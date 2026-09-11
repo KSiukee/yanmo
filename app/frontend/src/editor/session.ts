@@ -301,41 +301,6 @@ export function useEditorSession(): EditorSession {
     }
   }
 
-  // 目录树：只接"看得见、点得动、拖得走"，切章仍走上面那条（先落盘再切）
-  const directory = useDirectory({
-    workId,
-    currentNodeId,
-    saveState,
-    openChapter: (node_id) => switchChapter(node_id),
-    onError: (message) => {
-      failure.value = `目录操作没能完成：${message}`;
-    },
-  });
-
-  // 删章路标：只在点「+」时问一嘴，答复与空缺都归核心（这里只转发）
-  const gaps = useGaps({
-    transport: { check: treeGapCheck, answer: treeGapAnswer, fill: treeFillGap },
-    workId,
-    onError: (message) => {
-      failure.value = `删章路标没能问出来：${message}`;
-    },
-  });
-
-  // 外观 / 写作行为偏好：全局一份（默认值只在核心那一处）；会话启动时读一次
-  const appearance = useAppearance({
-    transport: { read: readAppearance, write: writeAppearance, reset: resetAppearance },
-    onError: (message) => {
-      failure.value = `设置没能存下来：${message}`;
-    },
-  });
-
-  /** 打开"刚新建/补写"的那一章——要接着写（走同一条切章纪律，只是焦点策略不同） */
-  const openFreshChapter = (node_id: number) => switchChapter(node_id, true);
-
-  // 点「+」之后的编排（先问路标 → 补写 / 接着建章）：**不放在视图里**，视图只管"点了哪一行"。
-  // ⚠️ 必须排在上面的 gaps 与 directory **之后**——它俩是 const，提前用会撞暂时性死区（真机上白屏过一次）
-  const adding = useAddChapter({ gaps, directory, addChapterAfter, openFreshChapter });
-
   /**
    * 换一本书：落点是那本书上次写的那一章。
    *
@@ -389,47 +354,97 @@ export function useEditorSession(): EditorSession {
     await switchWork(work); // 回到这本书还活着的那一章
   }
 
-  // 回收站：捞回来 / 彻底删掉；捞回来之后目录树与书架都得跟着刷新
-  const trash = useTrash({
-    transport: {
-      list: listTrash,
-      restoreWork,
-      preview: restorePreview,
-      restoreNode,
-      purgeWork,
-      purgeNode,
-      empty: emptyTrash,
-    },
-    workId,
-    reopen: async () => {
-      await switchWork(null);
-    },
-    onChanged: () => {
-      void shelf.refresh();
-      void directory.refresh();
-    },
-    onError: (message) => {
-      failure.value = `回收站操作没能完成：${message}`;
-    },
-  });
+  /**
+   * 装配：**有先后要求的创建都收在这一处**，顺序一眼可见。
+   *
+   * 为什么单列：依赖顺序是隐式的——编译器看不见、单测也碰不到；把新组合式插错位置，
+   * 挂载时会直接抛错，真机上就是白屏（这条踩过一次）。约定：
+   * ① `directory` / `gaps` / `appearance` 先行（后面的要靠它们）；
+   * ② 再建 `adding`（它同时要 directory + gaps + 建章那条路）；
+   * ③ `trash` / `shelf` 最后（它们只在回调里互相引用，运行时才碰）。
+   */
+  function createParts() {
+    // 目录树：只接"看得见、点得动、拖得走"，切章仍走上面那条（先落盘再切）
+    const directory = useDirectory({
+      workId,
+      currentNodeId,
+      saveState,
+      openChapter: (node_id) => switchChapter(node_id),
+      onError: (message) => {
+        failure.value = `目录操作没能完成：${message}`;
+      },
+    });
 
-  // 书架：列书 / 建书 / 改名 / 删书；"切书"仍走上面那条（先落盘再切）
-  const shelf = useShelf({
-    transport: {
-      list: listShelf,
-      create: createWork,
-      rename: renameWork,
-      remove: deleteWork,
-      export: exportWork,
-    },
-    workId,
-    openWork: (target) => switchWork(target),
-    // 删书之前也先把手上这一章落盘：存不下去就不该动手删
-    beforeRemove: () => flushCurrent(),
-    onError: (message) => {
-      failure.value = `书架操作没能完成：${message}`;
-    },
-  });
+    // 删章路标：只在点「+」时问一嘴，答复与空缺都归核心（这里只转发）
+    const gaps = useGaps({
+      transport: { check: treeGapCheck, answer: treeGapAnswer, fill: treeFillGap },
+      workId,
+      onError: (message) => {
+        failure.value = `删章路标没能问出来：${message}`;
+      },
+    });
+
+    // 外观 / 写作行为偏好：全局一份（默认值只在核心那一处）；会话启动时读一次
+    const appearance = useAppearance({
+      transport: { read: readAppearance, write: writeAppearance, reset: resetAppearance },
+      onError: (message) => {
+        failure.value = `设置没能存下来：${message}`;
+      },
+    });
+
+    /** 打开"刚新建/补写"的那一章——要接着写（走同一条切章纪律，只是焦点策略不同） */
+    const openFreshChapter = (node_id: number) => switchChapter(node_id, true);
+
+    // 点「+」之后的编排（先问路标 → 补写 / 接着建章）：**不放在视图里**，视图只管"点了哪一行"
+    const adding = useAddChapter({ gaps, directory, addChapterAfter, openFreshChapter });
+
+    // 回收站：捞回来 / 彻底删掉；捞回来之后目录树与书架都得跟着刷新
+    const trash = useTrash({
+      transport: {
+        list: listTrash,
+        restoreWork,
+        preview: restorePreview,
+        restoreNode,
+        purgeWork,
+        purgeNode,
+        empty: emptyTrash,
+      },
+      workId,
+      reopen: async () => {
+        await switchWork(null);
+      },
+      onChanged: () => {
+        void shelf.refresh();
+        void directory.refresh();
+      },
+      onError: (message) => {
+        failure.value = `回收站操作没能完成：${message}`;
+      },
+    });
+
+    // 书架：列书 / 建书 / 改名 / 删书；"切书"仍走上面那条（先落盘再切）
+    const shelf = useShelf({
+      transport: {
+        list: listShelf,
+        create: createWork,
+        rename: renameWork,
+        remove: deleteWork,
+        export: exportWork,
+      },
+      workId,
+      openWork: (target) => switchWork(target),
+      // 删书之前也先把手上这一章落盘：存不下去就不该动手删
+      beforeRemove: () => flushCurrent(),
+      onError: (message) => {
+        failure.value = `书架操作没能完成：${message}`;
+      },
+    });
+
+    return { directory, gaps, appearance, adding, trash, shelf };
+  }
+
+  // 装配一次，之后各处只用解出来的这几个（顺序约定见 createParts）
+  const { directory, gaps, appearance, adding, trash, shelf } = createParts();
 
   onMounted(async () => {
     window.addEventListener("blur", persistNow);
