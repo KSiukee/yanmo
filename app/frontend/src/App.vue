@@ -11,6 +11,7 @@ import DirectoryPane from "./components/DirectoryPane.vue";
 import EditorPane from "./components/EditorPane.vue";
 import FlowPane from "./components/FlowPane.vue";
 import EngineBadge from "./components/EngineBadge.vue";
+import SettingsDialog from "./components/SettingsDialog.vue";
 import ShelfDialog from "./components/ShelfDialog.vue";
 import TrashDialog from "./components/TrashDialog.vue";
 
@@ -19,6 +20,7 @@ const session = useEditorSession();
 const { chapterTitle, workId } = session;
 const { visible: shelfVisible, toggle: toggleShelf } = session.shelf;
 const { visible: trashVisible } = session.trash;
+const { visible: settingsVisible, values: settingsValues, open: openSettings } = session.appearance;
 </script>
 
 <template>
@@ -33,6 +35,14 @@ const { visible: trashVisible } = session.trash;
       >
         书架
       </button>
+      <button
+        type="button"
+        class="shell__settings"
+        title="外观与写作行为偏好"
+        @click="void openSettings()"
+      >
+        设置
+      </button>
       <span class="shell__hint">{{ chapterTitle || "AI 只问，不写" }}</span>
       <EngineBadge />
     </header>
@@ -45,6 +55,7 @@ const { visible: trashVisible } = session.trash;
 
     <ShelfDialog v-if="shelfVisible" :session="session" />
     <TrashDialog v-if="trashVisible" :session="session" />
+    <SettingsDialog v-if="settingsVisible && settingsValues" :session="session" />
   </div>
 </template>
 
@@ -74,7 +85,8 @@ const { visible: trashVisible } = session.trash;
   color: var(--ym-ink-soft);
 }
 
-.shell__shelf {
+.shell__shelf,
+.shell__settings {
   padding: 1px 10px;
   border: 1px solid var(--ym-line);
   border-radius: 4px;
@@ -85,7 +97,8 @@ const { visible: trashVisible } = session.trash;
   cursor: pointer;
 }
 
-.shell__shelf:hover {
+.shell__shelf:hover,
+.shell__settings:hover {
   border-color: var(--ym-accent);
   color: var(--ym-accent);
 }

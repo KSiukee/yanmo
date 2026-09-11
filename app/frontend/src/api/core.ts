@@ -83,6 +83,17 @@ export interface TreeNode {
   subtree_word_count: number;
 }
 
+/** 外观 / 写作行为偏好（每项都已经落到具体值）。 */
+export interface Appearance {
+  /** 打开最新一章时跳到段末并聚焦输入光标 */
+  jump_to_end_on_latest: boolean;
+}
+
+/** 要改的偏好项：**只写传进来的**，没传的保持原样。 */
+export interface AppearancePatch {
+  jump_to_end_on_latest?: boolean;
+}
+
 /** 删章留下的一处空缺——点「+」时问那一句的依据。 */
 export interface ChapterGap {
   /** 回收站里那一条（「去回收站看看」用它） */
@@ -208,6 +219,9 @@ const COMMANDS = {
   treeGapCheck: "tree_gap_check",
   treeGapAnswer: "tree_gap_answer",
   treeFillGap: "tree_fill_gap",
+  appearanceRead: "appearance_read",
+  appearanceWrite: "appearance_write",
+  appearanceReset: "appearance_reset",
   saveCursor: "save_cursor",
   saveBody: "save_body",
   bodyFingerprint: "body_fingerprint",
@@ -354,6 +368,18 @@ export const treeGapAnswer = (node_id: number, answer: "deferred" | "ignored") =
 /** 删章路标：补写——在原来的层、用原来的名字与位置新建空章，返回新章 id。 */
 export const treeFillGap = (node_id: number) =>
   call<number>(COMMANDS.treeFillGap, { node_id });
+
+/** 读外观 / 写作行为偏好；`work_id` 给 null 就是只看全局那份。 */
+export const readAppearance = (work_id: number | null) =>
+  call<Appearance>(COMMANDS.appearanceRead, { work_id });
+
+/** 改偏好（稀疏合并），返回**写完回读**的那一份。 */
+export const writeAppearance = (work_id: number | null, patch: AppearancePatch) =>
+  call<Appearance>(COMMANDS.appearanceWrite, { work_id, patch });
+
+/** 偏好回到默认（书的覆盖则是"回到继承全局"）。 */
+export const resetAppearance = (work_id: number | null) =>
+  call<Appearance>(COMMANDS.appearanceReset, { work_id });
 
 /** 记下"这一章读到哪了"（失焦 / 切章 / 关窗时调用）。 */
 export const saveCursor = (node_id: number, cursor: EditorCursor) =>

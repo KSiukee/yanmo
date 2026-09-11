@@ -18,6 +18,8 @@ import {
   armExitGate,
   bodyFingerprint,
   chapterNeighbors,
+  readAppearance,
+  resetAppearance,
   closeSession,
   createChapter,
   createWork,
@@ -45,16 +47,19 @@ import {
   treeFillGap,
   treeGapAnswer,
   treeGapCheck,
+  writeAppearance,
   type ChapterNeighbors,
   type EditorCursor,
   type EditorSnapshot,
 } from "../api/core";
 import { Autosave, type AutosaveState } from "./autosave";
 import { useAddChapter, type AddChapter } from "./add-chapter";
+import { useAppearance, type AppearanceState } from "./appearance";
 import { ChapterSwitch } from "./chapters";
 import { useDirectory, type Directory } from "./directory";
 import { docToText, textToHtml } from "./doc";
 import { ExitGate, type ExitGateState } from "./exitguard";
+import { focusPlan } from "./focus";
 import { useGaps, type Gaps } from "./gaps";
 import { useShelf, type Shelf } from "./shelf";
 import { useTrash, type Trash } from "./trash";
@@ -78,10 +83,12 @@ export interface EditorSession {
   gaps: Gaps;
   /** 点「+」之后的编排：先问路标，再照作者意图建章（视图只管"点了哪一行"） */
   adding: AddChapter;
+  /** 外观 / 写作行为偏好（设置面板用；焦点策略也读它） */
+  appearance: AppearanceState;
   /** 当前作品 id（书架用来标"正在写这本"） */
   workId: Ref<number | null>;
   persistNow: () => void;
-  switchChapter: (node_id: number | null | undefined) => Promise<void>;
+  switchChapter: (node_id: number | null | undefined, fresh?: boolean) => Promise<void>;
   /** 在某一章后面新建一章并切过去（目录树的「+」走这条） */
   addChapterAfter: (node_id: number) => Promise<void>;
   /** 删掉目录里的一段（软删，进回收站；删到正在写的那一支会自动换落点） */
@@ -147,8 +154,12 @@ export function useEditorSession(): EditorSession {
     return engine;
   }
 
+  /** 刚打开的这一章有没有"上次读到哪"的记录——焦点策略要用（见 editor/focus.ts） */
+  let openedHadCursor = false;
+
   // ── 换内容：换内容，不换实例 ───────────────────────────────────────
   function applyChapter(snapshot: EditorSnapshot) {
+    openedHadCursor = snapshot.cursor !== null;
     chapterTitle.value = snapshot.title;
     workId.value = snapshot.work_id;
     currentNodeId.value = snapshot.node_id;
@@ -220,6 +231,27 @@ export function useEditorSession(): EditorSession {
     }
   }
 
+  /**
+   * 打开一章之后把光标安排明白：**历史章挪出正文、该写的章接着写**。
+   *
+   * 放在"邻居读回来之后"再判：要知道这一章是不是全书最后一章（跨卷按阅读顺序）。
+   * `fresh` = 刚新建/补写出来的那一种（作者的意图就是要写）。
+   */
+  function settleFocus(fresh: boolean) {
+    const instance = editor.value;
+    const order = neighbors.value;
+    if (!instance || !order) return; // 拿不到阅读顺序就不动光标（安全那一边）
+    const plan = focusPlan({
+      fresh,
+      had_cursor: openedHadCursor,
+      is_latest: order.index === order.total,
+      // 偏好还没读回来时按"不抢焦点"处理——宁可少聚焦一次，也不要在历史章里插进乱字符
+      jump_to_end: appearance.values.value?.jump_to_end_on_latest ?? false,
+    });
+    if (plan === "focus-end") instance.commands.focus("end");
+    else if (plan === "blur") instance.commands.blur();
+  }
+
   const switcher = new ChapterSwitch({
     autosave: () => autosave.value,
     currentCursor: () => currentCursor(),
@@ -234,12 +266,15 @@ export function useEditorSession(): EditorSession {
     },
   });
 
-  async function switchChapter(node_id: number | null | undefined) {
+  async function switchChapter(node_id: number | null | undefined, fresh = false) {
     if (!node_id) return;
     switching.value = true;
     failure.value = null;
     try {
-      if ((await switcher.to(node_id)) === "switched") await refreshNeighbors();
+      if ((await switcher.to(node_id)) === "switched") {
+        await refreshNeighbors();
+        settleFocus(fresh);
+      }
     } finally {
       switching.value = false;
     }
@@ -254,7 +289,10 @@ export function useEditorSession(): EditorSession {
       // 核心的"插在这一章之后"：同级、紧随其后、序号密集、不跨卷
       // 标题留空＝由核心按**同层序号**取名（按全书取号的话，分卷之后会跳号）
       const created = await createChapter(node_id, "");
-      if ((await switcher.to(created)) === "switched") await refreshNeighbors();
+      if ((await switcher.to(created)) === "switched") {
+        await refreshNeighbors();
+        settleFocus(true); // 刚新建：接着写（不管它是第几章）
+      }
       await directory.refresh(); // 新章得看得见（目录不为别的动作整树重建）
     } catch (error) {
       failure.value = `没能新建章节：${error instanceof Error ? error.message : String(error)}`;
@@ -283,9 +321,20 @@ export function useEditorSession(): EditorSession {
     },
   });
 
+  // 外观 / 写作行为偏好：全局一份（默认值只在核心那一处）；会话启动时读一次
+  const appearance = useAppearance({
+    transport: { read: readAppearance, write: writeAppearance, reset: resetAppearance },
+    onError: (message) => {
+      failure.value = `设置没能存下来：${message}`;
+    },
+  });
+
+  /** 打开"刚新建/补写"的那一章——要接着写（走同一条切章纪律，只是焦点策略不同） */
+  const openFreshChapter = (node_id: number) => switchChapter(node_id, true);
+
   // 点「+」之后的编排（先问路标 → 补写 / 接着建章）：**不放在视图里**，视图只管"点了哪一行"。
   // ⚠️ 必须排在上面的 gaps 与 directory **之后**——它俩是 const，提前用会撞暂时性死区（真机上白屏过一次）
-  const adding = useAddChapter({ gaps, directory, addChapterAfter });
+  const adding = useAddChapter({ gaps, directory, addChapterAfter, openFreshChapter });
 
   /**
    * 换一本书：落点是那本书上次写的那一章。
@@ -301,6 +350,7 @@ export function useEditorSession(): EditorSession {
       const snapshot = work_id === null ? await openEditorTarget() : await openWorkTarget(work_id);
       if ((await switcher.to(snapshot)) === "blocked") return false;
       await refreshNeighbors();
+      settleFocus(false);
       return true;
     } catch (error) {
       failure.value = `没能换到那本书：${error instanceof Error ? error.message : String(error)}`;
@@ -385,10 +435,12 @@ export function useEditorSession(): EditorSession {
     window.addEventListener("blur", persistNow);
     document.addEventListener("visibilitychange", onVisibilityChange);
     try {
+      await appearance.load(); // 先读偏好：焦点策略要用（读失败按"不抢焦点"走）
       const snapshot = await openEditorTarget();
       applyChapter(snapshot);
       makeAutosave(snapshot);
       await refreshNeighbors();
+      settleFocus(false);
 
       // 关窗闸门：先落盘，存不下去就别想走
       gate = new ExitGate({
@@ -438,6 +490,7 @@ export function useEditorSession(): EditorSession {
     directory,
     gaps,
     adding,
+    appearance,
     shelf,
     trash,
     workId,

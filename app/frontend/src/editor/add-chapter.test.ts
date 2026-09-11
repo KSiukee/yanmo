@@ -84,14 +84,14 @@ function build(options: { found?: ChapterGap | null; fillFails?: boolean; answer
     refresh: async () => {
       calls.push("refresh");
     },
-    select: async (node_id: number) => {
-      calls.push(`select:${node_id}`);
-    },
-  } as Pick<Directory, "create" | "refresh" | "select">;
+  } as Pick<Directory, "create" | "refresh">;
 
   const adding = useAddChapter({
     gaps,
     directory,
+    openFreshChapter: async (node_id) => {
+      calls.push(`fresh:${node_id}`);
+    },
     addChapterAfter: async (node_id) => {
       calls.push(`after:${node_id}`);
     },
@@ -109,7 +109,7 @@ test("没得问：接着他在那一章后面插一章", async () => {
 test("没得问：卷上点 + 就是往里加一章并打开", async () => {
   const { adding, calls } = build();
   await adding.addHere(volume());
-  assert.deepEqual(calls, ["check:5", "create:5:chapter", "select:7"], "问的是这一卷里面（layer=5）");
+  assert.deepEqual(calls, ["check:5", "create:5:chapter", "fresh:7"], "问的是这一卷里面（layer=5）");
 });
 
 test("有得问：先摆弹窗，这一行先不建章", async () => {
@@ -124,7 +124,7 @@ test("补写：补完刷新目录并切过去", async () => {
   const { adding, calls } = build({ found: gap() });
   await adding.addHere(row());
   await adding.fill();
-  assert.deepEqual(calls, ["check:1", "fill", "refresh", "select:99"]);
+  assert.deepEqual(calls, ["check:1", "fill", "refresh", "fresh:99"]);
   assert.equal(adding.visible.value, false);
 });
 

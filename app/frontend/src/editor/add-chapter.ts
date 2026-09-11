@@ -18,8 +18,10 @@ import { addIntent, type TreeRow } from "./tree.ts";
 export interface AddChapterDeps {
   /** 删章路标那一问（editor/gaps.ts） */
   gaps: Gaps;
-  /** 目录树：往里新建 / 补写后重拉 / 切过去 */
-  directory: Pick<Directory, "create" | "refresh" | "select">;
+  /** 目录树：往里新建 / 补写后重拉 */
+  directory: Pick<Directory, "create" | "refresh">;
+  /** 打开"刚新建/补写"的那一章：**要接着写**（焦点策略见 editor/focus.ts） */
+  openFreshChapter: (node_id: number) => Promise<void>;
   /** 会话：在某一章后面插一章（走核心既有的"插在这一章之后"） */
   addChapterAfter: (node_id: number) => Promise<void>;
 }
@@ -54,7 +56,7 @@ export function useAddChapter(deps: AddChapterDeps): AddChapter {
     if (addIntent(row) === "inside") {
       // 标题留空＝由核心按同层序号取名
       const created = await deps.directory.create(row.id, "chapter", "");
-      if (created !== null) await deps.directory.select(created);
+      if (created !== null) await deps.openFreshChapter(created);
       return;
     }
     await deps.addChapterAfter(row.id); // 走核心既有的"插在这一章之后"
@@ -76,7 +78,7 @@ export function useAddChapter(deps: AddChapterDeps): AddChapter {
       if (created === null) return; // 没补成（错误已报过）：弹窗还摆着
       pending.value = null;
       await deps.directory.refresh(); // 补出来的章得看得见
-      await deps.directory.select(created);
+      await deps.openFreshChapter(created); // 补写出来的空章：直接接着写
     },
     answer: async (next) => {
       const row = pending.value;

@@ -1,0 +1,32 @@
+/* 设置面板自己的部分（公共的遮罩/盒子/标题/按钮在 dialog.css）。 */
+
+.settings__box {
+  width: min(520px, 100%);
+}
+
+.settings__group {
+  margin: 0 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--ym-ink-soft);
+}
+
+.settings__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.settings__hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ym-ink-soft);
+}
+
+.settings__hint--bad {
+  color: #b3261e;
+}
