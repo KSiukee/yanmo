@@ -18,9 +18,15 @@ export interface TreeRow {
   title: string;
   word_count: number;
   has_body: boolean;
+  holds_body: boolean;
+  accepts_children: boolean;
   depth: number;
   has_children: boolean;
   expanded: boolean;
+  /** 本卷几章（**非容器是 0**） */
+  chapter_count: number;
+  /** 本卷共多少字（**非容器是 0**） */
+  subtree_word_count: number;
 }
 
 /** 树要用的几个动作（会话层注入真命令，测试注入替身）。 */
@@ -48,6 +54,26 @@ export function addIntent(row: Pick<TreeRow, "holds_body" | "accepts_children">)
   if (row.holds_body) return "after";
   if (row.accepts_children) return "inside";
   return null;
+}
+
+/** 字数给人看：一万以下报原数，一万以上报「x.x万」（一位小数）。 */
+export function formatWords(words: number): string {
+  if (words < 10000) return String(words);
+  return `${Math.round(words / 1000) / 10}万`;
+}
+
+/**
+ * 容器行右侧那行小字：**本卷几章**（作者设了卷长就是 `12/30章`）· 共多少字。
+ *
+ * 只用在校不了正文的容器行上；能写正文的行显示的是它自己那一章的字数。
+ */
+export function containerLabel(
+  row: Pick<TreeRow, "chapter_count" | "subtree_word_count">,
+  target: number | null,
+): string {
+  if (row.chapter_count === 0 && row.subtree_word_count === 0) return "空";
+  const chapters = target && target > 0 ? `${row.chapter_count}/${target}章` : `${row.chapter_count}章`;
+  return `${chapters} · ${formatWords(row.subtree_word_count)}`;
 }
 
 /** 环检测的上行上限——树坏了要明确报错，不是转到天荒地老。 */
@@ -109,8 +135,9 @@ export class DirectoryTree {
   async create(parent_id: number | null, kind: string, title: string): Promise<number> {
     const work_id = this.requireWork();
     const created = await this.transport.create(work_id, parent_id, kind, title);
-    await this.loadLevel(parent_id);
     if (parent_id !== null) this.expanded.add(parent_id); // 新建完就看得见，别让人再点一次
+    // 多了一个节点，各层祖先的"本卷几章 / 共多少字"都变了：重拉看得见的那些层
+    await this.reloadVisible();
     return created;
   }
 
@@ -137,19 +164,31 @@ export class DirectoryTree {
       if (current === target) return; // 位置没变，不跑这一趟
     }
 
-    const old_parent = node.parent_id;
     await this.transport.move(node_id, new_parent, target);
     if (new_parent !== null) this.expanded.add(new_parent); // 拖进去就展开，否则"东西不见了"
-    await this.loadLevel(old_parent);
-    if (old_parent !== new_parent) await this.loadLevel(new_parent);
+    // 搬动会同时改两边各层祖先的"本卷几章 / 共多少字"：整片重拉最省心（拖动不是高频动作）
+    await this.reloadVisible();
   }
 
-  /** 落盘后顺手更新这一行的字数——**不为了几个字重拉一次目录**。 */
+  /**
+   * 落盘后顺手更新这一行的字数——**不为了几个字重拉一次目录**。
+   *
+   * 顺手把差额加到各层祖先的"本卷共多少字"上：卷那一行的小字才不会越写越不准。
+   */
   applyWordCount(node_id: number, word_count: number, has_body: boolean): void {
     const node = this.nodes.get(node_id);
-    if (!node) return;
+    if (!node) return; // 这一行还没加载过：界面上也没显示它，下次重拉自然就对了
+    const delta = word_count - node.word_count;
     node.word_count = word_count;
     node.has_body = has_body;
+    if (delta === 0) return;
+    let parent = node.parent_id;
+    for (let guard = 0; parent !== null && guard < MAX_DEPTH; guard += 1) {
+      const ancestor = this.nodes.get(parent);
+      if (!ancestor) break;
+      ancestor.subtree_word_count += delta;
+      parent = ancestor.parent_id;
+    }
   }
 
   /**

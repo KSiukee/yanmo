@@ -317,3 +317,73 @@ fn previous_schema_database_is_upgraded_and_search_backfilled() {
     assert_eq!(hits.len(), 1, "升级后老稿子必须立刻能搜到（存量回填）");
     assert_eq!(hits[0].node_id, 1);
 }
+
+#[test]
+fn subtree_rollup_counts_chapters_and_words_per_container() {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let volume_one = store.list_nodes(work.id).unwrap()[0].id;
+    let volume_two = store.create_node(work.id, None, NodeKind::Volume, "第二卷").unwrap();
+
+    let mut write = |parent: i64, title: &str, body: &str| {
+        let id = store.create_node(work.id, Some(parent), NodeKind::Chapter, title).unwrap();
+        store.write_body(id, body).unwrap();
+        id
+    };
+    let first = write(volume_one, "第一章", "一二三四五");
+    write(volume_one, "第二章", "六七");
+    write(volume_two, "第三章", "八九十");
+
+    // 场景卡挂在第一章下：它算字数，但不算"章"
+    let scene = store
+        .create_node(work.id, Some(first), NodeKind::Scene, "场景卡")
+        .unwrap();
+    store.write_body(scene, "场景卡里的备注。").unwrap();
+
+    let one = store.subtree_rollup(volume_one).unwrap();
+    let two = store.subtree_rollup(volume_two).unwrap();
+    assert_eq!(one.chapters, 2, "第一卷两章");
+    assert_eq!(two.chapters, 1, "第二卷一章");
+
+    // 汇总的数字必须与"把子树里每个节点的字数加起来"一致——两边不许各算一套
+    let all = store.list_nodes(work.id).unwrap();
+    let mut expected = 0;
+    for node in all.iter().filter(|n| n.parent_id == Some(volume_one)) {
+        expected += node.word_count;
+        for kid in all.iter().filter(|n| n.parent_id == Some(node.id)) {
+            expected += kid.word_count;
+        }
+    }
+    assert_eq!(one.word_count, expected, "本卷字数 = 子树里各节点字数之和");
+    assert!(one.word_count > two.word_count, "第一卷多一章还有场景卡");
+
+    // 软删一章：汇总立刻跟着少
+    let second = all.iter().find(|n| n.title == "第二章").unwrap().id;
+    store.soft_delete_node(second).unwrap();
+    let after = store.subtree_rollup(volume_one).unwrap();
+    assert_eq!(after.chapters, 1, "删掉的章不算了");
+    assert!(after.word_count < one.word_count);
+}
+
+#[test]
+fn volume_target_is_per_work_and_clears_cleanly() {
+    let (_dir, mut store) = fresh();
+    let novel = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let other = store.create_work(WorkKind::Novel, "短歌").unwrap();
+
+    assert_eq!(store.volume_target(novel.id).unwrap(), None, "没设过就是没有，不猜默认值");
+    store.set_volume_target(novel.id, Some(30)).unwrap();
+    assert_eq!(store.volume_target(novel.id).unwrap(), Some(30));
+    assert_eq!(store.volume_target(other.id).unwrap(), None, "每部作品各记各的");
+
+    // ≤0 与 None 都当"清掉"：这是行小字，不该因为它把界面卡住
+    store.set_volume_target(novel.id, Some(0)).unwrap();
+    assert_eq!(store.volume_target(novel.id).unwrap(), None);
+    store.set_volume_target(novel.id, Some(12)).unwrap();
+    store.set_volume_target(novel.id, None).unwrap();
+    assert_eq!(store.volume_target(novel.id).unwrap(), None);
+
+    // 已删除的作品不给设
+    store.soft_delete_work(novel.id).unwrap();
+    assert!(store.set_volume_target(novel.id, Some(5)).is_err());
+}

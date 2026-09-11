@@ -77,7 +77,9 @@ fn main() {
             commands::tree::tree_ancestors,
             commands::tree::tree_create_node,
             commands::tree::tree_rename_node,
-            commands::tree::tree_move_node
+            commands::tree::tree_move_node,
+            commands::tree::tree_volume_target,
+            commands::tree::tree_set_volume_target
         ])
         .run(tauri::generate_context!())
         .expect("启动研墨失败");

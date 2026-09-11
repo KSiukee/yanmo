@@ -13,7 +13,7 @@ use tauri::State;
 
 use crate::storage::AppData;
 use yanmo_core::model::NodeKind;
-use yanmo_core::store::{NodeSummary, Store};
+use yanmo_core::store::{NodeSummary, Store, SubtreeRollup};
 
 /// 目录树的一个条目。
 #[derive(Debug, Serialize)]
@@ -32,9 +32,12 @@ pub struct TreeNodeDto {
     pub accepts_children: bool,
     /// 下面还有没有节点（决定要不要画展开箭头）
     pub has_children: bool,
+    /// 容器行的小字：本卷几章 / 共多少字（**只有容器才填，叶子是 0**）
+    pub chapter_count: i64,
+    pub subtree_word_count: i64,
 }
 
-fn to_dto(node: NodeSummary) -> TreeNodeDto {
+fn to_dto(node: NodeSummary, rollup: SubtreeRollup) -> TreeNodeDto {
     TreeNodeDto {
         id: node.id,
         parent_id: node.parent_id,
@@ -45,10 +48,14 @@ fn to_dto(node: NodeSummary) -> TreeNodeDto {
         holds_body: node.kind.holds_body(),
         accepts_children: node.kind.accepts_children(),
         has_children: node.has_children,
+        chapter_count: rollup.chapters,
+        subtree_word_count: rollup.word_count,
     }
 }
 
 /// 取某一层的子节点——展开哪一层拉哪一层。
+///
+/// 容器行顺带带上"本卷几章 / 共多少字"：**只给容器算**，叶子行是自己的字数，不必多问一口。
 #[tauri::command(rename_all = "snake_case")]
 pub fn tree_children(
     data: State<'_, AppData>,
@@ -56,7 +63,17 @@ pub fn tree_children(
     parent_id: Option<i64>,
 ) -> Result<Vec<TreeNodeDto>, String> {
     data.with_store(|store: &mut Store| {
-        Ok(store.children_of(work_id, parent_id)?.into_iter().map(to_dto).collect())
+        let nodes = store.children_of(work_id, parent_id)?;
+        let mut out = Vec::with_capacity(nodes.len());
+        for node in nodes {
+            let rollup = if node.kind.accepts_children() && !node.kind.holds_body() {
+                store.subtree_rollup(node.id)?
+            } else {
+                SubtreeRollup::default()
+            };
+            out.push(to_dto(node, rollup));
+        }
+        Ok(out)
     })
 }
 
@@ -103,4 +120,20 @@ pub fn tree_move_node(
     data.with_store(|store: &mut Store| {
         store.move_node(node_id, parent_id, index.max(0) as usize)
     })
+}
+
+/// 每卷目标章数（作者自己定的"大概几章一卷"）：目录里那行"本卷 12/30 章"的分母。
+#[tauri::command(rename_all = "snake_case")]
+pub fn tree_volume_target(data: State<'_, AppData>, work_id: i64) -> Result<Option<i64>, String> {
+    data.with_store(|store: &mut Store| store.volume_target(work_id))
+}
+
+/// 设定 / 清除每卷目标章数：`null`（或 ≤0）= 清掉，回到"没设过"。
+#[tauri::command(rename_all = "snake_case")]
+pub fn tree_set_volume_target(
+    data: State<'_, AppData>,
+    work_id: i64,
+    chapters: Option<i64>,
+) -> Result<(), String> {
+    data.with_store(|store: &mut Store| store.set_volume_target(work_id, chapters))
 }

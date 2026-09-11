@@ -7,7 +7,15 @@
 
 import { ref, watch, type Ref } from "vue";
 
-import { treeAncestors, treeChildren, treeCreateNode, treeMoveNode, treeRenameNode } from "../api/core";
+import {
+  treeAncestors,
+  treeChildren,
+  treeCreateNode,
+  treeMoveNode,
+  treeRenameNode,
+  treeSetVolumeTarget,
+  treeVolumeTarget,
+} from "../api/core";
 import type { AutosaveState } from "./autosave";
 import { DirectoryTree, type TreeRow } from "./tree";
 
@@ -27,6 +35,10 @@ export interface Directory {
   rows: Ref<TreeRow[]>;
   /** 当前章（界面据此高亮；**目录自己的状态不掺进来**） */
   current: Ref<number | null>;
+  /** 每卷目标章数（作者设过才有）：目录里「本卷 12/30 章」的分母 */
+  volumeTarget: Ref<number | null>;
+  /** 设定 / 清除每卷目标章数（null = 清掉） */
+  setVolumeTarget: (chapters: number | null) => Promise<void>;
   toggle: (node_id: number) => Promise<void>;
   select: (node_id: number) => Promise<void>;
   rename: (node_id: number, title: string) => Promise<void>;
@@ -49,6 +61,7 @@ export function useDirectory(options: DirectoryOptions): Directory {
     move: treeMoveNode,
   });
   const rows = ref<TreeRow[]>([]);
+  const volumeTarget = ref<number | null>(null);
   const sync = () => {
     rows.value = tree.rows();
   };
@@ -81,6 +94,7 @@ export function useDirectory(options: DirectoryOptions): Directory {
         // 打开作品就定位到正在写的那一章：章在收起的卷里也不会"看不见自己"
         const node_id = options.currentNodeId.value;
         if (node_id !== null) await tree.reveal(node_id);
+        volumeTarget.value = await loadVolumeTarget(work_id);
       });
     },
     { immediate: true },
@@ -115,9 +129,31 @@ export function useDirectory(options: DirectoryOptions): Directory {
     }
   }
 
+  /** 读卷长：读不到就当"没设过"——这只是行小字，不该挡住目录 */
+  async function loadVolumeTarget(work_id: number): Promise<number | null> {
+    try {
+      return await treeVolumeTarget(work_id);
+    } catch {
+      return null;
+    }
+  }
+
+  /** 写卷长：写进去再回读一次，界面显示的永远是库里那份 */
+  async function setVolumeTarget(chapters: number | null): Promise<void> {
+    const work_id = options.workId.value;
+    if (work_id === null) return;
+    await act(async () => {
+      const next = chapters !== null && chapters > 0 ? chapters : null;
+      await treeSetVolumeTarget(work_id, next);
+      volumeTarget.value = await loadVolumeTarget(work_id);
+    });
+  }
+
   return {
     rows,
     current: options.currentNodeId,
+    volumeTarget,
+    setVolumeTarget,
     toggle: (node_id) => act(() => tree.toggle(node_id)),
     select: (node_id) => options.openChapter(node_id),
     rename: (node_id, title) => act(() => tree.rename(node_id, title)),

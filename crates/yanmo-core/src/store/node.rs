@@ -161,6 +161,40 @@ impl Store {
     }
 }
 
+/// 一棵子树的汇总：目录树里容器行要显示的"本卷几章 / 共多少字"。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SubtreeRollup {
+    /// 子树里 `chapter` 类的节点数——"本卷几章"问的就是它（场景卡这类卡片不算章）
+    pub chapters: i64,
+    /// 子树里所有节点的字数之和（正文写入时已回算过，这里只是加总，**不扫正文**）
+    pub word_count: i64,
+}
+
+impl Store {
+    /// 子树汇总——**只给容器行算**（叶子行的字数是它自己那一格）。
+    ///
+    /// 加总的是预聚合字段 `nodes.word_count`，所以卷里有几百章也只是走一遍索引；
+    /// 深度上限与别处一致：数据真坏了会在这里截断，不会转到天荒地老。
+    pub fn subtree_rollup(&self, node_id: i64) -> Result<SubtreeRollup> {
+        self.node_work(node_id)?; // 顺带确认它存在且没被删
+        let sql = format!(
+            "WITH RECURSIVE sub(id, word_count, node_kind, depth) AS (
+                 SELECT id, word_count, node_kind, 0 FROM nodes
+                  WHERE parent_id = ?1 AND deleted_at IS NULL
+                 UNION ALL
+                 SELECT n.id, n.word_count, n.node_kind, sub.depth + 1 FROM nodes n
+                   JOIN sub ON n.parent_id = sub.id
+                  WHERE n.deleted_at IS NULL AND sub.depth < {MAX_TREE_DEPTH}
+             )
+             SELECT COALESCE(SUM(word_count), 0), COALESCE(SUM(node_kind = 'chapter'), 0) FROM sub"
+        );
+        let (word_count, chapters) = self
+            .conn
+            .query_row(&sql, params![node_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(SubtreeRollup { chapters, word_count })
+    }
+}
+
 /// 导航用的章节条目（完整目录树是另一个任务；这里只给"上一章 / 下一章"够用的东西）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChapterSummary {

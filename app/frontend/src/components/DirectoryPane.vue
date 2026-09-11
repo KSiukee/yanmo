@@ -8,15 +8,26 @@
 // - 懒加载：只有展开过的层级才画出来（长篇几百章不会一次全进来）；
 // - 拖拽排序：落在行的上 / 中 / 下三段，分别是"排到它前面 / 放进它里面 / 排到它后面"；
 // - 内联改名：双击就地改，回车落、Esc 撤（空标题＝放弃）。
-import { nextTick, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 
 import type { EditorSession } from "../editor/session";
-import { addIntent, type TreeRow } from "../editor/tree";
+import { addIntent, containerLabel, formatWords, type TreeRow } from "../editor/tree";
 
 const props = defineProps<{ session: EditorSession }>();
 // 从会话对象里取出的都是 ref，模板里照常自动解包
-const { rows, current, toggle, select, rename, move, create, canDrop } = props.session.directory;
+const { rows, current, toggle, select, rename, move, create, canDrop, volumeTarget, setVolumeTarget } =
+  props.session.directory;
 const { neighbors, switching, switchChapter, addChapterAfter } = props.session;
+
+/** 有卷才显示"每卷多少章"这一栏：零层级作品用不上它 */
+const hasVolumes = computed(() => rows.value.some((row) => row.accepts_children && !row.holds_body));
+
+/** 改卷长：空着或 ≤0 就当作"没设过"（清掉） */
+function saveVolumeTarget(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const parsed = Number.parseInt(input.value, 10);
+  void setVolumeTarget(Number.isFinite(parsed) && parsed > 0 ? parsed : null);
+}
 
 /** 正在改名的那一行（同时只可能有一行） */
 const editing = ref<number | null>(null);
@@ -119,6 +130,21 @@ async function addHere(row: TreeRow) {
       </button>
     </header>
 
+    <p v-if="hasVolumes" class="pane__setup">
+      <label title="每卷大概写几章：只影响目录里「本卷 12/30 章」这行小字，不会改你的结构">
+        每卷
+        <input
+          class="pane__target"
+          type="number"
+          min="1"
+          :value="volumeTarget ?? ''"
+          placeholder="—"
+          @change="saveVolumeTarget"
+        />
+        章
+      </label>
+    </p>
+
     <p v-if="rows.length === 0" class="pane__empty">还没有目录</p>
     <ul ref="listEl" class="tree">
       <li
@@ -160,7 +186,10 @@ async function addHere(row: TreeRow) {
         />
         <span v-else class="tree__title" :title="row.title">{{ row.title || "（未命名）" }}</span>
 
-        <span class="tree__words">{{ row.has_body ? row.word_count : "空" }}</span>
+        <span v-if="row.holds_body" class="tree__words">{{ row.has_body ? formatWords(row.word_count) : "空" }}</span>
+        <span v-else class="tree__words" :title="`本卷 ${row.chapter_count} 章 · ${row.subtree_word_count} 字`">
+          {{ containerLabel(row, volumeTarget) }}
+        </span>
         <button
           v-if="addIntent(row)"
           type="button"

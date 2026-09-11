@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import type { TreeNode } from "../api/core.ts";
-import { addIntent, DirectoryTree, type TreeTransport } from "./tree.ts";
+import { addIntent, containerLabel, DirectoryTree, formatWords, type TreeTransport } from "./tree.ts";
 
 interface Spec {
   id: number;
@@ -26,17 +26,34 @@ function fakeWorld(initial: Spec[]) {
   let specs = initial.map((spec) => ({ ...spec }));
   let next_id = Math.max(0, ...initial.map((spec) => spec.id)) + 1;
 
-  const toDto = (spec: Spec): TreeNode => ({
-    id: spec.id,
-    parent_id: spec.parent,
-    kind: spec.kind,
-    title: spec.title,
-    word_count: spec.words ?? 0,
-    has_body: (spec.words ?? 0) > 0,
-    holds_body: HOLDS_BODY.has(spec.kind),
-    accepts_children: ACCEPTS_CHILDREN.has(spec.kind),
-    has_children: specs.some((kid) => kid.parent === spec.id),
-  });
+  const toDto = (spec: Spec): TreeNode => {
+    const under = subtreeTotals(spec.id);
+    return {
+      id: spec.id,
+      parent_id: spec.parent,
+      kind: spec.kind,
+      title: spec.title,
+      word_count: spec.words ?? 0,
+      has_body: (spec.words ?? 0) > 0,
+      holds_body: HOLDS_BODY.has(spec.kind),
+      accepts_children: ACCEPTS_CHILDREN.has(spec.kind),
+      has_children: specs.some((kid) => kid.parent === spec.id),
+      chapter_count: under.chapters,
+      subtree_word_count: under.words,
+    };
+  };
+
+  /** 参考实现：替身自己也算一遍"本卷几章 / 共多少字"，跟树的数字对账。 */
+  const subtreeTotals = (root: number): { chapters: number; words: number } => {
+    let chapters = 0;
+    let words = 0;
+    for (const kid of specs.filter((item) => item.parent === root)) {
+      const inner = subtreeTotals(kid.id);
+      chapters += inner.chapters + (kid.kind === "chapter" ? 1 : 0);
+      words += (kid.words ?? 0) + inner.words;
+    }
+    return { chapters, words };
+  };
 
   const transport: TreeTransport = {
     children: async (work_id, parent_id) => {
@@ -149,7 +166,7 @@ test("新建：重拉父层，返回新 id，并顺手展开父层", async () =>
 
   const created = await tree.create(1, "chapter", "第三章");
   assert.equal(created, 6);
-  assert.deepEqual(calls.slice(1), ["create:1:第三章", "children:7:1"]);
+  assert.deepEqual(calls.slice(1), ["create:1:第三章", "children:7:-", "children:7:1"]);
   assert.deepEqual(
     tree.rows().map((row) => row.title),
     ["第一卷", "第一章", "第二章", "第三章", "第二卷"],
@@ -181,7 +198,7 @@ test("同层拖动：索引要扣掉自己占的那一位", async () => {
 
   // 把第一章拖到"第二章之后"：界面给的落点索引是 2，核心要的是 1
   await tree.move(2, 1, 2);
-  assert.deepEqual(calls.slice(2), ["move:2:1:1", "children:7:1"]);
+  assert.deepEqual(calls.slice(2), ["move:2:1:1", "children:7:-", "children:7:1"]);
   assert.deepEqual(
     tree.rows().map((row) => row.title),
     ["第一卷", "第二章", "第一章", "第二卷"],
@@ -206,7 +223,7 @@ test("跨层拖动：把章挪出卷，两侧都要重拉，并展开新父级",
   await tree.toggle(1);
 
   await tree.move(2, null, 1); // 第一章挪到根级第二位（两卷之间）
-  assert.deepEqual(calls.slice(2), ["move:2:-:1", "children:7:1", "children:7:-"]);
+  assert.deepEqual(calls.slice(2), ["move:2:-:1", "children:7:-", "children:7:1"]);
   assert.deepEqual(
     tree.rows().map((row) => row.title),
     ["第一卷", "第二章", "第一章", "第二卷"],
@@ -309,6 +326,50 @@ test("还没打开作品就定位：什么都不做，也不去问核心", async
   const tree = new DirectoryTree(transport);
   await tree.reveal(4);
   assert.deepEqual(calls, []);
+});
+
+test("容器行的小字：本卷几章 · 共多少字（设了卷长就是 x/y）", () => {
+  assert.equal(containerLabel({ chapter_count: 12, subtree_word_count: 34000 }, null), "12章 · 3.4万");
+  assert.equal(containerLabel({ chapter_count: 12, subtree_word_count: 34000 }, 30), "12/30章 · 3.4万");
+  assert.equal(containerLabel({ chapter_count: 0, subtree_word_count: 0 }, 30), "空", "空卷就说空");
+  assert.equal(
+    containerLabel({ chapter_count: 0, subtree_word_count: 900 }, null),
+    "0章 · 900",
+    "只有卡片没有章时，字数照报",
+  );
+});
+
+test("字数给人看：一万以上换成「万」", () => {
+  assert.equal(formatWords(0), "0");
+  assert.equal(formatWords(9999), "9999");
+  assert.equal(formatWords(10000), "1万");
+  assert.equal(formatWords(12345), "1.2万");
+  assert.equal(formatWords(1234567), "123.5万");
+});
+
+test("容器行的汇总来自核心：本卷几章、共多少字", async () => {
+  const { transport } = fakeWorld(BOOK);
+  const tree = new DirectoryTree(transport);
+  await tree.openWork(7);
+
+  const volume = tree.rows().find((row) => row.title === "第一卷");
+  assert.equal(volume?.chapter_count, 2, "第一卷里两章");
+  assert.equal(volume?.subtree_word_count, 2000, "1200 + 800（场景卡没字数）");
+  assert.equal(volume?.chapter_count, 2, "场景卡不算章");
+});
+
+test("落盘改字数：各层容器的「共多少字」跟着挪，不重拉目录", async () => {
+  const { transport, calls } = fakeWorld(BOOK);
+  const tree = new DirectoryTree(transport);
+  await tree.openWork(7);
+  await tree.toggle(1);
+  const before = calls.length;
+
+  tree.applyWordCount(2, 1500, true); // 第一章从 1200 写到 1500
+  assert.equal(calls.length, before, "不该为几个字重拉目录");
+  const volume = tree.rows().find((row) => row.title === "第一卷");
+  assert.equal(volume?.subtree_word_count, 2300, "2000 + 300");
+  assert.equal(tree.rows().find((row) => row.id === 2)?.word_count, 1500);
 });
 
 test("落盘后更新这一行的字数：不重拉目录", async () => {  const { transport, calls } = fakeWorld(BOOK);

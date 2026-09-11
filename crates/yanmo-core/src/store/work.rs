@@ -152,6 +152,47 @@ impl Store {
         }
         self.record("works", id, "delete", json!({}))
     }
+
+    /// 每卷目标章数——作者自己定的"大概几章一卷"，**按作品分开记**。
+    ///
+    /// 它只影响目录里"本卷 12/30 章"这行小字，**不改任何结构**；没设过就是 `None`。
+    pub fn volume_target(&self, work_id: i64) -> Result<Option<i64>> {
+        ensure_alive(&self.conn, work_id)?;
+        let raw: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                params![volume_target_key(work_id)],
+                |r| r.get(0),
+            )
+            .optional()?;
+        // 值坏了就当没设过：这是给人看的进度提示，不值得为它报错挡住界面
+        Ok(raw.and_then(|text| text.trim().parse::<i64>().ok()).filter(|n| *n > 0))
+    }
+
+    /// 设定 / 清除每卷目标章数：`None`（或 ≤0）= 清掉，回到"没设过"。
+    pub fn set_volume_target(&mut self, work_id: i64, chapters: Option<i64>) -> Result<()> {
+        ensure_alive(&self.conn, work_id)?;
+        let key = volume_target_key(work_id);
+        match chapters.filter(|n| *n > 0) {
+            Some(count) => {
+                self.conn.execute(
+                    "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES(?1, ?2, ?3)",
+                    params![key, count.to_string(), now_millis()],
+                )?;
+            }
+            None => {
+                self.conn
+                    .execute("DELETE FROM settings WHERE key = ?1", params![key])?;
+            }
+        }
+        self.record("works", work_id, "set_volume_target", json!({ "chapters": chapters }))
+    }
+}
+
+/// 每卷目标章数在 `settings` 里的键（按作品分开，互不干扰）。
+fn volume_target_key(work_id: i64) -> String {
+    format!("work.{work_id}.volume_target")
 }
 
 /// 供同层其他模块复用的作品存在性检查（防"往已删除的作品里写东西"）。

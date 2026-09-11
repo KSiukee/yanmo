@@ -61,7 +61,7 @@ const session = useEditorSession();
 .shell__body {
   flex: 1;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 320px;
+  grid-template-columns: 240px minmax(0, 1fr) 320px;
   min-height: 0;
 }
 </style>

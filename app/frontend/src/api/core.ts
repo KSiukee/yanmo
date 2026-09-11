@@ -77,6 +77,10 @@ export interface TreeNode {
   accepts_children: boolean;
   /** 下面还有没有节点（决定要不要画展开箭头） */
   has_children: boolean;
+  /** 容器行的小字：本卷几章（**非容器是 0**） */
+  chapter_count: number;
+  /** 容器行的小字：本卷共多少字（**非容器是 0**） */
+  subtree_word_count: number;
 }
 
 /** 一次落盘的回执。 */
@@ -124,6 +128,8 @@ const COMMANDS = {
   treeCreateNode: "tree_create_node",
   treeRenameNode: "tree_rename_node",
   treeMoveNode: "tree_move_node",
+  treeVolumeTarget: "tree_volume_target",
+  treeSetVolumeTarget: "tree_set_volume_target",
   saveCursor: "save_cursor",
   saveBody: "save_body",
   bodyFingerprint: "body_fingerprint",
@@ -184,6 +190,14 @@ export const treeRenameNode = (node_id: number, title: string) =>
 /** 目录树：拖拽排序（挪到新父级的第 index 位；越界由核心夹到末尾）。 */
 export const treeMoveNode = (node_id: number, parent_id: number | null, index: number) =>
   call<void>(COMMANDS.treeMoveNode, { node_id, parent_id, index });
+
+/** 每卷目标章数（目录里那行「本卷 12/30 章」的分母）；没设过是 null。 */
+export const treeVolumeTarget = (work_id: number) =>
+  call<number | null>(COMMANDS.treeVolumeTarget, { work_id });
+
+/** 设定 / 清除每卷目标章数（null = 清掉）。 */
+export const treeSetVolumeTarget = (work_id: number, chapters: number | null) =>
+  call<void>(COMMANDS.treeSetVolumeTarget, { work_id, chapters });
 
 /** 记下"这一章读到哪了"（失焦 / 切章 / 关窗时调用）。 */
 export const saveCursor = (node_id: number, cursor: EditorCursor) =>
