@@ -11,24 +11,24 @@ defineEmits<{ fill: []; defer: []; ignore: []; trash: []; close: [] }>();
 </script>
 
 <template>
-  <div class="gap" @click.self="$emit('close')">
-    <section class="gap__box">
-      <h2 class="gap__title">这一层少了一章</h2>
+  <div class="gap dialog dialog--above" @click.self="$emit('close')">
+    <section class="gap__box dialog__box">
+      <h2 class="gap__title dialog__title">这一层少了一章</h2>
       <p class="gap__note">{{ gapNote(gap) }}</p>
       <p class="gap__hint">
         要在原来的位置上补写一个空章吗？——补写是<strong>新建一章</strong>，回收站里那份旧稿不会动。
       </p>
       <div class="gap__actions">
-        <button type="button" class="gap__button gap__button--primary" :disabled="busy" @click="$emit('fill')">
+        <button type="button" class="gap__button gap__button--primary dialog__button" :disabled="busy" @click="$emit('fill')">
           补写这一章
         </button>
-        <button type="button" class="gap__button" :disabled="busy" @click="$emit('defer')">
+        <button type="button" class="gap__button dialog__button" :disabled="busy" @click="$emit('defer')">
           稍后再说
         </button>
-        <button type="button" class="gap__button" :disabled="busy" @click="$emit('ignore')">
+        <button type="button" class="gap__button dialog__button" :disabled="busy" @click="$emit('ignore')">
           不用了，别再问
         </button>
-        <button type="button" class="gap__button gap__button--ghost" :disabled="busy" @click="$emit('trash')">
+        <button type="button" class="gap__button gap__button--ghost dialog__button" :disabled="busy" @click="$emit('trash')">
           去回收站看看
         </button>
       </div>
@@ -36,4 +36,5 @@ defineEmits<{ fill: []; defer: []; ignore: []; trash: []; close: [] }>();
   </div>
 </template>
 
+<style scoped src="./dialog.css"></style>
 <style scoped src="./gap-dialog.css"></style>

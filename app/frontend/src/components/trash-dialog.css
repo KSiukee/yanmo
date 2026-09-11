@@ -1,79 +1,7 @@
-.trash {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 32px;
-  background: rgba(28, 26, 23, 0.35);
-}
-
-.trash__box {
-  display: flex;
-  flex-direction: column;
-  width: min(720px, 100%);
-  max-height: 100%;
-  padding: 16px;
-  border: 1px solid var(--ym-line);
-  border-radius: 8px;
-  background: var(--ym-paper);
-  box-shadow: 0 12px 40px rgba(28, 26, 23, 0.18);
-}
-
-.trash__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.trash__title {
-  flex: 1;
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-}
-
-.trash__button {
-  padding: 2px 10px;
-  border: 1px solid var(--ym-line);
-  border-radius: 4px;
-  background: var(--ym-paper);
-  color: inherit;
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.trash__button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.trash__button--danger {
-  color: #b3261e;
-}
-
-.trash__note {
-  margin: 0 0 8px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  background: var(--ym-paper-dim);
-  font-size: 12px;
-  color: var(--ym-ink-soft);
-}
-
-.trash__empty {
-  margin: 0;
-  padding: 12px 2px;
-  font-size: 12px;
-  color: var(--ym-ink-soft);
-}
+/* 弹窗公共壳（遮罩/盒子/标题/按钮/交代条/空态）在 dialog.css；这里只留本弹窗自己的东西。 */
 
 .trash__list {
-  flex: 1;
+flex: 1;
   min-height: 0;
   overflow: auto;
   margin: 0;
@@ -82,7 +10,7 @@
 }
 
 .trash__row {
-  display: flex;
+display: flex;
   align-items: center;
   gap: 12px;
   padding: 8px 10px;
@@ -90,12 +18,12 @@
 }
 
 .trash__main {
-  flex: 1;
+flex: 1;
   min-width: 0;
 }
 
 .trash__name {
-  display: block;
+display: block;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -103,20 +31,20 @@
 }
 
 .trash__meta {
-  display: block;
+display: block;
   margin-top: 2px;
   font-size: 11px;
   color: var(--ym-ink-soft);
 }
 
 .trash__actions {
-  display: flex;
+display: flex;
   flex: none;
   gap: 6px;
 }
 
 .trash__conflict {
-  margin: 0 0 10px;
+margin: 0 0 10px;
   padding: 8px 10px;
   border: 1px solid var(--ym-accent);
   border-radius: 6px;
@@ -126,33 +54,21 @@
 }
 
 .trash__conflict-title {
-  margin: 0 0 4px;
+margin: 0 0 4px;
 }
 
 .trash__clashes {
-  margin: 0 0 4px;
+margin: 0 0 4px;
   padding-left: 18px;
   color: var(--ym-ink-soft);
 }
 
 .trash__conflict-hint {
-  margin: 0 0 6px;
+margin: 0 0 6px;
   color: var(--ym-ink-soft);
 }
 
 .trash__conflict-actions {
-  display: flex;
+display: flex;
   gap: 6px;
-}
-
-.trash__input {
-  flex: 1;
-  min-width: 0;
-  padding: 2px 8px;
-  border: 1px solid var(--ym-line);
-  border-radius: 4px;
-  background: var(--ym-paper);
-  color: inherit;
-  font: inherit;
-  font-size: 12px;
 }

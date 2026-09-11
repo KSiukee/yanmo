@@ -1,70 +1,14 @@
-.shelf {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 32px;
-  background: rgba(28, 26, 23, 0.35);
-}
-
-.shelf__box {
-  display: flex;
-  flex-direction: column;
-  width: min(720px, 100%);
-  max-height: 100%;
-  padding: 16px;
-  border: 1px solid var(--ym-line);
-  border-radius: 8px;
-  background: var(--ym-paper);
-  box-shadow: 0 12px 40px rgba(28, 26, 23, 0.18);
-}
-
-.shelf__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.shelf__title {
-  flex: 1;
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-}
-
-.shelf__button {
-  padding: 2px 10px;
-  border: 1px solid var(--ym-line);
-  border-radius: 4px;
-  background: var(--ym-paper);
-  color: inherit;
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.shelf__button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.shelf__button--danger {
-  color: #b3261e;
-}
+/* 弹窗公共壳（遮罩/盒子/标题/按钮/交代条/空态）在 dialog.css；这里只留本弹窗自己的东西。 */
 
 .shelf__new {
-  display: flex;
+display: flex;
   gap: 6px;
   margin-bottom: 10px;
 }
 
 .shelf__input,
 .shelf__rename {
-  flex: 1;
+flex: 1;
   min-width: 0;
   padding: 3px 8px;
   border: 1px solid var(--ym-accent);
@@ -76,7 +20,7 @@
 }
 
 .shelf__kind {
-  padding: 3px 6px;
+padding: 3px 6px;
   border: 1px solid var(--ym-line);
   border-radius: 4px;
   background: var(--ym-paper);
@@ -86,24 +30,11 @@
 }
 
 .shelf__note {
-  margin: 0 0 8px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  background: var(--ym-paper-dim);
-  font-size: 12px;
-  color: var(--ym-ink-soft);
   word-break: break-all;
 }
 
-.shelf__empty {
-  margin: 0;
-  padding: 12px 2px;
-  font-size: 12px;
-  color: var(--ym-ink-soft);
-}
-
 .shelf__list {
-  flex: 1;
+flex: 1;
   min-height: 0;
   overflow: auto;
   margin: 0;
@@ -112,7 +43,7 @@
 }
 
 .shelf__card {
-  display: flex;
+display: flex;
   align-items: center;
   gap: 12px;
   padding: 8px 10px;
@@ -120,17 +51,17 @@
 }
 
 .shelf__card--current {
-  border-left: 2px solid var(--ym-accent);
+border-left: 2px solid var(--ym-accent);
   background: var(--ym-paper-dim);
 }
 
 .shelf__main {
-  flex: 1;
+flex: 1;
   min-width: 0;
 }
 
 .shelf__name {
-  display: block;
+display: block;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -138,20 +69,20 @@
 }
 
 .shelf__meta {
-  display: block;
+display: block;
   margin-top: 2px;
   font-size: 11px;
   color: var(--ym-ink-soft);
 }
 
 .shelf__actions {
-  display: flex;
+display: flex;
   flex: none;
   align-items: center;
   gap: 6px;
 }
 
 .shelf__here {
-  font-size: 11px;
+font-size: 11px;
   color: var(--ym-accent);
 }

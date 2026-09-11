@@ -1,0 +1,96 @@
+/* 弹窗公共壳：遮罩 / 盒子 / 标题 / 按钮 / 交代条 / 空态。
+ *
+ * 书架、回收站、删章路标这三个弹窗**共用这一份**——别再各抄一遍（重复副本是拆分硬信号，
+ * 而这里已经重复过三次）。组件自己的东西留在各 xxx-dialog.css 里，靠 `scoped src` 叠加。
+ */
+
+.dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(28, 26, 23, 0.35);
+}
+
+/* 需要压在别的弹窗之上时用（例如从目录里弹出来的那一问） */
+.dialog--above {
+  z-index: 30;
+}
+
+.dialog__box {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 100%);
+  max-height: 100%;
+  padding: 16px;
+  border: 1px solid var(--ym-line);
+  border-radius: 8px;
+  background: var(--ym-paper);
+  box-shadow: 0 12px 40px rgba(28, 26, 23, 0.18);
+}
+
+.dialog__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dialog__title {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.dialog__button {
+  padding: 2px 10px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dialog__button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.dialog__button--danger {
+  color: #b3261e;
+}
+
+.dialog__note {
+  margin: 0 0 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--ym-paper-dim);
+  font-size: 12px;
+  color: var(--ym-ink-soft);
+}
+
+.dialog__empty {
+  margin: 0;
+  padding: 12px 2px;
+  font-size: 12px;
+  color: var(--ym-ink-soft);
+}
+
+.dialog__input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}

@@ -50,6 +50,7 @@ import {
   type EditorSnapshot,
 } from "../api/core";
 import { Autosave, type AutosaveState } from "./autosave";
+import { useAddChapter, type AddChapter } from "./add-chapter";
 import { ChapterSwitch } from "./chapters";
 import { useDirectory, type Directory } from "./directory";
 import { docToText, textToHtml } from "./doc";
@@ -75,6 +76,8 @@ export interface EditorSession {
   trash: Trash;
   /** 删章路标：点「+」前先问一嘴"这一层少了一章，要补写吗" */
   gaps: Gaps;
+  /** 点「+」之后的编排：先问路标，再照作者意图建章（视图只管"点了哪一行"） */
+  adding: AddChapter;
   /** 当前作品 id（书架用来标"正在写这本"） */
   workId: Ref<number | null>;
   persistNow: () => void;
@@ -280,6 +283,10 @@ export function useEditorSession(): EditorSession {
     },
   });
 
+  // 点「+」之后的编排（先问路标 → 补写 / 接着建章）：**不放在视图里**，视图只管"点了哪一行"。
+  // ⚠️ 必须排在上面的 gaps 与 directory **之后**——它俩是 const，提前用会撞暂时性死区（真机上白屏过一次）
+  const adding = useAddChapter({ gaps, directory, addChapterAfter });
+
   /**
    * 换一本书：落点是那本书上次写的那一章。
    *
@@ -430,6 +437,7 @@ export function useEditorSession(): EditorSession {
     deleteNode,
     directory,
     gaps,
+    adding,
     shelf,
     trash,
     workId,

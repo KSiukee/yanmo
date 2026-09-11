@@ -39,22 +39,22 @@ async function doEmpty() {
 </script>
 
 <template>
-  <div class="trash" @click.self="close">
-    <section class="trash__box">
-      <header class="trash__head">
-        <h2 class="trash__title">回收站</h2>
+  <div class="trash dialog" @click.self="close">
+    <section class="trash__box dialog__box">
+      <header class="trash__head dialog__head">
+        <h2 class="trash__title dialog__title">回收站</h2>
         <button
           type="button"
-          class="trash__button trash__button--danger"
+          class="trash__button trash__button--danger dialog__button"
           :disabled="busy || entries.length === 0"
           @click="doEmpty"
         >
           清空
         </button>
-        <button type="button" class="trash__button" title="回到书架" @click="close">关闭</button>
+        <button type="button" class="trash__button dialog__button" title="回到书架" @click="close">关闭</button>
       </header>
 
-      <p v-if="note" class="trash__note">{{ note }}</p>
+      <p v-if="note" class="trash__note dialog__note">{{ note }}</p>
 
       <div v-if="conflict" class="trash__conflict">
         <p class="trash__conflict-title">
@@ -69,16 +69,16 @@ async function doEmpty() {
           恢复**不会覆盖**你已经写的那一章——两章都会在。要给它换个名字就填在下面。
         </p>
         <div class="trash__conflict-actions">
-          <input v-model="renameTo" class="trash__input" type="text" placeholder="给它起个新名字（留空 = 照原样恢复）" />
-          <button type="button" class="trash__button" :disabled="busy" @click="doResolve(true)">
+          <input v-model="renameTo" class="trash__input dialog__input" type="text" placeholder="给它起个新名字（留空 = 照原样恢复）" />
+          <button type="button" class="trash__button dialog__button" :disabled="busy" @click="doResolve(true)">
             恢复
           </button>
-          <button type="button" class="trash__button" :disabled="busy" @click="cancelConflict">
+          <button type="button" class="trash__button dialog__button" :disabled="busy" @click="cancelConflict">
             取消
           </button>
         </div>
       </div>
-      <p v-if="entries.length === 0" class="trash__empty">回收站是空的</p>
+      <p v-if="entries.length === 0" class="trash__empty dialog__empty">回收站是空的</p>
 
       <ul class="trash__list">
         <li v-for="entry in entries" :key="`${entry.kind}-${entry.id}`" class="trash__row">
@@ -89,7 +89,7 @@ async function doEmpty() {
           <div class="trash__actions">
             <button
               type="button"
-              class="trash__button"
+              class="trash__button dialog__button"
               :disabled="busy"
               title="捞回原来待的地方"
               @click="doRestore(entry)"
@@ -98,7 +98,7 @@ async function doEmpty() {
             </button>
             <button
               type="button"
-              class="trash__button trash__button--danger"
+              class="trash__button trash__button--danger dialog__button"
               :disabled="busy"
               @click="doPurge(entry)"
             >
@@ -111,4 +111,5 @@ async function doEmpty() {
   </div>
 </template>
 
+<style scoped src="./dialog.css"></style>
 <style scoped src="./trash-dialog.css"></style>

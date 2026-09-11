@@ -75,17 +75,17 @@ function confirmRemove(work_id: number, title: string) {
 </script>
 
 <template>
-  <div class="shelf" @click.self="close">
-    <section class="shelf__box">
-      <header class="shelf__head">
-        <h2 class="shelf__title">书架</h2>
-        <button type="button" class="shelf__button" :disabled="busy" @click="startCreate">
+  <div class="shelf dialog" @click.self="close">
+    <section class="shelf__box dialog__box">
+      <header class="shelf__head dialog__head">
+        <h2 class="shelf__title dialog__title">书架</h2>
+        <button type="button" class="shelf__button dialog__button" :disabled="busy" @click="startCreate">
           + 新书
         </button>
-        <button type="button" class="shelf__button" title="看看删掉的书与章节" @click="openTrash">
+        <button type="button" class="shelf__button dialog__button" title="看看删掉的书与章节" @click="openTrash">
           回收站
         </button>
-        <button type="button" class="shelf__button" title="回到正文" @click="close">关闭</button>
+        <button type="button" class="shelf__button dialog__button" title="回到正文" @click="close">关闭</button>
       </header>
 
       <form v-if="creating" class="shelf__new" @submit.prevent="submitCreate">
@@ -102,11 +102,11 @@ function confirmRemove(work_id: number, title: string) {
             {{ kind.label }}
           </option>
         </select>
-        <button type="submit" class="shelf__button" :disabled="busy || !newTitle.trim()">建好就写</button>
+        <button type="submit" class="shelf__button dialog__button" :disabled="busy || !newTitle.trim()">建好就写</button>
       </form>
 
-      <p v-if="note" class="shelf__note">{{ note }}</p>
-      <p v-if="entries.length === 0" class="shelf__empty">书架上还没有书</p>
+      <p v-if="note" class="shelf__note dialog__note">{{ note }}</p>
+      <p v-if="entries.length === 0" class="shelf__empty dialog__empty">书架上还没有书</p>
       <ul ref="listEl" class="shelf__list">
         <li
           v-for="entry in entries"
@@ -137,7 +137,7 @@ function confirmRemove(work_id: number, title: string) {
             <button
               v-else
               type="button"
-              class="shelf__button"
+              class="shelf__button dialog__button"
               :disabled="busy"
               @click="open(entry.id)"
             >
@@ -145,7 +145,7 @@ function confirmRemove(work_id: number, title: string) {
             </button>
             <button
               type="button"
-              class="shelf__button"
+              class="shelf__button dialog__button"
               :disabled="busy"
               title="导出成文件（分章 txt + 单文件 json），同样的内容不会重复写"
               @click="exportWork(entry.id, 'both')"
@@ -154,7 +154,7 @@ function confirmRemove(work_id: number, title: string) {
             </button>
             <button
               type="button"
-              class="shelf__button"
+              class="shelf__button dialog__button"
               :disabled="busy"
               @click="startRename(entry.id, entry.title)"
             >
@@ -162,7 +162,7 @@ function confirmRemove(work_id: number, title: string) {
             </button>
             <button
               type="button"
-              class="shelf__button shelf__button--danger"
+              class="shelf__button shelf__button--danger dialog__button"
               :disabled="busy"
               @click="confirmRemove(entry.id, entry.title)"
             >
@@ -175,4 +175,5 @@ function confirmRemove(work_id: number, title: string) {
   </div>
 </template>
 
+<style scoped src="./dialog.css"></style>
 <style scoped src="./shelf-dialog.css"></style>
