@@ -4535,7 +4535,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-app"
-version = "0.15.8"
+version = "0.15.9"
 dependencies = [
  "serde",
  "serde_json",
@@ -4548,7 +4548,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-core"
-version = "0.15.8"
+version = "0.15.9"
 dependencies = [
  "rusqlite",
  "serde",
@@ -4558,7 +4558,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-proto"
-version = "0.15.8"
+version = "0.15.9"
 dependencies = [
  "serde",
  "serde_json",
