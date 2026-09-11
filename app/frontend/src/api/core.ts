@@ -83,6 +83,22 @@ export interface TreeNode {
   subtree_word_count: number;
 }
 
+/** 书架的一行：作品 + 它的规模。 */
+export interface ShelfEntry {
+  id: number;
+  /** 「novel / collection / article」——界面只用来显示，不假设行为差异 */
+  kind: string;
+  title: string;
+  /** 这本书里章的个数（单篇文章是 0，此时只报字数） */
+  chapters: number;
+  /** 字数合计 */
+  word_count: number;
+  /** 最近打开（unix 毫秒）；从没打开过是 null */
+  opened_at: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
 /** 一次落盘的回执。 */
 export interface SaveAck {
   char_count: number;
@@ -121,6 +137,7 @@ const COMMANDS = {
   exitApp: "exit_app",
   openEditorTarget: "open_editor_target",
   openChapter: "open_chapter",
+  openWorkTarget: "open_work_target",
   createChapter: "create_chapter",
   chapterNeighbors: "chapter_neighbors",
   treeChildren: "tree_children",
@@ -140,6 +157,10 @@ const COMMANDS = {
   closeSession: "close_session",
   abandonSession: "abandon_session",
   escapeExport: "escape_export",
+  listShelf: "list_shelf",
+  createWork: "create_work",
+  renameWork: "rename_work",
+  deleteWork: "delete_work",
 } as const;
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -159,6 +180,24 @@ export const openEditorTarget = () => call<EditorSnapshot>(COMMANDS.openEditorTa
 /** 切到指定章节（这一章必须真的能编辑，否则核心会明确报错）。 */
 export const openChapter = (node_id: number) =>
   call<EditorSnapshot>(COMMANDS.openChapter, { node_id });
+
+/** 切到某一本书：落点是它上次写的那一章（记不起来就是第一章）。 */
+export const openWorkTarget = (work_id: number) =>
+  call<EditorSnapshot>(COMMANDS.openWorkTarget, { work_id });
+
+/** 书架：最近打开的书在前，带每本书的章数与字数。 */
+export const listShelf = () => call<ShelfEntry[]>(COMMANDS.listShelf);
+
+/** 新建一本书，返回它的 id。 */
+export const createWork = (kind: string, title: string) =>
+  call<number>(COMMANDS.createWork, { kind, title });
+
+/** 给书改名。 */
+export const renameWork = (work_id: number, title: string) =>
+  call<void>(COMMANDS.renameWork, { work_id, title });
+
+/** 删掉一本书（软删除，正文与历史都留着）。 */
+export const deleteWork = (work_id: number) => call<void>(COMMANDS.deleteWork, { work_id });
 
 /** 在当前章后面新建一章（目录树接上前的最小入口）。 */
 export const createChapter = (node_id: number, title: string) =>

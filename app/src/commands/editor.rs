@@ -132,6 +132,18 @@ pub fn open_chapter(data: State<'_, AppData>, node_id: i64) -> Result<EditorSnap
     })
 }
 
+/// 切到某一本书：落点是**这本书上次写的那一章**（记不起来了就给它的第一章）。
+///
+/// "换书"与"换章"在界面上是同一套纪律（先落盘再换），所以这里也只管"落点对不对"。
+#[tauri::command(rename_all = "snake_case")]
+pub fn open_work_target(data: State<'_, AppData>, work_id: i64) -> Result<EditorSnapshot, String> {
+    data.with_store(|store| {
+        let target = store.work_target(work_id)?;
+        store.note_open_node(target.node_id)?;
+        snapshot_of(store, target)
+    })
+}
+
 /// 在当前章后面新建一章，并把它作为当前章返回（界面点完就能直接切过去）。
 ///
 /// **标题留空 = 由核心按同层序号取名**——默认名只有核心那一份实现。

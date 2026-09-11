@@ -61,6 +61,7 @@ fn main() {
             commands::system::exit_app,
             commands::editor::open_editor_target,
             commands::editor::open_chapter,
+            commands::editor::open_work_target,
             commands::editor::create_chapter,
             commands::editor::chapter_neighbors,
             commands::editor::save_cursor,
@@ -79,7 +80,11 @@ fn main() {
             commands::tree::tree_rename_node,
             commands::tree::tree_move_node,
             commands::tree::tree_volume_target,
-            commands::tree::tree_set_volume_target
+            commands::tree::tree_set_volume_target,
+            commands::work::list_shelf,
+            commands::work::create_work,
+            commands::work::rename_work,
+            commands::work::delete_work
         ])
         .run(tauri::generate_context!())
         .expect("启动研墨失败");

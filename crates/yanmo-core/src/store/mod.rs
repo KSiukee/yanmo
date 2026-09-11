@@ -27,6 +27,7 @@ pub use content::ContentStats;
 pub use node::{ChapterNeighbors, ChapterSummary, NodeSummary, SubtreeRollup};
 pub use search::SearchHit;
 pub use session::{EditorCursor, EditorTarget, SessionReport};
+pub use work::ShelfEntry;
 
 use std::path::Path;
 

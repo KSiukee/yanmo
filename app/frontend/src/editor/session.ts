@@ -20,11 +20,16 @@ import {
   chapterNeighbors,
   closeSession,
   createChapter,
+  createWork,
+  deleteWork,
   emergencySnapshot,
   escapeExport,
+  listShelf,
   onCloseRequested,
   openChapter,
   openEditorTarget,
+  openWorkTarget,
+  renameWork,
   requestExit,
   saveBody,
   saveCursor,
@@ -38,6 +43,7 @@ import { ChapterSwitch } from "./chapters";
 import { useDirectory, type Directory } from "./directory";
 import { docToText, textToHtml } from "./doc";
 import { ExitGate, type ExitGateState } from "./exitguard";
+import { useShelf, type Shelf } from "./shelf";
 
 export interface EditorSession {
   editor: ShallowRef<Editor | null>;
@@ -50,10 +56,16 @@ export interface EditorSession {
   crashNotice: Ref<string | null>;
   /** 目录树：看得见、点得动、拖得走（切章仍走这里，先落盘再切） */
   directory: Directory;
+  /** 书架：多作品是默认形态（切书同样先落盘再切） */
+  shelf: Shelf;
+  /** 当前作品 id（书架用来标"正在写这本"） */
+  workId: Ref<number | null>;
   persistNow: () => void;
   switchChapter: (node_id: number | null | undefined) => Promise<void>;
   /** 在某一章后面新建一章并切过去（目录树的「+」走这条） */
   addChapterAfter: (node_id: number) => Promise<void>;
+  /** 换一本书（`null` = 回到默认落点）；返回是否真的切过去了 */
+  switchWork: (work_id: number | null) => Promise<boolean>;
   retryExit: () => void;
   escapeExit: () => void;
   forceExit: () => void;
@@ -234,6 +246,39 @@ export function useEditorSession(): EditorSession {
     },
   });
 
+  /**
+   * 换一本书：落点是那本书上次写的那一章。
+   *
+   * 复用的是**同一条切章纪律**（先落盘、记光标，再换内容换控制器）——
+   * 换书在作者看来只是"换一章"，不该有第二套流程。
+   */
+  async function switchWork(work_id: number | null): Promise<boolean> {
+    if (switcher.switching) return false;
+    switching.value = true;
+    failure.value = null;
+    try {
+      const snapshot = work_id === null ? await openEditorTarget() : await openWorkTarget(work_id);
+      if ((await switcher.to(snapshot)) === "blocked") return false;
+      await refreshNeighbors();
+      return true;
+    } catch (error) {
+      failure.value = `没能换到那本书：${error instanceof Error ? error.message : String(error)}`;
+      return false;
+    } finally {
+      switching.value = false;
+    }
+  }
+
+  // 书架：列书 / 建书 / 改名 / 删书；"切书"仍走上面那条（先落盘再切）
+  const shelf = useShelf({
+    transport: { list: listShelf, create: createWork, rename: renameWork, remove: deleteWork },
+    workId,
+    openWork: (target) => switchWork(target),
+    onError: (message) => {
+      failure.value = `书架操作没能完成：${message}`;
+    },
+  });
+
   onMounted(async () => {
     window.addEventListener("blur", persistNow);
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -288,6 +333,9 @@ export function useEditorSession(): EditorSession {
     editor,
     addChapterAfter,
     directory,
+    shelf,
+    workId,
+    switchWork,
     chapterTitle,
     saveState,
     exitState,

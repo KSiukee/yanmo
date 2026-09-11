@@ -11,16 +11,27 @@ import DirectoryPane from "./components/DirectoryPane.vue";
 import EditorPane from "./components/EditorPane.vue";
 import FlowPane from "./components/FlowPane.vue";
 import EngineBadge from "./components/EngineBadge.vue";
+import ShelfDialog from "./components/ShelfDialog.vue";
 
-// 会话在布局层建**一次**：目录树与正文编辑器说的必须是同一本书、同一章
+// 会话在布局层建**一次**：目录树、书架与正文编辑器说的必须是同一本书、同一章
 const session = useEditorSession();
+const { chapterTitle, workId } = session;
+const { visible: shelfVisible, toggle: toggleShelf } = session.shelf;
 </script>
 
 <template>
   <div class="shell">
     <header class="shell__bar">
       <span class="shell__brand">研墨</span>
-      <span class="shell__hint">AI 只问，不写</span>
+      <button
+        type="button"
+        class="shell__shelf"
+        :title="workId ? '换一本书 / 新建一本书' : '打开书架'"
+        @click="toggleShelf()"
+      >
+        书架
+      </button>
+      <span class="shell__hint">{{ chapterTitle || "AI 只问，不写" }}</span>
       <EngineBadge />
     </header>
 
@@ -29,6 +40,8 @@ const session = useEditorSession();
       <EditorPane :session="session" />
       <FlowPane />
     </main>
+
+    <ShelfDialog v-if="shelfVisible" :session="session" />
   </div>
 </template>
 
@@ -56,6 +69,22 @@ const session = useEditorSession();
 .shell__hint {
   font-size: 12px;
   color: var(--ym-ink-soft);
+}
+
+.shell__shelf {
+  padding: 1px 10px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.shell__shelf:hover {
+  border-color: var(--ym-accent);
+  color: var(--ym-accent);
 }
 
 .shell__body {

@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import type { TreeNode } from "../api/core.ts";
-import { addIntent, containerLabel, DirectoryTree, formatWords, type TreeTransport } from "./tree.ts";
+import { addIntent, containerLabel, DirectoryTree, type TreeTransport } from "./tree.ts";
 
 interface Spec {
   id: number;
@@ -337,14 +337,6 @@ test("容器行的小字：本卷几章 · 共多少字（设了卷长就是 x/y
     "0章 · 900",
     "只有卡片没有章时，字数照报",
   );
-});
-
-test("字数给人看：一万以上换成「万」", () => {
-  assert.equal(formatWords(0), "0");
-  assert.equal(formatWords(9999), "9999");
-  assert.equal(formatWords(10000), "1万");
-  assert.equal(formatWords(12345), "1.2万");
-  assert.equal(formatWords(1234567), "123.5万");
 });
 
 test("容器行的汇总来自核心：本卷几章、共多少字", async () => {

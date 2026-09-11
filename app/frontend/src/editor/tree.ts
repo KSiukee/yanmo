@@ -9,6 +9,7 @@
 // 这里只认接口不认具体命令（真命令在会话层注入）：树的状态机可以脱离界面与核心单测。
 
 import type { TreeNode } from "../api/core";
+import { formatWords } from "./display.ts";
 
 /** 交给界面渲染的一行——扁平化 + 缩进 + 展开态。 */
 export interface TreeRow {
@@ -54,12 +55,6 @@ export function addIntent(row: Pick<TreeRow, "holds_body" | "accepts_children">)
   if (row.holds_body) return "after";
   if (row.accepts_children) return "inside";
   return null;
-}
-
-/** 字数给人看：一万以下报原数，一万以上报「x.x万」（一位小数）。 */
-export function formatWords(words: number): string {
-  if (words < 10000) return String(words);
-  return `${Math.round(words / 1000) / 10}万`;
 }
 
 /**

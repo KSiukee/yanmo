@@ -11,7 +11,8 @@
 import { computed, nextTick, ref } from "vue";
 
 import type { EditorSession } from "../editor/session";
-import { addIntent, containerLabel, formatWords, type TreeRow } from "../editor/tree";
+import { addIntent, containerLabel, type TreeRow } from "../editor/tree";
+import { formatWords } from "../editor/display.ts";
 
 const props = defineProps<{ session: EditorSession }>();
 // 从会话对象里取出的都是 ref，模板里照常自动解包

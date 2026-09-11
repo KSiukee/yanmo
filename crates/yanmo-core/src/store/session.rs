@@ -175,6 +175,27 @@ impl Store {
             Some(existing) => existing.id,
             None => self.create_work(WorkKind::Article, DEFAULT_WORK_TITLE)?.id,
         };
+        self.ensure_target_in_work(work_id)
+    }
+
+    /// 切到某一本书时的落点：**上次在这本书里写的那一章**（记不起来了就给这本书的第一章）。
+    ///
+    /// "上次在哪一章"与"读到哪了"是同一份记录（光标），所以这里不另存一份——
+    /// 一份记录只有一种含义，不会出现两处说法不一致。
+    pub fn work_target(&mut self, work_id: i64) -> Result<EditorTarget> {
+        if let Some(node_id) = self.cursor_node(work_id)? {
+            // 只有"还在、还承载正文"才认——那一章被删了，不能把人送进回收站
+            if let Some(target) = self.editor_target_for(node_id)? {
+                self.touch_work_opened(target.work_id)?;
+                return Ok(target);
+            }
+        }
+        self.ensure_target_in_work(work_id)
+    }
+
+    /// 在一本书里找一个能立刻落笔的目标：优先现成的正文节点，没有就补一章。
+    fn ensure_target_in_work(&mut self, work_id: i64) -> Result<EditorTarget> {
+        super::work::ensure_alive(&self.conn, work_id)?;
         self.touch_work_opened(work_id)?;
 
         let nodes = self.list_nodes(work_id)?;
@@ -252,20 +273,29 @@ struct CursorRecord {
     cursor: EditorCursor,
 }
 
-/// 光标记录的 settings 键：只记「最后一次」那一章。
+/// 光标记录的 settings 键：**按作品分键**（每本书各自记自己读到哪了）。
 ///
-/// 多作品时按作品分键是书架任务的活（那里才知道作品粒度），这里刻意不预支。
-const CURSOR_KEY: &str = "editor.cursor";
+/// 一本书一个槽：切书回来能秒回原位，而键的数量只随书增加，不会随章节数膨胀。
+fn cursor_key(work_id: i64) -> String {
+    format!("work.{work_id}.cursor")
+}
+
+/// 旧版的单槽键（全库只有一条记录）。**只在还没写过分键记录时兜一次**，
+/// 写过一次之后就被清掉——升级上来的老库不该丢掉"上次读到哪了"。
+const LEGACY_CURSOR_KEY: &str = "editor.cursor";
 
 impl Store {
-    /// 记下"这一章我读到哪了"。失焦 / 切章 / 关窗前调用，**不跟着击键走**。
+    /// 记下"这一章我读到哪了"。失焦 / 切章 / 切书 / 关窗前调用，**不跟着击键走**。
     pub fn save_cursor(&self, node_id: i64, cursor: EditorCursor) -> Result<()> {
-        self.node_work(node_id)?; // 不往已删除的节点上记位置
+        let work_id = self.node_work(node_id)?; // 不往已删除的节点上记位置
         let json = serde_json::to_string(&CursorRecord { node_id, cursor }).unwrap_or_default();
         self.conn.execute(
             "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES(?1, ?2, ?3)",
-            params![CURSOR_KEY, json, now_millis()],
+            params![cursor_key(work_id), json, now_millis()],
         )?;
+        // 分键记录已经写上了，旧单槽就没用了：顺手送走，免得下次又兜一次
+        self.conn
+            .execute("DELETE FROM settings WHERE key = ?1", params![LEGACY_CURSOR_KEY])?;
         Ok(())
     }
 
@@ -273,23 +303,32 @@ impl Store {
     ///
     /// 两道门槛都必要：认错章会把别处的光标套上来；认已删除的章（回收站里）则毫无意义。
     pub fn load_cursor(&self, node_id: i64) -> Result<Option<EditorCursor>> {
-        if self.node_work(node_id).is_err() {
+        let Ok(work_id) = self.node_work(node_id) else {
             return Ok(None); // 节点没了：没有"读到哪了"这回事，不当错误处理
-        }
+        };
+        let record = match self.read_cursor_record(&cursor_key(work_id))? {
+            Some(record) => Some(record),
+            // 老库的兜底：单槽记录若是这一章的，照样认（认完下次保存就换成分键）
+            None => self.read_cursor_record(LEGACY_CURSOR_KEY)?,
+        };
+        Ok(record
+            .filter(|record| record.node_id == node_id)
+            .map(|record| record.cursor))
+    }
+
+    /// 这本书上次写的是哪一章（光标记录顺带记着它）——切书时用来秒回原位。
+    pub(super) fn cursor_node(&self, work_id: i64) -> Result<Option<i64>> {
+        Ok(self.read_cursor_record(&cursor_key(work_id))?.map(|record| record.node_id))
+    }
+
+    fn read_cursor_record(&self, key: &str) -> Result<Option<CursorRecord>> {
         let raw: Option<String> = self
             .conn
-            .query_row(
-                "SELECT value FROM settings WHERE key = ?1",
-                params![CURSOR_KEY],
-                |r| r.get(0),
-            )
+            .query_row("SELECT value FROM settings WHERE key = ?1", params![key], |r| {
+                r.get(0)
+            })
             .optional()?;
-        let Some(json) = raw else {
-            return Ok(None);
-        };
-        let Ok(record) = serde_json::from_str::<CursorRecord>(&json) else {
-            return Ok(None); // 记录坏了就当没有，不猜
-        };
-        Ok((record.node_id == node_id).then_some(record.cursor))
+        // 记录坏了就当没有，不猜
+        Ok(raw.and_then(|json| serde_json::from_str::<CursorRecord>(&json).ok()))
     }
 }

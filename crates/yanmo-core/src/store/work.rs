@@ -11,8 +11,24 @@ use crate::time::now_millis;
 /// 作品字段列表（顺序与 [`WorkRow`] 对应）。
 const COLS: &str = "id, kind, title, target_words, created_at, updated_at, opened_at";
 
+/// 书架排序口径：**最近打开的在前**；没打开过的按最近编辑。
+///
+/// 书架与"该编辑哪一本"共用这一份——排序口径只留一处，免得两处慢慢走偏。
+const ORDER_BY_OPENED: &str =
+    "ORDER BY opened_at IS NULL, opened_at DESC, updated_at DESC, id DESC";
+
 /// 一行的原始取值——先取成朴素类型，再**在 Rust 侧校验**（不在 SQL 里猜着读）。
 type WorkRow = (i64, String, String, Option<i64>, i64, i64, Option<i64>);
+
+/// 书架的一行：作品本身 + 它的规模。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShelfEntry {
+    pub work: Work,
+    /// 这本书里章的个数（场景卡这类卡片不算章）
+    pub chapters: i64,
+    /// 这本书的字数合计（各节点预聚合字数之和，不扫正文）
+    pub word_count: i64,
+}
 
 fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkRow> {
     Ok((
@@ -89,15 +105,50 @@ impl Store {
 
     /// 书架列表：**未删除**的作品，最近打开优先，其次最近编辑。
     pub fn list_works(&self) -> Result<Vec<Work>> {
-        let sql = format!(
-            "SELECT {COLS} FROM works WHERE deleted_at IS NULL
-             ORDER BY opened_at IS NULL, opened_at DESC, updated_at DESC, id DESC"
-        );
+        let sql = format!("SELECT {COLS} FROM works WHERE deleted_at IS NULL {ORDER_BY_OPENED}");
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map([], read_row)?;
         let mut out = Vec::new();
         for row in rows {
             out.push(build(row?)?);
+        }
+        Ok(out)
+    }
+
+    /// 书架：一眼看全书——书名之外还带上**章数与字数合计**（一次查完，不为每本书各跑一趟）。
+    ///
+    /// 规模数字用的是预聚合的 `nodes.word_count`，所以书架不会为了显示去扫正文。
+    pub fn shelf(&self) -> Result<Vec<ShelfEntry>> {
+        let sql = format!(
+            "SELECT {COLS},
+                    (SELECT COUNT(*) FROM nodes n
+                      WHERE n.work_id = works.id AND n.deleted_at IS NULL AND n.node_kind = 'chapter'),
+                    (SELECT COALESCE(SUM(n.word_count), 0) FROM nodes n
+                      WHERE n.work_id = works.id AND n.deleted_at IS NULL)
+               FROM works
+              WHERE deleted_at IS NULL
+              {ORDER_BY_OPENED}"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                (
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                ),
+                row.get::<_, i64>(7)?,
+                row.get::<_, i64>(8)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (raw, chapters, word_count) = row?;
+            out.push(ShelfEntry { work: build(raw)?, chapters, word_count });
         }
         Ok(out)
     }
