@@ -1,0 +1,72 @@
+.gap {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(28, 26, 23, 0.35);
+}
+
+.gap__box {
+  width: min(420px, 100%);
+  padding: 16px;
+  border: 1px solid var(--ym-line);
+  border-radius: 8px;
+  background: var(--ym-paper);
+  box-shadow: 0 12px 40px rgba(28, 26, 23, 0.18);
+}
+
+.gap__title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.gap__note {
+  margin: 0 0 6px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.gap__hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ym-ink-soft);
+}
+
+.gap__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.gap__button {
+  padding: 3px 10px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.gap__button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.gap__button--primary {
+  border-color: var(--ym-accent);
+  color: var(--ym-accent);
+}
+
+.gap__button--ghost {
+  margin-left: auto;
+  border-color: transparent;
+  color: var(--ym-ink-soft);
+}

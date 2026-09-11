@@ -42,6 +42,9 @@ import {
   saveBody,
   saveCursor,
   sessionReport,
+  treeFillGap,
+  treeGapAnswer,
+  treeGapCheck,
   type ChapterNeighbors,
   type EditorCursor,
   type EditorSnapshot,
@@ -51,6 +54,7 @@ import { ChapterSwitch } from "./chapters";
 import { useDirectory, type Directory } from "./directory";
 import { docToText, textToHtml } from "./doc";
 import { ExitGate, type ExitGateState } from "./exitguard";
+import { useGaps, type Gaps } from "./gaps";
 import { useShelf, type Shelf } from "./shelf";
 import { useTrash, type Trash } from "./trash";
 
@@ -69,6 +73,8 @@ export interface EditorSession {
   shelf: Shelf;
   /** 回收站：删错了能捞回来（恢复与真删的语义全在核心） */
   trash: Trash;
+  /** 删章路标：点「+」前先问一嘴"这一层少了一章，要补写吗" */
+  gaps: Gaps;
   /** 当前作品 id（书架用来标"正在写这本"） */
   workId: Ref<number | null>;
   persistNow: () => void;
@@ -265,6 +271,15 @@ export function useEditorSession(): EditorSession {
     },
   });
 
+  // 删章路标：只在点「+」时问一嘴，答复与空缺都归核心（这里只转发）
+  const gaps = useGaps({
+    transport: { check: treeGapCheck, answer: treeGapAnswer, fill: treeFillGap },
+    workId,
+    onError: (message) => {
+      failure.value = `删章路标没能问出来：${message}`;
+    },
+  });
+
   /**
    * 换一本书：落点是那本书上次写的那一章。
    *
@@ -414,6 +429,7 @@ export function useEditorSession(): EditorSession {
     addChapterAfter,
     deleteNode,
     directory,
+    gaps,
     shelf,
     trash,
     workId,

@@ -13,12 +13,26 @@ import { computed, nextTick, ref } from "vue";
 import type { EditorSession } from "../editor/session";
 import { addIntent, containerLabel, type TreeRow } from "../editor/tree";
 import { formatWords } from "../editor/display.ts";
+import GapDialog from "./GapDialog.vue";
 
 const props = defineProps<{ session: EditorSession }>();
 // 从会话对象里取出的都是 ref，模板里照常自动解包
-const { rows, current, toggle, select, rename, move, create, canDrop, volumeTarget, setVolumeTarget } =
-  props.session.directory;
+const {
+  rows,
+  current,
+  toggle,
+  select,
+  rename,
+  move,
+  create,
+  canDrop,
+  volumeTarget,
+  setVolumeTarget,
+  refresh: refreshTree,
+} = props.session.directory;
 const { neighbors, switching, switchChapter, addChapterAfter, deleteNode } = props.session;
+const { trash, gaps } = props.session;
+const { pending: gapPending, busy: gapBusy, check: checkGap, fill: fillGap, answer: answerGap } = gaps;
 
 /** 有卷才显示"每卷多少章"这一栏：零层级作品用不上它 */
 const hasVolumes = computed(() => rows.value.some((row) => row.accepts_children && !row.holds_body));
@@ -34,6 +48,9 @@ function saveVolumeTarget(event: Event) {
 const editing = ref<number | null>(null);
 const draft = ref("");
 const listEl = ref<HTMLElement | null>(null);
+
+/** 弹出"这里少了一章"那一问的那一行：作者答完，接着按他点「+」的意图建章 */
+const gapRow = ref<TreeRow | null>(null);
 
 /** 拖拽：谁在拖、落在谁身上、落在哪一段 */
 const dragging = ref<number | null>(null);
@@ -112,8 +129,19 @@ function askDelete(row: TreeRow) {
   }
 }
 
-/** 行上的「+」：能写正文的往后插一章（接着写），容器就往里加一章 */
+/** 行上的「+」：先问一嘴"这一层是不是少了一章"，没得问就直接建。 */
 async function addHere(row: TreeRow) {
+  // 新章落在哪一层：容器往里加，章就是它自己那一层（跟 addIntent 的分支一一对应）
+  const layer = addIntent(row) === "inside" ? row.id : row.parent_id;
+  if (await checkGap(layer)) {
+    gapRow.value = row; // 有该问的空缺：先摆弹窗，等作者拿主意再建新章
+    return;
+  }
+  await addByIntent(row);
+}
+
+/** 作者原来点「+」的意图：容器往里加一章，章就接着它往后插一章。 */
+async function addByIntent(row: TreeRow) {
   if (addIntent(row) === "inside") {
     // 标题留空＝由核心按同层序号取名
     const created = await create(row.id, "chapter", "");
@@ -121,6 +149,35 @@ async function addHere(row: TreeRow) {
     return;
   }
   await addChapterAfter(row.id); // 走核心既有的"插在这一章之后"
+}
+
+/** 补写：在原位新建一个空章（不是恢复旧稿），补完直接开写。 */
+async function onGapFill() {
+  gapRow.value = null;
+  const created = await fillGap();
+  if (created === null) return;
+  await refreshTree(); // 补出来的章得看得见
+  await select(created);
+}
+
+/** 「稍后再说 / 不用了」：记下答复，再照他原来点的意图接着建新章。 */
+async function onGapAnswer(answer: "deferred" | "ignored") {
+  const row = gapRow.value;
+  if (!(await answerGap(answer))) return; // 答复记不下来就别偷偷往下走
+  gapRow.value = null;
+  if (row) await addByIntent(row);
+}
+
+/** 「去回收站看看」：他还没拿主意，**什么都不记**，下次点「+」还会问。 */
+function onGapTrash() {
+  onGapClose();
+  trash.toggle();
+}
+
+/** 点遮罩关掉：同样不记答复——只是这次不想答，不该被当成「不用了」 */
+function onGapClose() {
+  gapRow.value = null;
+  gaps.dismiss();
 }
 </script>
 
@@ -242,6 +299,17 @@ async function addHere(row: TreeRow) {
         →
       </button>
     </footer>
+
+    <GapDialog
+      v-if="gapPending && gapRow"
+      :gap="gapPending"
+      :busy="gapBusy"
+      @fill="onGapFill"
+      @defer="onGapAnswer('deferred')"
+      @ignore="onGapAnswer('ignored')"
+      @trash="onGapTrash"
+      @close="onGapClose"
+    />
   </aside>
 </template>
 

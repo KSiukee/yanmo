@@ -83,6 +83,23 @@ export interface TreeNode {
   subtree_word_count: number;
 }
 
+/** 删章留下的一处空缺——点「+」时问那一句的依据。 */
+export interface ChapterGap {
+  /** 回收站里那一条（「去回收站看看」用它） */
+  node_id: number;
+  /** 缺在哪一层；null = 根级 */
+  parent_id: number | null;
+  parent_title: string | null;
+  /** 第几号 */
+  serial: number;
+  /** 原来叫什么 */
+  title: string;
+  /** 什么时候删的（unix 毫秒） */
+  deleted_at: number;
+  /** 旧稿多少字（让作者知道"字还在"） */
+  word_count: number;
+}
+
 /** 书架的一行：作品 + 它的规模。 */
 export interface ShelfEntry {
   id: number;
@@ -188,6 +205,9 @@ const COMMANDS = {
   treeDeleteNode: "tree_delete_node",
   treeVolumeTarget: "tree_volume_target",
   treeSetVolumeTarget: "tree_set_volume_target",
+  treeGapCheck: "tree_gap_check",
+  treeGapAnswer: "tree_gap_answer",
+  treeFillGap: "tree_fill_gap",
   saveCursor: "save_cursor",
   saveBody: "save_body",
   bodyFingerprint: "body_fingerprint",
@@ -322,6 +342,18 @@ export const treeVolumeTarget = (work_id: number) =>
 /** 设定 / 清除每卷目标章数（null = 清掉）。 */
 export const treeSetVolumeTarget = (work_id: number, chapters: number | null) =>
   call<void>(COMMANDS.treeSetVolumeTarget, { work_id, chapters });
+
+/** 删章路标：这一层现在该不该问一句（不该问就是 null）。 */
+export const treeGapCheck = (work_id: number, parent_id: number | null) =>
+  call<ChapterGap | null>(COMMANDS.treeGapCheck, { work_id, parent_id });
+
+/** 删章路标：记下对某处空缺的答复（deferred = 稍后再说 / ignored = 不用了）。 */
+export const treeGapAnswer = (node_id: number, answer: "deferred" | "ignored") =>
+  call<void>(COMMANDS.treeGapAnswer, { node_id, answer });
+
+/** 删章路标：补写——在原来的层、用原来的名字与位置新建空章，返回新章 id。 */
+export const treeFillGap = (node_id: number) =>
+  call<number>(COMMANDS.treeFillGap, { node_id });
 
 /** 记下"这一章读到哪了"（失焦 / 切章 / 关窗时调用）。 */
 export const saveCursor = (node_id: number, cursor: EditorCursor) =>

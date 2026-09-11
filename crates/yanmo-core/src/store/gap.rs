@@ -35,11 +35,12 @@ impl GapAnswer {
         }
     }
 
-    fn parse(text: &str) -> Option<Self> {
+    /// 从界面传来的取值认出答复：**未知取值明确报错，不猜**（与节点类型的认法一致）。
+    pub fn parse(text: &str) -> Result<Self> {
         match text {
-            "deferred" => Some(GapAnswer::Deferred),
-            "ignored" => Some(GapAnswer::Ignored),
-            _ => None,
+            "deferred" => Ok(GapAnswer::Deferred),
+            "ignored" => Ok(GapAnswer::Ignored),
+            other => Err(Error::Invalid(format!("未知的答复：{other}"))),
         }
     }
 }
@@ -235,7 +236,7 @@ impl Store {
         let stored = self.read_gap_answers()?;
         Ok(stored
             .get(&gap_key(parent_id, serial))
-            .and_then(|value| GapAnswer::parse(value)))
+            .and_then(|value| GapAnswer::parse(value).ok()))
     }
 
     fn write_gap_answer(
