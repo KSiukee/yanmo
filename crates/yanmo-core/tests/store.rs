@@ -430,3 +430,68 @@ fn default_chapter_name_skips_numbers_already_in_use() {
     let next = store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap();
     assert_eq!(store.node_title(next).unwrap(), "第4章", "自起的名字不参与取号，不会把它顶到第5章");
 }
+
+/// 作者问过的那个流程：删掉中间的章 → 新建 → 改名把号补回来 → 再新建拿几号？
+///
+/// 取号看的是"这一层**现在**用着哪些号"（只数活着的）：
+/// 把一个号腾出来，它就会被再用；没腾出来，就接着往后走。
+#[test]
+fn a_number_freed_by_renaming_gets_reused() {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let volume = store.list_nodes(work.id).unwrap()[0].id;
+    let chapters = |store: &Store| -> Vec<String> {
+        store
+            .list_nodes(work.id)
+            .unwrap()
+            .into_iter()
+            .filter(|n| n.kind == NodeKind::Chapter)
+            .map(|n| n.title)
+            .collect()
+    };
+    let mut ids = Vec::new();
+    for _ in 0..3 {
+        ids.push(store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap());
+    }
+    assert_eq!(chapters(&store), vec!["第1章", "第2章", "第3章"]);
+
+    // ① 删掉中间的第二章，再新建：拿到第4章（不能跟还在的第3章撞）
+    store.soft_delete_node(ids[1]).unwrap();
+    let fresh = store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap();
+    assert_eq!(store.node_title(fresh).unwrap(), "第4章");
+
+    // ② 作者把这一章改名成「第2章」、挪回第二位 —— 号就腾出来了
+    store.rename_node(fresh, "第2章").unwrap();
+    store.move_node(fresh, Some(volume), 1).unwrap();
+    assert_eq!(chapters(&store), vec!["第1章", "第2章", "第3章"]);
+
+    // ③ 再新建：**又是第4章**（4 已经不占用了）
+    let again = store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap();
+    assert_eq!(store.node_title(again).unwrap(), "第4章", "腾出来的号会被再用");
+}
+
+#[test]
+fn a_number_held_by_a_trashed_chapter_is_skipped() {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let volume = store.list_nodes(work.id).unwrap()[0].id;
+    let mut ids = Vec::new();
+    for _ in 0..3 {
+        ids.push(store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap());
+    }
+
+    // 删掉第二章、**不**改名：新建拿第4章，再新建拿第5章——2 这个号一直留着（那章还在回收站里）
+    store.soft_delete_node(ids[1]).unwrap();
+    let fourth = store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap();
+    let fifth = store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap();
+    assert_eq!(store.node_title(fourth).unwrap(), "第4章");
+    assert_eq!(store.node_title(fifth).unwrap(), "第5章");
+
+    // 回收站里那一章还是"第2章"：真恢复它，就正好撞上作者可能已经手写出来的第2章
+    // （那条冲突由恢复前的预检 + 作者三选一来处理）
+    let trashed: String = store
+        .conn()
+        .query_row("SELECT title FROM nodes WHERE id = ?1", [ids[1]], |r| r.get(0))
+        .unwrap();
+    assert_eq!(trashed, "第2章");
+}
