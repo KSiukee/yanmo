@@ -495,3 +495,135 @@ fn a_number_held_by_a_trashed_chapter_is_skipped() {
         .unwrap();
     assert_eq!(trashed, "第2章");
 }
+
+#[test]
+fn default_name_follows_the_insertion_point() {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let volume = store.list_nodes(work.id).unwrap()[0].id;
+    let first = store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap();
+    let third = store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap();
+    store.rename_node(third, "第3章").unwrap(); // 装成"第2章被删了"的样子
+    let _ = first;
+
+    // ★ 在第 1 章后面插一章：**它就是第 2 号**（哪怕 4、5 还空着也不该抢后面的号）
+    let created = store.add_chapter_after(first, NodeKind::Chapter, "").unwrap();
+    assert_eq!(store.node_title(created).unwrap(), "第2章");
+    let order: Vec<String> = store
+        .list_nodes(work.id)
+        .unwrap()
+        .into_iter()
+        .filter(|n| n.parent_id == Some(volume))
+        .map(|n| n.title)
+        .collect();
+    assert_eq!(order, vec!["第1章", "第2章", "第3章"], "名字与位置对得上");
+
+    // 落点那个号被占着时：退回最大号 + 1，绝不撞名
+    let extra = store.add_chapter_after(first, NodeKind::Chapter, "").unwrap();
+    assert_eq!(store.node_title(extra).unwrap(), "第4章", "第2章被占了，往后取");
+
+    // 全用中文数字的书：照样认得出来
+    let cn = store.create_work(WorkKind::Novel, "短歌").unwrap();
+    let cn_volume = store.list_nodes(cn.id).unwrap()[0].id;
+    for title in ["第一章", "第二章"] {
+        store.create_node(cn.id, Some(cn_volume), NodeKind::Chapter, title).unwrap();
+    }
+    let appended = store.create_node(cn.id, Some(cn_volume), NodeKind::Chapter, "").unwrap();
+    assert_eq!(store.node_title(appended).unwrap(), "第3章", "中文数字也算数");
+}
+
+/// 取号规则的**表驱动**用例：每条都写明"层里有什么 / 插在哪 / 应该叫什么"。
+fn named_new_chapter(layer_titles: &[&str], after: Option<usize>) -> String {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let volume = store.list_nodes(work.id).unwrap()[0].id;
+    let mut ids = Vec::new();
+    for title in layer_titles {
+        ids.push(store.create_node(work.id, Some(volume), NodeKind::Chapter, title).unwrap());
+    }
+    let created = match after {
+        Some(index) => store.add_chapter_after(ids[index], NodeKind::Chapter, "").unwrap(),
+        None => store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap(),
+    };
+    store.node_title(created).unwrap()
+}
+
+#[test]
+fn default_name_rule_table() {
+    let cases: Vec<(Vec<&str>, Option<usize>, &str, &str)> = vec![
+        (vec![], None, "第1章", "空层：从 1 开始"),
+        (vec!["第1章"], None, "第2章", "追加：接着最大号"),
+        (vec!["第1章", "第3章"], Some(0), "第2章", "落点那个号空着 → 就用它"),
+        (vec!["第1章", "第2章", "第3章"], Some(0), "第4章", "落点号被占 → 退回最大号 + 1"),
+        (vec!["第1章", "第3章"], None, "第4章", "追加：最大号 + 1"),
+        (vec!["序章", "引子"], None, "第3章", "全认不出号 → 退回现有几章 + 1"),
+        (vec!["第一章", "第二章"], None, "第3章", "中文数字也算数"),
+        (vec!["第十章"], None, "第11章", "中文两位数"),
+        (vec!["第99章"], None, "第100章", "三位数"),
+        (vec!["第1章", "第2章"], Some(1), "第3章", "在最后一章后面插"),
+        (vec!["第2章", "第3章"], Some(1), "第4章", "开头少了一个号也不去补 1（落点在末尾）"),
+        (vec!["第5章", "第6章"], Some(0), "第7章", "编号不从 1 开始：不硬套位次"),
+        (vec!["第1章", "第2章", "第5章"], Some(1), "第6章", "空档不止一个 → 不猜，往后排"),
+        (vec!["第1章", "第4章"], Some(0), "第5章", "空了两个以上 → 不猜，往后排"),
+    ];
+    for (titles, after, expected, why) in cases {
+        assert_eq!(
+            named_new_chapter(&titles, after),
+            expected,
+            "{why}：层里 {titles:?}，落点 {after:?}"
+        );
+    }
+}
+
+#[test]
+fn default_name_follows_position_even_with_mixed_kinds() {
+    // 真实目录的形态：根层常常是「单篇 + 若干章」混着排。
+    // 取号只能数**同类的**兄弟，否则"第几位"会被单篇顶偏。
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Article, "我的第一篇").unwrap();
+    let piece = store.list_nodes(work.id).unwrap()[0].id;
+    let first = store.create_node(work.id, None, NodeKind::Chapter, "").unwrap();
+    assert_eq!(store.node_title(first).unwrap(), "第1章");
+    let third = store.create_node(work.id, None, NodeKind::Chapter, "").unwrap();
+    store.rename_node(third, "第3章").unwrap();
+
+    let created = store.add_chapter_after(first, NodeKind::Chapter, "").unwrap();
+    assert_eq!(
+        store.node_title(created).unwrap(),
+        "第2章",
+        "单篇排在前面不该把章节的位置数偏掉"
+    );
+    assert!(piece > 0);
+
+    // 落点如果不是同类兄弟（在单篇后面插一章）：退回最大号 + 1，不硬套位次
+    let after_piece = store.add_chapter_after(piece, NodeKind::Chapter, "").unwrap();
+    assert_eq!(store.node_title(after_piece).unwrap(), "第4章");
+}
+
+#[test]
+fn default_name_never_collides_with_a_live_sibling() {
+    // ★ 这条是这块逻辑唯一真正要保住的性质：**取出来的默认名绝不与活着的同级同类同名**。
+    // 穷举一批层内容 × 每个落点（含"追加"），逐个断言——比只看几个例子更能压住分支 bug。
+    let layers: Vec<Vec<&str>> = vec![
+        vec![],
+        vec!["第1章"],
+        vec!["第1章", "第2章", "第3章"],
+        vec!["第1章", "第3章", "第4章"],
+        vec!["第2章", "第3章"],
+        vec!["第1章", "第1章"],       // 作者自己就写了两个同名：我们不跟着撞第三个
+        vec!["第1章", "第10章"],
+        vec!["第九章", "第十章"],
+        vec!["序章", "引子", "尾声"],
+        vec!["第7章", "场景卡"],
+    ];
+    for titles in &layers {
+        for after in std::iter::once(None).chain((0..titles.len()).map(Some)) {
+            let generated = named_new_chapter(titles, after);
+            let collides = titles.iter().any(|title| *title == generated);
+            assert!(
+                !collides,
+                "生成的默认名「{generated}」与层里已有的重名了：层 {titles:?}，落点 {after:?}"
+            );
+        }
+    }
+}

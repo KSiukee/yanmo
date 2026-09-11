@@ -85,44 +85,98 @@ fn naming(kind: NodeKind) -> (&'static str, &'static str) {
     }
 }
 
-/// 从标题里认出编号（**只认阿拉伯数字**）：作者自起的名字一概不猜，也就不会误判。
+/// 从标题里认出编号：阿拉伯数字与中文数字都认（作者手打的「第一章」也算数），
+/// 其它名字一概不猜，也就不会误判成编号。
 fn parse_serial(title: &str, kind: NodeKind) -> Option<i64> {
     let (prefix, suffix) = naming(kind);
-    let inner = title.strip_prefix(prefix)?.strip_suffix(suffix)?;
-    inner.trim().parse::<i64>().ok().filter(|serial| *serial > 0)
+    let inner = title.strip_prefix(prefix)?.strip_suffix(suffix)?.trim();
+    inner
+        .parse::<i64>()
+        .ok()
+        .or_else(|| parse_cn_number(inner))
+        .filter(|serial| *serial > 0)
 }
 
-/// 标题留空时的默认名：**按同层同类型取号**（卷 / 章 / 节 / 篇），不按全书。
+/// 认中文数字：一 / 十 / 十二 / 二十三 …（到九十九够用了）。
+fn parse_cn_number(text: &str) -> Option<i64> {
+    let digit = |c: char| match c {
+        '零' => Some(0),
+        '一' => Some(1),
+        '二' | '两' => Some(2),
+        '三' => Some(3),
+        '四' => Some(4),
+        '五' => Some(5),
+        '六' => Some(6),
+        '七' => Some(7),
+        '八' => Some(8),
+        '九' => Some(9),
+        _ => None,
+    };
+    let chars: Vec<char> = text.chars().collect();
+    match chars.as_slice() {
+        // ⚠️ '十' 必须排在单字那一支前面：match 是自上而下的，
+        // 先命中 [single] 的话「第十章」会被当成"一个认不出的字"（表驱动测试抓到的）
+        ['十'] => Some(10),
+        [single] => digit(*single),
+        ['十', b] => digit(*b).map(|b| 10 + b),
+        [a, '十'] => digit(*a).map(|a| a * 10),
+        [a, '十', b] => digit(*a).and_then(|a| digit(*b).map(|b| a * 10 + b)),
+        _ => None,
+    }
+}
+
+/// 标题留空时的默认名——**按同层同类型取号**（卷 / 章 / 节 / 篇），不按全书。
 ///
 /// 按全书数会把别卷的章也算进来，分卷之后新建的章就会跳号；按这一层取号，
 /// 才是作者在这一卷里看到的"下一章"。
 ///
-/// 取的是**同级里已用过的最大号 + 1**，不是"现有几章 + 1"——
-/// 后者在删掉中间那一章之后会算出一个**已经被占用的号**，新章就跟人撞名了
-/// （这是真会发生的：删了第 2 章，再新建还是"第3章"，而第3章还在）。
+/// 规则只有一句话：**紧挨着的两个号中间正好缺一个，就补那个缺号；其余一律取最大号 + 1。**
+///
+/// - 删掉第 2 章之后，在第 1 章后面插一章（左右是 1 和 3，中间正好缺 2）→ 就叫「第2章」✅
+/// - 在这本书末尾接着写（右边没有号了）→ 「最大号 + 1」✅
+/// - 层里的编号是 5、6 这种（插在中间也算不出"缺的那个号"）→ 一律「最大号 + 1」，
+///   绝不凭空给一个跟这一段编号无关的号（早先的"按第几位取号"就会在那儿算出「第2章」）
+/// - 一个编号都没认出来（作者全用自起的名字）→ 退回"同层同类现有几章 + 1"
 fn default_title(
     conn: &Connection,
     work_id: i64,
     parent_id: Option<i64>,
     kind: NodeKind,
+    after: Option<i64>,
 ) -> Result<String> {
     let mut stmt = conn.prepare(
-        "SELECT title FROM nodes
-         WHERE work_id = ?1 AND parent_id IS ?2 AND node_kind = ?3 AND deleted_at IS NULL",
+        "SELECT id, title FROM nodes
+         WHERE work_id = ?1 AND parent_id IS ?2 AND node_kind = ?3 AND deleted_at IS NULL
+         ORDER BY sort_order, id",
     )?;
-    let rows = stmt.query_map(params![work_id, parent_id, kind.as_str()], |r| r.get::<_, String>(0))?;
-    let mut serial = 0;
-    let mut count = 0;
+    let rows = stmt.query_map(params![work_id, parent_id, kind.as_str()], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+    })?;
+    let mut siblings: Vec<(i64, Option<i64>)> = Vec::new();
     for row in rows {
-        count += 1;
-        if let Some(used) = parse_serial(&row?, kind) {
-            serial = serial.max(used);
-        }
+        let (id, title) = row?;
+        siblings.push((id, parse_serial(&title, kind)));
     }
+
+    let max_used = siblings.iter().filter_map(|(_, serial)| *serial).max();
     let (prefix, suffix) = naming(kind);
-    // 一个编号都没认出来（作者全用了自起的名字）：退回"同层同类现有几章 + 1"，至少不重复
-    let serial = if serial > 0 { serial + 1 } else { count + 1 };
+    let serial = fill_single_gap(&siblings, after)
+        .or_else(|| max_used.map(|max| max + 1))
+        .unwrap_or(siblings.len() as i64 + 1);
     Ok(format!("{prefix}{serial}{suffix}"))
+}
+
+/// 落点左右**紧挨着**的两个号如果正好差 2，就补中间那个缺号——除此之外不猜。
+///
+/// 左边没有号（落点不是同类兄弟，或它自己没编号）就当作 0（"排在这一层最前面"），
+/// 右边没有号（插在末尾）就返回 `None`，交给"最大号 + 1"。
+fn fill_single_gap(siblings: &[(i64, Option<i64>)], after: Option<i64>) -> Option<i64> {
+    let anchor = after?;
+    let position = siblings.iter().position(|(id, _)| *id == anchor);
+    let left = position.and_then(|index| siblings[index].1).unwrap_or(0);
+    let start = position.map(|index| index + 1).unwrap_or(0);
+    let right = siblings.get(start..)?.iter().find_map(|(_, serial)| *serial)?;
+    (right - left == 2).then_some(left + 1)
 }
 
 impl Store {
@@ -143,7 +197,7 @@ impl Store {
         }
         let title = title.trim();
         let title = if title.is_empty() {
-            default_title(&self.conn, work_id, parent_id, kind)?
+            default_title(&self.conn, work_id, parent_id, kind, None)?
         } else {
             title.to_string()
         };
@@ -276,7 +330,13 @@ impl Store {
             .map(|position| position + 1)
             .unwrap_or(usize::MAX);
 
-        let created = self.create_node(work_id, parent, kind, title)?;
+        // 标题留空时**按落点取号**：作者在第 1 章后面插一章，它就该叫「第2章」
+        let title = if title.trim().is_empty() {
+            default_title(&self.conn, work_id, parent, kind, Some(node_id))?
+        } else {
+            title.trim().to_string()
+        };
+        let created = self.create_node(work_id, parent, kind, &title)?;
         self.move_node(created, parent, index)?;
         Ok(created)
     }

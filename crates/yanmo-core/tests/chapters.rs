@@ -220,12 +220,13 @@ fn default_chapter_name_counts_inside_its_own_volume() {
     let created = book.store.add_chapter_after(one, NodeKind::Chapter, "").unwrap();
     assert_eq!(title_of(&book.store, created), "第3章");
 
-    // 另一卷各数各的：第二卷里也已有两章，所以它也数到第三
+    // 另一卷各数各的：第二卷里已有的号是 3、4，所以这一层下一个是 5
+    // （"各层各数"数的是**这一层用过的号**，不是"这一层有几章"）
     let in_second = book
         .store
         .create_node(book.work_id, Some(volume_two), NodeKind::Chapter, "")
         .unwrap();
-    assert_eq!(title_of(&book.store, in_second), "第3章", "各层各数，不互相借号");
+    assert_eq!(title_of(&book.store, in_second), "第5章", "只数自己这一层的号");
 
     // 卷也一样按同层取号
     let volume_three = book.store.create_node(book.work_id, None, NodeKind::Volume, "").unwrap();
