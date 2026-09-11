@@ -350,7 +350,7 @@ impl Store {
     }
 
     /// 这个节点属于哪本书（**连已删除的也算**）：删着的东西也要能问出归属。
-    fn work_of_any(&self, node_id: i64) -> Result<i64> {
+    pub(super) fn work_of_any(&self, node_id: i64) -> Result<i64> {
         self.conn
             .query_row("SELECT work_id FROM nodes WHERE id = ?1", params![node_id], |r| r.get(0))
             .optional()?
