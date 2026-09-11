@@ -99,6 +99,28 @@ export interface ShelfEntry {
   updated_at: number;
 }
 
+/** 一次导出的回执。 */
+export interface ExportAck {
+  /** 导到哪个文件夹（界面只展示，不碰文件系统） */
+  path: string;
+  files: number;
+  /** 顺手清掉了几个上次导出留下的旧文件 */
+  removed: number;
+}
+
+/** 回收站里的一项。 */
+export interface TrashEntry {
+  /** 「work」= 整本书；「node」= 书里被删的一段 */
+  kind: string;
+  id: number;
+  title: string;
+  work_id: number;
+  work_title: string;
+  deleted_at: number;
+  /** 跟着一起进来 / 会一起回去的节点数（含它自己） */
+  nodes: number;
+}
+
 /** 一次落盘的回执。 */
 export interface SaveAck {
   char_count: number;
@@ -145,6 +167,7 @@ const COMMANDS = {
   treeCreateNode: "tree_create_node",
   treeRenameNode: "tree_rename_node",
   treeMoveNode: "tree_move_node",
+  treeDeleteNode: "tree_delete_node",
   treeVolumeTarget: "tree_volume_target",
   treeSetVolumeTarget: "tree_set_volume_target",
   saveCursor: "save_cursor",
@@ -161,6 +184,13 @@ const COMMANDS = {
   createWork: "create_work",
   renameWork: "rename_work",
   deleteWork: "delete_work",
+  listTrash: "list_trash",
+  restoreWork: "restore_work",
+  restoreNode: "restore_node",
+  purgeNode: "purge_node",
+  purgeWork: "purge_work",
+  emptyTrash: "empty_trash",
+  exportWork: "export_work",
 } as const;
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -199,6 +229,29 @@ export const renameWork = (work_id: number, title: string) =>
 /** 删掉一本书（软删除，正文与历史都留着）。 */
 export const deleteWork = (work_id: number) => call<void>(COMMANDS.deleteWork, { work_id });
 
+/** 回收站：整本书在前，书里被删的段在后。 */
+export const listTrash = () => call<TrashEntry[]>(COMMANDS.listTrash);
+
+/** 从回收站恢复一本书。 */
+export const restoreWork = (work_id: number) =>
+  call<number>(COMMANDS.restoreWork, { work_id });
+
+/** 从回收站恢复一段（整棵子树 + 还在回收站里的父链），返回恢复的节点数。 */
+export const restoreNode = (node_id: number) => call<number>(COMMANDS.restoreNode, { node_id });
+
+/** 彻底删除一段（**不可恢复**），返回删掉的节点数。 */
+export const purgeNode = (node_id: number) => call<number>(COMMANDS.purgeNode, { node_id });
+
+/** 彻底删除一本书（**不可恢复**），返回删掉的节点数。 */
+export const purgeWork = (work_id: number) => call<number>(COMMANDS.purgeWork, { work_id });
+
+/** 清空回收站，返回清掉的项数。 */
+export const emptyTrash = () => call<number>(COMMANDS.emptyTrash);
+
+/** 把一本书导出成 txt（分章）或 json（单文件）；同样的内容不会重复写。 */
+export const exportWork = (work_id: number, format: string) =>
+  call<ExportAck>(COMMANDS.exportWork, { work_id, format });
+
 /** 在当前章后面新建一章（目录树接上前的最小入口）。 */
 export const createChapter = (node_id: number, title: string) =>
   call<EditorSnapshot>(COMMANDS.createChapter, { node_id, title });
@@ -229,6 +282,10 @@ export const treeRenameNode = (node_id: number, title: string) =>
 /** 目录树：拖拽排序（挪到新父级的第 index 位；越界由核心夹到末尾）。 */
 export const treeMoveNode = (node_id: number, parent_id: number | null, index: number) =>
   call<void>(COMMANDS.treeMoveNode, { node_id, parent_id, index });
+
+/** 目录树：删掉一个节点（**软删除**，连同子树进回收站，能捞回来）。 */
+export const treeDeleteNode = (node_id: number) =>
+  call<number>(COMMANDS.treeDeleteNode, { node_id });
 
 /** 每卷目标章数（目录里那行「本卷 12/30 章」的分母）；没设过是 null。 */
 export const treeVolumeTarget = (work_id: number) =>

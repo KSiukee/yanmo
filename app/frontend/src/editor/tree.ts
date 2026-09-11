@@ -37,6 +37,8 @@ export interface TreeTransport {
   ancestors: (node_id: number) => Promise<number[]>;
   create: (work_id: number, parent_id: number | null, kind: string, title: string) => Promise<number>;
   rename: (node_id: number, title: string) => Promise<void>;
+  /** 软删除（进回收站）：核心会连带整棵子树 */
+  remove: (node_id: number) => Promise<number>;
   move: (node_id: number, parent_id: number | null, index: number) => Promise<void>;
 }
 
@@ -163,6 +165,19 @@ export class DirectoryTree {
     if (new_parent !== null) this.expanded.add(new_parent); // 拖进去就展开，否则"东西不见了"
     // 搬动会同时改两边各层祖先的"本卷几章 / 共多少字"：整片重拉最省心（拖动不是高频动作）
     await this.reloadVisible();
+  }
+
+  /** 删掉一个节点（软删，进回收站）：删完把看得见的层重拉一遍——它的子树一起走了。 */
+  async remove(node_id: number): Promise<number> {
+    const removed = await this.transport.remove(node_id);
+    this.expanded.delete(node_id); // 这一层不用再记着展开了
+    await this.reloadVisible();
+    return removed;
+  }
+
+  /** `node_id` 是不是 `ancestor_id` 自己或它的子孙（判断"删的是不是我正在写的那一支"）。 */
+  contains(ancestor_id: number, node_id: number): boolean {
+    return node_id === ancestor_id || this.isDescendant(ancestor_id, node_id);
   }
 
   /**

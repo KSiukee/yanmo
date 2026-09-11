@@ -11,7 +11,7 @@ use tauri::State;
 
 use crate::storage::AppData;
 use yanmo_core::model::WorkKind;
-use yanmo_core::store::{ShelfEntry, Store};
+use yanmo_core::store::{ExportFormat, ShelfEntry, Store};
 
 /// 书架的一行。
 #[derive(Debug, Serialize)]
@@ -77,4 +77,45 @@ pub fn rename_work(
 #[tauri::command(rename_all = "snake_case")]
 pub fn delete_work(data: State<'_, AppData>, work_id: i64) -> Result<(), String> {
     data.with_store(|store: &mut Store| store.soft_delete_work(work_id))
+}
+
+/// 一次导出的回执。
+#[derive(Debug, Serialize)]
+pub struct ExportAckDto {
+    /// 导到哪个文件夹（界面只展示，不碰文件系统）
+    pub path: String,
+    pub files: usize,
+    /// 顺手清掉了几个上次导出留下的旧文件（改名 / 删章之后的孤儿）
+    pub removed: usize,
+}
+
+/// 把一本书导出成 `txt`（分章，结构用目录表达）或 `json`（单文件，结构与正文都在里面）。
+///
+/// 落在"文档 / 研墨导出 / 书名"下；同样的内容不会重复写，旧文件会被清掉——
+/// 所以这个文件夹可以放心交给 git 或同步盘。
+#[tauri::command(rename_all = "snake_case")]
+pub fn export_work(
+    data: State<'_, AppData>,
+    work_id: i64,
+    format: String,
+) -> Result<ExportAckDto, String> {
+    // `both` = 一次导出两种：分章 txt 给人接手，单个 json 给机器读回来
+    let formats = if format == "both" {
+        vec![ExportFormat::Text, ExportFormat::Json]
+    } else {
+        vec![ExportFormat::parse(&format).map_err(|e| e.to_string())?]
+    };
+    let (title, files) = data.with_store(|store: &mut Store| {
+        let mut files = Vec::new();
+        for one in &formats {
+            files.extend(store.render_work(work_id, *one)?);
+        }
+        Ok((store.get_work(work_id)?.title, files))
+    })?;
+    let outcome = data.write_export(&title, &files)?;
+    Ok(ExportAckDto {
+        path: outcome.dir.display().to_string(),
+        files: outcome.files,
+        removed: outcome.removed,
+    })
 }

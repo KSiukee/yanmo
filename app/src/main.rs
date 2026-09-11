@@ -79,12 +79,20 @@ fn main() {
             commands::tree::tree_create_node,
             commands::tree::tree_rename_node,
             commands::tree::tree_move_node,
+            commands::tree::tree_delete_node,
             commands::tree::tree_volume_target,
             commands::tree::tree_set_volume_target,
             commands::work::list_shelf,
             commands::work::create_work,
             commands::work::rename_work,
-            commands::work::delete_work
+            commands::work::delete_work,
+            commands::work::export_work,
+            commands::trash::list_trash,
+            commands::trash::restore_work,
+            commands::trash::restore_node,
+            commands::trash::purge_node,
+            commands::trash::purge_work,
+            commands::trash::empty_trash
         ])
         .run(tauri::generate_context!())
         .expect("启动研墨失败");

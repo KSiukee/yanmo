@@ -122,6 +122,12 @@ pub fn tree_move_node(
     })
 }
 
+/// 删掉一个节点（**软删除**：连同子树一起进回收站，之后能捞回来）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn tree_delete_node(data: State<'_, AppData>, node_id: i64) -> Result<usize, String> {
+    data.with_store(|store: &mut Store| store.soft_delete_node(node_id))
+}
+
 /// 每卷目标章数（作者自己定的"大概几章一卷"）：目录里那行"本卷 12/30 章"的分母。
 #[tauri::command(rename_all = "snake_case")]
 pub fn tree_volume_target(data: State<'_, AppData>, work_id: i64) -> Result<Option<i64>, String> {

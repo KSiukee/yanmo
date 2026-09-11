@@ -18,7 +18,7 @@ const props = defineProps<{ session: EditorSession }>();
 // 从会话对象里取出的都是 ref，模板里照常自动解包
 const { rows, current, toggle, select, rename, move, create, canDrop, volumeTarget, setVolumeTarget } =
   props.session.directory;
-const { neighbors, switching, switchChapter, addChapterAfter } = props.session;
+const { neighbors, switching, switchChapter, addChapterAfter, deleteNode } = props.session;
 
 /** 有卷才显示"每卷多少章"这一栏：零层级作品用不上它 */
 const hasVolumes = computed(() => rows.value.some((row) => row.accepts_children && !row.holds_body));
@@ -102,6 +102,14 @@ async function onDrop(row: TreeRow) {
   const at = siblings.findIndex((item) => item.id === row.id);
   if (at < 0) return;
   await move(id, row.parent_id, at + (zone === "after" ? 1 : 0));
+}
+
+/** 行上的「×」：删掉它（软删，进回收站能捞回来）——容器会把里面的东西一起带走 */
+function askDelete(row: TreeRow) {
+  const includes = row.accepts_children ? "里面的内容会一起进回收站，" : "";
+  if (window.confirm(`删掉「${row.title}」？${includes}之后能在回收站里捞回来。`)) {
+    void deleteNode(row.id);
+  }
 }
 
 /** 行上的「+」：能写正文的往后插一章（接着写），容器就往里加一章 */
@@ -199,6 +207,14 @@ async function addHere(row: TreeRow) {
           @click.stop="addHere(row)"
         >
           +
+        </button>
+        <button
+          type="button"
+          class="tree__del"
+          title="删掉它（会进回收站，可以捞回来）"
+          @click.stop="askDelete(row)"
+        >
+          ×
         </button>
       </li>
     </ul>

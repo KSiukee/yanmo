@@ -9,8 +9,16 @@ import { shelfKindLabel, shelfLabel } from "../editor/shelf";
 import { formatWhen } from "../editor/display";
 
 const props = defineProps<{ session: EditorSession }>();
-const { entries, busy, close, open, create, rename, remove } = props.session.shelf;
+const { entries, busy, close, open, create, rename, remove, export: exportWork, note } =
+  props.session.shelf;
+const { visible: trashVisible, toggle: toggleTrash } = props.session.trash;
 const { workId } = props.session;
+
+/** 去回收站：先把书架收起来，免得两层弹层叠在一起 */
+function openTrash() {
+  close();
+  toggleTrash();
+}
 
 /** 正在改名的那一本（同时只可能有一本） */
 const renaming = ref<number | null>(null);
@@ -74,6 +82,9 @@ function confirmRemove(work_id: number, title: string) {
         <button type="button" class="shelf__button" :disabled="busy" @click="startCreate">
           + 新书
         </button>
+        <button type="button" class="shelf__button" title="看看删掉的书与章节" @click="openTrash">
+          回收站
+        </button>
         <button type="button" class="shelf__button" title="回到正文" @click="close">关闭</button>
       </header>
 
@@ -94,6 +105,7 @@ function confirmRemove(work_id: number, title: string) {
         <button type="submit" class="shelf__button" :disabled="busy || !newTitle.trim()">建好就写</button>
       </form>
 
+      <p v-if="note" class="shelf__note">{{ note }}</p>
       <p v-if="entries.length === 0" class="shelf__empty">书架上还没有书</p>
       <ul ref="listEl" class="shelf__list">
         <li
@@ -130,6 +142,15 @@ function confirmRemove(work_id: number, title: string) {
               @click="open(entry.id)"
             >
               打开
+            </button>
+            <button
+              type="button"
+              class="shelf__button"
+              :disabled="busy"
+              title="导出成文件（分章 txt + 单文件 json），同样的内容不会重复写"
+              @click="exportWork(entry.id, 'both')"
+            >
+              导出
             </button>
             <button
               type="button"

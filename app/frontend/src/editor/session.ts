@@ -23,14 +23,21 @@ import {
   createWork,
   deleteWork,
   emergencySnapshot,
+  emptyTrash,
+  exportWork,
   escapeExport,
   listShelf,
+  listTrash,
   onCloseRequested,
   openChapter,
   openEditorTarget,
   openWorkTarget,
+  purgeNode,
+  purgeWork,
   renameWork,
   requestExit,
+  restoreNode,
+  restoreWork,
   saveBody,
   saveCursor,
   sessionReport,
@@ -44,6 +51,7 @@ import { useDirectory, type Directory } from "./directory";
 import { docToText, textToHtml } from "./doc";
 import { ExitGate, type ExitGateState } from "./exitguard";
 import { useShelf, type Shelf } from "./shelf";
+import { useTrash, type Trash } from "./trash";
 
 export interface EditorSession {
   editor: ShallowRef<Editor | null>;
@@ -58,12 +66,16 @@ export interface EditorSession {
   directory: Directory;
   /** 书架：多作品是默认形态（切书同样先落盘再切） */
   shelf: Shelf;
+  /** 回收站：删错了能捞回来（恢复与真删的语义全在核心） */
+  trash: Trash;
   /** 当前作品 id（书架用来标"正在写这本"） */
   workId: Ref<number | null>;
   persistNow: () => void;
   switchChapter: (node_id: number | null | undefined) => Promise<void>;
   /** 在某一章后面新建一章并切过去（目录树的「+」走这条） */
   addChapterAfter: (node_id: number) => Promise<void>;
+  /** 删掉目录里的一段（软删，进回收站；删到正在写的那一支会自动换落点） */
+  deleteNode: (node_id: number) => Promise<void>;
   /** 换一本书（`null` = 回到默认落点）；返回是否真的切过去了 */
   switchWork: (work_id: number | null) => Promise<boolean>;
   retryExit: () => void;
@@ -169,6 +181,12 @@ export function useEditorSession(): EditorSession {
     };
   }
 
+  /** 只落盘，不等光标：删东西之前要把手上这一章存下来（存不下就别删）。 */
+  async function flushCurrent(): Promise<void> {
+    const engine = autosave.value;
+    if (engine) await engine.flush();
+  }
+
   /** 落盘 + 记光标：失焦、切后台、切章、关窗前都要来一次（**不跟着击键走**）。 */
   function persistNow() {
     const engine = autosave.value;
@@ -269,11 +287,71 @@ export function useEditorSession(): EditorSession {
     }
   }
 
+  /**
+   * 删掉目录里的一段（软删，能捞回来）。
+   *
+   * 删的要是**正在写的那一支**（它自己或它的上级），得先换个落点——
+   * 否则编辑器攥着一个已经进回收站的节点，下一次落盘就会撞墙。
+   */
+  async function deleteNode(node_id: number): Promise<void> {
+    const current = currentNodeId.value;
+    const hitsCurrent = current !== null && directory.contains(node_id, current);
+    const work = workId.value;
+    if (hitsCurrent) {
+      // 删的正是手上这一支：**先落盘再删**。反过来做的话，切换流程里的"先落盘"会撞上
+      // "节点已删除"，人就卡在一个已经进回收站的章节上了（这条是真机上撞出来的）
+      try {
+        await flushCurrent();
+      } catch (error) {
+        failure.value = `没能先把这一章存下来，这次没有删除：${error instanceof Error ? error.message : String(error)}`;
+        return;
+      }
+    }
+    if ((await directory.remove(node_id)) === null) return;
+    if (!hitsCurrent) return;
+    // 这一支已经不在了：**把落盘控制器摘掉**，否则切换流程还会去给一个已删除的节点记光标，
+    // 那一步会报错并把切换整个拦下来（真机上撞出来的第二层）
+    autosave.value?.dispose();
+    autosave.value = null;
+    await switchWork(work); // 回到这本书还活着的那一章
+  }
+
+  // 回收站：捞回来 / 彻底删掉；捞回来之后目录树与书架都得跟着刷新
+  const trash = useTrash({
+    transport: {
+      list: listTrash,
+      restoreWork,
+      restoreNode,
+      purgeWork,
+      purgeNode,
+      empty: emptyTrash,
+    },
+    workId,
+    reopen: async () => {
+      await switchWork(null);
+    },
+    onChanged: () => {
+      void shelf.refresh();
+      void directory.refresh();
+    },
+    onError: (message) => {
+      failure.value = `回收站操作没能完成：${message}`;
+    },
+  });
+
   // 书架：列书 / 建书 / 改名 / 删书；"切书"仍走上面那条（先落盘再切）
   const shelf = useShelf({
-    transport: { list: listShelf, create: createWork, rename: renameWork, remove: deleteWork },
+    transport: {
+      list: listShelf,
+      create: createWork,
+      rename: renameWork,
+      remove: deleteWork,
+      export: exportWork,
+    },
     workId,
     openWork: (target) => switchWork(target),
+    // 删书之前也先把手上这一章落盘：存不下去就不该动手删
+    beforeRemove: () => flushCurrent(),
     onError: (message) => {
       failure.value = `书架操作没能完成：${message}`;
     },
@@ -332,8 +410,10 @@ export function useEditorSession(): EditorSession {
   return {
     editor,
     addChapterAfter,
+    deleteNode,
     directory,
     shelf,
+    trash,
     workId,
     switchWork,
     chapterTitle,

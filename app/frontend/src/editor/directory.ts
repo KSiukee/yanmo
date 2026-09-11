@@ -11,6 +11,7 @@ import {
   treeAncestors,
   treeChildren,
   treeCreateNode,
+  treeDeleteNode,
   treeMoveNode,
   treeRenameNode,
   treeSetVolumeTarget,
@@ -43,6 +44,10 @@ export interface Directory {
   select: (node_id: number) => Promise<void>;
   rename: (node_id: number, title: string) => Promise<void>;
   move: (node_id: number, parent_id: number | null, index: number) => Promise<void>;
+  /** 删掉一个节点（软删，进回收站）；返回连带删掉了几项 */
+  remove: (node_id: number) => Promise<number | null>;
+  /** `node_id` 是不是 `ancestor_id` 自己或它的子孙 */
+  contains: (ancestor_id: number, node_id: number) => boolean;
   /** 新建节点（卷 / 章 / …）；失败返回 null，界面不必自己兜错 */
   create: (parent_id: number | null, kind: string, title: string) => Promise<number | null>;
   /** 拖拽前问一句：这个落点能不能放（不许拖进自己的子树） */
@@ -59,6 +64,7 @@ export function useDirectory(options: DirectoryOptions): Directory {
     create: treeCreateNode,
     rename: treeRenameNode,
     move: treeMoveNode,
+    remove: treeDeleteNode,
   });
   const rows = ref<TreeRow[]>([]);
   const volumeTarget = ref<number | null>(null);
@@ -129,6 +135,18 @@ export function useDirectory(options: DirectoryOptions): Directory {
     }
   }
 
+  /** 删节点：删完重拉看得见的层；失败返回 null */
+  async function remove(node_id: number): Promise<number | null> {
+    try {
+      return await tree.remove(node_id);
+    } catch (error) {
+      report(error);
+      return null;
+    } finally {
+      sync();
+    }
+  }
+
   /** 读卷长：读不到就当"没设过"——这只是行小字，不该挡住目录 */
   async function loadVolumeTarget(work_id: number): Promise<number | null> {
     try {
@@ -158,6 +176,8 @@ export function useDirectory(options: DirectoryOptions): Directory {
     select: (node_id) => options.openChapter(node_id),
     rename: (node_id, title) => act(() => tree.rename(node_id, title)),
     move: (node_id, parent_id, index) => act(() => tree.move(node_id, parent_id, index)),
+    remove,
+    contains: (ancestor_id, node_id) => tree.contains(ancestor_id, node_id),
     create,
     canDrop: (node_id, parent_id) =>
       parent_id === null || (parent_id !== node_id && !tree.isDescendant(node_id, parent_id)),

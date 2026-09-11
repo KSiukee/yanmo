@@ -10,7 +10,7 @@
 
 import { ref, type Ref } from "vue";
 
-import type { ShelfEntry } from "../api/core";
+import type { ExportAck, ShelfEntry } from "../api/core";
 import { formatWords } from "./display.ts";
 
 /** 删掉某一本之后该开哪一本：优先列表里的第一本；一本都不剩就交给核心去建默认的。 */
@@ -38,6 +38,8 @@ export interface ShelfTransport {
   create: (kind: string, title: string) => Promise<number>;
   rename: (work_id: number, title: string) => Promise<void>;
   remove: (work_id: number) => Promise<void>;
+  /** 导出成文件（txt 分章 / json 单文件），返回落点 */
+  export: (work_id: number, format: string) => Promise<ExportAck>;
 }
 
 export interface ShelfOptions {
@@ -49,6 +51,8 @@ export interface ShelfOptions {
    * 返回是否真的切过去了（没切成功就别关面板）。
    */
   openWork: (work_id: number | null) => Promise<boolean>;
+  /** 删书之前先把手上这一章落盘（存不下去就别删） */
+  beforeRemove?: () => Promise<void>;
   onError?: (message: string) => void;
 }
 
@@ -56,6 +60,8 @@ export interface Shelf {
   entries: Ref<ShelfEntry[]>;
   visible: Ref<boolean>;
   busy: Ref<boolean>;
+  /** 上一次动作的交代（"导出到哪儿了"之类） */
+  note: Ref<string>;
   /** 打开 / 收起书架（打开时顺手刷新一次） */
   toggle: () => void;
   close: () => void;
@@ -64,12 +70,15 @@ export interface Shelf {
   rename: (work_id: number, title: string) => Promise<void>;
   remove: (work_id: number) => Promise<void>;
   open: (work_id: number) => Promise<void>;
+  /** 导出一本书（txt / json）；落点会写进 note */
+  export: (work_id: number, format: string) => Promise<void>;
 }
 
 export function useShelf(options: ShelfOptions): Shelf {
   const entries = ref<ShelfEntry[]>([]);
   const visible = ref(false);
   const busy = ref(false);
+  const note = ref("");
 
   const report = (error: unknown) => {
     options.onError?.(error instanceof Error ? error.message : String(error));
@@ -111,6 +120,7 @@ export function useShelf(options: ShelfOptions): Shelf {
     entries,
     visible,
     busy,
+    note,
     toggle: () => {
       visible.value = !visible.value;
       if (visible.value) void refresh();
@@ -131,10 +141,24 @@ export function useShelf(options: ShelfOptions): Shelf {
       }),
     remove: (work_id) =>
       act(async () => {
+        await options.beforeRemove?.();
         await options.transport.remove(work_id);
         if (work_id !== options.workId.value) return; // 删的不是当前这本：留在书架上就行
         const next = nextWorkAfterDelete(entries.value, work_id);
         await options.openWork(next); // next 为 null 时核心会给一本默认的
       }),
+    export: async (work_id, format) => {
+      const entry = entries.value.find((item) => item.id === work_id);
+      busy.value = true;
+      try {
+        const ack = await options.transport.export(work_id, format);
+        const cleaned = ack.removed > 0 ? `，清掉 ${ack.removed} 个旧文件` : "";
+        note.value = `《${entry?.title ?? "这本书"}》已导出 ${ack.files} 个文件${cleaned}：${ack.path}`;
+      } catch (error) {
+        report(error);
+      } finally {
+        busy.value = false;
+      }
+    },
   };
 }

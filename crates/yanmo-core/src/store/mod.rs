@@ -10,23 +10,27 @@
 //!
 //! # 文件划分
 //!
-//! 一个领域一个文件（[`work`] / [`node`] + [`node_edit`] / [`content`] / [`search`]），
+//! 一个领域一个文件（[`work`] / [`node`] + [`node_edit`] / [`content`] / [`search`] / [`export`] / [`trash`]），
 //! 各自只管自己的 SQL；公共句柄与留痕在 [`mod`] 与 [`device`]。
 //! 节点的**读**与**编辑**特意分开：目录树查询和树结构变更的变化理由不一样。
 
 mod content;
 mod device;
+mod export;
 mod node;
 mod node_edit;
 mod search;
 mod session;
 mod snapshot;
+mod trash;
 mod work;
 
 pub use content::ContentStats;
+pub use export::{ExportFormat, RenderedFile};
 pub use node::{ChapterNeighbors, ChapterSummary, NodeSummary, SubtreeRollup};
 pub use search::SearchHit;
 pub use session::{EditorCursor, EditorTarget, SessionReport};
+pub use trash::{TrashEntry, TrashKind};
 pub use work::ShelfEntry;
 
 use std::path::Path;

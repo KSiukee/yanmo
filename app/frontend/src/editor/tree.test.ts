@@ -43,6 +43,13 @@ function fakeWorld(initial: Spec[]) {
     };
   };
 
+  /** 替身的"连子树一起删"：跟核心一样，删一个节点会带走它下面所有节点。 */
+  const subtreeIds = (root: number): number[] => {
+    const out = [root];
+    for (const kid of specs.filter((item) => item.parent === root)) out.push(...subtreeIds(kid.id));
+    return out;
+  };
+
   /** 参考实现：替身自己也算一遍"本卷几章 / 共多少字"，跟树的数字对账。 */
   const subtreeTotals = (root: number): { chapters: number; words: number } => {
     let chapters = 0;
@@ -75,6 +82,12 @@ function fakeWorld(initial: Spec[]) {
         current = specs.find((item) => item.id === current)?.parent ?? null;
       }
       return chain.reverse(); // 根在前
+    },
+    remove: async (node_id) => {
+      calls.push(`remove:${node_id}`);
+      const doomed = subtreeIds(node_id);
+      specs = specs.filter((item) => !doomed.includes(item.id));
+      return doomed.length;
     },
     rename: async (node_id, title) => {
       calls.push(`rename:${node_id}:${title}`);
@@ -362,6 +375,37 @@ test("落盘改字数：各层容器的「共多少字」跟着挪，不重拉�
   const volume = tree.rows().find((row) => row.title === "第一卷");
   assert.equal(volume?.subtree_word_count, 2300, "2000 + 300");
   assert.equal(tree.rows().find((row) => row.id === 2)?.word_count, 1500);
+});
+
+test("删掉一段：连子树一起走，并且重拉看得见的层", async () => {
+  const { transport, calls } = fakeWorld(BOOK);
+  const tree = new DirectoryTree(transport);
+  await tree.openWork(7);
+  await tree.toggle(1);
+  await tree.toggle(3); // 把场景卡也露出来
+  const before = calls.length;
+
+  const removed = await tree.remove(3); // 删第二章：它的场景卡跟着走
+  assert.equal(removed, 2, "连带子树一共两项");
+  assert.deepEqual(calls.slice(before), ["remove:3", "children:7:-", "children:7:1"]);
+  assert.deepEqual(
+    tree.rows().map((row) => row.title),
+    ["第一卷", "第一章", "第二卷"],
+    "删掉的第二章与它的场景卡都不在目录里了",
+  );
+});
+
+test("删之前先问一句：这段是不是我正在写的那一支", async () => {
+  const { transport } = fakeWorld(BOOK);
+  const tree = new DirectoryTree(transport);
+  await tree.openWork(7);
+  await tree.toggle(1);
+  await tree.toggle(3);
+
+  assert.equal(tree.contains(3, 4), true, "场景卡在第二章下面");
+  assert.equal(tree.contains(3, 3), true, "它自己也算");
+  assert.equal(tree.contains(3, 2), false, "兄弟不算");
+  assert.equal(tree.contains(1, 4), true, "隔着两层的子孙也算");
 });
 
 test("落盘后更新这一行的字数：不重拉目录", async () => {  const { transport, calls } = fakeWorld(BOOK);

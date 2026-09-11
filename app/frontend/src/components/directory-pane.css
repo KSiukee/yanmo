@@ -141,6 +141,28 @@
   opacity: 1;
 }
 
+.tree__del {
+  flex: none;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--ym-ink-soft);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.tree__row:hover .tree__del,
+.tree__del:focus-visible {
+  opacity: 1;
+}
+
+.tree__del:hover {
+  color: #b3261e;
+}
+
 .pane__empty {
   margin: 0;
   padding: 8px 12px;
