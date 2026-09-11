@@ -37,6 +37,7 @@ import {
   renameWork,
   requestExit,
   restoreNode,
+  restorePreview,
   restoreWork,
   saveBody,
   saveCursor,
@@ -321,6 +322,7 @@ export function useEditorSession(): EditorSession {
     transport: {
       list: listTrash,
       restoreWork,
+      preview: restorePreview,
       restoreNode,
       purgeWork,
       purgeNode,

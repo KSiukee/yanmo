@@ -29,7 +29,9 @@ fn sibling_ids(conn: &Connection, work_id: i64, parent_id: Option<i64>) -> Resul
 }
 
 /// 把同父节点重排成密集序号；`moved` 指定要挪到 `index` 位置的节点。
-fn renumber(
+///
+/// 删除与恢复也要用它（删完收洞、恢复时按原位锚回），所以对同层的模块开放。
+pub(super) fn renumber(
     conn: &Connection,
     work_id: i64,
     parent_id: Option<i64>,
@@ -72,31 +74,55 @@ fn is_descendant(conn: &Connection, candidate: i64, ancestor: i64) -> Result<boo
     ))
 }
 
+/// 默认名的"前缀 / 后缀"：`第 12 章` 这种编号的骨架（场景卡没有"第…章"的说法，给个朴素名字）。
+fn naming(kind: NodeKind) -> (&'static str, &'static str) {
+    match kind {
+        NodeKind::Volume => ("第", "卷"),
+        NodeKind::Chapter => ("第", "章"),
+        NodeKind::Section => ("第", "节"),
+        NodeKind::Piece => ("第", "篇"),
+        NodeKind::Scene => ("场景卡", ""),
+    }
+}
+
+/// 从标题里认出编号（**只认阿拉伯数字**）：作者自起的名字一概不猜，也就不会误判。
+fn parse_serial(title: &str, kind: NodeKind) -> Option<i64> {
+    let (prefix, suffix) = naming(kind);
+    let inner = title.strip_prefix(prefix)?.strip_suffix(suffix)?;
+    inner.trim().parse::<i64>().ok().filter(|serial| *serial > 0)
+}
+
 /// 标题留空时的默认名：**按同层同类型取号**（卷 / 章 / 节 / 篇），不按全书。
 ///
-/// 按全书数会把别卷的章也算进来，分卷之后新建的章就会跳号；
-/// 按这一层数出来的号，正好是作者在这一卷里看到的"下一章"。
-/// 场景卡不是给读者看的编号对象，给个朴素的名字即可。
+/// 按全书数会把别卷的章也算进来，分卷之后新建的章就会跳号；按这一层取号，
+/// 才是作者在这一卷里看到的"下一章"。
+///
+/// 取的是**同级里已用过的最大号 + 1**，不是"现有几章 + 1"——
+/// 后者在删掉中间那一章之后会算出一个**已经被占用的号**，新章就跟人撞名了
+/// （这是真会发生的：删了第 2 章，再新建还是"第3章"，而第3章还在）。
 fn default_title(
     conn: &Connection,
     work_id: i64,
     parent_id: Option<i64>,
     kind: NodeKind,
 ) -> Result<String> {
-    let serial: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM nodes
+    let mut stmt = conn.prepare(
+        "SELECT title FROM nodes
          WHERE work_id = ?1 AND parent_id IS ?2 AND node_kind = ?3 AND deleted_at IS NULL",
-        params![work_id, parent_id, kind.as_str()],
-        |r| r.get(0),
     )?;
-    let serial = serial + 1;
-    Ok(match kind {
-        NodeKind::Volume => format!("第{serial}卷"),
-        NodeKind::Chapter => format!("第{serial}章"),
-        NodeKind::Section => format!("第{serial}节"),
-        NodeKind::Piece => format!("第{serial}篇"),
-        NodeKind::Scene => format!("场景卡{serial}"),
-    })
+    let rows = stmt.query_map(params![work_id, parent_id, kind.as_str()], |r| r.get::<_, String>(0))?;
+    let mut serial = 0;
+    let mut count = 0;
+    for row in rows {
+        count += 1;
+        if let Some(used) = parse_serial(&row?, kind) {
+            serial = serial.max(used);
+        }
+    }
+    let (prefix, suffix) = naming(kind);
+    // 一个编号都没认出来（作者全用了自起的名字）：退回"同层同类现有几章 + 1"，至少不重复
+    let serial = if serial > 0 { serial + 1 } else { count + 1 };
+    Ok(format!("{prefix}{serial}{suffix}"))
 }
 
 impl Store {
@@ -196,7 +222,16 @@ impl Store {
 
     /// 软删除节点**及其整棵子树**，返回受影响的节点数。
     pub fn soft_delete_node(&mut self, id: i64) -> Result<usize> {
-        let affected = self.conn.execute(
+        // 删之前先问清"它属于哪本书、挂在谁下面"——删完这两样就问不出来了
+        let work_id = self.node_work(id)?;
+        let parent_id: Option<i64> = self
+            .conn
+            .query_row("SELECT parent_id FROM nodes WHERE id = ?1", params![id], |r| r.get(0))
+            .optional()?
+            .flatten();
+
+        let tx = self.conn.transaction()?;
+        let affected = tx.execute(
             "WITH RECURSIVE sub(id) AS (
                  SELECT id FROM nodes WHERE id = ?1
                  UNION ALL
@@ -209,6 +244,11 @@ impl Store {
         if affected == 0 {
             return Err(Error::Invalid(format!("节点不存在或已删除：{id}")));
         }
+        // 同级会留一个洞：**当场收成密集序号**。这样"同级序号是密集的"这条不变量
+        // 在任何时候都成立，恢复时也才有一个稳定的"原来在第几位"可锚。
+        renumber(&tx, work_id, parent_id, None)?;
+        tx.commit()?;
+
         self.record("nodes", id, "delete_subtree", json!({ "affected": affected }))?;
         Ok(affected)
     }

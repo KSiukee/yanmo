@@ -89,6 +89,7 @@ fn main() {
             commands::work::export_work,
             commands::trash::list_trash,
             commands::trash::restore_work,
+            commands::trash::restore_preview,
             commands::trash::restore_node,
             commands::trash::purge_node,
             commands::trash::purge_work,

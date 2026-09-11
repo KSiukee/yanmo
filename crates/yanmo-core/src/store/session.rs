@@ -209,12 +209,10 @@ impl Store {
 
         // 有作品但没有能落正文的节点（例如只有一卷）：补一章，别让作者对着空目录发呆
         let parent = nodes.iter().find(|n| n.parent_id.is_none()).map(|n| n.id);
-        let node_id = self.create_node(work_id, parent, NodeKind::Chapter, "第一章")?;
-        Ok(EditorTarget {
-            work_id,
-            node_id,
-            title: "第一章".to_string(),
-        })
+        // 标题留空 = 交给核心那一份取号实现（别再在这儿写死一个名字，两处迟早不一致）
+        let node_id = self.create_node(work_id, parent, NodeKind::Chapter, "")?;
+        let title = self.node_title(node_id)?;
+        Ok(EditorTarget { work_id, node_id, title })
     }
 
     /// 严格取一个编辑目标：不存在 / 已删除 / 不承载正文 → **明确报错**。

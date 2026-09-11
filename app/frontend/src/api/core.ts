@@ -99,6 +99,24 @@ export interface ShelfEntry {
   updated_at: number;
 }
 
+/** 同级里与它重名的那一个（恢复前会摆给作者看）。 */
+export interface NameClash {
+  id: number;
+  title: string;
+  word_count: number;
+}
+
+/** 恢复**之前**的交代：回到哪、会不会与谁重名。 */
+export interface RestorePreview {
+  work_id: number;
+  work_title: string;
+  /** 原来的父级；null = 根级 */
+  parent_title: string | null;
+  /** 原来在第几位（从 1 起） */
+  index: number;
+  name_clashes: NameClash[];
+}
+
 /** 一次导出的回执。 */
 export interface ExportAck {
   /** 导到哪个文件夹（界面只展示，不碰文件系统） */
@@ -187,6 +205,7 @@ const COMMANDS = {
   listTrash: "list_trash",
   restoreWork: "restore_work",
   restoreNode: "restore_node",
+  restorePreview: "restore_preview",
   purgeNode: "purge_node",
   purgeWork: "purge_work",
   emptyTrash: "empty_trash",
@@ -236,8 +255,17 @@ export const listTrash = () => call<TrashEntry[]>(COMMANDS.listTrash);
 export const restoreWork = (work_id: number) =>
   call<number>(COMMANDS.restoreWork, { work_id });
 
-/** 从回收站恢复一段（整棵子树 + 还在回收站里的父链），返回恢复的节点数。 */
-export const restoreNode = (node_id: number) => call<number>(COMMANDS.restoreNode, { node_id });
+/** 恢复前先看一眼：会不会与同级某章重名（有冲突时界面要让作者拿主意）。 */
+export const restorePreview = (node_id: number) =>
+  call<RestorePreview>(COMMANDS.restorePreview, { node_id });
+
+/**
+ * 从回收站恢复一段（整棵子树 + 还在回收站里的父链），返回恢复的节点数。
+ *
+ * `title` 是作者给的新名字（留空 = 照原样恢复）；**名字永远由他给，系统不替他起**。
+ */
+export const restoreNode = (node_id: number, title: string | null) =>
+  call<number>(COMMANDS.restoreNode, { node_id, title });
 
 /** 彻底删除一段（**不可恢复**），返回删掉的节点数。 */
 export const purgeNode = (node_id: number) => call<number>(COMMANDS.purgeNode, { node_id });

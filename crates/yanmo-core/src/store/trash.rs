@@ -12,7 +12,7 @@
 use rusqlite::{params, OptionalExtension};
 use serde_json::json;
 
-use super::Store;
+use super::{Store, MAX_TREE_DEPTH};
 use crate::error::{Error, Result};
 
 /// 回收站里的东西是"整本书"还是"书里的某一段"。
@@ -29,6 +29,31 @@ impl TrashKind {
             TrashKind::Node => "node",
         }
     }
+}
+
+/// 同级里与它重名、还活着的那个（恢复前要摆给作者看）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NameClash {
+    pub id: i64,
+    pub title: String,
+    pub word_count: i64,
+}
+
+/// 恢复**之前**先看一眼：它会回到哪、会不会与谁重名。
+///
+/// 恢复是一次点击就能完成的动作，而"删了旧的、又重写了同名的一章"这种事一模一样地
+/// 长得像误触——所以**把冲突摆出来让作者选**，系统绝不替他决定，也绝不替他改名。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RestorePreview {
+    pub work_id: i64,
+    pub work_title: String,
+    /// 原来的父级；`None` = 根级
+    pub parent_id: Option<i64>,
+    pub parent_title: Option<String>,
+    /// 原来在第几位（从 1 起）
+    pub index: i64,
+    /// 同级里同名的活节点（空的 = 没有冲突，直接恢复就好）
+    pub name_clashes: Vec<NameClash>,
 }
 
 /// 回收站里的一项。
@@ -138,11 +163,40 @@ impl Store {
 
     /// 恢复一个节点：**整棵子树 + 还在回收站里的父链**一起回来。
     ///
+    /// `rename_to` 是作者在"有重名"时给的新名字——**名字永远由他给**，系统不替他起；
+    /// 改名与恢复在同一个事务里，所以不会出现"两章同名"的中间状态。
+    ///
     /// 返回恢复的节点数（含父链）。
-    pub fn restore_node(&mut self, node_id: i64) -> Result<usize> {
+    pub fn restore_node(&mut self, node_id: i64, rename_to: Option<&str>) -> Result<usize> {
         if !self.trashed("nodes", node_id)? {
             return Err(Error::Invalid(format!("回收站里没有这一段：{node_id}")));
         }
+        let work_id = self.work_of_any(node_id)?;
+        // 记下每一层"原来在第几位"当锚：被删那天它停在哪，恢复就回到那一带
+        let mut anchors: Vec<(i64, Option<i64>, i64)> = Vec::new();
+        let mut current = Some(node_id);
+        while let Some(id) = current {
+            if anchors.len() > MAX_TREE_DEPTH {
+                return Err(Error::Invalid(
+                    "节点树深度异常（疑似成环），已拒绝继续".to_string(),
+                ));
+            }
+            let (parent, order, deleted): (Option<i64>, i64, Option<i64>) = self
+                .conn
+                .query_row(
+                    "SELECT parent_id, sort_order, deleted_at FROM nodes WHERE id = ?1",
+                    params![id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .optional()?
+                .ok_or_else(|| Error::Invalid(format!("节点不存在：{id}")))?;
+            anchors.push((id, parent, order));
+            if deleted.is_none() {
+                break; // 这条链往上已经都是活的了
+            }
+            current = parent;
+        }
+
         let tx = self.conn.transaction()?;
         let restored = tx.execute(
             "WITH RECURSIVE sub(id) AS (
@@ -154,31 +208,79 @@ impl Store {
             params![node_id],
         )?;
         // 父链：捞出来的东西不能挂在看不见的父级下面
-        let mut current: Option<i64> = tx
-            .query_row("SELECT parent_id FROM nodes WHERE id = ?1", params![node_id], |r| r.get(0))
-            .optional()?
-            .flatten();
-        while let Some(id) = current {
-            let still_deleted: Option<i64> = tx
-                .query_row(
-                    "SELECT id FROM nodes WHERE id = ?1 AND deleted_at IS NOT NULL",
-                    params![id],
-                    |r| r.get(0),
-                )
-                .optional()?;
-            if still_deleted.is_none() {
-                break; // 这条链往上已经都是活的了
-            }
+        for (id, _, _) in anchors.iter().skip(1) {
             tx.execute("UPDATE nodes SET deleted_at = NULL WHERE id = ?1", params![id])?;
-            current = tx
-                .query_row("SELECT parent_id FROM nodes WHERE id = ?1", params![id], |r| r.get(0))
-                .optional()?
-                .flatten();
+        }
+        if let Some(title) = rename_to.map(str::trim).filter(|title| !title.is_empty()) {
+            tx.execute(
+                "UPDATE nodes SET title = ?1 WHERE id = ?2",
+                params![title, node_id],
+            )?;
+        }
+        // 每一层都按"原来的位置"锚回去，再收成密集序号——回到原来那一带，且不与谁同号
+        for (id, parent, order) in &anchors {
+            super::node_edit::renumber(&tx, work_id, *parent, Some((*id, *order as usize)))?;
         }
         tx.commit()?;
 
-        self.record("nodes", node_id, "restore", json!({ "with_parents": true }))?;
+        self.record(
+            "nodes",
+            node_id,
+            "restore",
+            json!({ "with_parents": true, "renamed": rename_to.is_some() }),
+        )?;
         Ok(restored)
+    }
+
+    /// 恢复**之前**先看一眼：回到哪、会不会与同级某章重名。
+    pub fn restore_preview(&self, node_id: i64) -> Result<RestorePreview> {
+        if !self.trashed("nodes", node_id)? {
+            return Err(Error::Invalid(format!("回收站里没有这一段：{node_id}")));
+        }
+        let work_id = self.work_of_any(node_id)?;
+        let work_title: String = self
+            .conn
+            .query_row("SELECT title FROM works WHERE id = ?1", params![work_id], |r| r.get(0))?;
+        let (parent_id, title, order): (Option<i64>, String, i64) = self.conn.query_row(
+            "SELECT parent_id, title, sort_order FROM nodes WHERE id = ?1",
+            params![node_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?;
+        let parent_title: Option<String> = match parent_id {
+            Some(id) => Some(
+                self.conn
+                    .query_row("SELECT title FROM nodes WHERE id = ?1", params![id], |r| r.get(0))
+                    .optional()?
+                    .unwrap_or_default(),
+            ),
+            None => None,
+        };
+
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, word_count FROM nodes
+              WHERE work_id = ?1 AND parent_id IS ?2 AND deleted_at IS NULL AND title = ?3
+              ORDER BY sort_order, id",
+        )?;
+        let rows = stmt.query_map(params![work_id, parent_id, title], |r| {
+            Ok(NameClash {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                word_count: r.get(2)?,
+            })
+        })?;
+        let mut name_clashes = Vec::new();
+        for row in rows {
+            name_clashes.push(row?);
+        }
+
+        Ok(RestorePreview {
+            work_id,
+            work_title,
+            parent_id,
+            parent_title,
+            index: order + 1,
+            name_clashes,
+        })
     }
 
     /// 彻底删除一个节点（**不可恢复**）：连同子树、正文与快照一起抹掉。
@@ -245,6 +347,14 @@ impl Store {
             )
             .optional()?;
         Ok(found.is_some())
+    }
+
+    /// 这个节点属于哪本书（**连已删除的也算**）：删着的东西也要能问出归属。
+    fn work_of_any(&self, node_id: i64) -> Result<i64> {
+        self.conn
+            .query_row("SELECT work_id FROM nodes WHERE id = ?1", params![node_id], |r| r.get(0))
+            .optional()?
+            .ok_or_else(|| Error::Invalid(format!("节点不存在：{node_id}")))
     }
 
     /// 子树里有几个节点（含自己）。

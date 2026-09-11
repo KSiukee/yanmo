@@ -7,7 +7,10 @@ import { trashLabel } from "../editor/trash";
 import { formatWhen } from "../editor/display";
 
 const props = defineProps<{ session: EditorSession }>();
-const { entries, busy, close, restore, purge, empty } = props.session.trash;
+const { entries, busy, close, restore, purge, empty, conflict, resolveConflict, cancelConflict } =
+  props.session.trash;
+/** 冲突时作者填的新名字（留空 = 照原样恢复，两章同名） */
+const renameTo = ref("");
 
 /** 上一次动作的交代（"捞回来了""彻底删了 N 项"） */
 const note = ref("");
@@ -20,6 +23,12 @@ async function doPurge(entry: Parameters<typeof purge>[0]) {
   const what = trashLabel(entry);
   if (!window.confirm(`彻底删除 ${what}？这一步没有后悔药。`)) return;
   note.value = await purge(entry);
+}
+
+async function doResolve(rename: boolean) {
+  await resolveConflict(rename && renameTo.value.trim() ? renameTo.value.trim() : null);
+  renameTo.value = "";
+  note.value = rename ? "已按你给的名字恢复" : "已照原样恢复（目录里会有两章同名）";
 }
 
 async function doEmpty() {
@@ -46,6 +55,29 @@ async function doEmpty() {
       </header>
 
       <p v-if="note" class="trash__note">{{ note }}</p>
+
+      <div v-if="conflict" class="trash__conflict">
+        <p class="trash__conflict-title">
+          要恢复的「{{ conflict.entry.title }}」跟还活着的一章**重名**了：
+        </p>
+        <ul class="trash__clashes">
+          <li v-for="clash in conflict.preview.name_clashes" :key="clash.id">
+            {{ clash.title }}（已写 {{ clash.word_count }} 字）
+          </li>
+        </ul>
+        <p class="trash__conflict-hint">
+          恢复**不会覆盖**你已经写的那一章——两章都会在。要给它换个名字就填在下面。
+        </p>
+        <div class="trash__conflict-actions">
+          <input v-model="renameTo" class="trash__input" type="text" placeholder="给它起个新名字（留空 = 照原样恢复）" />
+          <button type="button" class="trash__button" :disabled="busy" @click="doResolve(true)">
+            恢复
+          </button>
+          <button type="button" class="trash__button" :disabled="busy" @click="cancelConflict">
+            取消
+          </button>
+        </div>
+      </div>
       <p v-if="entries.length === 0" class="trash__empty">回收站是空的</p>
 
       <ul class="trash__list">

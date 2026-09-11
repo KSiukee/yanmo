@@ -83,7 +83,7 @@ fn restoring_a_book_brings_the_whole_book_back() {
     assert_eq!(trash[0].id, chapters[0]);
 
     // 恢复它，书就完整了
-    store.restore_node(chapters[0]).unwrap();
+    store.restore_node(chapters[0], None).unwrap();
     assert!(store.list_trash().unwrap().is_empty());
     assert_eq!(store.chapter_neighbors(chapters[0]).unwrap().total, 2);
 }
@@ -101,17 +101,17 @@ fn restoring_a_segment_brings_back_its_subtree_and_its_parents() {
     assert_eq!(trash[0].nodes, 3, "卷 + 两章");
     assert!(store.list_nodes(work).unwrap().is_empty(), "整卷看不见了");
 
-    let restored = store.restore_node(volume).unwrap();
+    let restored = store.restore_node(volume, None).unwrap();
     assert_eq!(restored, 3, "整棵子树一起回来");
     assert_eq!(store.list_nodes(work).unwrap().len(), 3);
     assert_eq!(store.read_body(chapters[0]).unwrap(), "第一章的正文。");
 
     // 另一种情形：先删一章，再删它所在的卷；按章恢复时**父链也要回来**
     store.soft_delete_node(volume).unwrap(); // 卷（此刻章已经是活的，一起被删）
-    store.restore_node(volume).unwrap();
+    store.restore_node(volume, None).unwrap();
     store.soft_delete_node(chapters[0]).unwrap(); // 只删章
     store.soft_delete_node(volume).unwrap(); // 再删卷（章已经在回收站里了）
-    store.restore_node(chapters[0]).unwrap(); // 直接捞那一章
+    store.restore_node(chapters[0], None).unwrap(); // 直接捞那一章
     let nodes = store.list_nodes(work).unwrap();
     assert_eq!(nodes.len(), 2, "章回来了，**卷也一起回来**（否则它挂在看不见的父级下）");
     assert!(nodes.iter().any(|n| n.id == volume));
@@ -122,7 +122,7 @@ fn restoring_a_segment_brings_back_its_subtree_and_its_parents() {
     let left = store.list_trash().unwrap();
     assert_eq!(left.len(), 1);
     assert_eq!(left[0].id, chapters[1], "兄弟章还在回收站里等着");
-    store.restore_node(chapters[1]).unwrap();
+    store.restore_node(chapters[1], None).unwrap();
     assert!(store.list_trash().unwrap().is_empty());
     assert_eq!(store.list_nodes(work).unwrap().len(), 3);
 }
@@ -135,7 +135,7 @@ fn purge_only_works_on_the_trash_and_really_deletes() {
     // 活着的东西不许被"彻底删除"绕过回收站
     assert!(store.purge_node(chapters[0]).is_err(), "没进回收站就不给真删");
     assert!(store.purge_work(work).is_err());
-    assert!(store.restore_node(chapters[0]).is_err());
+    assert!(store.restore_node(chapters[0], None).is_err());
     assert!(store.restore_work(work).is_err());
     assert!(store.purge_node(999_999).is_err());
 
@@ -179,4 +179,108 @@ fn empty_trash_clears_everything_at_once() {
     assert_eq!(total(&store, "SELECT COUNT(*) FROM works"), 0);
     assert_eq!(total(&store, "SELECT COUNT(*) FROM nodes"), 0);
     assert_eq!(total(&store, "SELECT COUNT(*) FROM node_contents"), 0);
+}
+
+/// 某一层里活着节点的序号（用来盯住"同级密集序号"这条不变量）。
+fn layer_orders(store: &Store, parent: i64) -> Vec<i64> {
+    let mut stmt = store
+        .conn()
+        .prepare("SELECT sort_order FROM nodes WHERE parent_id = ?1 AND deleted_at IS NULL ORDER BY sort_order, id")
+        .unwrap();
+    let rows = stmt.query_map([parent], |r| r.get::<_, i64>(0)).unwrap();
+    rows.map(|row| row.unwrap()).collect()
+}
+
+/// 某一层里活着节点的 id，按显示顺序。
+fn layer_ids(store: &Store, parent: i64) -> Vec<i64> {
+    let mut stmt = store
+        .conn()
+        .prepare("SELECT id FROM nodes WHERE parent_id = ?1 AND deleted_at IS NULL ORDER BY sort_order, id")
+        .unwrap();
+    let rows = stmt.query_map([parent], |r| r.get::<_, i64>(0)).unwrap();
+    rows.map(|row| row.unwrap()).collect()
+}
+
+#[test]
+fn deleting_a_middle_chapter_keeps_the_layer_densely_numbered() {
+    let (_dir, mut store) = fresh();
+    let (work, volume, chapters) = book(&mut store, "长夜"); // 第一卷两章
+    let extra = store.create_node(work, Some(volume), NodeKind::Chapter, "").unwrap();
+    assert_eq!(layer_orders(&store, volume), vec![0, 1, 2]);
+
+    store.soft_delete_node(chapters[1]).unwrap(); // 删中间那一章
+    assert_eq!(
+        layer_orders(&store, volume),
+        vec![0, 1],
+        "删完同级要收成密集序号，不能留洞"
+    );
+
+    // 恢复：回到原来那一带，序号仍然密集
+    store.restore_node(chapters[1], None).unwrap();
+    assert_eq!(layer_orders(&store, volume), vec![0, 1, 2], "恢复后仍然密集");
+    assert_eq!(
+        layer_ids(&store, volume),
+        vec![chapters[0], chapters[1], extra],
+        "恢复的章回到原来那一带（它被删时排在第二位）"
+    );
+    assert!(work > 0);
+}
+
+#[test]
+fn restoring_can_be_given_a_new_name_without_touching_the_text() {
+    let (_dir, mut store) = fresh();
+    let (work, _volume, chapters) = book(&mut store, "长夜");
+    store.soft_delete_node(chapters[0]).unwrap();
+
+    store.restore_node(chapters[0], Some("  引子·铜钱  ")).unwrap();
+    let node = store.list_nodes(work).unwrap().into_iter().find(|n| n.id == chapters[0]).unwrap();
+    assert_eq!(node.title, "引子·铜钱", "名字由作者给，前后空白去掉");
+    assert_eq!(store.read_body(chapters[0]).unwrap(), "第一章的正文。", "正文一个字不动");
+
+    // 空白名字 = 不改名（照原样恢复）
+    store.soft_delete_node(chapters[0]).unwrap();
+    store.restore_node(chapters[0], Some("   ")).unwrap();
+    assert_eq!(store.node_title(chapters[0]).unwrap(), "引子·铜钱");
+}
+
+#[test]
+fn restore_preview_shows_who_would_share_the_name() {
+    let (_dir, mut store) = fresh();
+    let (work, volume, chapters) = book(&mut store, "长夜");
+
+    // 没有冲突时：预检老实说"没人重名"，界面上就不用多问一句
+    store.soft_delete_node(chapters[0]).unwrap();
+    let clean = store.restore_preview(chapters[0]).unwrap();
+    assert_eq!(clean.work_id, work);
+    assert_eq!(clean.work_title, "长夜");
+    assert_eq!(clean.parent_id, Some(volume));
+    assert_eq!(clean.index, 1);
+    assert!(clean.name_clashes.is_empty());
+    store.restore_node(chapters[0], None).unwrap(); // 放回原处，继续看别的
+
+    // 作者删了第二章、又重写了一章同名：预检要把那一条摆出来
+    store.soft_delete_node(chapters[1]).unwrap();
+    let rewritten = store.create_node(work, Some(volume), NodeKind::Chapter, "第二章").unwrap();
+    store.write_body(rewritten, "重写过的第二章，写了一半。").unwrap();
+
+    let clash = store.restore_preview(chapters[1]).unwrap();
+    assert_eq!(clash.name_clashes.len(), 1, "{:?}", clash.name_clashes);
+    assert_eq!(clash.name_clashes[0].id, rewritten);
+    assert_eq!(clash.name_clashes[0].title, "第二章");
+    assert!(clash.name_clashes[0].word_count > 0, "要让作者看出那一章已经写了多少");
+
+    // 照原样恢复：两章并存、都不丢字（系统绝不覆盖、绝不合并）
+    store.restore_node(chapters[1], None).unwrap();
+    let live = store.list_nodes(work).unwrap();
+    assert_eq!(live.iter().filter(|n| n.title == "第二章").count(), 2, "两章同名并存");
+    assert_eq!(store.read_body(rewritten).unwrap(), "重写过的第二章，写了一半。");
+    assert_eq!(store.read_body(chapters[1]).unwrap(), "第二章的正文。");
+
+    // 走"恢复并改名"这条路：恢复出来的就是新名字
+    store.soft_delete_node(chapters[1]).unwrap();
+    store.restore_node(chapters[1], Some("第二章（旧稿）")).unwrap();
+    let live = store.list_nodes(work).unwrap();
+    assert_eq!(live.iter().filter(|n| n.title == "第二章").count(), 1, "重名被作者自己解掉了");
+    assert!(live.iter().any(|n| n.title == "第二章（旧稿）"));
+    assert_eq!(store.read_body(chapters[1]).unwrap(), "第二章的正文。", "旧稿的字还在");
 }

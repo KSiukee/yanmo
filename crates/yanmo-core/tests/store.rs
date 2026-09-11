@@ -387,3 +387,46 @@ fn volume_target_is_per_work_and_clears_cleanly() {
     store.soft_delete_work(novel.id).unwrap();
     assert!(store.set_volume_target(novel.id, Some(5)).is_err());
 }
+
+#[test]
+fn default_chapter_name_skips_numbers_already_in_use() {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let volume = store.list_nodes(work.id).unwrap()[0].id;
+
+    let mut ids = Vec::new();
+    for _ in 0..3 {
+        let id = store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap();
+        ids.push(id);
+    }
+    let chapters = |store: &Store| -> Vec<String> {
+        store
+            .list_nodes(work.id)
+            .unwrap()
+            .into_iter()
+            .filter(|n| n.kind == NodeKind::Chapter)
+            .map(|n| n.title)
+            .collect()
+    };
+    assert_eq!(chapters(&store), vec!["第1章", "第2章", "第3章"], "取号从 1 开始，一个不跳");
+
+    // ★ 删中间的第二章：再新建**不能**又算出"第3章"（那会跟还在的第三章撞名）
+    store.soft_delete_node(ids[1]).unwrap();
+    let created = store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap();
+    let titles = chapters(&store);
+    assert_eq!(
+        store.node_title(created).unwrap(),
+        "第4章",
+        "取的是**已用过的最大号 + 1**，不是「现有几章 + 1」"
+    );
+    assert_eq!(
+        titles.iter().filter(|t| *t == "第3章").count(),
+        1,
+        "目录里不该出现两个第3章：{titles:?}"
+    );
+
+    // 作者自起的名字一个都不动
+    store.rename_node(created, "引子").unwrap();
+    let next = store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap();
+    assert_eq!(store.node_title(next).unwrap(), "第4章", "自起的名字不参与取号，不会把它顶到第5章");
+}

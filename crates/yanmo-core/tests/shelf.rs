@@ -118,7 +118,7 @@ fn work_target_falls_back_when_there_is_no_memory() {
     // 只建了一卷、还没写一个字：切过去要能立刻落笔（补一章），不能让人对着空目录发呆
     let target = store.work_target(novel.id).unwrap();
     assert_eq!(target.work_id, novel.id);
-    assert_eq!(target.title, "第一章");
+    assert_eq!(target.title, "第1章", "首章的默认名与别处一套取号规则");
     let nodes = store.list_nodes(novel.id).unwrap();
     assert!(nodes.iter().any(|n| n.id == target.node_id && n.parent_id == Some(volume)));
 

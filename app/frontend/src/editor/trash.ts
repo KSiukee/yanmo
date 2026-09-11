@@ -9,7 +9,7 @@
 
 import { ref, type Ref } from "vue";
 
-import type { TrashEntry } from "../api/core";
+import type { RestorePreview, TrashEntry } from "../api/core";
 
 /** 回收站的这一行叫什么。 */
 export function trashLabel(entry: Pick<TrashEntry, "kind" | "title" | "work_title" | "nodes">): string {
@@ -22,7 +22,10 @@ export function trashLabel(entry: Pick<TrashEntry, "kind" | "title" | "work_titl
 export interface TrashTransport {
   list: () => Promise<TrashEntry[]>;
   restoreWork: (work_id: number) => Promise<number>;
-  restoreNode: (node_id: number) => Promise<number>;
+  /** 恢复前的预检：会不会与同级某章重名 */
+  preview: (node_id: number) => Promise<RestorePreview>;
+  /** 恢复一段；`title` 是作者给的新名字（null = 照原样恢复） */
+  restoreNode: (node_id: number, title: string | null) => Promise<number>;
   purgeWork: (work_id: number) => Promise<number>;
   purgeNode: (node_id: number) => Promise<number>;
   empty: () => Promise<number>;
@@ -39,10 +42,22 @@ export interface TrashOptions {
   onError?: (message: string) => void;
 }
 
+/** 一次"要作者拿主意"的恢复：删掉的这一段与还活着的某章重名。 */
+export interface TrashConflict {
+  entry: TrashEntry;
+  preview: RestorePreview;
+}
+
 export interface Trash {
   entries: Ref<TrashEntry[]>;
   visible: Ref<boolean>;
   busy: Ref<boolean>;
+  /** 非空时界面要弹一次选择：照原样恢复 / 恢复并改名 / 取消 */
+  conflict: Ref<TrashConflict | null>;
+  /** 冲突时作者拿的主意：给新名字就改名恢复，null = 照原样恢复 */
+  resolveConflict: (rename_to: string | null) => Promise<void>;
+  /** 冲突时选择取消：什么都不做 */
+  cancelConflict: () => void;
   /** 打开 / 收起（打开时刷新一次） */
   toggle: () => void;
   close: () => void;
@@ -59,6 +74,7 @@ export function useTrash(options: TrashOptions): Trash {
   const entries = ref<TrashEntry[]>([]);
   const visible = ref(false);
   const busy = ref(false);
+  const conflict = ref<TrashConflict | null>(null);
 
   const report = (error: unknown) => {
     options.onError?.(error instanceof Error ? error.message : String(error));
@@ -113,13 +129,33 @@ export function useTrash(options: TrashOptions): Trash {
       visible.value = false;
     },
     refresh,
+    conflict,
+    resolveConflict: (rename_to) =>
+      act(async () => {
+        const pending = conflict.value;
+        conflict.value = null;
+        if (!pending) return "";
+        const nodes = await options.transport.restoreNode(pending.entry.id, rename_to);
+        const what = rename_to ? `「${rename_to}」` : `「${pending.entry.title}」`;
+        return nodes > 1 ? `${what}连同 ${nodes - 1} 项一起回来了` : `${what}回来了`;
+      }),
+    cancelConflict: () => {
+      conflict.value = null;
+    },
     restore: (entry) =>
       act(async () => {
         if (entry.kind === "work") {
           await options.transport.restoreWork(entry.id);
           return `《${entry.title}》回到了书架`;
         }
-        const nodes = await options.transport.restoreNode(entry.id);
+        // 先看一眼会不会跟还活着的某章重名：**有冲突就把决定权交回作者**，
+        // 不替他改名，也不悄悄恢复出两章同名（他可能正是删了旧的、又重写了这一章）
+        const preview = await options.transport.preview(entry.id);
+        if (preview.name_clashes.length > 0) {
+          conflict.value = { entry, preview };
+          return "";
+        }
+        const nodes = await options.transport.restoreNode(entry.id, null);
         return nodes > 1 ? `「${entry.title}」连同 ${nodes - 1} 项一起回来了` : `「${entry.title}」回来了`;
       }),
     purge: (entry) =>
