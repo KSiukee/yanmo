@@ -1,0 +1,38 @@
+/* 研墨基础样式。
+ *
+ * 字体纪律：**不内置任何字体文件**。
+ * 这里只用系统字体栈；将来内置字体必须是开源许可的（思源 / 霞鹜文楷 / 更纱黑体等），
+ * 并登记进 THIRD_PARTY_NOTICES。
+ */
+
+:root {
+  --ym-ink: #1c1a17;
+  --ym-ink-soft: #5b554d;
+  --ym-paper: #faf7f2;
+  --ym-paper-dim: #f1ece3;
+  --ym-line: #ddd5c8;
+  --ym-accent: #8a5a3b;
+
+  --ym-font-ui: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  --ym-font-body: "Songti SC", "SimSun", "Source Han Serif SC", serif;
+
+  color-scheme: light dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--ym-font-ui);
+  color: var(--ym-ink);
+  background: var(--ym-paper);
+  -webkit-font-smoothing: antialiased;
+}

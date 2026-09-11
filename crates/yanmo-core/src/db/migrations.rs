@@ -1,0 +1,187 @@
+//! schema 版本迁移框架。
+//!
+//! # 迁移铁律
+//!
+//! 1. **列表只增不改**：数据库结构变更必须在 [`MIGRATIONS`] 追加新版本，
+//!    禁止手改已有表结构、禁止改动已发布的 step。
+//! 2. **原子化**：多语句在**显式事务**内**逐条 `execute`**；
+//!    ⚠️ **不使用 `executescript` / `execute_batch`**——那类批量接口可能隐式提交，
+//!    外层事务保护失效，中途失败会留下**半迁移状态**（表已建/列已加但版本未更新）。
+//! 3. **幂等化**：`ALTER TABLE ADD COLUMN` 前先查 `PRAGMA table_info` 判存在。
+//! 4. **留痕**：每次迁移尝试都写 `migration_log`，**成功失败都记**。
+//! 5. **拒绝降级**：库版本高于引擎支持时**明确报错**，绝不猜着读。
+
+use rusqlite::Connection;
+
+use super::{migrations_v1, migrations_v2};
+use crate::error::{Error, Result};
+use crate::time::now_millis;
+
+/// 一次 schema 迁移。
+pub struct Migration {
+    pub version: u32,
+    pub name: &'static str,
+    /// 逐条执行的 SQL。**每条必须是一个完整语句**（不是脚本）。
+    pub steps: &'static [&'static str],
+}
+
+/// 迁移列表——**只增不改**。
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "initial_schema",
+        steps: migrations_v1::STEPS,
+    },
+    Migration {
+        version: 2,
+        name: "search_index",
+        steps: migrations_v2::STEPS,
+    },
+];
+
+/// 最新 schema 版本（**派生自迁移表末位**，不手写——防漂移）。
+pub fn schema_version() -> u32 {
+    MIGRATIONS.last().map(|m| m.version).unwrap_or(0)
+}
+
+/// 读库里的 `user_version`（= 已应用的 schema 版本）。
+pub fn user_version(conn: &Connection) -> Result<u32> {
+    let v: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    Ok(v.max(0) as u32)
+}
+
+/// 把库升到最新版本。已是最新则什么都不做（幂等）。
+pub fn migrate(conn: &mut Connection) -> Result<u32> {
+    ensure_log_table(conn)?;
+    let current = user_version(conn)?;
+    let latest = schema_version();
+    if current > latest {
+        // ★ 库比引擎新时也不能猜着读——明确报错并交给用户升级，而不是按旧结构硬读
+        return Err(Error::SchemaTooNew {
+            found: current,
+            supported: latest,
+        });
+    }
+    for m in MIGRATIONS.iter().filter(|m| m.version > current) {
+        apply(conn, m)?;
+    }
+    Ok(latest)
+}
+
+/// `migration_log` 是迁移框架自己的表，不属于任何编号迁移（先有鸡才有蛋）。
+fn ensure_log_table(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS migration_log (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            version     INTEGER NOT NULL,
+            name        TEXT    NOT NULL,
+            started_at  INTEGER NOT NULL,
+            finished_at INTEGER,
+            ok          INTEGER NOT NULL DEFAULT 0,
+            error       TEXT    NOT NULL DEFAULT ''
+        )",
+        [],
+    )?;
+    Ok(())
+}
+
+/// 执行单个迁移：查日志 → 记开始 → 事务内逐条跑 → 提交并更新版本 → 记结果。
+fn apply(conn: &mut Connection, m: &Migration) -> Result<()> {
+    conn.execute(
+        "INSERT INTO migration_log(version, name, started_at, ok) VALUES(?1, ?2, ?3, 0)",
+        rusqlite::params![m.version, m.name, now_millis()],
+    )?;
+    let log_id = conn.last_insert_rowid();
+
+    let tx = conn.transaction()?;
+    for step in m.steps {
+        if let Err(e) = tx.execute(step, []) {
+            drop(tx); // 回滚：绝不留下半迁移状态
+            record_failure(conn, log_id, &e.to_string())?;
+            return Err(Error::Db(e));
+        }
+    }
+    // user_version 也参与事务（SQLite 的 user_version 写在库头，是事务性的）
+    tx.pragma_update(None, "user_version", m.version)?;
+    tx.commit()?;
+
+    conn.execute(
+        "UPDATE migration_log SET finished_at=?1, ok=1, error='' WHERE id=?2",
+        rusqlite::params![now_millis(), log_id],
+    )?;
+    Ok(())
+}
+
+fn record_failure(conn: &Connection, log_id: i64, err: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE migration_log SET finished_at=?1, ok=0, error=?2 WHERE id=?3",
+        rusqlite::params![now_millis(), err, log_id],
+    )?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migration_list_is_append_only_and_versioned_1_to_n() {
+        for (i, m) in MIGRATIONS.iter().enumerate() {
+            assert_eq!(m.version as usize, i + 1, "迁移版本必须从 1 连续递增");
+            assert!(!m.steps.is_empty(), "迁移 {} 没有步骤", m.name);
+        }
+    }
+
+    #[test]
+    fn schema_version_derives_from_last_migration() {
+        assert_eq!(schema_version(), MIGRATIONS.last().unwrap().version);
+    }
+
+    #[test]
+    fn refuses_to_open_newer_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("future.db");
+        {
+            let mut conn = crate::db::open(&path).unwrap();
+            migrate(&mut conn).unwrap();
+            // 伪造成"未来版本"的库
+            conn.pragma_update(None, "user_version", schema_version() + 1).unwrap();
+        }
+        let mut conn = crate::db::open(&path).unwrap();
+        let err = migrate(&mut conn).unwrap_err();
+        assert!(matches!(err, Error::SchemaTooNew { .. }), "应明确拒绝而不是猜着读");
+    }
+
+    #[test]
+    fn failure_is_recorded_and_version_not_bumped() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fail.db");
+        let mut conn = crate::db::open(&path).unwrap();
+        ensure_log_table(&conn).unwrap();
+
+        // 故意构造一个会失败的迁移（语法错误）
+        static BAD: &[&str] = &["CREATE TABLE ok_one(x INTEGER)", "THIS IS NOT SQL"];
+        let bad = Migration { version: 1, name: "bad", steps: BAD };
+
+        assert!(apply(&mut conn, &bad).is_err());
+        assert_eq!(user_version(&conn).unwrap(), 0, "失败不得推进版本号");
+
+        let (ok, err): (i64, String) = conn
+            .query_row("SELECT ok, error FROM migration_log ORDER BY id DESC LIMIT 1", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(ok, 0);
+        assert!(!err.is_empty(), "失败原因必须留痕");
+
+        // 事务回滚：半迁移的表不应存在
+        let exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='ok_one'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(exists, 0, "失败必须整体回滚，不留半迁移状态");
+    }
+}

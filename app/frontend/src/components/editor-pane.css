@@ -1,0 +1,86 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--ym-paper);
+}
+
+.editor__bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--ym-line);
+  background: var(--ym-paper-dim);
+  font-size: 12px;
+  color: var(--ym-ink-soft);
+}
+
+.editor__title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.editor__meta {
+  display: flex;
+  gap: 10px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.editor__status--idle,
+.editor__status--pending,
+.editor__status--saving,
+.editor__status--saved {
+  color: var(--ym-ink-soft);
+}
+
+.editor__status--pending,
+.editor__status--saving {
+  opacity: 0.75;
+}
+
+.editor__status--error {
+  color: #b3261e;
+}
+
+.editor__status--desync {
+  color: #8a5a00;
+}
+
+.editor__bad {
+  color: #b3261e;
+}
+
+.editor__notice {
+  margin: 0;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--ym-line);
+  background: #fff7e6;
+  font-size: 12px;
+  color: #8a5a00;
+}
+
+.editor__area {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.editor__area :deep(.ProseMirror) {
+  max-width: 42em;
+  margin: 0 auto;
+  padding: 32px 24px;
+  font-family: var(--ym-font-body);
+  font-size: 17px;
+  line-height: 1.9;
+  outline: none;
+}
+
+/* 中文写作的第一条排版规则：首行缩进两字符（视觉用 2em，导出走 OOXML 的 firstLineChars）。 */
+.editor__area :deep(.ProseMirror p) {
+  margin: 0 0 0.6em;
+  text-indent: 2em;
+}

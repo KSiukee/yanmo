@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "研墨桌面壳的默认权限集：逐项列举，不含路径与文件系统能力——数据位置由壳（Rust）决定，界面无权解析路径",
+  "windows": ["main"],
+  "permissions": [
+    "core:app:default",
+    "core:event:default",
+    "core:image:default",
+    "core:menu:default",
+    "core:resources:default",
+    "core:tray:default",
+    "core:webview:default",
+    "core:window:default"
+  ]
+}

@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = ["crates/yanmo-core", "crates/yanmo-proto", "app"]
+
+[workspace.package]
+version = "0.9.1"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+repository = ""
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# bundled：自带 SQLite 源码编译 —— 保证 FTS5 可用且版本可控（避免旧库静默降级为子串扫描）
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# 核心与协议：零 UI 依赖——可被单元测试与命令行直接驱动（不依赖任何界面框架）
+yanmo-core = { path = "crates/yanmo-core" }
+yanmo-proto = { path = "crates/yanmo-proto" }

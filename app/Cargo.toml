@@ -1,0 +1,23 @@
+[package]
+name = "yanmo-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "研墨官方桌面壳（薄 UI，业务逻辑在 yanmo-core）"
+
+[[bin]]
+name = "yanmo"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde.workspace = true
+serde_json.workspace = true
+yanmo-core.workspace = true
+yanmo-proto.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,27 @@
+# 构建产物
+/target
+**/target
+node_modules
+**/node_modules
+app/frontend/dist
+app/gen
+
+# 交接系统内部资料（禁提交，铁律）
+.codex/
+AGENTS.md
+CLAUDE.md
+logs/
+docs/
+
+# 内部审计工具（词表含内部专有名词，绝不能进公开仓）
+tools/sanitize/
+
+# 编辑器/系统
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# 图标源图（临时）
+.icon-src.png

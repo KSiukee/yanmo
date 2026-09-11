@@ -1,0 +1,270 @@
+// 边写边存的逻辑测试：**用假时钟把时间拨快**，不真的等下去。
+//
+// 覆盖的是"不丢稿"承诺背后的机制：防抖合并、落盘期间的改动不丢、卡住与不一致能被发现并抢救。
+// 零依赖：Node 自带的测试运行器 + 类型剥离，`npm test` 就能跑。
+
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  Autosave,
+  DEBOUNCE_RANGE,
+  VERIFY_RANGE,
+  type AutosaveTransport,
+  type SaveAck,
+} from "./autosave.ts";
+
+/** 让所有已排队的微任务跑完。 */
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+type Timer = ReturnType<typeof setTimeout>;
+
+/** 假时钟：`advance(ms)` 把到期的回调按时间顺序放出来。 */
+class FakeClock {
+  private t = 0;
+  private seq = 1;
+  private timers = new Map<number, { at: number; fn: () => void }>();
+
+  now = () => this.t;
+
+  schedule = (fn: () => void, ms: number): Timer => {
+    const id = this.seq++;
+    this.timers.set(id, { at: this.t + ms, fn });
+    return id as unknown as Timer;
+  };
+
+  cancel = (handle: Timer): void => {
+    this.timers.delete(handle as unknown as number);
+  };
+
+  async advance(ms: number): Promise<void> {
+    const target = this.t + ms;
+    for (;;) {
+      let pick = -1;
+      let pickAt = Number.POSITIVE_INFINITY;
+      for (const [id, timer] of this.timers) {
+        if (timer.at <= target && timer.at < pickAt) {
+          pickAt = timer.at;
+          pick = id;
+        }
+      }
+      if (pick < 0) break;
+      const timer = this.timers.get(pick)!;
+      this.timers.delete(pick);
+      this.t = timer.at;
+      timer.fn();
+      await settle();
+    }
+    this.t = target;
+    await settle();
+  }
+}
+
+/** 假核心：记住"库里"的正文与指纹，可以人为写失败、挂起、被外部改动。 */
+function fakeCore(options: { manual?: boolean } = {}) {
+  const calls: string[] = [];
+  const gates: Array<() => void> = [];
+  let storedBody = "";
+  let storedFingerprint = "";
+  let failing = false;
+
+  const fp = (body: string) => `fp(${body})`;
+  const ack = (body: string): SaveAck => ({
+    char_count: body.length,
+    word_count: body.length,
+    fingerprint: fp(body),
+  });
+
+  const transport: AutosaveTransport = {
+    async save(_node_id, body) {
+      calls.push(`save:${body}`);
+      if (options.manual) await new Promise<void>((resolve) => gates.push(resolve));
+      if (failing) throw new Error("磁盘写入失败");
+      storedBody = body;
+      storedFingerprint = fp(body);
+      return ack(body);
+    },
+    async fingerprint() {
+      calls.push("fingerprint");
+      return storedFingerprint;
+    },
+    async emergency(_node_id, body, reason) {
+      calls.push(`emergency:${reason}:${body}`);
+      storedBody = body;
+      storedFingerprint = fp(body);
+      return ack(body);
+    },
+  };
+
+  return {
+    transport,
+    calls,
+    gates,
+    saves: () => calls.filter((c) => c.startsWith("save:")),
+    alwaysFail: (value: boolean) => {
+      failing = value;
+    },
+    setStored: (body: string) => {
+      storedBody = body;
+      storedFingerprint = fp(body);
+    },
+    setStoredFingerprint: (value: string) => {
+      storedFingerprint = value;
+    },
+    stored: () => storedBody,
+  };
+}
+
+function build(core: ReturnType<typeof fakeCore>, clock: FakeClock, overrides = {}) {
+  return new Autosave({
+    node_id: 7,
+    transport: core.transport,
+    now: clock.now,
+    schedule: clock.schedule,
+    cancel: clock.cancel,
+    ...overrides,
+  });
+}
+
+test("停笔才落盘：连续击键只写一次，写的是最后那一版", async () => {
+  const clock = new FakeClock();
+  const core = fakeCore();
+  const autosave = build(core, clock);
+  autosave.attach("", { char_count: 0, word_count: 0, fingerprint: "" });
+
+  autosave.changed("第一");
+  await clock.advance(100);
+  autosave.changed("第一句");
+  await clock.advance(100);
+  autosave.changed("第一句话");
+  await clock.advance(300);
+
+  assert.deepEqual(core.saves(), ["save:第一句话"]);
+  assert.equal(autosave.state().status, "saved");
+  assert.equal(autosave.state().char_count, 4);
+});
+
+test("落盘期间的新改动不会被这一次写吞掉", async () => {
+  const clock = new FakeClock();
+  const core = fakeCore({ manual: true });
+  const autosave = build(core, clock);
+  autosave.attach("", { char_count: 0, word_count: 0, fingerprint: "" });
+
+  autosave.changed("第一句");
+  await clock.advance(250);
+  assert.equal(autosave.state().status, "saving");
+
+  autosave.changed("第一句，又补了一句");
+  await clock.advance(50);
+  core.gates.shift()!(); // 第一次写回来
+  await settle();
+  await clock.advance(250);
+  core.gates.shift()!(); // 第二次写回来
+  await settle();
+
+  assert.deepEqual(core.saves(), ["save:第一句", "save:第一句，又补了一句"]);
+  assert.equal(autosave.state().status, "saved");
+  assert.equal(core.stored(), "第一句，又补了一句");
+});
+
+test("失焦立刻落盘，不等防抖", async () => {
+  const clock = new FakeClock();
+  const core = fakeCore();
+  const autosave = build(core, clock);
+  autosave.attach("", { char_count: 0, word_count: 0, fingerprint: "" });
+
+  autosave.changed("马上要切走了");
+  await autosave.flush();
+
+  assert.deepEqual(core.saves(), ["save:马上要切走了"]);
+  assert.equal(autosave.state().status, "saved");
+});
+
+test("一直存不进去：先报错，超时后强制抢救", async () => {
+  const clock = new FakeClock();
+  const core = fakeCore();
+  const autosave = build(core, clock);
+  autosave.attach("", { char_count: 0, word_count: 0, fingerprint: "" });
+  core.alwaysFail(true);
+
+  autosave.changed("写不进去的一版");
+  await clock.advance(250);
+  assert.equal(autosave.state().status, "error");
+  assert.match(autosave.state().detail, /保存失败/);
+
+  await clock.advance(1600); // 超过卡住阈值
+  await autosave.verifyNow();
+
+  assert.ok(
+    core.calls.some((c) => c.startsWith("emergency:stuck:")),
+    `卡住时必须抢救，实际调用：${core.calls.join(" | ")}`,
+  );
+  assert.equal(autosave.state().incident, "落盘长时间没有完成");
+  assert.equal(core.stored(), "写不进去的一版", "抢救后库里应当是手上这一版");
+});
+
+test("读回校验发现库里的正文变了：立刻抢救并留痕", async () => {
+  const clock = new FakeClock();
+  const core = fakeCore();
+  const autosave = build(core, clock);
+  core.setStored("手上这一版正文");
+  autosave.attach("手上这一版正文", { char_count: 7, word_count: 7, fingerprint: "fp(手上这一版正文)" });
+
+  // 库里被改成了别的东西（外部改动 / 写入丢失）
+  core.setStoredFingerprint("fp(别人写的)");
+  await clock.advance(autosave.verifyMs);
+
+  assert.ok(
+    core.calls.includes("emergency:desync:手上这一版正文"),
+    `不一致时必须抢救，实际调用：${core.calls.join(" | ")}`,
+  );
+  assert.equal(autosave.state().incident, "库里的正文与手上这份不一致");
+  assert.equal(core.stored(), "手上这一版正文");
+  assert.equal(autosave.state().status, "saved");
+  assert.match(autosave.state().detail, /已恢复/);
+});
+
+test("一切正常时不误报，也不多写", async () => {
+  const clock = new FakeClock();
+  const core = fakeCore();
+  const autosave = build(core, clock);
+  core.setStored("正文没变");
+  autosave.attach("正文没变", { char_count: 4, word_count: 4, fingerprint: "fp(正文没变)" });
+
+  await clock.advance(VERIFY_RANGE.max);
+  await clock.advance(VERIFY_RANGE.max);
+
+  assert.equal(core.calls.some((c) => c.startsWith("emergency")), false);
+  assert.equal(core.saves().length, 0, "没有改动就不该产生任何落盘");
+  assert.equal(autosave.state().status, "saved");
+  assert.equal(autosave.state().incident, null);
+  assert.ok(core.calls.filter((c) => c === "fingerprint").length >= 2, "每隔几秒核一次");
+});
+
+test("关掉之后彻底安静", async () => {
+  const clock = new FakeClock();
+  const core = fakeCore();
+  const autosave = build(core, clock);
+  autosave.attach("", { char_count: 0, word_count: 0, fingerprint: "" });
+
+  autosave.changed("还没落盘就关了");
+  autosave.dispose();
+  await clock.advance(10_000);
+
+  assert.deepEqual(core.calls, []);
+});
+
+test("防抖与校验间隔被夹在任务口径内", () => {
+  const clock = new FakeClock();
+  const core = fakeCore();
+
+  const tooFast = build(core, clock, { debounceMs: 1, verifyMs: 100 });
+  assert.equal(tooFast.debounceMs, DEBOUNCE_RANGE.min);
+  assert.equal(tooFast.verifyMs, VERIFY_RANGE.min);
+  tooFast.dispose();
+
+  const tooSlow = build(core, clock, { debounceMs: 9999, verifyMs: 999_999 });
+  assert.equal(tooSlow.debounceMs, DEBOUNCE_RANGE.max);
+  assert.equal(tooSlow.verifyMs, VERIFY_RANGE.max);
+  tooSlow.dispose();
+});
