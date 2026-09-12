@@ -180,7 +180,7 @@ fn rescue(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError> {
 }
 
 /// 把渲染好的文件写到导出目录：**内容一样就不重写**（与桌面壳同一条纪律）。
-fn write_rendered(
+pub(crate) fn write_rendered(
     store: &Store,
     work_id: i64,
     format: ExportFormat,

@@ -20,6 +20,8 @@ pub mod commands;
 /// 开发档命令：只在开发（debug）构建里编译——发布构建的二进制里没有这段代码。
 #[cfg(debug_assertions)]
 mod dev;
+/// 交互菜单：**不带参数运行就是它**，给作者用的备用导出工具（任何构建都有）。
+pub mod menu;
 
 pub use commands::execute;
 
@@ -55,6 +57,17 @@ impl From<std::io::Error> for CliError {
     }
 }
 
+/// 给人看的一句话（终端里直接打印；**不是**给界面查字典的码表——那条路是 JSON 输出）。
+impl std::fmt::Display for CliError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CliError::Usage(usage) => f.write_str(&usage.0),
+            CliError::Core(error) => write!(f, "{error}"),
+            CliError::Io(error) => write!(f, "{error}"),
+        }
+    }
+}
+
 /// 失败的 JSON 形状：**码 + 参数**（界面能查字典，脚本能按码分支）。
 fn error_json(error: &CliError) -> Value {
     match error {
@@ -70,6 +83,18 @@ fn error_json(error: &CliError) -> Value {
 
 /// 跑一条命令（`argv` 不含程序名），返回进程退出码。
 pub fn run(argv: Vec<String>) -> i32 {
+    if argv.iter().any(|item| item == "--help" || item == "-h") {
+        println!("{}", json!({ "ok": true, "usage": args::help_text() }));
+        return 0;
+    }
+    if argv.iter().any(|item| item == "--version" || item == "-V") {
+        println!("{}", json!({ "ok": true, "version": yanmo_core::version::version_string() }));
+        return 0;
+    }
+    // **不带命令 = 打开中文菜单**：图形界面打不开时，作者不该被迫研究命令行参数
+    if !has_command(&argv) {
+        return menu::run(&argv);
+    }
     match dispatch(&argv) {
         Ok(value) => {
             println!("{value}");
@@ -87,13 +112,25 @@ pub fn run(argv: Vec<String>) -> i32 {
     }
 }
 
+/// 参数里有没有"命令"（带值参数的取值不算命令）。
+fn has_command(argv: &[String]) -> bool {
+    let mut index = 0;
+    while index < argv.len() {
+        let token = argv[index].as_str();
+        if token == "--data" || token == "--export-to" {
+            index += 2; // 跳过它的取值
+            continue;
+        }
+        if token.starts_with("--") {
+            index += 1;
+            continue;
+        }
+        return true;
+    }
+    false
+}
+
 fn dispatch(argv: &[String]) -> Result<Value, CliError> {
-    if argv.iter().any(|item| item == "--help" || item == "-h") {
-        return Ok(json!({ "ok": true, "usage": args::help_text() }));
-    }
-    if argv.iter().any(|item| item == "--version" || item == "-V") {
-        return Ok(json!({ "ok": true, "version": yanmo_core::version::version_string() }));
-    }
     let args = Args::parse(argv)?;
     commands::execute(&args)
 }

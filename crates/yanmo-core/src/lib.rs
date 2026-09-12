@@ -15,6 +15,7 @@ pub mod diff;
 pub mod error;
 pub mod error_codes;
 pub mod model;
+pub mod paths;
 pub mod store;
 pub mod text;
 pub mod time;

@@ -19,30 +19,13 @@ use yanmo_core::store::{SessionReport, Store};
 use crate::error::ApiError;
 use crate::exitwatch::ExitWatch;
 
-/// 数据库文件名（位于应用数据目录内）。
-const DB_FILE: &str = "yanmo.db";
 /// 逃生导出目录（关窗存不下去时，把手上这份正文原子写到这里）。
 const ESCAPE_DIR: &str = "escape";
-/// 导出目录名：优先落在作者的"文档"里（他自己找得到的地方），拿不到就退回数据目录。
-///
-/// **语言无关**：它写在磁盘上，不该随界面语言变（导出的稿子是给作者带走的东西，
-/// 换一次语言就换个文件夹，只会让人以为文件丢了）。
-const EXPORT_FOLDER: &str = "YanmoExport";
-/// 早先版本用的导出目录名——**磁盘上已经有的数据**，不是界面文案，不能跟着语言走。
-// i18n-allow-next-line: 旧版目录名是既有数据（兼容用），不是要显示给用户的文案
-const LEGACY_EXPORT_FOLDER: &str = "研墨导出";
+/// 系统答不上"文档在哪"时的导出落点：数据目录里的一个子目录。
 const EXPORT_DIR: &str = "export";
-
-/// 选导出根：**老目录还在就继续用它**（把作者已经导出的东西留在原地更好找），
-/// 否则用语言无关的新名字。两边各导一份会让人以为稿子分家了。
-fn export_root(documents: &Path) -> PathBuf {
-    let legacy = documents.join(LEGACY_EXPORT_FOLDER);
-    if legacy.is_dir() {
-        legacy
-    } else {
-        documents.join(EXPORT_FOLDER)
-    }
-}
+// 库文件名与"文档/导出目录"的名字**不写在本文件**：图形界面与命令行救援入口是两个壳，
+// 它们必须认同同一份约定（常量与选择规则都在 `yanmo_core::paths`）——
+// 各写一份的结果是改一处漏一处，作者会以为稿子分家了。
 
 /// 一次导出的结果（路径只报给界面看，界面拿到也改不了）。
 pub struct ExportOutcome {
@@ -146,7 +129,7 @@ impl AppData {
         let export_dir = app
             .path()
             .document_dir()
-            .map(|home| export_root(&home))
+            .map(|home| yanmo_core::paths::export_root(&home))
             .unwrap_or_else(|_| dir.join(EXPORT_DIR));
         Self::open_at(&dir, export_dir)
     }
@@ -162,7 +145,7 @@ impl AppData {
             ApiError::with("shell.data_dir_create_failed", [("path", dir.display().to_string())])
                 .caused_by(e)
         })?;
-        let db_path = dir.join(DB_FILE);
+        let db_path = dir.join(yanmo_core::paths::DB_FILE);
         let mut store = Store::open(&db_path).map_err(|e| {
             ApiError::with("shell.db_open_failed", [("path", db_path.display().to_string())])
                 .caused_by(e)
@@ -292,7 +275,7 @@ mod tests {
     fn open_creates_database_where_it_says() {
         let dir = tempfile::tempdir().unwrap();
         let data = AppData::open_at_for_test(dir.path()).unwrap();
-        assert_eq!(data.db_path(), dir.path().join(DB_FILE).as_path());
+        assert_eq!(data.db_path(), dir.path().join(yanmo_core::paths::DB_FILE).as_path());
         assert!(data.db_path().exists(), "启动后数据库文件应当已落盘");
         assert_eq!(
             data.schema_version().unwrap(),
@@ -405,16 +388,6 @@ mod tests {
             "书名里的路径分隔符要被安全化，导出不许跑到目录外面去：{}",
             outcome.dir.display()
         );
-    }
-
-    #[test]
-    fn export_root_keeps_using_a_legacy_folder_that_already_exists() {
-        let dir = tempfile::tempdir().unwrap();
-        // 没有老目录：用语言无关的新名字
-        assert_eq!(export_root(dir.path()), dir.path().join(EXPORT_FOLDER));
-        // 老目录在（早先版本导出过）：**继续用它**，别让作者以为文件丢了
-        std::fs::create_dir_all(dir.path().join(LEGACY_EXPORT_FOLDER)).unwrap();
-        assert_eq!(export_root(dir.path()), dir.path().join(LEGACY_EXPORT_FOLDER));
     }
 
     #[test]
