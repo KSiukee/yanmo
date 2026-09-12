@@ -17,6 +17,10 @@
 pub mod args;
 pub mod commands;
 
+/// 开发档命令：只在开发（debug）构建里编译——发布构建的二进制里没有这段代码。
+#[cfg(debug_assertions)]
+mod dev;
+
 pub use commands::execute;
 
 use std::collections::BTreeMap;
@@ -85,7 +89,7 @@ pub fn run(argv: Vec<String>) -> i32 {
 
 fn dispatch(argv: &[String]) -> Result<Value, CliError> {
     if argv.iter().any(|item| item == "--help" || item == "-h") {
-        return Ok(json!({ "ok": true, "usage": args::HELP }));
+        return Ok(json!({ "ok": true, "usage": args::help_text() }));
     }
     if argv.iter().any(|item| item == "--version" || item == "-V") {
         return Ok(json!({ "ok": true, "version": yanmo_core::version::version_string() }));

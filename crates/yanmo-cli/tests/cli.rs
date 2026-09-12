@@ -97,6 +97,19 @@ fn a_session_that_never_ended_shows_up_as_unclean() {
 }
 
 #[test]
+fn works_lists_the_shelf() {
+    let dir = tempfile::tempdir().unwrap();
+    let (work_id, _node_id) = seed(dir.path(), "novel");
+
+    let works = ok(dir.path(), "works", &[]);
+    let list = works["works"].as_array().unwrap();
+    assert!(
+        list.iter().any(|work| work["id"] == work_id && work["title"] == "长夜"),
+        "书架上要看得见这本书：{works}"
+    );
+}
+
+#[test]
 fn verify_reports_a_healthy_database() {
     let dir = tempfile::tempdir().unwrap();
     seed(dir.path(), "novel");
@@ -139,5 +152,10 @@ fn wrong_command_or_option_is_a_usage_error() {
     assert!(
         matches!(run(dir.path(), "read", &[("nodes", "1")]), Err(CliError::Usage(_))),
         "选项名写错要当场报出来"
+    );
+    // read 只认 --node：拿 --work 来读正文属于用错命令，要报错而不是默默读错东西
+    assert!(
+        matches!(run(dir.path(), "read", &[("work", "1")]), Err(CliError::Usage(_))),
+        "命令与选项对不上要报出来"
     );
 }

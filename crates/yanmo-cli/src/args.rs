@@ -34,19 +34,32 @@ impl From<String> for Usage {
     }
 }
 
-/// 帮助文本（英文名字 + 中文一句说明；这里不是界面，界面文案在桌面壳里）。
-pub const HELP: &str = "\
-yanmo-cli — 研墨的命令行入口
+/// 救援档帮助（**任何构建都有**）：只读 + 导出，一条都不改稿库。
+pub const HELP_RESCUE: &str = "\
+yanmo-cli — 研墨的命令行入口（把稿子取出来）
 
 用法：yanmo-cli --data <数据目录> <命令> [--键 值]…
 
-命令：
+命令（全部只读或只写文件，**不会改动稿库**）：
+  verify                    体检：库文件完整性 + 结构版本
+  works                     列出书架上的书
+  nodes --work <id>         列出一本书的目录（元数据，不含正文）
+  read --node <id>          读一章正文
+  export --work <id> --format txt|json --out <目录>
+                            把一本书导出成文件
+
+输出：统一 JSON（成功 {\"ok\":true,…}；失败 {\"ok\":false,\"code\":…,\"params\":{…}}）——
+      命令失败打在 stdout，用法错误（参数写错）打在 stderr。
+退出码：0 成功 / 1 命令失败 / 2 用法错误。";
+
+/// 开发档帮助（**只在开发构建里有**）：给自动化与场景复现用。
+pub const HELP_DEV: &str = "\
+这个构建还多带这些命令（发布构建里不存在）：
   begin                     开始一次会话（登记标记），并报告上次退得干不干净
   report                    只看上次会话的交代（只读，不写标记）
   note-open --node <id>     记下「现在打开的是哪一章」
   write --node <id> --body <文本> | --body-file <路径>
                             写入一章正文（内容没变时不写库）
-  read --node <id>          读一章正文
   fingerprint --node <id>   库里正文的指纹
   end --node <id>           正常退出收尾（留快照 + 标记干净）
   abandon                   放弃这次会话（只标记干净，不留快照）
@@ -54,15 +67,17 @@ yanmo-cli — 研墨的命令行入口
                             新建一本书
   new-node --work <id> [--parent <id>] --kind <volume|chapter|section|piece|scene> [--title <名字>]
                             在书里新建一个节点（标题留空＝按同层取号命名）
-  nodes --work <id>         列出一本书的目录（元数据，不含正文）
   hold --node <id> [--seconds <n>]
-                            把这次会话保持打开（默认 30 秒）——供外部在「运行中」中断它
-  export --work <id> --format txt|json --out <目录>
-                            把一本书导出成文件
-  verify                    体检：库文件完整性 + 结构版本
+                            把这次会话保持打开（默认 30 秒）——供外部在「运行中」中断它";
 
-输出：统一 JSON（成功 {\"ok\":true,…}；失败 {\"ok\":false,\"code\":…,\"params\":{…}}）。
-退出码：0 成功 / 1 命令失败 / 2 用法错误。";
+/// 这个构建的帮助文本（发布构建只列救援档）。
+pub fn help_text() -> String {
+    if cfg!(debug_assertions) {
+        format!("{HELP_RESCUE}\n\n{HELP_DEV}")
+    } else {
+        HELP_RESCUE.to_string()
+    }
+}
 
 impl Args {
     /// 解析参数（`argv` 不含程序名）。
