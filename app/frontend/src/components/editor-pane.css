@@ -18,6 +18,9 @@
 }
 
 .editor__title {
+  /* 章名拿走剩下的全部宽度（右边那一格最多占 55%），长章名用省略号收尾 */
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -26,7 +29,12 @@
 .editor__meta {
   display: flex;
   gap: 10px;
-  flex: none;
+  /* 允许收缩 + 能省略号，并且**最多占半条栏**：超长的报错信息不许把章名挤没。
+     真机压测过：往这一格塞 300 字，章名宽度会被压成 0；加了 55% 上限之后，
+     章名至少留得住剩下的四成多，完整报错挪到鼠标悬停的提示里（见 EditorPane.vue）。 */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 55%;
   font-variant-numeric: tabular-nums;
 }
 
@@ -51,6 +59,10 @@
 }
 
 .editor__bad {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: #b3261e;
 }
 

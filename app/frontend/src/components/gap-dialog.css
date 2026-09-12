@@ -5,6 +5,8 @@
 }
 
 .gap__note {
+  /* 章名是用户数据：一长串没有空格的西文名不能撑破弹窗 */
+  overflow-wrap: anywhere;
   margin: 0 0 6px;
   font-size: 13px;
   line-height: 1.6;

@@ -54,7 +54,9 @@ margin: 0 0 10px;
 }
 
 .trash__conflict-title {
-margin: 0 0 4px;
+  /* 同上：这句话里带用户给的名字 */
+  overflow-wrap: anywhere;
+  margin: 0 0 4px;
 }
 
 .trash__clashes {

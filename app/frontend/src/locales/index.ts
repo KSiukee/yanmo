@@ -20,14 +20,26 @@ export function t(key: string, params?: Record<string, string | number>): string
   return fill(DICTS[DEFAULT_LOCALE][key] ?? key, params);
 }
 
+/** 已经报过的模板——同一条只报一次，免得一次渲染刷满控制台。 */
+const WARNED = new Set<string>();
+
 /** 把 `{名字}` 换成取值；参数里没有的名字原样留着（不静默吞掉）。 */
 export function fill(template: string, params?: Record<string, string | number>): string {
-  if (!params) {
-    return template;
+  const filled = params
+    ? template.replace(/\{(\w+)\}/g, (whole, name: string) =>
+        name in params ? String(params[name]) : whole,
+      )
+    : template;
+  // 模板里还有没填上的占位符 = 代码与字典脱节了（界面上会露出 `{node_id}` 这种东西）。
+  // 不抛异常（别为一个显示问题把界面搞崩），但要**当场喊一声**，别让它静默溜过去。
+  const missing = [...template.matchAll(/\{(\w+)\}/g)]
+    .map((match) => match[1])
+    .filter((name) => !(params && name in params));
+  if (missing.length > 0 && !WARNED.has(template)) {
+    WARNED.add(template);
+    console.warn("界面文案缺少参数：", template, "缺", missing.join("、"));
   }
-  return template.replace(/\{(\w+)\}/g, (whole, name: string) =>
-    name in params ? String(params[name]) : whole,
-  );
+  return filled;
 }
 
 /** 字典里有没有这一条（守卫与测试用）。 */

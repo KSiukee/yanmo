@@ -91,25 +91,37 @@ impl Error {
     }
 }
 
-/// 登记前的把门动作：码必须出自 [`codes`]，且模板里的占位符都有对应参数。
+/// 登记前的把门动作：码必须出自 [`codes`]，参数名必须与码表声明的**正好一致**，
+/// 且日志模板里的占位符都有对应参数。
 ///
 /// 放在构造函数里而不是测试里，是因为**错在这里就要当场炸**——
-/// 一个没登记的码会一路飘到界面变成"未知错误"，那才难查。
+/// 一个没登记的码会一路飘到界面变成"未知错误"，参数名漂了则会让界面显示成 `{node_id}`，
+/// 两种都难查。
 fn collect(
     code: &'static str,
     params: impl IntoIterator<Item = (&'static str, String)>,
 ) -> Vec<(&'static str, String)> {
-    // i18n-allow-next-line: 开发者断言（崩在测试/调试构建里），不进界面
-    debug_assert!(
-        ERROR_CODES.contains(&code),
-        "错误码 {code} 没登记进 crates/yanmo-core/src/error_codes.rs 的码表"
-    );
     let params: Vec<(&'static str, String)> = params.into_iter().collect();
+    let declared = crate::error_codes::code_params(code);
     // i18n-allow-next-line: 开发者断言（崩在测试/调试构建里），不进界面
-    debug_assert!(
-        crate::error_codes::render_log(code, &params).find('{').is_none(),
-        "码 {code} 的日志模板里有没被填上的占位符——参数名单对不上"
-    );
+    debug_assert!(declared.is_some(), "错误码 {code} 没登记进 error_codes.rs 的码表");
+    if let Some(declared) = declared {
+        let mut provided: Vec<&str> = params.iter().map(|(name, _)| *name).collect();
+        provided.sort_unstable();
+        provided.dedup();
+        let mut expected: Vec<&str> = declared.to_vec();
+        expected.sort_unstable();
+        // i18n-allow-next-line: 开发者断言（崩在测试/调试构建里），不进界面
+        debug_assert_eq!(
+            provided, expected,
+            "码 {code} 的参数名与码表声明对不上：调用点给了 {provided:?}，码表写的是 {expected:?}"
+        );
+        // i18n-allow-next-line: 开发者断言（崩在测试/调试构建里），不进界面
+        debug_assert!(
+            crate::error_codes::render_log(code, &params).find('{').is_none(),
+            "码 {code} 的日志模板里有没被填上的占位符——参数名单对不上"
+        );
+    }
     params
 }
 

@@ -39,6 +39,21 @@ test("最近打开时间给人看：今天 / 昨天 / N 天前 / 日期 / 从没
   assert.match(formatWhen(now - 100 * DAY, now), /^\d{4}-\d{2}-\d{2}$/, "太久远就报日期");
 });
 
+// 库里的时间戳坏了（NaN / 超出 Date 范围）是可能的：**不许把 "NaN-NaN-NaN" 摆到界面上**，
+// 也不许把一个很远的未来时间说成"今天"。
+test("时间戳坏了就说「时间未知」，绝不显示 NaN", () => {
+  const now = 1_700_000_000_000;
+  assert.equal(formatWhen(NaN, now), "时间未知");
+  assert.equal(formatWhen(Infinity, now), "时间未知");
+  assert.equal(formatWhen(-Infinity, now), "时间未知");
+  assert.equal(formatWhen(9e18, now), "时间未知", "超出 Date 能表示的范围");
+});
+
+test("字数不是有限数就说「字数未知」，不显示 NaN", () => {
+  assert.equal(formatWords(NaN), "字数未知");
+  assert.equal(formatWords(Infinity), "字数未知");
+});
+
 test("书架上那一行的小字：有章报章数，单篇只报字数", () => {
   assert.equal(shelfLabel({ chapters: 12, word_count: 34000 }), "12 章 · 3.4万 字");
   assert.equal(shelfLabel({ chapters: 0, word_count: 800 }), "800 字");

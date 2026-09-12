@@ -44,7 +44,7 @@ function statusText(status: AutosaveState["status"]): string {
     <header class="editor__bar">
       <span class="editor__title">{{ chapterTitle || t("editor.untitled") }}</span>
       <span class="editor__meta">
-        <span v-if="failure" class="editor__bad">{{ failure }}</span>
+        <span v-if="failure" class="editor__bad" :title="failure">{{ failure }}</span>
         <template v-else>
           <span class="editor__count">{{ t("editor.word_count", { count: saveState.word_count }) }}</span>
           <span

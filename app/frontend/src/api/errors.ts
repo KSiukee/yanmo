@@ -26,6 +26,42 @@ export class CoreError extends Error {
 }
 
 /**
+ * 去掉**落单的代理项**（半个字符）。
+ *
+ * JS 的字符串允许只留一半代理项（`"\uD83D"`），Rust 那边的 JSON 解析器**直接拒收**，
+ * 而且只回一句英文解析错误——用户看到的就成了"读不出来"。半个字符本来也构不成一个字，
+ * 丢掉它让整段文字照常存下去，比让这一次操作整个失败合理。
+ */
+export function dropLoneSurrogates(text: string): string {
+  return text.replace(
+    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+    "",
+  );
+}
+
+/** 递归修掉参数里的半个字符（只走数组与**朴素对象**，别把别的对象克隆坏了）。 */
+export function healText<T>(value: T, depth = 0): T {
+  if (typeof value === "string") {
+    return dropLoneSurrogates(value) as unknown as T;
+  }
+  if (typeof value !== "object" || value === null || depth > 8) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => healText(item, depth + 1)) as unknown as T;
+  }
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) {
+    return value;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    out[key] = healText(item, depth + 1);
+  }
+  return out as unknown as T;
+}
+
+/**
  * 把壳抛回来的东西整成界面认得的错误。
  *
  * Rust 侧回的是 `{ code, params, detail }`；其余（核心根本没起来、Tauri 自己的报错）
@@ -43,5 +79,8 @@ export function asError(e: unknown): Error {
     }
     return new CoreError((e as { code: string }).code, params);
   }
-  return new CoreUnavailableError(typeof e === "string" ? e : String(e));
+  // 认不出来的失败：**也别把英文解析错误原样丢到界面上**。
+  // 原始文本留一小截在句子里（排查要用），但句子本身是中文的。
+  const raw = (typeof e === "string" ? e : String(e)).slice(0, 120);
+  return new CoreUnavailableError(t("ipc.unparsable", { detail: raw }));
 }

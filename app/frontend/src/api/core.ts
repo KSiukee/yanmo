@@ -13,7 +13,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-import { asError, CoreError, CoreUnavailableError } from "./errors";
+import { asError, CoreError, CoreUnavailableError, healText } from "./errors";
 
 // 错误类型从 `api/errors.ts` 转出：用的人照旧从网关取，不必知道它住在哪。
 export { CoreError, CoreUnavailableError };
@@ -254,7 +254,9 @@ const COMMANDS = {
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   try {
-    return await invoke<T>(command, args);
+    // 参数先修一遍「半个字符」：JS 允许落单代理项，Rust 的 JSON 解析器直接拒收，
+    // 真让它过去，用户会收到一句英文解析错误（见 api/errors.ts 的说明）。
+    return await invoke<T>(command, args ? healText(args) : args);
   } catch (e) {
     throw asError(e);
   }

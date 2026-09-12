@@ -7,6 +7,7 @@ import { t } from "../locales/index.ts";
 
 /** 字数给人看：一万以下报原数，一万以上报「x.x万」（一位小数）。 */
 export function formatWords(words: number): string {
+  if (!Number.isFinite(words)) return t("display.words_unknown");
   if (words < 10000) return String(words);
   return t("display.words_wan", { value: Math.round(words / 1000) / 10 });
 }
@@ -14,11 +15,14 @@ export function formatWords(words: number): string {
 /** 最近打开时间给人看：今天 / 昨天 / N 天前 / 具体日期；从没打开过就直说。 */
 export function formatWhen(ms: number | null, now: number = Date.now()): string {
   if (ms === null) return t("display.never_opened");
+  // 先认时间戳本身：NaN、无穷、以及超出 Date 能表示的范围（损坏的库会给这种值）——
+  // 不认就直接说"时间未知"，别算出 "NaN-NaN-NaN"，也别把很远的未来时间说成"今天"
+  const date = new Date(ms);
+  if (!Number.isFinite(date.getTime())) return t("display.time_unknown");
   const days = Math.floor((now - ms) / 86_400_000);
   if (days <= 0) return t("display.today");
   if (days === 1) return t("display.yesterday");
   if (days < 30) return t("display.days_ago", { days });
-  const date = new Date(ms);
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${date.getFullYear()}-${month}-${day}`;
