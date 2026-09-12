@@ -141,6 +141,63 @@ fn export_writes_the_book_to_disk() {
 }
 
 #[test]
+fn search_finds_text_and_titles() {
+    let dir = tempfile::tempdir().unwrap();
+    let (work_id, node_id) = seed(dir.path(), "novel");
+    ok(
+        dir.path(),
+        "write",
+        &[("node", &node_id.to_string()), ("body", "他把那枚铜钱按在桌上，指节发白。")],
+    );
+
+    // 长短语走全文索引：命中正文，片段要带着那串字
+    let long = ok(dir.path(), "search", &[("query", "指节发白")]);
+    let hits = long["hits"].as_array().unwrap();
+    assert_eq!(hits.len(), 1, "应命中一章：{long}");
+    assert_eq!(hits[0]["node_id"], node_id);
+    assert_eq!(hits[0]["work_id"], work_id);
+    assert!(hits[0]["snippet"].as_str().unwrap().contains("指节发白"), "{long}");
+
+    // 两个字太短，全文索引表示不了：回退全扫也得搜得到（中文里这是常态）
+    let short = ok(dir.path(), "search", &[("query", "铜钱")]);
+    assert_eq!(short["count"].as_i64(), Some(1), "两字查询也要搜得到：{short}");
+
+    // 命中标题时片段是空串，但 matched_title 要说清楚
+    let titled = ok(dir.path(), "search", &[("query", "第一章")]);
+    let titled_hits = titled["hits"].as_array().unwrap();
+    assert_eq!(titled_hits[0]["matched_title"], true, "{titled}");
+    assert_eq!(titled_hits[0]["snippet"].as_str().unwrap(), "", "只在标题里命中时正文片段是空的");
+
+    // 搜不到就是空结果，不是报错
+    let none = ok(dir.path(), "search", &[("query", "这句话书里没有")]);
+    assert_eq!(none["count"].as_i64(), Some(0), "{none}");
+
+    // --work 限定到别的书：结果是空的
+    let other = ok(dir.path(), "new-work", &[("kind", "novel"), ("title", "另一本")]);
+    let other_id = other["work_id"].as_i64().unwrap();
+    let scoped = ok(dir.path(), "search", &[("query", "指节发白"), ("work", &other_id.to_string())]);
+    assert_eq!(scoped["count"].as_i64(), Some(0), "限定到别的书就不该有命中：{scoped}");
+}
+
+#[test]
+fn search_needs_a_query_and_rejects_bad_options() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path(), "novel");
+    assert!(
+        matches!(run(dir.path(), "search", &[]), Err(CliError::Usage(_))),
+        "不给 --query 要报用法错误"
+    );
+    assert!(
+        matches!(run(dir.path(), "search", &[("query", "字"), ("work", "不是数字")]), Err(CliError::Usage(_))),
+        "--work 不是整数要报用法错误"
+    );
+    assert!(
+        matches!(run(dir.path(), "search", &[("query", "字"), ("node", "1")]), Err(CliError::Usage(_))),
+        "search 不认 --node，写错要报出来"
+    );
+}
+
+#[test]
 fn wrong_command_or_option_is_a_usage_error() {
     let dir = tempfile::tempdir().unwrap();
     assert!(matches!(run(dir.path(), "dance", &[]), Err(CliError::Usage(_))), "不认识的命令要报错");

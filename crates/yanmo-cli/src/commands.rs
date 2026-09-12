@@ -2,7 +2,7 @@
 //!
 //! # 两档命令面（编译期分档，不是运行期开关）
 //!
-//! - **救援档（任何构建都有）**：`verify` / `works` / `nodes` / `read` / `export`——
+//! - **救援档（任何构建都有）**：`verify` / `works` / `nodes` / `read` / `search` / `export`——
 //!   全部是**只读或只写文件**的，**一条都不能改稿库**。界面起不来、库有问题的时候，
 //!   靠这几条判断"字还在不在"并把它取出来。
 //! - **开发档（仅开发构建）**：`begin` / `report` / `note-open` / `write` / `fingerprint` /
@@ -36,6 +36,7 @@ fn rescue_options(command: &str) -> Option<&'static [&'static str]> {
         "works" => Some(&[]),
         "nodes" => Some(&["work"]),
         "read" => Some(&["node"]),
+        "search" => Some(&["query", "work", "limit"]),
         "export" => Some(&["work", "format", "out"]),
         _ => None,
     }
@@ -112,6 +113,16 @@ pub fn execute(args: &Args) -> Result<Value, CliError> {
     Err(Usage(format!("不认识的命令：{}", args.command)).into())
 }
 
+/// 可选的整数选项：没给就是 `None`；给了但不是整数**当场报用法错误**（不静默当没给）。
+fn parse_optional_i64(value: Option<&str>, name: &str) -> Result<Option<i64>, CliError> {
+    match value {
+        None => Ok(None),
+        Some(text) => {
+            text.parse::<i64>().map(Some).map_err(|_| Usage(format!("{name} 需要是一个整数")).into())
+        }
+    }
+}
+
 /// 救援档：**只读或只写文件**，一条都不改稿库。
 fn rescue(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError> {
     let value = match args.command.as_str() {
@@ -166,6 +177,35 @@ fn rescue(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError> {
             let node = args.required_i64("node")?;
             let body = store.read_body(node)?;
             json!({ "ok": true, "command": "read", "node_id": node, "body": body })
+        }
+        "search" => {
+            let query = args.required("query")?;
+            let work = parse_optional_i64(args.optional("work"), "--work")?;
+            // 不给 --limit 就用核心的默认上限（给 0 是同一个意思，见 store::search）
+            let limit = parse_optional_i64(args.optional("limit"), "--limit")?.unwrap_or(0);
+            let limited = u32::try_from(limit).map_err(|_| Usage::from("--limit 不能是负数"))? as usize;
+            let hits: Vec<Value> = store
+                .search(query, work, limited)?
+                .into_iter()
+                .map(|hit| {
+                    json!({
+                        "node_id": hit.node_id,
+                        "work_id": hit.work_id,
+                        "title": hit.title,
+                        "snippet": hit.snippet,
+                        "matched_title": hit.matched_title,
+                    })
+                })
+                .collect();
+            json!({
+                "ok": true,
+                "command": "search",
+                "query": query,
+                "work_id": work,
+                "limit": limit,
+                "count": hits.len(),
+                "hits": hits,
+            })
         }
         "export" => {
             let work = args.required_i64("work")?;

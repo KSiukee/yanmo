@@ -54,6 +54,8 @@ yanmo-cli — 研墨的命令行入口
   works                     列出书架上的书
   nodes --work <id>         列出一本书的目录（元数据，不含正文）
   read --node <id>          读一章正文
+  search --query <文字> [--work <id>] [--limit <n>]
+                            在稿子里检索（全文索引；--work 只搜一本书，--limit 默认 50、上限 500）
   export --work <id> --format txt|json --out <目录>
                             把一本书导出成文件
 
