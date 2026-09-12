@@ -121,10 +121,27 @@ impl AppData {
     ///
     /// 任何一步失败都直接返回错误，**绝不带病启动**（半个可用的数据层比不启动更危险）。
     pub fn open(app: &AppHandle) -> Result<Self, ApiError> {
-        let dir = app
-            .path()
-            .app_data_dir()
-            .map_err(|e| ApiError::new("shell.data_dir_unavailable").caused_by(e))?;
+        // 数据目录由**发布形态**决定（见 `yanmo_core::paths`）：
+        // 程序目录里带便携标记 → 数据就在旁边的 `data/`；没有标记 → 走系统数据目录（默认，行为不变）。
+        // 为什么不用"程序目录能不能写"来猜：exe 被单独放到桌面时那种目录也可写，
+        // 自动判定会把稿库落到桌面——最容易被误删、被同步盘扫到的地方。
+        let exe_dir = std::env::current_exe().ok().and_then(|exe| exe.parent().map(Path::to_path_buf));
+        let (dir, portable) = match exe_dir.as_deref().and_then(yanmo_core::paths::resolve_data_dir) {
+            Some(yanmo_core::paths::DataDir::Portable(dir)) => (dir, true),
+            Some(yanmo_core::paths::DataDir::System(dir)) => (dir, false),
+            None => {
+                return Err(ApiError::new("shell.data_dir_unavailable")
+                    .caused_by("系统数据目录取不到，程序目录里也没有便携标记"));
+            }
+        };
+        if portable && !yanmo_core::paths::is_writable(&dir) {
+            // 便携目录写不进去：**明确报错**，绝不静默换地方——
+            // 否则作者会以为稿子在程序旁边，实际却写去了别处（或干脆没写进去）。
+            return Err(ApiError::with(
+                "shell.portable_dir_readonly",
+                [("path", dir.display().to_string())],
+            ));
+        }
         // 导出放"文档/导出目录"：那是作者自己找得到的地方；系统答不上来就退回数据目录
         let export_dir = app
             .path()

@@ -106,11 +106,20 @@ fn pick_data_dir(
             dir.display()
         ));
     }
-    if let Some(dir) = paths::default_data_dir() {
+    // 与图形界面**同一份判定**：程序目录里带便携标记 → 数据就在旁边的 `data/`；
+    // 没有标记 → 系统数据目录（默认）。
+    let chosen = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+        .and_then(|exe_dir| paths::resolve_data_dir(&exe_dir));
+    if let Some(choice) = chosen {
+        let dir = match choice {
+            paths::DataDir::Portable(dir) | paths::DataDir::System(dir) => dir,
+        };
         if has_database(&dir) {
             return Ok(dir);
         }
-        let _ = writeln!(out, "\n在系统默认位置没找到稿子库：{}", dir.display());
+        let _ = writeln!(out, "\n在预期位置没找到稿子库：{}", dir.display());
     } else {
         let _ = writeln!(out, "\n没能问出系统的数据目录在哪。");
     }

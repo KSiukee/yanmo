@@ -57,6 +57,7 @@
   "error.shell.export_dir_unreadable": "读导出目录 {path} 失败：{detail}",
   "error.shell.export_file_remove_failed": "清旧导出文件 {path} 失败：{detail}",
   "error.shell.export_write_failed": "写导出文件 {path} 失败：{detail}",
+  "error.shell.portable_dir_readonly": "程序旁边的数据文件夹写不进去：{path}。请把研墨放到你有写权限的位置（例如 D 盘或「文档」里的文件夹），再重新打开。",
   "error.shell.session_begin_failed": "无法登记本次会话：{detail}",
   "error.shell.store_unavailable": "数据库句柄不可用",
   "error.snapshot.not_found": "版本快照不存在：{snapshot_id}",

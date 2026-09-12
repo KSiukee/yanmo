@@ -19,6 +19,7 @@ use serde::Serialize;
 /// 加一个码就在这儿加一行（有穷举测试盯着，见本文件末尾）。
 pub const SHELL_CODES: &[(&str, &[&str])] = &[
     ("shell.data_dir_unavailable", &[]),
+    ("shell.portable_dir_readonly", &["path"]),
     ("shell.data_dir_create_failed", &["path"]),
     ("shell.db_open_failed", &["path"]),
     ("shell.session_begin_failed", &[]),
