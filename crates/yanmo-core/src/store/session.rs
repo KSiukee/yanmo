@@ -56,12 +56,7 @@ pub struct EditorTarget {
 impl Store {
     /// 启动时调用一次：读旧标记 → 写新标记 → 报告上次退得干不干净。
     pub fn begin_session(&mut self) -> Result<SessionReport> {
-        let previous = self.read_marker()?;
-        let report = SessionReport {
-            unclean: previous.as_ref().map(|m| !m.clean).unwrap_or(false),
-            last_node_id: previous.as_ref().and_then(|m| m.node_id),
-            last_seen_at: previous.as_ref().map(|m| m.heartbeat_at),
-        };
+        let report = self.peek_session()?;
         let now = now_millis();
         self.write_marker(&Marker {
             pid: std::process::id(),
@@ -72,6 +67,19 @@ impl Store {
             clean: false,
         })?;
         Ok(report)
+    }
+
+    /// **只读**地看上次会话的交代（不写新标记、不改任何状态）。
+    ///
+    /// 界面启动走 [`Store::begin_session`]（启动即登记）；而"只想看一眼"的调用方
+    /// （命令行工具、体检脚本）走这条——否则看一眼就把上一轮的状态盖掉了。
+    pub fn peek_session(&self) -> Result<SessionReport> {
+        let previous = self.read_marker()?;
+        Ok(SessionReport {
+            unclean: previous.as_ref().map(|m| !m.clean).unwrap_or(false),
+            last_node_id: previous.as_ref().and_then(|m| m.node_id),
+            last_seen_at: previous.as_ref().map(|m| m.heartbeat_at),
+        })
     }
 
     /// 正常退出：**先留关窗快照，再标记干净退出**。返回是否真的写了新快照。

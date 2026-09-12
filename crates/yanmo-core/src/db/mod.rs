@@ -74,6 +74,14 @@ pub fn verify_environment(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// 完整性快检：`PRAGMA quick_check` 的结论（`"ok"`，或第一处问题的描述）。
+///
+/// **只读、不改任何东西**。体检、异常中断之后的判断、自动化脚本都靠它拿一个明确结论——
+/// 这样调用方不必自己写 PRAGMA（SQL 只该出现在数据层）。
+pub fn quick_check(conn: &Connection) -> Result<String> {
+    Ok(conn.query_row("PRAGMA quick_check", [], |row| row.get(0))?)
+}
+
 /// 记录一条动作日志（op-log，append-only，为多端同步预留）。
 ///
 /// `device_id` 用调用方传入的本机设备标识；`seq` 由 SQLite 自增保证本机单调。

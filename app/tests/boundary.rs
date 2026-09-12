@@ -30,6 +30,10 @@ const FORBIDDEN_FRONTEND_MODULES: &[&str] = &[
 /// 界面框架——核心一旦依赖它们，就不再能被无界面驱动。
 const FORBIDDEN_CORE_DEPS: &[&str] = &["tauri", "tao", "wry", "winit", "webview2"];
 
+/// 网络库——本机数据处理用不上网络；一旦引进来，「零出网」就只剩一句口号。
+const FORBIDDEN_NETWORK_DEPS: &[&str] =
+    &["reqwest", "hyper", "ureq", "isahc", "curl", "surf", "attohttpc"];
+
 fn package_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
@@ -91,6 +95,27 @@ fn core_has_no_ui_dependency() {
         assert!(
             !FORBIDDEN_CORE_DEPS.contains(&name.as_str()),
             "核心不得依赖界面框架「{name}」：它必须能被单元测试与命令行直接驱动"
+        );
+    }
+}
+
+/// 命令行入口的边界：**不开窗、不出网**。
+///
+/// 它存在的意义就是「没有界面也能把事干完」（自动化、脚本、体检）。一旦引入界面框架，
+/// 它就不再是那条轻量的路；一旦引入网络库，「只做本机数据处理」这句承诺也就没法自证了。
+#[test]
+fn cli_has_no_ui_or_network_dependency() {
+    let manifest = read(&workspace_root().join("crates/yanmo-cli/Cargo.toml"));
+    let names = dependency_names(&manifest);
+    assert!(!names.is_empty(), "没解析出命令行依赖，守卫会假绿——检查 Cargo.toml 结构");
+    for name in &names {
+        assert!(
+            !FORBIDDEN_CORE_DEPS.contains(&name.as_str()),
+            "命令行不得依赖界面框架「{name}」：它要在没有窗口的环境里也能跑"
+        );
+        assert!(
+            !FORBIDDEN_NETWORK_DEPS.contains(&name.as_str()),
+            "命令行不得依赖网络库「{name}」：这里只做本机数据处理"
         );
     }
 }

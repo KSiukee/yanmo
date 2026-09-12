@@ -1,0 +1,22 @@
+[package]
+name = "yanmo-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "研墨的命令行入口：不开窗也能读、写、导出与体检"
+
+[[bin]]
+name = "yanmo-cli"
+path = "src/main.rs"
+
+[dependencies]
+yanmo-core.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+# 与核心的测试特性同名同义：只影响本 crate 是否**存在**那几个调试参数，
+# 发布构建里连解析分支都没有（见 `args.rs`）。
+testing = ["yanmo-core/testing"]
