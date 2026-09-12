@@ -85,6 +85,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "不能把节点移进自己的子孙里——那会形成环" : [],
     TRASH_PURGE_NEEDS_TRASHED => "trash.purge_needs_trashed"
         : "只能彻底删除已经在回收站里的东西：{id}" : ["id"],
+    SNAPSHOT_NOT_FOUND => "snapshot.not_found"
+        : "版本快照不存在：{snapshot_id}" : ["snapshot_id"],
 }
 
 /// 按码把参数填进日志模板；模板不认识这个码就退回 `码(名字=取值, …)`。

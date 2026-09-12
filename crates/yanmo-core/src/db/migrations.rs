@@ -13,7 +13,7 @@
 
 use rusqlite::Connection;
 
-use super::{migrations_v1, migrations_v2};
+use super::{migrations_v1, migrations_v2, migrations_v3};
 use crate::error::{Error, Result};
 use crate::time::now_millis;
 
@@ -23,6 +23,11 @@ pub struct Migration {
     pub name: &'static str,
     /// 逐条执行的 SQL。**每条必须是一个完整语句**（不是脚本）。
     pub steps: &'static [&'static str],
+    /// **要先看库才能决定**的步骤（如 `ALTER TABLE ADD COLUMN` 前判列是否存在）。
+    ///
+    /// 它在事务内、静态步骤之前被调用，产出的语句同样**逐条 execute**——
+    /// 框架的原子化纪律不打折，只是把"要不要执行"这一步交给代码判（铁律 3：幂等化）。
+    pub prepare: Option<fn(&rusqlite::Connection) -> Result<Vec<String>>>,
 }
 
 /// 迁移列表——**只增不改**。
@@ -31,11 +36,19 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 1,
         name: "initial_schema",
         steps: migrations_v1::STEPS,
+        prepare: None,
     },
     Migration {
         version: 2,
         name: "search_index",
         steps: migrations_v2::STEPS,
+        prepare: None,
+    },
+    Migration {
+        version: 3,
+        name: "snapshot_pinned",
+        steps: migrations_v3::STEPS,
+        prepare: Some(migrations_v3::prepare),
     },
 ];
 
@@ -94,8 +107,13 @@ fn apply(conn: &mut Connection, m: &Migration) -> Result<()> {
     let log_id = conn.last_insert_rowid();
 
     let tx = conn.transaction()?;
-    for step in m.steps {
-        if let Err(e) = tx.execute(step, []) {
+    // 先跑"按需产出"的步骤（如判过存在的 ALTER），再跑静态步骤——两者同样逐条 execute
+    let prepared = match m.prepare {
+        Some(build) => build(&tx)?,
+        None => Vec::new(),
+    };
+    for step in m.steps.iter().map(|s| (*s).to_string()).chain(prepared) {
+        if let Err(e) = tx.execute(step.as_str(), []) {
             drop(tx); // 回滚：绝不留下半迁移状态
             record_failure(conn, log_id, &e.to_string())?;
             return Err(Error::Db(e));
@@ -128,7 +146,11 @@ mod tests {
     fn migration_list_is_append_only_and_versioned_1_to_n() {
         for (i, m) in MIGRATIONS.iter().enumerate() {
             assert_eq!(m.version as usize, i + 1, "迁移版本必须从 1 连续递增");
-            assert!(!m.steps.is_empty(), "迁移 {} 没有步骤", m.name);
+            assert!(
+                !m.steps.is_empty() || m.prepare.is_some(),
+                "迁移 {} 既没有静态步骤也没有按需步骤",
+                m.name
+            );
         }
     }
 
@@ -161,7 +183,7 @@ mod tests {
 
         // 故意构造一个会失败的迁移（语法错误）
         static BAD: &[&str] = &["CREATE TABLE ok_one(x INTEGER)", "THIS IS NOT SQL"];
-        let bad = Migration { version: 1, name: "bad", steps: BAD };
+        let bad = Migration { version: 1, name: "bad", steps: BAD, prepare: None };
 
         assert!(apply(&mut conn, &bad).is_err());
         assert_eq!(user_version(&conn).unwrap(), 0, "失败不得推进版本号");

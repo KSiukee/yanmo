@@ -44,6 +44,11 @@ import {
   saveBody,
   saveCursor,
   sessionReport,
+  snapshotDiff,
+  snapshotDrop,
+  snapshotKeep,
+  snapshotList,
+  snapshotRestore,
   treeFillGap,
   treeGapAnswer,
   treeGapCheck,
@@ -51,6 +56,7 @@ import {
   type ChapterNeighbors,
   type EditorCursor,
   type EditorSnapshot,
+  type SnapshotRestoreAck,
 } from "../api/core";
 import { Autosave, type AutosaveState } from "./autosave";
 import { useAddChapter, type AddChapter } from "./add-chapter";
@@ -63,6 +69,7 @@ import { ExitGate, type ExitGateState } from "./exitguard";
 import { focusPlan } from "./focus";
 import { useGaps, type Gaps } from "./gaps";
 import { useShelf, type Shelf } from "./shelf";
+import { useSnapshots, type Snapshots } from "./snapshots";
 import { useTrash, type Trash } from "./trash";
 
 export interface EditorSession {
@@ -80,6 +87,8 @@ export interface EditorSession {
   shelf: Shelf;
   /** 回收站：删错了能捞回来（恢复与真删的语义全在核心） */
   trash: Trash;
+  /** 版本历史：这一章留过哪些版本，看看差异、回滚（滚动保留与"回滚先留底"全在核心） */
+  snapshots: Snapshots;
   /** 删章路标：点「+」前先问一嘴"这一层少了一章，要补写吗" */
   gaps: Gaps;
   /** 点「+」之后的编排：先问路标，再照作者意图建章（视图只管"点了哪一行"） */
@@ -233,6 +242,22 @@ export function useEditorSession(): EditorSession {
   }
 
   /**
+   * 回滚把正文换成了旧版本：**换内容不换实例**（与切章同一条纪律），
+   * 并让落盘控制器重建比对基准——否则下一次读回校验会以为"库被人改了"，白抢救一次。
+   */
+  function applyRestored(ack: SnapshotRestoreAck) {
+    if (currentNodeId.value !== ack.node_id) return; // 回滚途中切了章：不动现在这一章
+    editor.value?.commands.setContent(textToHtml(ack.body), false);
+    autosave.value?.attach(ack.body, {
+      char_count: ack.char_count,
+      word_count: ack.word_count,
+      fingerprint: ack.fingerprint,
+    });
+    void directory.refresh(); // 字数变了：目录里那行小字要跟上
+    void refreshNeighbors();
+  }
+
+  /**
    * 打开一章之后把光标安排明白：**历史章挪出正文、该写的章接着写**。
    *
    * 放在"邻居读回来之后"再判：要知道这一章是不是全书最后一章（跨卷按阅读顺序）。
@@ -275,6 +300,8 @@ export function useEditorSession(): EditorSession {
       if ((await switcher.to(node_id)) === "switched") {
         await refreshNeighbors();
         settleFocus(fresh);
+        // 版本历史跟着换章：开着面板时不能还摆着上一章的版本
+        if (snapshots.visible.value) void snapshots.refresh();
       }
     } finally {
       switching.value = false;
@@ -319,6 +346,7 @@ export function useEditorSession(): EditorSession {
       if ((await switcher.to(snapshot)) === "blocked") return false;
       await refreshNeighbors();
       settleFocus(false);
+      if (snapshots.visible.value) void snapshots.refresh();
       return true;
     } catch (error) {
       failure.value = t("session.switch_work_failed", {
@@ -368,7 +396,7 @@ export function useEditorSession(): EditorSession {
    * 挂载时会直接抛错，真机上就是白屏（这条踩过一次）。约定：
    * ① `directory` / `gaps` / `appearance` 先行（后面的要靠它们）；
    * ② 再建 `adding`（它同时要 directory + gaps + 建章那条路）；
-   * ③ `trash` / `shelf` 最后（它们只在回调里互相引用，运行时才碰）。
+   * ③ `trash` / `shelf` / `snapshots` 最后（它们只在回调里互相引用，运行时才碰）。
    */
   function createParts() {
     // 目录树：只接"看得见、点得动、拖得走"，切章仍走上面那条（先落盘再切）
@@ -447,11 +475,29 @@ export function useEditorSession(): EditorSession {
       },
     });
 
-    return { directory, gaps, appearance, adding, trash, shelf };
+    // 版本历史：列 / 比 / 留一版 / 删一版 / 回滚（滚动保留、回滚先留底全在核心）。
+    // 回滚前先落盘：**存不下去就不覆盖**——这条纪律与"删章之前先存"是同一条。
+    const snapshots = useSnapshots({
+      transport: {
+        list: snapshotList,
+        diff: snapshotDiff,
+        keep: snapshotKeep,
+        drop: snapshotDrop,
+        restore: snapshotRestore,
+      },
+      nodeId: currentNodeId,
+      beforeRestore: () => flushCurrent(),
+      onRestored: (ack) => applyRestored(ack),
+      onError: (message) => {
+        failure.value = t("session.snapshots_failed", { detail: message });
+      },
+    });
+
+    return { directory, gaps, appearance, adding, trash, shelf, snapshots };
   }
 
   // 装配一次，之后各处只用解出来的这几个（顺序约定见 createParts）
-  const { directory, gaps, appearance, adding, trash, shelf } = createParts();
+  const { directory, gaps, appearance, adding, trash, shelf, snapshots } = createParts();
 
   onMounted(async () => {
     window.addEventListener("blur", persistNow);
@@ -515,6 +561,7 @@ export function useEditorSession(): EditorSession {
     appearance,
     shelf,
     trash,
+    snapshots,
     workId,
     switchWork,
     chapterTitle,

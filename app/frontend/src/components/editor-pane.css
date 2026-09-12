@@ -26,6 +26,23 @@
   text-overflow: ellipsis;
 }
 
+.editor__versions {
+  flex: none;
+  padding: 0 8px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.editor__versions:hover {
+  border-color: var(--ym-accent);
+  color: var(--ym-accent);
+}
+
 .editor__meta {
   display: flex;
   gap: 10px;

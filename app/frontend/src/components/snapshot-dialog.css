@@ -1,0 +1,150 @@
+/* 弹窗公共壳（遮罩/盒子/标题/按钮/交代条/空态）在 dialog.css；这里只留版本历史自己的东西。 */
+
+/* 左列版本、右列差异：比回收站宽一点，逐行差异才读得下去 */
+.snapshots__box {
+  width: min(880px, 100%);
+}
+
+.snapshots__body {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+.snapshots__list {
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.snapshots__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--ym-line);
+}
+
+/* 正在比的那一条：底色标出来，免得看串行 */
+.snapshots__row--on {
+  background: var(--ym-paper-dim);
+}
+
+.snapshots__pick {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 6px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.snapshots__when {
+  display: block;
+  font-size: 12px;
+}
+
+.snapshots__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ym-ink-soft);
+}
+
+.snapshots__pin {
+  color: var(--ym-accent);
+}
+
+.snapshots__actions {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  padding-right: 6px;
+}
+
+.snapshots__diff {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.snapshots__diff-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.snapshots__diff-title {
+  flex: 1;
+  font-weight: 600;
+}
+
+.snapshots__diff-stats {
+  color: var(--ym-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.snapshots__diff-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ym-ink-soft);
+}
+
+.snapshots__lines {
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--ym-line);
+  border-radius: 6px;
+  list-style: none;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.snapshots__line {
+  display: flex;
+  gap: 6px;
+  padding: 0 8px;
+  /* 空段落也要占一行高度，否则"删掉一整段空行"看不出来 */
+  min-height: 1.6em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.snapshots__line--added {
+  background: #eaf6ec;
+}
+
+.snapshots__line--removed {
+  background: #fdecea;
+}
+
+.snapshots__line--skipped {
+  background: var(--ym-paper-dim);
+  color: var(--ym-ink-soft);
+}
+
+.snapshots__sign {
+  flex: none;
+  width: 1em;
+  text-align: center;
+  color: var(--ym-ink-soft);
+}
+
+.snapshots__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.snapshots__gap {
+  font-size: 11px;
+}

@@ -11,6 +11,7 @@
 
 pub mod atomic;
 pub mod db;
+pub mod diff;
 pub mod error;
 pub mod error_codes;
 pub mod model;

@@ -23,6 +23,8 @@ const {
   escapeExit,
   forceExit,
 } = props.session;
+// 版本历史：跟当前章绑在一起，入口就在章名这一行（状态机在 editor/snapshots.ts）
+const { toggle: toggleSnapshots } = props.session.snapshots;
 
 // 状态 → 字典键：文案在 locales 里，这里只留"哪个状态对应哪句话"
 const STATUS_KEYS: Record<AutosaveState["status"], string> = {
@@ -43,6 +45,14 @@ function statusText(status: AutosaveState["status"]): string {
   <section class="editor">
     <header class="editor__bar">
       <span class="editor__title">{{ chapterTitle || t("editor.untitled") }}</span>
+      <button
+        type="button"
+        class="editor__versions"
+        :title="t('snapshots.open_title')"
+        @click="toggleSnapshots()"
+      >
+        {{ t("snapshots.button") }}
+      </button>
       <span class="editor__meta">
         <span v-if="failure" class="editor__bad" :title="failure">{{ failure }}</span>
         <template v-else>

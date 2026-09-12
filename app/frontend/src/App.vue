@@ -16,6 +16,7 @@ import FlowPane from "./components/FlowPane.vue";
 import EngineBadge from "./components/EngineBadge.vue";
 import SettingsDialog from "./components/SettingsDialog.vue";
 import ShelfDialog from "./components/ShelfDialog.vue";
+import SnapshotDialog from "./components/SnapshotDialog.vue";
 import TrashDialog from "./components/TrashDialog.vue";
 
 // 会话在布局层建**一次**：目录树、书架与正文编辑器说的必须是同一本书、同一章
@@ -23,6 +24,7 @@ const session = useEditorSession();
 const { chapterTitle, workId } = session;
 const { visible: shelfVisible, toggle: toggleShelf } = session.shelf;
 const { visible: trashVisible } = session.trash;
+const { visible: snapshotsVisible } = session.snapshots;
 const { visible: settingsVisible, values: settingsValues, open: openSettings } = session.appearance;
 
 // 顶栏那行小字：有章名就显示章名；开着书但还没起名就显示占位；没有书才说立场那句话
@@ -65,6 +67,7 @@ const hint = computed(() => {
 
     <ShelfDialog v-if="shelfVisible" :session="session" />
     <TrashDialog v-if="trashVisible" :session="session" />
+    <SnapshotDialog v-if="snapshotsVisible" :session="session" />
     <SettingsDialog v-if="settingsVisible && settingsValues" :session="session" />
   </div>
 </template>

@@ -34,6 +34,7 @@ pub use gap::{ChapterGap, GapAnswer};
 pub use node::{ChapterNeighbors, ChapterSummary, NodeSummary, SubtreeRollup};
 pub use search::SearchHit;
 pub use session::{EditorCursor, EditorTarget, SessionReport};
+pub use snapshot::{SnapshotSummary, AUTO_SNAPSHOTS_KEPT};
 pub use trash::{TrashEntry, TrashKind};
 pub use work::ShelfEntry;
 
