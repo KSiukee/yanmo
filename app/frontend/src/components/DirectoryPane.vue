@@ -13,7 +13,7 @@ import { computed, nextTick, ref } from "vue";
 import type { EditorSession } from "../editor/session";
 import { addIntent, containerLabel, type TreeRow } from "../editor/tree";
 import { t } from "../locales/index.ts";
-import { formatWords } from "../editor/display.ts";
+import { formatCaliberNumber, formatCaliberWords } from "../editor/display.ts";
 import GapDialog from "./GapDialog.vue";
 
 const props = defineProps<{ session: EditorSession }>();
@@ -30,6 +30,8 @@ const {
   volumeTarget,
   setVolumeTarget,
 } = props.session.directory;
+// 目录树里的字数按**当前口径**显示（口径跟着作品语言，可在状态栏切换）
+const { caliber } = props.session;
 const { neighbors, switching, switchChapter, deleteNode, adding, trash } = props.session;
 // 点「+」之后的编排在 editor/add-chapter.ts（这里只接线，不写流程）
 const {
@@ -238,8 +240,24 @@ function goTrash() {
         />
         <span v-else class="tree__title" :title="rowLabel(row)">{{ rowLabel(row) }}</span>
 
-        <span v-if="row.holds_body" class="tree__words">{{ row.has_body ? formatWords(row.word_count) : t("tree.empty_chapter") }}</span>
-        <span v-else class="tree__words" :title="t('tree.volume_stat_title', { chapters: row.chapter_count, words: row.subtree_word_count })">
+        <span v-if="row.holds_body" class="tree__words">{{ row.has_body ? formatCaliberNumber(row, caliber) : t("tree.empty_chapter") }}</span>
+        <span
+          v-else
+          class="tree__words"
+          :title="
+            t('tree.volume_stat_title', {
+              chapters: row.chapter_count,
+              words: formatCaliberWords(
+                {
+                  word_count: row.subtree_word_count,
+                  char_count: row.subtree_char_count,
+                  chars_no_punct: row.subtree_chars_no_punct,
+                },
+                caliber,
+              ),
+            })
+          "
+        >
           {{ containerLabel(row, volumeTarget) }}
         </span>
         <button

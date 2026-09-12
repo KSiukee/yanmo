@@ -5,11 +5,13 @@ import { ref } from "vue";
 import type { EditorSession } from "../editor/session";
 import { trashLabel } from "../editor/trash";
 import { t } from "../locales/index.ts";
-import { formatWhen } from "../editor/display";
+import { formatCaliberWords, formatWhen } from "../editor/display";
 
 const props = defineProps<{ session: EditorSession }>();
 const { entries, busy, close, restore, purge, empty, conflict, resolveConflict, cancelConflict } =
   props.session.trash;
+// 重名提示里那个「已写多少字」也按当前口径念（跟状态栏、目录树同一口径）
+const { caliber } = props.session;
 /** 冲突时作者填的新名字（留空 = 照原样恢复，两章同名） */
 const renameTo = ref("");
 
@@ -69,7 +71,7 @@ async function doEmpty() {
         </p>
         <ul class="trash__clashes">
           <li v-for="clash in conflict.preview.name_clashes" :key="clash.id">
-            {{ t("trash.clash_line", { title: clash.title, words: clash.word_count }) }}
+            {{ t("trash.clash_line", { title: clash.title, words: formatCaliberWords(clash, caliber) }) }}
           </li>
         </ul>
         <p class="trash__conflict-hint">

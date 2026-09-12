@@ -16,6 +16,8 @@ function entry(id: number, chapters: number, words: number, opened: number | nul
     title: `第${id}本`,
     chapters,
     word_count: words,
+    char_count: words,
+    chars_no_punct: words,
     opened_at: opened,
     created_at: 0,
     updated_at: 0,
@@ -54,9 +56,12 @@ test("字数不是有限数就说「字数未知」，不显示 NaN", () => {
   assert.equal(formatWords(Infinity), "字数未知");
 });
 
-test("书架上那一行的小字：有章报章数，单篇只报字数", () => {
-  assert.equal(shelfLabel({ chapters: 12, word_count: 34000 }), "12 章 · 3.4万 字");
-  assert.equal(shelfLabel({ chapters: 0, word_count: 800 }), "800 字");
+test("书架上那一行的小字：有章报章数，单篇只报字数，且**跟着当前口径**", () => {
+  const counts = { chapters: 12, word_count: 34000, char_count: 41000, chars_no_punct: 36000 };
+  assert.equal(shelfLabel(counts, "chars"), "12 章 · 4.1万 字");
+  assert.equal(shelfLabel({ ...counts, chapters: 0 }, "chars_no_punct"), "3.6万 字");
+  // 按词口径下单位是「词」——模板里写死「字」就会串味
+  assert.equal(shelfLabel(counts, "words"), "12 章 · 3.4万 词");
 });
 
 test("作品类型的显示名", () => {

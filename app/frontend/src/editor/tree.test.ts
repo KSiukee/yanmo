@@ -34,12 +34,16 @@ function fakeWorld(initial: Spec[]) {
       kind: spec.kind,
       title: spec.title,
       word_count: spec.words ?? 0,
+      char_count: spec.words ?? 0,
+      chars_no_punct: spec.words ?? 0,
       has_body: (spec.words ?? 0) > 0,
       holds_body: HOLDS_BODY.has(spec.kind),
       accepts_children: ACCEPTS_CHILDREN.has(spec.kind),
       has_children: specs.some((kid) => kid.parent === spec.id),
       chapter_count: under.chapters,
       subtree_word_count: under.words,
+      subtree_char_count: under.words,
+      subtree_chars_no_punct: under.words,
     };
   };
 

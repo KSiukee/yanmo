@@ -36,7 +36,12 @@ impl TrashKind {
 pub struct NameClash {
     pub id: i64,
     pub title: String,
+    /// 它现在有多少字（让作者知道"字还在"）——按词口径
     pub word_count: i64,
+    /// 同上，逐字（含标点）
+    pub char_count: i64,
+    /// 同上，逐字（不含标点）
+    pub chars_no_punct: i64,
 }
 
 /// 恢复**之前**先看一眼：它会回到哪、会不会与谁重名。
@@ -255,7 +260,7 @@ impl Store {
         };
 
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, word_count FROM nodes
+            "SELECT id, title, word_count, char_count, chars_no_punct FROM nodes
               WHERE work_id = ?1 AND parent_id IS ?2 AND deleted_at IS NULL AND title = ?3
               ORDER BY sort_order, id",
         )?;
@@ -264,6 +269,8 @@ impl Store {
                 id: r.get(0)?,
                 title: r.get(1)?,
                 word_count: r.get(2)?,
+                char_count: r.get(3)?,
+                chars_no_punct: r.get(4)?,
             })
         })?;
         let mut name_clashes = Vec::new();

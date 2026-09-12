@@ -19,8 +19,12 @@ pub struct NodeSummary {
     pub kind: NodeKind,
     pub title: String,
     pub sort_order: i64,
-    /// 预聚合字数（来自 `nodes.word_count`，不扫正文）
+    /// 预聚合字数（来自 `nodes.word_count`，不扫正文）——**按词**口径
     pub word_count: i64,
+    /// 逐字（含标点）——预聚合，同样不扫正文
+    pub char_count: i64,
+    /// 逐字（不含标点）
+    pub chars_no_punct: i64,
     /// 是否已有正文——空章一眼可见；但**正文本身不在这里**
     pub has_body: bool,
     /// 下面还有没有节点（界面据此决定要不要画展开箭头）。
@@ -31,7 +35,7 @@ pub struct NodeSummary {
 
 /// 树条目查询的公共部分：只取元数据 + "有没有正文 / 有没有下级" 的判断，**不取正文**。
 const SUMMARY_SQL: &str = "SELECT n.id, n.work_id, n.parent_id, n.node_kind, n.title,
-        n.sort_order, n.word_count,
+        n.sort_order, n.word_count, n.char_count, n.chars_no_punct,
         (c.body IS NOT NULL AND c.body <> '') AS has_body,
         EXISTS(SELECT 1 FROM nodes k WHERE k.parent_id = n.id AND k.deleted_at IS NULL) AS has_children
      FROM nodes n
@@ -39,7 +43,7 @@ const SUMMARY_SQL: &str = "SELECT n.id, n.work_id, n.parent_id, n.node_kind, n.t
      LEFT JOIN node_contents c ON c.node_id = n.id
      WHERE n.deleted_at IS NULL";
 
-type SummaryRow = (i64, i64, Option<i64>, String, String, i64, i64, i64, i64);
+type SummaryRow = (i64, i64, Option<i64>, String, String, i64, i64, i64, i64, i64, i64);
 
 fn read_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<SummaryRow> {
     Ok((
@@ -52,6 +56,8 @@ fn read_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<SummaryRow> {
         row.get(6)?,
         row.get(7)?,
         row.get(8)?,
+        row.get(9)?,
+        row.get(10)?,
     ))
 }
 
@@ -64,8 +70,10 @@ fn build_summary(row: SummaryRow) -> Result<NodeSummary> {
         title: row.4,
         sort_order: row.5,
         word_count: row.6,
-        has_body: row.7 != 0,
-        has_children: row.8 != 0,
+        char_count: row.7,
+        chars_no_punct: row.8,
+        has_body: row.9 != 0,
+        has_children: row.10 != 0,
     })
 }
 
@@ -169,8 +177,12 @@ impl Store {
 pub struct SubtreeRollup {
     /// 子树里 `chapter` 类的节点数——"本卷几章"问的就是它（场景卡这类卡片不算章）
     pub chapters: i64,
-    /// 子树里所有节点的字数之和（正文写入时已回算过，这里只是加总，**不扫正文**）
+    /// 子树里所有节点的字数之和（正文写入时已回算过，这里只是加总，**不扫正文**）——按词
     pub word_count: i64,
+    /// 同上，逐字（含标点）
+    pub char_count: i64,
+    /// 同上，逐字（不含标点）
+    pub chars_no_punct: i64,
 }
 
 impl Store {
@@ -181,20 +193,25 @@ impl Store {
     pub fn subtree_rollup(&self, node_id: i64) -> Result<SubtreeRollup> {
         self.node_work(node_id)?; // 顺带确认它存在且没被删
         let sql = format!(
-            "WITH RECURSIVE sub(id, word_count, node_kind, depth) AS (
-                 SELECT id, word_count, node_kind, 0 FROM nodes
+            "WITH RECURSIVE sub(id, word_count, char_count, chars_no_punct, node_kind, depth) AS (
+                 SELECT id, word_count, char_count, chars_no_punct, node_kind, 0 FROM nodes
                   WHERE parent_id = ?1 AND deleted_at IS NULL
                  UNION ALL
-                 SELECT n.id, n.word_count, n.node_kind, sub.depth + 1 FROM nodes n
+                 SELECT n.id, n.word_count, n.char_count, n.chars_no_punct, n.node_kind, sub.depth + 1
+                   FROM nodes n
                    JOIN sub ON n.parent_id = sub.id
                   WHERE n.deleted_at IS NULL AND sub.depth < {MAX_TREE_DEPTH}
              )
-             SELECT COALESCE(SUM(word_count), 0), COALESCE(SUM(node_kind = 'chapter'), 0) FROM sub"
+             SELECT COALESCE(SUM(word_count), 0), COALESCE(SUM(char_count), 0),
+                    COALESCE(SUM(chars_no_punct), 0), COALESCE(SUM(node_kind = 'chapter'), 0)
+               FROM sub"
         );
-        let (word_count, chapters) = self
+        let (word_count, char_count, chars_no_punct, chapters) = self
             .conn
-            .query_row(&sql, params![node_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        Ok(SubtreeRollup { chapters, word_count })
+            .query_row(&sql, params![node_id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })?;
+        Ok(SubtreeRollup { chapters, word_count, char_count, chars_no_punct })
     }
 }
 

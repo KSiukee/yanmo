@@ -13,7 +13,7 @@ const props = defineProps<{ session: EditorSession }>();
 const { entries, busy, close, open, create, rename, remove, export: exportWork, note } =
   props.session.shelf;
 const { visible: trashVisible, toggle: toggleTrash } = props.session.trash;
-const { workId } = props.session;
+const { workId, caliber } = props.session;
 
 /** 去回收站：先把书架收起来，免得两层弹层叠在一起 */
 function openTrash() {
@@ -135,7 +135,7 @@ function confirmRemove(work_id: number, title: string) {
             />
             <span v-else class="shelf__name" :title="workLabel(entry.title)">{{ workLabel(entry.title) }}</span>
             <span class="shelf__meta">
-              {{ shelfKindLabel(entry.kind) }} · {{ shelfLabel(entry) }} ·
+              {{ shelfKindLabel(entry.kind) }} · {{ shelfLabel(entry, caliber) }} ·
               {{ formatWhen(entry.opened_at) }}
             </span>
           </div>

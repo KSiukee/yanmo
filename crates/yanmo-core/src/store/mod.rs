@@ -66,7 +66,11 @@ impl Store {
     /// 接管一条已经打开并迁移好的连接（命令行工具与测试用这条）。
     pub fn from_connection(conn: Connection) -> Result<Self> {
         let device_id = device::ensure(&conn)?;
-        Ok(Self { conn, device_id })
+        let mut store = Self { conn, device_id };
+        // 字数预聚合回填（#128）：老库缺两个口径的列值。**只做一次**，标记在 settings 里；
+        // 放在这里而不是 `open`，是为了让命令行、测试、壳走哪条入口都拿到一致的数据。
+        store.backfill_node_counts()?;
+        Ok(store)
     }
 
     /// 只读访问连接：查询、诊断、**写后读回校验**。

@@ -11,7 +11,7 @@
 import { ref, type Ref } from "vue";
 
 import type { ExportAck, ShelfEntry } from "../api/core";
-import { formatWords } from "./display.ts";
+import { formatCaliberWords } from "./display.ts";
 import { t } from "../locales/index.ts";
 
 /** 删掉某一本之后该开哪一本：优先列表里的第一本；一本都不剩就交给核心去建默认的。 */
@@ -20,13 +20,15 @@ export function nextWorkAfterDelete(entries: ShelfEntry[], deleted: number): num
 }
 
 /** 书架上那一行的小字：有章就报章数，单篇文章只报字数。 */
-export function shelfLabel(entry: Pick<ShelfEntry, "chapters" | "word_count">): string {
+export function shelfLabel(
+  entry: Pick<ShelfEntry, "chapters" | "word_count" | "char_count" | "chars_no_punct">,
+  caliber: string,
+): string {
+  // 数字与单位都跟着作品当前的字数口径走（逐字报「字」、按词报「词」）
+  const words = formatCaliberWords(entry, caliber);
   return entry.chapters > 0
-    ? t("shelf.label_with_chapters", {
-        chapters: entry.chapters,
-        words: formatWords(entry.word_count),
-      })
-    : t("shelf.label_words_only", { words: formatWords(entry.word_count) });
+    ? t("shelf.label_with_chapters", { chapters: entry.chapters, words })
+    : t("shelf.label_words_only", { words });
 }
 
 /** 作品类型的显示名（核心给的是取值，显示成中文是界面的事）。 */

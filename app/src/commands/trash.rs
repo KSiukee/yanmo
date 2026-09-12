@@ -54,6 +54,8 @@ pub struct NameClashDto {
     pub id: i64,
     pub title: String,
     pub word_count: i64,
+    pub char_count: i64,
+    pub chars_no_punct: i64,
 }
 
 /// 恢复**之前**的交代：回到哪、会不会与谁重名。
@@ -85,6 +87,8 @@ pub fn restore_preview(data: State<'_, AppData>, node_id: i64) -> Result<Restore
                     id: clash.id,
                     title: clash.title,
                     word_count: clash.word_count,
+                    char_count: clash.char_count,
+                    chars_no_punct: clash.chars_no_punct,
                 })
                 .collect(),
         })

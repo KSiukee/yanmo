@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ref } from "vue";
 
-import type { RestorePreview, TrashEntry } from "../api/core.ts";
+import type { NameClash, RestorePreview, TrashEntry } from "../api/core.ts";
 import { trashLabel, useTrash, type TrashTransport } from "./trash.ts";
 
 function entry(id: number, title: string, kind = "node"): TrashEntry {
@@ -21,7 +21,7 @@ function entry(id: number, title: string, kind = "node"): TrashEntry {
   };
 }
 
-function preview(clashes: Array<{ id: number; title: string; word_count: number }>): RestorePreview {
+function preview(clashes: NameClash[]): RestorePreview {
   return {
     work_id: 1,
     work_title: "长夜",
@@ -43,7 +43,8 @@ function build(initial: TrashEntry[], clashes: Array<{ id: number; title: string
     },
     preview: async (node_id) => {
       calls.push(`preview:${node_id}`);
-      return preview(clashes);
+      // 替身只关心这几个数：三口径给同一份，免得每个调用点都要写三遍
+      return preview(clashes.map((c) => ({ ...c, char_count: c.word_count, chars_no_punct: c.word_count })));
     },
     restoreNode: async (node_id, title) => {
       calls.push(`restore-node:${node_id}:${title ?? "-"}`);

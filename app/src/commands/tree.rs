@@ -25,6 +25,10 @@ pub struct TreeNodeDto {
     pub kind: String,
     pub title: String,
     pub word_count: i64,
+    /// 逐字（含标点）
+    pub char_count: i64,
+    /// 逐字（不含标点）
+    pub chars_no_punct: i64,
     /// 空章一眼可见
     pub has_body: bool,
     /// 这个节点**能不能编辑正文**（点一下是"打开来写"还是"展开看看"）
@@ -36,6 +40,8 @@ pub struct TreeNodeDto {
     /// 容器行的小字：本卷几章 / 共多少字（**只有容器才填，叶子是 0**）
     pub chapter_count: i64,
     pub subtree_word_count: i64,
+    pub subtree_char_count: i64,
+    pub subtree_chars_no_punct: i64,
 }
 
 fn to_dto(node: NodeSummary, rollup: SubtreeRollup) -> TreeNodeDto {
@@ -45,12 +51,16 @@ fn to_dto(node: NodeSummary, rollup: SubtreeRollup) -> TreeNodeDto {
         kind: node.kind.as_str().to_string(),
         title: node.title,
         word_count: node.word_count,
+        char_count: node.char_count,
+        chars_no_punct: node.chars_no_punct,
         has_body: node.has_body,
         holds_body: node.kind.holds_body(),
         accepts_children: node.kind.accepts_children(),
         has_children: node.has_children,
         chapter_count: rollup.chapters,
         subtree_word_count: rollup.word_count,
+        subtree_char_count: rollup.char_count,
+        subtree_chars_no_punct: rollup.chars_no_punct,
     }
 }
 

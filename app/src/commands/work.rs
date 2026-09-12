@@ -23,8 +23,12 @@ pub struct ShelfEntryDto {
     pub title: String,
     /// 这本书里章的个数（**单篇文章是 0**，界面此时只报字数）
     pub chapters: i64,
-    /// 字数合计（各章预聚合字数之和，不扫正文）
+    /// 字数合计（各章预聚合字数之和，不扫正文）——按词
     pub word_count: i64,
+    /// 同上，逐字（含标点）
+    pub char_count: i64,
+    /// 同上，逐字（不含标点）
+    pub chars_no_punct: i64,
     /// 最近打开时间（unix 毫秒）；从没打开过是 null
     pub opened_at: Option<i64>,
     pub created_at: i64,
@@ -38,6 +42,8 @@ fn to_dto(entry: ShelfEntry) -> ShelfEntryDto {
         title: entry.work.title,
         chapters: entry.chapters,
         word_count: entry.word_count,
+        char_count: entry.char_count,
+        chars_no_punct: entry.chars_no_punct,
         opened_at: entry.work.opened_at,
         created_at: entry.work.created_at,
         updated_at: entry.work.updated_at,

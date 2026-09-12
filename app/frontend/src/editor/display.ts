@@ -4,6 +4,7 @@
 // 反过来，谁也不该为了显示一个数字去 import 别人的状态机。
 
 import { t } from "../locales/index.ts";
+import { countUnitKey, pickCount, type Counts } from "./wordcount.ts";
 
 /** 字数给人看：一万以下报原数，一万以上报「x.x万」（一位小数）。 */
 export function formatWords(words: number): string {
@@ -26,4 +27,18 @@ export function formatWhen(ms: number | null, now: number = Date.now()): string 
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/**
+ * 按当前口径把一个数字念出来（**带单位**）：「3.4万 字」/「1200 词」。
+ *
+ * 单位跟着口径走——逐字报「字」、按词报「词」，别在模板里写死（那是两套口径共用一个句子）。
+ */
+export function formatCaliberWords(counts: Counts, caliber: string): string {
+  return t(countUnitKey(caliber), { count: formatWords(pickCount(counts, caliber)) });
+}
+
+/** 只要数字、不要单位的场合（目录树那一列很窄）。 */
+export function formatCaliberNumber(counts: Counts, caliber: string): string {
+  return formatWords(pickCount(counts, caliber));
 }

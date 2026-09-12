@@ -29,7 +29,7 @@ pub struct ContentStats {
 }
 
 /// 从正文算三个口径——**唯一一处**（规则本体在 `text::WordCaliber`，这里只调它）。
-fn stats_of(body: &str) -> ContentStats {
+pub(super) fn stats_of(body: &str) -> ContentStats {
     ContentStats {
         char_count: text::count_chars(body),
         chars_no_punct: text::count_chars_no_punct(body),
@@ -102,8 +102,10 @@ impl Store {
             params![node_id, body, hash, stats.char_count, now],
         )?;
         tx.execute(
-            "UPDATE nodes SET word_count = ?1, updated_at = ?2 WHERE id = ?3",
-            params![stats.word_count, now, node_id],
+            // 三个口径**各存一列**：目录树 / 卷合计 / 书架要"一眼看字数"，不能每次去扫正文
+            "UPDATE nodes SET word_count = ?1, char_count = ?2, chars_no_punct = ?3, updated_at = ?4
+             WHERE id = ?5",
+            params![stats.word_count, stats.char_count, stats.chars_no_punct, now, node_id],
         )?;
         tx.commit()?;
 
@@ -116,6 +118,56 @@ impl Store {
         // 顺带记心跳与"最后落盘的是哪一章"，**不额外增加界面往返**（崩溃检测靠它）
         self.note_heartbeat(Some(node_id), Some(&hash))?;
         Ok(stats)
+    }
+
+    /// 把三个字数口径**回填**到节点上（#128）——老库只有「按词」那一列。
+    ///
+    /// 只在没做过时跑一次：做完在 `settings` 里留标记；中途被杀就下次重跑（重算幂等，
+    /// 因为它是从正文原样算出来的，不是累加）。**必须过 Rust**——CJK 口径 SQL 算不了。
+    ///
+    /// 放在这里而不是迁移里，是因为它要读正文、要用 `text` 的规则；迁移只负责加列。
+    pub(super) fn backfill_node_counts(&mut self) -> Result<()> {
+        const MARKER: &str = "nodes.counts_backfilled";
+        let done: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                params![MARKER],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if done.is_some() {
+            return Ok(());
+        }
+
+        // 先全读出来再写：同一条连接上不能边遍历结果集边更新
+        let rows: Vec<(i64, String)> = {
+            let mut stmt = self.conn.prepare("SELECT node_id, body FROM node_contents")?;
+            let mapped = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            mapped.collect::<rusqlite::Result<Vec<_>>>()?
+        };
+
+        let now = now_millis();
+        let tx = self.conn.transaction()?;
+        for (node_id, body) in &rows {
+            let stats = stats_of(body);
+            tx.execute(
+                "UPDATE nodes SET word_count = ?1, char_count = ?2, chars_no_punct = ?3
+                 WHERE id = ?4",
+                params![stats.word_count, stats.char_count, stats.chars_no_punct, node_id],
+            )?;
+            // 顺手把正文表里那一列也刷新：口径规则修过（零宽字符那次），老值可能偏大
+            tx.execute(
+                "UPDATE node_contents SET char_count = ?1 WHERE node_id = ?2",
+                params![stats.char_count, node_id],
+            )?;
+        }
+        tx.execute(
+            "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES(?1, ?2, ?3)",
+            params![MARKER, "1", now],
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// 库里正文的**内容指纹**——「写后读回校验」用它比对，**不必把整章文本再传一遍**。

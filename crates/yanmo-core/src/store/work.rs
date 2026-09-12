@@ -26,8 +26,12 @@ pub struct ShelfEntry {
     pub work: Work,
     /// 这本书里章的个数（场景卡这类卡片不算章）
     pub chapters: i64,
-    /// 这本书的字数合计（各节点预聚合字数之和，不扫正文）
+    /// 这本书的字数合计（各节点预聚合字数之和，不扫正文）——按词
     pub word_count: i64,
+    /// 同上，逐字（含标点）
+    pub char_count: i64,
+    /// 同上，逐字（不含标点）
+    pub chars_no_punct: i64,
 }
 
 fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkRow> {
@@ -132,6 +136,10 @@ impl Store {
                     (SELECT COUNT(*) FROM nodes n
                       WHERE n.work_id = works.id AND n.deleted_at IS NULL AND n.node_kind = 'chapter'),
                     (SELECT COALESCE(SUM(n.word_count), 0) FROM nodes n
+                      WHERE n.work_id = works.id AND n.deleted_at IS NULL),
+                    (SELECT COALESCE(SUM(n.char_count), 0) FROM nodes n
+                      WHERE n.work_id = works.id AND n.deleted_at IS NULL),
+                    (SELECT COALESCE(SUM(n.chars_no_punct), 0) FROM nodes n
                       WHERE n.work_id = works.id AND n.deleted_at IS NULL)
                FROM works
               WHERE deleted_at IS NULL
@@ -152,12 +160,14 @@ impl Store {
                 ),
                 row.get::<_, i64>(8)?,
                 row.get::<_, i64>(9)?,
+                row.get::<_, i64>(10)?,
+                row.get::<_, i64>(11)?,
             ))
         })?;
         let mut out = Vec::new();
         for row in rows {
-            let (raw, chapters, word_count) = row?;
-            out.push(ShelfEntry { work: build(raw)?, chapters, word_count });
+            let (raw, chapters, word_count, char_count, chars_no_punct) = row?;
+            out.push(ShelfEntry { work: build(raw)?, chapters, word_count, char_count, chars_no_punct });
         }
         Ok(out)
     }

@@ -83,6 +83,10 @@ export interface TreeNode {
   kind: string;
   title: string;
   word_count: number;
+  /** 逐字（含标点） */
+  char_count: number;
+  /** 逐字（不含标点） */
+  chars_no_punct: number;
   /** 已经有正文了吗（空章一眼可见） */
   has_body: boolean;
   /** 这个节点能不能编辑正文（点一下是"打开来写"还是"展开看看"） */
@@ -93,8 +97,12 @@ export interface TreeNode {
   has_children: boolean;
   /** 容器行的小字：本卷几章（**非容器是 0**） */
   chapter_count: number;
-  /** 容器行的小字：本卷共多少字（**非容器是 0**） */
+  /** 容器行的小字：本卷共多少字（**非容器是 0**）——按词口径 */
   subtree_word_count: number;
+  /** 同上，逐字（含标点） */
+  subtree_char_count: number;
+  /** 同上，逐字（不含标点） */
+  subtree_chars_no_punct: number;
 }
 
 /** 外观 / 写作行为偏好（每项都已经落到具体值）。 */
@@ -136,8 +144,12 @@ export interface ShelfEntry {
   title: string;
   /** 这本书里章的个数（单篇文章是 0，此时只报字数） */
   chapters: number;
-  /** 字数合计 */
+  /** 字数合计（按词口径） */
   word_count: number;
+  /** 同上，逐字（含标点） */
+  char_count: number;
+  /** 同上，逐字（不含标点） */
+  chars_no_punct: number;
   /** 最近打开（unix 毫秒）；从没打开过是 null */
   opened_at: number | null;
   created_at: number;
@@ -149,6 +161,8 @@ export interface NameClash {
   id: number;
   title: string;
   word_count: number;
+  char_count: number;
+  chars_no_punct: number;
 }
 
 /** 恢复**之前**的交代：回到哪、会不会与谁重名。 */
