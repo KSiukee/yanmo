@@ -7,12 +7,19 @@
 //! 3. **读不出来的记录当没设过**：宁可回默认，也不要让一个坏 JSON 把界面卡住。
 //!
 //! 与正文无关：这些偏好**不进导出**，也不改动数据的任何字节。
+//!
+//! # 为什么把「字数口径」也放这里
+//!
+//! 它看着像"统计"，其实是**显示偏好**：算哪三个数是核心的事（`text::WordCaliber`），
+//! 眼前显示哪一个由作者选。放进同一份设置是为了**共用这一套"全局 + 每书覆盖"的机制**——
+//! 再起一个模块就是第二份一模一样的读/写/合并/重置代码（重复副本＝拆分硬信号）。
 
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use super::Store;
 use crate::error::Result;
+use crate::text::WordCaliber;
 use crate::time::now_millis;
 
 /// 作者改过的项（`None` = 没改过，用默认）。
@@ -24,18 +31,25 @@ pub struct Appearance {
     /// 打开"最新那一章"时，跳到段末并聚焦输入光标
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub jump_to_end_on_latest: Option<bool>,
+    /// 状态栏显示哪个字数口径（`text::WordCaliber` 的稳定代码）。
+    ///
+    /// `None` = 没改过 → **跟作品语言走**（中文逐字 / 英文按词 / 日文逐字），
+    /// 由调用方用 `WorkLanguage::default_caliber()` 落定——核心这里不替它猜。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub word_count_caliber: Option<String>,
 }
 
 impl Appearance {
     /// 一项都没改过——那就没必要在库里留这个键。
     fn is_empty(&self) -> bool {
-        self.jump_to_end_on_latest.is_none()
+        self.jump_to_end_on_latest.is_none() && self.word_count_caliber.is_none()
     }
 
     /// 把 `over`（书的覆盖）盖在 `self`（全局）上：**只覆盖它真设过的项**。
     fn overridden_by(&self, over: &Appearance) -> Appearance {
         Appearance {
             jump_to_end_on_latest: over.jump_to_end_on_latest.or(self.jump_to_end_on_latest),
+            word_count_caliber: over.word_count_caliber.clone().or_else(|| self.word_count_caliber.clone()),
         }
     }
 }
@@ -44,12 +58,14 @@ impl Appearance {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct ResolvedAppearance {
     pub jump_to_end_on_latest: bool,
+    /// 作者选过的口径；`None` = 没选过（界面用作品语言的默认口径顶上）。
+    pub word_count_caliber: Option<WordCaliber>,
 }
 
 impl Default for ResolvedAppearance {
     /// 默认值只有这一处——界面与核心都不许各写一份。
     fn default() -> Self {
-        Self { jump_to_end_on_latest: true }
+        Self { jump_to_end_on_latest: true, word_count_caliber: None }
     }
 }
 
@@ -68,7 +84,23 @@ impl Store {
             jump_to_end_on_latest: merged
                 .jump_to_end_on_latest
                 .unwrap_or(defaults.jump_to_end_on_latest),
+            // 认不出来的代码**当没设过**（跟坏 JSON 同一条规矩），界面回语言默认
+            word_count_caliber: merged
+                .word_count_caliber
+                .as_deref()
+                .and_then(WordCaliber::parse),
         })
+    }
+
+    /// **落定后的字数口径**：作者选过就听作者的，没选过跟作品语言的默认。
+    ///
+    /// 这条规则只写在这里——壳与界面都别自己拼（界面尤其不该抄一份"语言 → 口径"对照表，
+    /// 两份迟早走偏）。改作品语言后若作者从没选过，这里自然就跟着新语言走。
+    pub fn word_caliber(&self, work_id: i64) -> Result<WordCaliber> {
+        if let Some(chosen) = self.appearance(Some(work_id))?.word_count_caliber {
+            return Ok(chosen);
+        }
+        Ok(self.get_work(work_id)?.language.default_caliber())
     }
 
     /// 写偏好（**稀疏合并**）：只覆盖传进来的项，没传的保持原样。
@@ -79,12 +111,25 @@ impl Store {
         if let Some(value) = patch.jump_to_end_on_latest {
             stored.jump_to_end_on_latest = Some(value);
         }
+        if let Some(value) = patch.word_count_caliber.as_deref() {
+            // 只认三种稳定代码：写进来一个不认识的，等于给界面埋一个"未知口径"
+            let parsed = WordCaliber::parse(value).ok_or_else(|| {
+                crate::error::Error::invalid_with(
+                    crate::error::codes::UNKNOWN_WORD_CALIBER,
+                    [("value", value.to_string())],
+                )
+            })?;
+            stored.word_count_caliber = Some(parsed.as_str().to_string());
+        }
         self.write_appearance(work_id, &stored)?;
         self.record(
             "settings",
             work_id.unwrap_or(0),
             "set_appearance",
-            serde_json::json!({ "jump_to_end_on_latest": patch.jump_to_end_on_latest }),
+            serde_json::json!({
+                "jump_to_end_on_latest": patch.jump_to_end_on_latest,
+                "word_count_caliber": patch.word_count_caliber,
+            }),
         )
     }
 

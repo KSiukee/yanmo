@@ -97,6 +97,7 @@ fn main() {
             commands::work::list_shelf,
             commands::work::create_work,
             commands::work::rename_work,
+            commands::work::set_work_language,
             commands::work::delete_work,
             commands::work::export_work,
             commands::trash::list_trash,

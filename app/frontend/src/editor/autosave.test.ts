@@ -71,6 +71,7 @@ function fakeCore(options: { manual?: boolean } = {}) {
   const fp = (body: string) => `fp(${body})`;
   const ack = (body: string): SaveAck => ({
     char_count: body.length,
+    chars_no_punct: body.length,
     word_count: body.length,
     fingerprint: fp(body),
   });
@@ -130,7 +131,7 @@ test("停笔才落盘：连续击键只写一次，写的是最后那一版", as
   const clock = new FakeClock();
   const core = fakeCore();
   const autosave = build(core, clock);
-  autosave.attach("", { char_count: 0, word_count: 0, fingerprint: "" });
+  autosave.attach("", { char_count: 0, chars_no_punct: 0, word_count: 0, fingerprint: "" });
 
   autosave.changed("第一");
   await clock.advance(100);
@@ -148,7 +149,7 @@ test("落盘期间的新改动不会被这一次写吞掉", async () => {
   const clock = new FakeClock();
   const core = fakeCore({ manual: true });
   const autosave = build(core, clock);
-  autosave.attach("", { char_count: 0, word_count: 0, fingerprint: "" });
+  autosave.attach("", { char_count: 0, chars_no_punct: 0, word_count: 0, fingerprint: "" });
 
   autosave.changed("第一句");
   await clock.advance(250);
@@ -171,7 +172,7 @@ test("失焦立刻落盘，不等防抖", async () => {
   const clock = new FakeClock();
   const core = fakeCore();
   const autosave = build(core, clock);
-  autosave.attach("", { char_count: 0, word_count: 0, fingerprint: "" });
+  autosave.attach("", { char_count: 0, chars_no_punct: 0, word_count: 0, fingerprint: "" });
 
   autosave.changed("马上要切走了");
   await autosave.flush();
@@ -184,7 +185,7 @@ test("一直存不进去：先报错，超时后强制抢救", async () => {
   const clock = new FakeClock();
   const core = fakeCore();
   const autosave = build(core, clock);
-  autosave.attach("", { char_count: 0, word_count: 0, fingerprint: "" });
+  autosave.attach("", { char_count: 0, chars_no_punct: 0, word_count: 0, fingerprint: "" });
   core.alwaysFail(true);
 
   autosave.changed("写不进去的一版");
@@ -208,7 +209,7 @@ test("读回校验发现库里的正文变了：立刻抢救并留痕", async ()
   const core = fakeCore();
   const autosave = build(core, clock);
   core.setStored("手上这一版正文");
-  autosave.attach("手上这一版正文", { char_count: 7, word_count: 7, fingerprint: "fp(手上这一版正文)" });
+  autosave.attach("手上这一版正文", { char_count: 7, chars_no_punct: 7, word_count: 7, fingerprint: "fp(手上这一版正文)" });
 
   // 库里被改成了别的东西（外部改动 / 写入丢失）
   core.setStoredFingerprint("fp(别人写的)");
@@ -229,7 +230,7 @@ test("一切正常时不误报，也不多写", async () => {
   const core = fakeCore();
   const autosave = build(core, clock);
   core.setStored("正文没变");
-  autosave.attach("正文没变", { char_count: 4, word_count: 4, fingerprint: "fp(正文没变)" });
+  autosave.attach("正文没变", { char_count: 4, chars_no_punct: 4, word_count: 4, fingerprint: "fp(正文没变)" });
 
   await clock.advance(VERIFY_RANGE.max);
   await clock.advance(VERIFY_RANGE.max);
@@ -245,7 +246,7 @@ test("关掉之后彻底安静", async () => {
   const clock = new FakeClock();
   const core = fakeCore();
   const autosave = build(core, clock);
-  autosave.attach("", { char_count: 0, word_count: 0, fingerprint: "" });
+  autosave.attach("", { char_count: 0, chars_no_punct: 0, word_count: 0, fingerprint: "" });
 
   autosave.changed("还没落盘就关了");
   autosave.dispose();

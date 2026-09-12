@@ -43,6 +43,7 @@ import {
   restoreWork,
   saveBody,
   saveCursor,
+  setWorkLanguage,
   sessionReport,
   snapshotDiff,
   snapshotDrop,
@@ -63,6 +64,14 @@ import { useAddChapter, type AddChapter } from "./add-chapter";
 import { useAppearance, type AppearanceState } from "./appearance";
 import { ChapterSwitch } from "./chapters";
 import { t } from "../locales/index.ts";
+import {
+  asCaliber,
+  asLanguage,
+  nextCaliber,
+  nextLanguage,
+  type Caliber,
+  type WorkLanguage,
+} from "./wordcount.ts";
 import { useDirectory, type Directory } from "./directory";
 import { docToText, textToHtml } from "./doc";
 import { ExitGate, type ExitGateState } from "./exitguard";
@@ -108,12 +117,21 @@ export interface EditorSession {
   retryExit: () => void;
   escapeExit: () => void;
   forceExit: () => void;
+  /** 作品语言（跟书走） */
+  language: Ref<WorkLanguage>;
+  /** 落定后的字数口径（作者选过 → 它；没选过 → 作品语言的默认） */
+  caliber: Ref<Caliber>;
+  /** 状态栏那个数字点一下：换下一个口径并**落库**（没落成就不改显示） */
+  cycleCaliber: () => Promise<void>;
+  /** 语言按钮点一下：换下一个语言，并按核心给的落定口径刷新 */
+  cycleLanguage: () => Promise<void>;
 }
 
 const IDLE: AutosaveState = {
   status: "idle",
   detail: "",
   char_count: 0,
+  chars_no_punct: 0,
   word_count: 0,
   incident: null,
 };
@@ -128,6 +146,9 @@ export function useEditorSession(): EditorSession {
   const switching = ref(false);
   /** 当前作品与当前章——目录树认这两个（换作品换树，落地的那行跟字数） */
   const workId = ref<number | null>(null);
+  /** 作品语言（跟书走）与**落定后的**字数口径（作者选过 → 它；没选过 → 语言默认） */
+  const language = ref<WorkLanguage>("zh");
+  const caliber = ref<Caliber>("chars");
   const currentNodeId = ref<number | null>(null);
 
   const autosave = shallowRef<Autosave | null>(null);
@@ -157,6 +178,7 @@ export function useEditorSession(): EditorSession {
     });
     engine.attach(snapshot.body, {
       char_count: snapshot.char_count,
+      chars_no_punct: snapshot.chars_no_punct,
       word_count: snapshot.word_count,
       fingerprint: snapshot.fingerprint,
     });
@@ -177,8 +199,11 @@ export function useEditorSession(): EditorSession {
       ...IDLE,
       status: snapshot.fingerprint === "" ? "idle" : "saved",
       char_count: snapshot.char_count,
+      chars_no_punct: snapshot.chars_no_punct,
       word_count: snapshot.word_count,
     };
+    language.value = asLanguage(snapshot.work_language);
+    caliber.value = asCaliber(snapshot.word_caliber);
     // 第二个参数 false：载入内容不算"作者改动"，不触发落盘
     editor.value?.commands.setContent(textToHtml(snapshot.body), false);
     applyCursor(snapshot.cursor);
@@ -227,6 +252,40 @@ export function useEditorSession(): EditorSession {
     if (cursor) void saveCursor(engine.node_id, cursor).catch(() => {});
   }
 
+  /**
+   * 状态栏那个数字点一下：换个口径，写进**全局偏好**（与设置面板同一份）。
+   *
+   * 写到全局而不是每本书：第一版界面只暴露全局那份（见外观设置骨架那条任务），
+   * 每本书的覆盖留给将来的"这本书单独一套"。**写成功才改显示**——存不下去就别装作换了。
+   */
+  async function cycleCaliber(): Promise<void> {
+    const wanted = nextCaliber(caliber.value);
+    try {
+      await writeAppearance(null, { word_count_caliber: wanted });
+      caliber.value = wanted;
+    } catch (error) {
+      failure.value = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  /**
+   * 语言按钮点一下：换作品语言。
+   *
+   * 口径**不在这里自己算**——核心把"落定后的口径"一起回传（作者从没选过口径时，
+   * 换成英文作品就该变成按词）。界面抄一份"语言 → 口径"的对照表，两边迟早走偏。
+   */
+  async function cycleLanguage(): Promise<void> {
+    const work = workId.value;
+    if (work === null) return;
+    try {
+      const ack = await setWorkLanguage(work, nextLanguage(language.value));
+      language.value = asLanguage(ack.language);
+      caliber.value = asCaliber(ack.word_caliber);
+    } catch (error) {
+      failure.value = error instanceof Error ? error.message : String(error);
+    }
+  }
+
   function onVisibilityChange() {
     if (document.visibilityState === "hidden") persistNow();
   }
@@ -250,6 +309,7 @@ export function useEditorSession(): EditorSession {
     editor.value?.commands.setContent(textToHtml(ack.body), false);
     autosave.value?.attach(ack.body, {
       char_count: ack.char_count,
+      chars_no_punct: ack.chars_no_punct,
       word_count: ack.word_count,
       fingerprint: ack.fingerprint,
     });
@@ -564,6 +624,10 @@ export function useEditorSession(): EditorSession {
     snapshots,
     workId,
     switchWork,
+    language,
+    caliber,
+    cycleCaliber,
+    cycleLanguage,
     chapterTitle,
     saveState,
     exitState,

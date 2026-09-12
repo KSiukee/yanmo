@@ -15,13 +15,26 @@ use crate::error::Result;
 use crate::text;
 use crate::time::now_millis;
 
-/// 一次写入（或核对）得到的字数。
+/// 一次写入（或核对）得到的字数——**三个口径都给**，界面按作者选的那个显示。
+///
+/// 三个数一起回，是因为口径是可切换的显示偏好：界面切换时不该再跑一趟核心。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ContentStats {
-    /// 字符数（不计空白）
+    /// 逐字（含标点）：非空白、非零宽的字符
     pub char_count: i64,
-    /// 字数（CJK 逐字 + 非 CJK 按串）
+    /// 逐字（不含标点）：汉字 / 假名 / 谚文 / 字母 / 数字
+    pub chars_no_punct: i64,
+    /// 按词：CJK（表意·假名·谚文）逐字 + 其它连续字母数字串计 1
     pub word_count: i64,
+}
+
+/// 从正文算三个口径——**唯一一处**（规则本体在 `text::WordCaliber`，这里只调它）。
+fn stats_of(body: &str) -> ContentStats {
+    ContentStats {
+        char_count: text::count_chars(body),
+        chars_no_punct: text::count_chars_no_punct(body),
+        word_count: text::count_words(body),
+    }
 }
 
 impl Store {
@@ -38,51 +51,44 @@ impl Store {
             .unwrap_or_default())
     }
 
-    /// 读正文 + 它的字数（编辑器打开一章用；字数与写入时同一口径）。
+    /// 读正文 + 它的字数（编辑器打开一章用）。
+    ///
+    /// **现算**，不读库里的预聚合值：口径规则本身会随版本修正（比如假名/谚文从
+    /// "一个词"改成"逐字"），现算的才对得上作者眼前这一版。库里的预聚合值见
+    /// `nodes.word_count`，它是目录树用的，靠写入时刷新。
     pub fn read_body_with_stats(&self, node_id: i64) -> Result<(String, ContentStats)> {
         let body = self.read_body(node_id)?;
-        let stats = ContentStats {
-            char_count: text::count_chars(&body),
-            word_count: text::count_words(&body),
-        };
+        let stats = stats_of(&body);
         Ok((body, stats))
     }
 
     /// 写正文。
     ///
     /// - 节点不存在或已删除 → 明确报错（不往回收站里写东西）；
-    /// - 内容指纹与库里一致 → **原样返回，不做任何写入**；
+    /// - 内容指纹与库里一致 → **不写库、不记日志**，但仍返回**现算**的三个字数；
     /// - 否则一个事务里更新正文、回算字数、更新时间戳。
     pub fn write_body(&mut self, node_id: i64, body: &str) -> Result<ContentStats> {
         self.node_work(node_id)?;
 
         let hash = text::content_hash(body);
-        if let Some((stored_hash, stored_chars)) = self
+        let stats = stats_of(body);
+        if let Some(stored_hash) = self
             .conn
             .query_row(
-                "SELECT content_hash, char_count FROM node_contents WHERE node_id = ?1",
+                "SELECT content_hash FROM node_contents WHERE node_id = ?1",
                 params![node_id],
-                |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
+                |r| r.get::<_, String>(0),
             )
             .optional()?
         {
             if stored_hash == hash {
-                let words: i64 = self.conn.query_row(
-                    "SELECT word_count FROM nodes WHERE id = ?1",
-                    params![node_id],
-                    |r| r.get(0),
-                )?;
-                return Ok(ContentStats {
-                    char_count: stored_chars,
-                    word_count: words,
-                });
+                // 正文一个字没变：**不写库**（这是"边写边存"能高频调用的前提）。
+                // 但字数照样**现算**返回——口径规则修过之后（如假名按逐字），
+                // 库里那份预聚合值可能是旧规则的，不该拿它糊弄界面。
+                return Ok(stats);
             }
         }
 
-        let stats = ContentStats {
-            char_count: text::count_chars(body),
-            word_count: text::count_words(body),
-        };
         let now = now_millis();
         let tx = self.conn.transaction()?;
         tx.execute(

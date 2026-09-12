@@ -13,7 +13,7 @@
 
 use rusqlite::Connection;
 
-use super::{migrations_v1, migrations_v2, migrations_v3};
+use super::{migrations_v1, migrations_v2, migrations_v3, migrations_v4};
 use crate::error::{Error, Result};
 use crate::time::now_millis;
 
@@ -49,6 +49,12 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "snapshot_pinned",
         steps: migrations_v3::STEPS,
         prepare: Some(migrations_v3::prepare),
+    },
+    Migration {
+        version: 4,
+        name: "work_language",
+        steps: migrations_v4::STEPS,
+        prepare: Some(migrations_v4::prepare),
     },
 ];
 

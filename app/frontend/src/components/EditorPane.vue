@@ -3,9 +3,16 @@
 //
 // 这个文件只负责"长什么样"：会话编排是另一个变化理由，别混在一起。
 // 会话由布局层建一次（目录树与编辑器说的是同一本书、同一章），这里只把它摊开。
+import { computed } from "vue";
 import { EditorContent } from "@tiptap/vue-3";
 
 import { t } from "../locales/index.ts";
+import {
+  caliberLabelKey,
+  countUnitKey,
+  languageLabelKey,
+  pickCount,
+} from "../editor/wordcount.ts";
 import type { EditorSession } from "../editor/session";
 import type { AutosaveState } from "../editor/autosave";
 import ExitDialog from "./ExitDialog.vue";
@@ -22,7 +29,24 @@ const {
   retryExit,
   escapeExit,
   forceExit,
+  language,
+  caliber,
+  cycleCaliber,
+  cycleLanguage,
 } = props.session;
+
+// 状态栏那个数字：三个口径都在手上（落盘时一起回来），**点一下就换一个**。
+// 口径名与单位都从字典取（核心只给码，文案在 locales 里）。
+const countText = computed(() =>
+  t(countUnitKey(caliber.value), { count: pickCount(saveState.value, caliber.value) }),
+);
+const countTitle = computed(() =>
+  t("editor.caliber.switch_title", { name: t(caliberLabelKey(caliber.value)) }),
+);
+const languageText = computed(() => t(languageLabelKey(language.value)));
+const languageTitle = computed(() =>
+  t("editor.language.switch_title", { name: languageText.value }),
+);
 // 版本历史：跟当前章绑在一起，入口就在章名这一行（状态机在 editor/snapshots.ts）
 const { toggle: toggleSnapshots } = props.session.snapshots;
 
@@ -56,7 +80,22 @@ function statusText(status: AutosaveState["status"]): string {
       <span class="editor__meta">
         <span v-if="failure" class="editor__bad" :title="failure">{{ failure }}</span>
         <template v-else>
-          <span class="editor__count">{{ t("editor.word_count", { count: saveState.word_count }) }}</span>
+          <button
+            type="button"
+            class="editor__count"
+            :title="countTitle"
+            @click="cycleCaliber()"
+          >
+            {{ countText }}
+          </button>
+          <button
+            type="button"
+            class="editor__lang"
+            :title="languageTitle"
+            @click="cycleLanguage()"
+          >
+            {{ languageText }}
+          </button>
           <span
             class="editor__status"
             :class="`editor__status--${saveState.status}`"

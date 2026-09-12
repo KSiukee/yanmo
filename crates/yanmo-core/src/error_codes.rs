@@ -64,6 +64,9 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     PATH_NO_PARENT => "file.path_no_parent" : "路径没有上级目录：{path}" : ["path"],
     UNKNOWN_NODE_KIND => "value.unknown_node_kind" : "未知的节点类型：{value}" : ["value"],
     UNKNOWN_WORK_KIND => "value.unknown_work_kind" : "未知的作品类型：{value}" : ["value"],
+    UNKNOWN_WORK_LANGUAGE => "value.unknown_work_language" : "未知的作品语言：{value}" : ["value"],
+    UNKNOWN_WORD_CALIBER => "value.unknown_word_caliber"
+        : "未知的字数口径：{value}（只有 chars / chars_no_punct / words）" : ["value"],
     UNKNOWN_EXPORT_FORMAT => "value.unknown_export_format"
         : "不认识的导出格式：{value}（只支持 txt / json）" : ["value"],
     UNKNOWN_GAP_ANSWER => "value.unknown_gap_answer" : "未知的答复：{value}" : ["value"],

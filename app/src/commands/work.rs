@@ -11,7 +11,7 @@ use tauri::State;
 
 use crate::error::ApiError;
 use crate::storage::AppData;
-use yanmo_core::model::WorkKind;
+use yanmo_core::model::{WorkKind, WorkLanguage};
 use yanmo_core::store::{ExportFormat, ShelfEntry, Store};
 
 /// 书架的一行。
@@ -72,6 +72,36 @@ pub fn rename_work(
     title: String,
 ) -> Result<(), ApiError> {
     data.with_store(|store: &mut Store| store.rename_work(work_id, &title))
+}
+
+/// 改作品语言的回执：改完的**语言**与**落定后的字数口径**。
+///
+/// 口径一起回，是因为界面上那个数字要立刻跟着变——而"改完该用哪个口径"的规则在核心
+/// （作者选过就听作者的，没选过跟新语言的默认），界面不该自己算。
+#[derive(Debug, Serialize)]
+pub struct WorkLanguageAck {
+    pub work_id: i64,
+    pub language: String,
+    pub word_caliber: &'static str,
+}
+
+/// 改作品语言（`zh` / `en` / `ja`）——**字数默认口径跟它走**。
+///
+/// 写完**回读一次**再把两个码回传：界面据此确认"真的存下去了"，也免得两边各说各话。
+#[tauri::command(rename_all = "snake_case")]
+pub fn set_work_language(
+    data: State<'_, AppData>,
+    work_id: i64,
+    language: String,
+) -> Result<WorkLanguageAck, ApiError> {
+    data.with_store(|store: &mut Store| {
+        store.set_work_language(work_id, WorkLanguage::parse(&language)?)?;
+        Ok(WorkLanguageAck {
+            work_id,
+            language: store.get_work(work_id)?.language.as_str().to_string(),
+            word_caliber: store.word_caliber(work_id)?.as_str(),
+        })
+    })
 }
 
 /// 删掉一本书（**软删除**：正文与历史都留着，回收站接上后能捞回来）。

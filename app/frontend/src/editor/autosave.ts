@@ -18,6 +18,7 @@ export interface AutosaveState {
   /** 给用户看的补充说明（失败原因 / 抢救说明） */
   detail: string;
   char_count: number;
+  chars_no_punct: number;
   word_count: number;
   /** 本次会话是否发生过抢救；发生过就一直留着，提醒用户回头看一眼 */
   incident: string | null;
@@ -25,6 +26,7 @@ export interface AutosaveState {
 
 export interface SaveAck {
   char_count: number;
+  chars_no_punct: number;
   word_count: number;
   fingerprint: string;
 }
@@ -82,6 +84,7 @@ export class Autosave {
   private status: SaveStatus = "idle";
   private detail = "";
   private charCount = 0;
+  private charsNoPunct = 0;
   private wordCount = 0;
   private incident: string | null = null;
 
@@ -117,6 +120,7 @@ export class Autosave {
     this.savedRev = 0;
     this.savedFingerprint = ack.fingerprint;
     this.charCount = ack.char_count;
+    this.charsNoPunct = ack.chars_no_punct;
     this.wordCount = ack.word_count;
     this.setStatus(ack.fingerprint === "" ? "idle" : "saved");
     this.armVerify();
@@ -181,6 +185,7 @@ export class Autosave {
       status: this.status,
       detail: this.detail,
       char_count: this.charCount,
+      chars_no_punct: this.charsNoPunct,
       word_count: this.wordCount,
       incident: this.incident,
     };
@@ -222,6 +227,7 @@ export class Autosave {
         this.savedFingerprint = ack.fingerprint;
         this.savedRev = rev;
         this.charCount = ack.char_count;
+        this.charsNoPunct = ack.chars_no_punct;
         this.wordCount = ack.word_count;
       } catch (e) {
         this.setStatus("error", t("autosave.save_failed", { detail: messageOf(e) }));
@@ -255,6 +261,7 @@ export class Autosave {
       this.savedFingerprint = ack.fingerprint;
       this.savedRev = rev;
       this.charCount = ack.char_count;
+      this.charsNoPunct = ack.chars_no_punct;
       this.wordCount = ack.word_count;
       if (rev === this.rev) {
         this.setStatus("saved", t("autosave.recovered", { label }));

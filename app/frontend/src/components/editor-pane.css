@@ -55,6 +55,25 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 状态栏那个字数与语言：**可点**（点一下换一个），但平时长得像普通文字，不喧宾夺主 */
+.editor__count,
+.editor__lang {
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.editor__count:hover,
+.editor__lang:hover {
+  border-color: var(--ym-line);
+  color: var(--ym-accent);
+}
+
 .editor__status--idle,
 .editor__status--pending,
 .editor__status--saving,

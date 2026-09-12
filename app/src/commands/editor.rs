@@ -23,8 +23,15 @@ pub struct EditorSnapshot {
     pub title: String,
     /// 正文（纯文本，段落间空行分隔）
     pub body: String,
+    /// 三个字数口径一起给：界面按作者选的那个显示（切换时不必再跑一趟核心）
     pub char_count: i64,
+    pub chars_no_punct: i64,
     pub word_count: i64,
+    /// 作品语言（`zh` / `en` / `ja`）——字数默认口径跟它走
+    pub work_language: String,
+    /// **落定后**的字数口径（作者选过就是它，没选过就是作品语言的默认）：
+    /// 界面直接照着取数，不必自己再维护一份"语言 → 口径"的对照表
+    pub word_caliber: &'static str,
     /// 库里这份正文的内容指纹；从未写过时为空串
     pub fingerprint: String,
     /// 上次读到哪了（**只有记的正是这一章时才有**）
@@ -59,6 +66,9 @@ pub struct NeighborsDto {
 /// 组装一章的快照（打开与切换走同一条路，免得两处各写一份）。
 fn snapshot_of(store: &Store, target: EditorTarget) -> yanmo_core::Result<EditorSnapshot> {
     let (body, stats) = store.read_body_with_stats(target.node_id)?;
+    // 口径由核心落定（作者选过 → 它；没选过 → 作品语言的默认）：规则只写在核心一处
+    let language = store.get_work(target.work_id)?.language;
+    let caliber = store.word_caliber(target.work_id)?;
     Ok(EditorSnapshot {
         work_id: target.work_id,
         node_id: target.node_id,
@@ -71,7 +81,10 @@ fn snapshot_of(store: &Store, target: EditorTarget) -> yanmo_core::Result<Editor
         }),
         body,
         char_count: stats.char_count,
+        chars_no_punct: stats.chars_no_punct,
         word_count: stats.word_count,
+        work_language: language.as_str().to_string(),
+        word_caliber: caliber.as_str(),
     })
 }
 
@@ -79,6 +92,7 @@ fn snapshot_of(store: &Store, target: EditorTarget) -> yanmo_core::Result<Editor
 #[derive(Debug, Serialize)]
 pub struct SaveAck {
     pub char_count: i64,
+    pub chars_no_punct: i64,
     pub word_count: i64,
     /// 落盘后库里的内容指纹——界面据此做**写后读回校验**
     pub fingerprint: String,
@@ -202,6 +216,7 @@ pub fn save_body(data: State<'_, AppData>, node_id: i64, body: String) -> Result
         let stats = store.write_body(node_id, &body)?;
         Ok(SaveAck {
             char_count: stats.char_count,
+            chars_no_punct: stats.chars_no_punct,
             word_count: stats.word_count,
             fingerprint: yanmo_core::text::content_hash(&body),
         })
@@ -228,6 +243,7 @@ pub fn emergency_snapshot(
         let stats = store.emergency_snapshot(node_id, &body, &reason)?;
         Ok(SaveAck {
             char_count: stats.char_count,
+            chars_no_punct: stats.chars_no_punct,
             word_count: stats.word_count,
             fingerprint: yanmo_core::text::content_hash(&body),
         })

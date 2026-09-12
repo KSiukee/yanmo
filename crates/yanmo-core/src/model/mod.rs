@@ -7,4 +7,4 @@ mod node;
 mod work;
 
 pub use node::{Node, NodeKind};
-pub use work::{Work, WorkKind};
+pub use work::{Work, WorkKind, WorkLanguage};

@@ -9,7 +9,7 @@ import type { Autosave, AutosaveState } from "./autosave.ts";
 import { ExitGate, isSafeToExit } from "./exitguard.ts";
 
 function stateOf(status: AutosaveState["status"], detail = ""): AutosaveState {
-  return { status, detail, char_count: 0, word_count: 0, incident: null };
+  return { status, detail, char_count: 0, chars_no_punct: 0, word_count: 0, incident: null };
 }
 
 /** 编辑器控制器替身：只实现闸门会用到的三样东西。 */

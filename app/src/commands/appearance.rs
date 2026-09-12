@@ -14,11 +14,16 @@ use yanmo_core::store::{Appearance, ResolvedAppearance, Store};
 #[derive(Debug, Serialize)]
 pub struct AppearanceDto {
     pub jump_to_end_on_latest: bool,
+    /// 作者选过的字数口径（`chars` / `chars_no_punct` / `words`）；null = 没选过
+    pub word_count_caliber: Option<String>,
 }
 
 impl From<ResolvedAppearance> for AppearanceDto {
     fn from(value: ResolvedAppearance) -> Self {
-        Self { jump_to_end_on_latest: value.jump_to_end_on_latest }
+        Self {
+            jump_to_end_on_latest: value.jump_to_end_on_latest,
+            word_count_caliber: value.word_count_caliber.map(|c| c.as_str().to_string()),
+        }
     }
 }
 
@@ -26,11 +31,15 @@ impl From<ResolvedAppearance> for AppearanceDto {
 #[derive(Debug, Deserialize)]
 pub struct AppearancePatch {
     pub jump_to_end_on_latest: Option<bool>,
+    pub word_count_caliber: Option<String>,
 }
 
 impl From<AppearancePatch> for Appearance {
     fn from(patch: AppearancePatch) -> Self {
-        Self { jump_to_end_on_latest: patch.jump_to_end_on_latest }
+        Self {
+            jump_to_end_on_latest: patch.jump_to_end_on_latest,
+            word_count_caliber: patch.word_count_caliber,
+        }
     }
 }
 

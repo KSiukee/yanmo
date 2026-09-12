@@ -39,8 +39,14 @@ export interface EditorSnapshot {
   title: string;
   /** 正文（纯文本，段落之间空行分隔） */
   body: string;
+  /** 三个字数口径一起给：界面按作者选的那个显示（切换时不必再跑一趟核心） */
   char_count: number;
+  chars_no_punct: number;
   word_count: number;
+  /** 作品语言（zh / en / ja）——字数默认口径跟它走 */
+  work_language: string;
+  /** **落定后**的字数口径（作者选过就是它，没选过就是作品语言的默认） */
+  word_caliber: string;
   /** 库里这份正文的内容指纹；从未写过时为空串 */
   fingerprint: string;
   /** 上次读到哪了（**只有记的正是这一章时才有**） */
@@ -95,11 +101,14 @@ export interface TreeNode {
 export interface Appearance {
   /** 打开最新一章时跳到段末并聚焦输入光标 */
   jump_to_end_on_latest: boolean;
+  /** 作者选过的字数口径（chars / chars_no_punct / words）；null = 没选过，跟作品语言走 */
+  word_count_caliber: string | null;
 }
 
 /** 要改的偏好项：**只写传进来的**，没传的保持原样。 */
 export interface AppearancePatch {
   jump_to_end_on_latest?: boolean;
+  word_count_caliber?: string;
 }
 
 /** 删章留下的一处空缺——点「+」时问那一句的依据。 */
@@ -201,6 +210,7 @@ export interface SnapshotRestoreAck {
   node_id: number;
   body: string;
   char_count: number;
+  chars_no_punct: number;
   word_count: number;
   fingerprint: string;
 }
@@ -221,6 +231,7 @@ export interface TrashEntry {
 /** 一次落盘的回执。 */
 export interface SaveAck {
   char_count: number;
+  chars_no_punct: number;
   word_count: number;
   /** 落盘后库里的内容指纹（写后读回校验的比对基准） */
   fingerprint: string;
@@ -289,6 +300,7 @@ const COMMANDS = {
   listShelf: "list_shelf",
   createWork: "create_work",
   renameWork: "rename_work",
+  setWorkLanguage: "set_work_language",
   deleteWork: "delete_work",
   listTrash: "list_trash",
   restoreWork: "restore_work",
@@ -334,6 +346,17 @@ export const createWork = (kind: string, title: string) =>
 /** 给书改名。 */
 export const renameWork = (work_id: number, title: string) =>
   call<void>(COMMANDS.renameWork, { work_id, title });
+
+/** 改作品语言的回执：改完的语言 + **落定后的字数口径**（界面照着刷新那个数字）。 */
+export interface WorkLanguageAck {
+  work_id: number;
+  language: string;
+  word_caliber: string;
+}
+
+/** 改作品语言（zh / en / ja）——字数默认口径跟它走；返回**写完回读**的两个码。 */
+export const setWorkLanguage = (work_id: number, language: string) =>
+  call<WorkLanguageAck>(COMMANDS.setWorkLanguage, { work_id, language });
 
 /** 删掉一本书（软删除，正文与历史都留着）。 */
 export const deleteWork = (work_id: number) => call<void>(COMMANDS.deleteWork, { work_id });

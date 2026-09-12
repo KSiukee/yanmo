@@ -1,6 +1,7 @@
 //! 作品（`works` 表）。
 
 use crate::error::{codes, Error, Result};
+use crate::text::WordCaliber;
 
 /// 作品类型——**一等公民**。
 ///
@@ -41,12 +42,59 @@ impl WorkKind {
     }
 }
 
+/// 作品语言——**作品的属性，跟书走**（与界面语言是两回事）。
+///
+/// 为什么要有它：字数口径本来就与语言相关（中文逐字 / 英文按词 / 日文原稿纸 400 字），
+/// 中文界面的作者写英文小说，字数就该按词算。将来字体与稿纸线型也跟它走。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkLanguage {
+    /// 中文
+    Zh,
+    /// 英文
+    En,
+    /// 日文
+    Ja,
+}
+
+impl WorkLanguage {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            WorkLanguage::Zh => "zh",
+            WorkLanguage::En => "en",
+            WorkLanguage::Ja => "ja",
+        }
+    }
+
+    pub fn parse(s: &str) -> Result<Self> {
+        match s {
+            "zh" => Ok(WorkLanguage::Zh),
+            "en" => Ok(WorkLanguage::En),
+            "ja" => Ok(WorkLanguage::Ja),
+            other => Err(Error::invalid_with(
+                codes::UNKNOWN_WORK_LANGUAGE,
+                [("value", other.to_string())],
+            )),
+        }
+    }
+
+    /// 这种语言的**默认字数口径**：中文逐字（含标点，与网文平台口径一致）、
+    /// 英文按词、日文逐字。作者在状态栏点一下就能改，这里只是"第一次打开看到哪个"。
+    pub const fn default_caliber(self) -> WordCaliber {
+        match self {
+            WorkLanguage::Zh | WorkLanguage::Ja => WordCaliber::Chars,
+            WorkLanguage::En => WordCaliber::Words,
+        }
+    }
+}
+
 /// 一部作品。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Work {
     pub id: i64,
     pub kind: WorkKind,
     pub title: String,
+    /// 作品语言（v4 起；老库迁移后一律是中文）。
+    pub language: WorkLanguage,
     /// 目标字数（可空＝不设目标）。
     pub target_words: Option<i64>,
     /// 创建时间（unix 毫秒）。

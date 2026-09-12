@@ -47,7 +47,7 @@ function build(initial: SnapshotSummary[], opts: { beforeFails?: boolean } = {})
     },
     restore: async (snapshot_id) => {
       calls.push(`restore:${snapshot_id}`);
-      return { node_id: 7, body: "旧稿。", char_count: 3, word_count: 3, fingerprint: "abcd" };
+      return { node_id: 7, body: "旧稿。", char_count: 3, chars_no_punct: 3, word_count: 3, fingerprint: "abcd" };
     },
   };
   const snapshots = useSnapshots({

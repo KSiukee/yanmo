@@ -17,7 +17,10 @@ function snapshot(node_id: number, body = "正文"): EditorSnapshot {
     title: `第${node_id}章`,
     body,
     char_count: body.length,
+    chars_no_punct: body.length,
     word_count: body.length,
+    work_language: "zh",
+    word_caliber: "chars",
     fingerprint: `fp(${body})`,
     cursor: { anchor: 0, head: 0, scroll_top: 0 },
   };

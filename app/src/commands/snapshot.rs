@@ -72,6 +72,7 @@ pub struct RestoreAck {
     pub node_id: i64,
     pub body: String,
     pub char_count: i64,
+    pub chars_no_punct: i64,
     pub word_count: i64,
     pub fingerprint: String,
 }
@@ -144,6 +145,7 @@ pub fn snapshot_restore(data: State<'_, AppData>, snapshot_id: i64) -> Result<Re
             fingerprint: text::content_hash(&body),
             body,
             char_count: stats.char_count,
+            chars_no_punct: stats.chars_no_punct,
             word_count: stats.word_count,
         })
     })
