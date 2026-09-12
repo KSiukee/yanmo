@@ -12,6 +12,7 @@ import { computed, nextTick, ref } from "vue";
 
 import type { EditorSession } from "../editor/session";
 import { addIntent, containerLabel, type TreeRow } from "../editor/tree";
+import { t } from "../locales/index.ts";
 import { formatWords } from "../editor/display.ts";
 import GapDialog from "./GapDialog.vue";
 
@@ -40,6 +41,31 @@ const {
   answer: answerGap,
   dismiss: dismissGap,
 } = adding;
+
+/**
+ * 同层序号（1 起）：**没起名的卷靠它显示「第 1 卷」**，而不是一个冷冰冰的"未命名"。
+ *
+ * 序号按当前显示顺序现算（拖动之后自然跟着变），不去库里存一份会打架的副本。
+ */
+const serialById = computed(() => {
+  const seen = new Map<number | null, number>();
+  const out = new Map<number, number>();
+  for (const row of rows.value) {
+    const next = (seen.get(row.parent_id) ?? 0) + 1;
+    seen.set(row.parent_id, next);
+    out.set(row.id, next);
+  }
+  return out;
+});
+
+/** 目录里显示的名字：没起名的容器按序号补"第 N 卷"，其它没起名的显示"（未命名）" */
+function rowLabel(row: TreeRow): string {
+  if (row.title) return row.title;
+  if (row.accepts_children && !row.holds_body) {
+    return t("tree.volume_placeholder", { n: serialById.value.get(row.id) ?? 1 });
+  }
+  return t("common.untitled_full");
+}
 
 /** 有卷才显示"每卷多少章"这一栏：零层级作品用不上它 */
 const hasVolumes = computed(() => rows.value.some((row) => row.accepts_children && !row.holds_body));
@@ -127,8 +153,9 @@ async function onDrop(row: TreeRow) {
 
 /** 行上的「×」：删掉它（软删，进回收站能捞回来）——容器会把里面的东西一起带走 */
 function askDelete(row: TreeRow) {
-  const includes = row.accepts_children ? "里面的内容会一起进回收站，" : "";
-  if (window.confirm(`删掉「${row.title}」？${includes}之后能在回收站里捞回来。`)) {
+  const includes = row.accepts_children ? t("tree.delete_children_note") : "";
+  const question = t("tree.delete_confirm", { title: rowLabel(row), children: includes });
+  if (window.confirm(question)) {
     void deleteNode(row.id);
   }
 }
@@ -143,21 +170,21 @@ function goTrash() {
 <template>
   <aside class="pane">
     <header class="pane__head">
-      <h2 class="pane__title">目录</h2>
+      <h2 class="pane__title">{{ t("tree.title") }}</h2>
       <button
         type="button"
         class="pane__button"
-        title="新建一卷"
+        :title="t('tree.new_volume')"
         :disabled="switching"
         @click="create(null, 'volume', '')"
       >
-        + 卷
+        {{ t("tree.new_volume_button") }}
       </button>
     </header>
 
     <p v-if="hasVolumes" class="pane__setup">
-      <label title="每卷大概写几章：只影响目录里「本卷 12/30 章」这行小字，不会改你的结构">
-        每卷
+      <label :title="t('tree.volume_target_title')">
+        {{ t("tree.volume_target_prefix") }}
         <input
           class="pane__target"
           type="number"
@@ -166,11 +193,11 @@ function goTrash() {
           placeholder="—"
           @change="saveVolumeTarget"
         />
-        章
+        {{ t("tree.volume_target_suffix") }}
       </label>
     </p>
 
-    <p v-if="rows.length === 0" class="pane__empty">还没有目录</p>
+    <p v-if="rows.length === 0" class="pane__empty">{{ t("tree.empty") }}</p>
     <ul ref="listEl" class="tree">
       <li
         v-for="row in rows"
@@ -193,7 +220,7 @@ function goTrash() {
           type="button"
           class="tree__arrow"
           :class="{ 'tree__arrow--none': !row.has_children }"
-          :title="row.expanded ? '收起' : '展开'"
+          :title="row.expanded ? t('tree.collapse') : t('tree.expand')"
           @click.stop="toggle(row.id)"
         >
           {{ row.expanded ? "▾" : "▸" }}
@@ -209,17 +236,17 @@ function goTrash() {
           @keydown.esc="editing = null"
           @blur="commitRename(row)"
         />
-        <span v-else class="tree__title" :title="row.title">{{ row.title || "（未命名）" }}</span>
+        <span v-else class="tree__title" :title="rowLabel(row)">{{ rowLabel(row) }}</span>
 
-        <span v-if="row.holds_body" class="tree__words">{{ row.has_body ? formatWords(row.word_count) : "空" }}</span>
-        <span v-else class="tree__words" :title="`本卷 ${row.chapter_count} 章 · ${row.subtree_word_count} 字`">
+        <span v-if="row.holds_body" class="tree__words">{{ row.has_body ? formatWords(row.word_count) : t("tree.empty_chapter") }}</span>
+        <span v-else class="tree__words" :title="t('tree.volume_stat_title', { chapters: row.chapter_count, words: row.subtree_word_count })">
           {{ containerLabel(row, volumeTarget) }}
         </span>
         <button
           v-if="addIntent(row)"
           type="button"
           class="tree__add"
-          :title="addIntent(row) === 'inside' ? '往里新建一章' : '在它后面新建一章'"
+          :title="addIntent(row) === 'inside' ? t('tree.add_inside') : t('tree.add_after')"
           @click.stop="addHere(row)"
         >
           +
@@ -227,7 +254,7 @@ function goTrash() {
         <button
           type="button"
           class="tree__del"
-          title="删掉它（会进回收站，可以捞回来）"
+          :title="t('tree.delete_title')"
           @click.stop="askDelete(row)"
         >
           ×
@@ -240,7 +267,7 @@ function goTrash() {
         type="button"
         class="pane__button"
         :disabled="switching || !neighbors?.previous"
-        :title="neighbors?.previous ? `上一章：${neighbors.previous.title}` : '已经是第一章'"
+        :title="neighbors?.previous ? t('tree.prev_chapter', { title: neighbors.previous.title }) : t('tree.at_first')"
         @click="switchChapter(neighbors?.previous?.id)"
       >
         ←
@@ -252,7 +279,7 @@ function goTrash() {
         type="button"
         class="pane__button"
         :disabled="switching || !neighbors?.next"
-        :title="neighbors?.next ? `下一章：${neighbors.next.title}` : '已经是最后一章'"
+        :title="neighbors?.next ? t('tree.next_chapter', { title: neighbors.next.title }) : t('tree.at_last')"
         @click="switchChapter(neighbors?.next?.id)"
       >
         →

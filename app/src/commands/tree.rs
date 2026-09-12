@@ -11,6 +11,7 @@
 use serde::Serialize;
 use tauri::State;
 
+use crate::error::ApiError;
 use crate::storage::AppData;
 use yanmo_core::model::NodeKind;
 use yanmo_core::store::{NodeSummary, Store, SubtreeRollup};
@@ -61,7 +62,7 @@ pub fn tree_children(
     data: State<'_, AppData>,
     work_id: i64,
     parent_id: Option<i64>,
-) -> Result<Vec<TreeNodeDto>, String> {
+) -> Result<Vec<TreeNodeDto>, ApiError> {
     data.with_store(|store: &mut Store| {
         let nodes = store.children_of(work_id, parent_id)?;
         let mut out = Vec::with_capacity(nodes.len());
@@ -79,7 +80,7 @@ pub fn tree_children(
 
 /// 从根到该节点父级的 id 链——界面用它**一层层展开到正在写的那一章**。
 #[tauri::command(rename_all = "snake_case")]
-pub fn tree_ancestors(data: State<'_, AppData>, node_id: i64) -> Result<Vec<i64>, String> {
+pub fn tree_ancestors(data: State<'_, AppData>, node_id: i64) -> Result<Vec<i64>, ApiError> {
     data.with_store(|store: &mut Store| store.node_ancestors(node_id))
 }
 
@@ -93,7 +94,7 @@ pub fn tree_create_node(
     parent_id: Option<i64>,
     kind: String,
     title: String,
-) -> Result<i64, String> {
+) -> Result<i64, ApiError> {
     data.with_store(|store: &mut Store| {
         store.create_node(work_id, parent_id, NodeKind::parse(&kind)?, &title)
     })
@@ -105,7 +106,7 @@ pub fn tree_rename_node(
     data: State<'_, AppData>,
     node_id: i64,
     title: String,
-) -> Result<(), String> {
+) -> Result<(), ApiError> {
     data.with_store(|store: &mut Store| store.rename_node(node_id, &title))
 }
 
@@ -116,7 +117,7 @@ pub fn tree_move_node(
     node_id: i64,
     parent_id: Option<i64>,
     index: i64,
-) -> Result<(), String> {
+) -> Result<(), ApiError> {
     data.with_store(|store: &mut Store| {
         store.move_node(node_id, parent_id, index.max(0) as usize)
     })
@@ -124,13 +125,13 @@ pub fn tree_move_node(
 
 /// 删掉一个节点（**软删除**：连同子树一起进回收站，之后能捞回来）。
 #[tauri::command(rename_all = "snake_case")]
-pub fn tree_delete_node(data: State<'_, AppData>, node_id: i64) -> Result<usize, String> {
+pub fn tree_delete_node(data: State<'_, AppData>, node_id: i64) -> Result<usize, ApiError> {
     data.with_store(|store: &mut Store| store.soft_delete_node(node_id))
 }
 
 /// 每卷目标章数（作者自己定的"大概几章一卷"）：目录里那行"本卷 12/30 章"的分母。
 #[tauri::command(rename_all = "snake_case")]
-pub fn tree_volume_target(data: State<'_, AppData>, work_id: i64) -> Result<Option<i64>, String> {
+pub fn tree_volume_target(data: State<'_, AppData>, work_id: i64) -> Result<Option<i64>, ApiError> {
     data.with_store(|store: &mut Store| store.volume_target(work_id))
 }
 
@@ -140,6 +141,6 @@ pub fn tree_set_volume_target(
     data: State<'_, AppData>,
     work_id: i64,
     chapters: Option<i64>,
-) -> Result<(), String> {
+) -> Result<(), ApiError> {
     data.with_store(|store: &mut Store| store.set_volume_target(work_id, chapters))
 }

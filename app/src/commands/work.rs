@@ -9,6 +9,7 @@
 use serde::Serialize;
 use tauri::State;
 
+use crate::error::ApiError;
 use crate::storage::AppData;
 use yanmo_core::model::WorkKind;
 use yanmo_core::store::{ExportFormat, ShelfEntry, Store};
@@ -45,7 +46,7 @@ fn to_dto(entry: ShelfEntry) -> ShelfEntryDto {
 
 /// 书架：最近打开的在前，带上每本书的章数与字数。
 #[tauri::command]
-pub fn list_shelf(data: State<'_, AppData>) -> Result<Vec<ShelfEntryDto>, String> {
+pub fn list_shelf(data: State<'_, AppData>) -> Result<Vec<ShelfEntryDto>, ApiError> {
     data.with_store(|store: &mut Store| {
         Ok(store.shelf()?.into_iter().map(to_dto).collect())
     })
@@ -57,7 +58,7 @@ pub fn create_work(
     data: State<'_, AppData>,
     kind: String,
     title: String,
-) -> Result<i64, String> {
+) -> Result<i64, ApiError> {
     data.with_store(|store: &mut Store| {
         Ok(store.create_work(WorkKind::parse(&kind)?, &title)?.id)
     })
@@ -69,13 +70,13 @@ pub fn rename_work(
     data: State<'_, AppData>,
     work_id: i64,
     title: String,
-) -> Result<(), String> {
+) -> Result<(), ApiError> {
     data.with_store(|store: &mut Store| store.rename_work(work_id, &title))
 }
 
 /// 删掉一本书（**软删除**：正文与历史都留着，回收站接上后能捞回来）。
 #[tauri::command(rename_all = "snake_case")]
-pub fn delete_work(data: State<'_, AppData>, work_id: i64) -> Result<(), String> {
+pub fn delete_work(data: State<'_, AppData>, work_id: i64) -> Result<(), ApiError> {
     data.with_store(|store: &mut Store| store.soft_delete_work(work_id))
 }
 
@@ -98,12 +99,12 @@ pub fn export_work(
     data: State<'_, AppData>,
     work_id: i64,
     format: String,
-) -> Result<ExportAckDto, String> {
+) -> Result<ExportAckDto, ApiError> {
     // `both` = 一次导出两种：分章 txt 给人接手，单个 json 给机器读回来
     let formats = if format == "both" {
         vec![ExportFormat::Text, ExportFormat::Json]
     } else {
-        vec![ExportFormat::parse(&format).map_err(|e| e.to_string())?]
+        vec![ExportFormat::parse(&format).map_err(ApiError::from)?]
     };
     let (title, files) = data.with_store(|store: &mut Store| {
         let mut files = Vec::new();

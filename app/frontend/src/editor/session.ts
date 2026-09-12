@@ -56,6 +56,7 @@ import { Autosave, type AutosaveState } from "./autosave";
 import { useAddChapter, type AddChapter } from "./add-chapter";
 import { useAppearance, type AppearanceState } from "./appearance";
 import { ChapterSwitch } from "./chapters";
+import { t } from "../locales/index.ts";
 import { useDirectory, type Directory } from "./directory";
 import { docToText, textToHtml } from "./doc";
 import { ExitGate, type ExitGateState } from "./exitguard";
@@ -262,7 +263,7 @@ export function useEditorSession(): EditorSession {
       makeAutosave(snapshot);
     },
     onError: (message) => {
-      failure.value = `没能切到那一章：${message}`;
+      failure.value = t("session.switch_failed", { detail: message });
     },
   });
 
@@ -295,7 +296,9 @@ export function useEditorSession(): EditorSession {
       }
       await directory.refresh(); // 新章得看得见（目录不为别的动作整树重建）
     } catch (error) {
-      failure.value = `没能新建章节：${error instanceof Error ? error.message : String(error)}`;
+      failure.value = t("session.create_chapter_failed", {
+        detail: error instanceof Error ? error.message : String(error),
+      });
     } finally {
       switching.value = false;
     }
@@ -318,7 +321,9 @@ export function useEditorSession(): EditorSession {
       settleFocus(false);
       return true;
     } catch (error) {
-      failure.value = `没能换到那本书：${error instanceof Error ? error.message : String(error)}`;
+      failure.value = t("session.switch_work_failed", {
+        detail: error instanceof Error ? error.message : String(error),
+      });
       return false;
     } finally {
       switching.value = false;
@@ -341,7 +346,9 @@ export function useEditorSession(): EditorSession {
       try {
         await flushCurrent();
       } catch (error) {
-        failure.value = `没能先把这一章存下来，这次没有删除：${error instanceof Error ? error.message : String(error)}`;
+        failure.value = t("session.delete_unsaved", {
+          detail: error instanceof Error ? error.message : String(error),
+        });
         return;
       }
     }
@@ -371,7 +378,7 @@ export function useEditorSession(): EditorSession {
       saveState,
       openChapter: (node_id) => switchChapter(node_id),
       onError: (message) => {
-        failure.value = `目录操作没能完成：${message}`;
+        failure.value = t("session.directory_failed", { detail: message });
       },
     });
 
@@ -380,7 +387,7 @@ export function useEditorSession(): EditorSession {
       transport: { check: treeGapCheck, answer: treeGapAnswer, fill: treeFillGap },
       workId,
       onError: (message) => {
-        failure.value = `删章路标没能问出来：${message}`;
+        failure.value = t("session.gap_failed", { detail: message });
       },
     });
 
@@ -388,7 +395,7 @@ export function useEditorSession(): EditorSession {
     const appearance = useAppearance({
       transport: { read: readAppearance, write: writeAppearance, reset: resetAppearance },
       onError: (message) => {
-        failure.value = `设置没能存下来：${message}`;
+        failure.value = t("session.settings_failed", { detail: message });
       },
     });
 
@@ -418,7 +425,7 @@ export function useEditorSession(): EditorSession {
         void directory.refresh();
       },
       onError: (message) => {
-        failure.value = `回收站操作没能完成：${message}`;
+        failure.value = t("session.trash_failed", { detail: message });
       },
     });
 
@@ -436,7 +443,7 @@ export function useEditorSession(): EditorSession {
       // 删书之前也先把手上这一章落盘：存不下去就不该动手删
       beforeRemove: () => flushCurrent(),
       onError: (message) => {
-        failure.value = `书架操作没能完成：${message}`;
+        failure.value = t("session.shelf_failed", { detail: message });
       },
     });
 
@@ -482,8 +489,8 @@ export function useEditorSession(): EditorSession {
       if (notice.unclean) {
         const when = notice.last_seen_at
           ? new Date(notice.last_seen_at).toLocaleString()
-          : "时间未知";
-        crashNotice.value = `上次没有正常退出（最后落盘：${when}）——已回到崩溃前那一章的最后落盘位置。`;
+          : t("session.time_unknown");
+        crashNotice.value = t("session.crash_notice", { when });
       }
     } catch (error) {
       failure.value = error instanceof Error ? error.message : String(error);

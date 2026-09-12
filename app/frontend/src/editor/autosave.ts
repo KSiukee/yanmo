@@ -8,6 +8,8 @@
 //
 // 计时与传输都是注入的：测试里可以拿假时钟把时间拨快，不用真的等下去。
 
+import { t } from "../locales/index.ts";
+
 export type SaveStatus = "idle" | "pending" | "saving" | "saved" | "error" | "desync";
 
 /** 界面直接绑这个对象。 */
@@ -156,7 +158,7 @@ export class Autosave {
     try {
       remote = await this.transport.fingerprint(this.node_id);
     } catch (e) {
-      this.setStatus("error", `读回校验失败：${messageOf(e)}`);
+      this.setStatus("error", t("autosave.verify_failed", { detail: messageOf(e) }));
       return;
     }
     if (remote !== baseline) {
@@ -222,7 +224,7 @@ export class Autosave {
         this.charCount = ack.char_count;
         this.wordCount = ack.word_count;
       } catch (e) {
-        this.setStatus("error", `保存失败：${messageOf(e)}`);
+        this.setStatus("error", t("autosave.save_failed", { detail: messageOf(e) }));
         this.armSave(); // 还脏着：过一会儿再试
         return;
       } finally {
@@ -245,9 +247,9 @@ export class Autosave {
   private async rescue(reason: "stuck" | "desync"): Promise<void> {
     const text = this.text;
     const rev = this.rev;
-    const label = reason === "stuck" ? "落盘长时间没有完成" : "库里的正文与手上这份不一致";
+    const label = t(reason === "stuck" ? "autosave.reason_stuck" : "autosave.reason_desync");
     this.incident = label;
-    this.setStatus("desync", `${label}——已留快照并回写`);
+    this.setStatus("desync", t("autosave.rescued", { label }));
     try {
       const ack = await this.transport.emergency(this.node_id, text, reason);
       this.savedFingerprint = ack.fingerprint;
@@ -255,13 +257,13 @@ export class Autosave {
       this.charCount = ack.char_count;
       this.wordCount = ack.word_count;
       if (rev === this.rev) {
-        this.setStatus("saved", `${label}——已恢复`);
+        this.setStatus("saved", t("autosave.recovered", { label }));
       } else {
         this.setStatus("pending");
         this.armSave();
       }
     } catch (e) {
-      this.setStatus("error", `抢救失败：${messageOf(e)}`);
+      this.setStatus("error", t("autosave.rescue_failed", { detail: messageOf(e) }));
     }
   }
 

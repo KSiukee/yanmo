@@ -10,6 +10,7 @@
 use serde::Serialize;
 use tauri::State;
 
+use crate::error::ApiError;
 use crate::storage::AppData;
 use yanmo_core::store::{EditorCursor, EditorTarget, Store};
 
@@ -110,7 +111,7 @@ pub struct EscapeAck {
 
 /// 取当前该编辑的一章（若上次是被杀，优先回到崩溃前那一章）。
 #[tauri::command]
-pub fn open_editor_target(data: State<'_, AppData>) -> Result<EditorSnapshot, String> {
+pub fn open_editor_target(data: State<'_, AppData>) -> Result<EditorSnapshot, ApiError> {
     let preferred = data.session().last_node_id;
     data.with_store(|store| {
         let target = store.ensure_editor_target_preferring(preferred)?;
@@ -124,7 +125,7 @@ pub fn open_editor_target(data: State<'_, AppData>) -> Result<EditorSnapshot, St
 ///
 /// 切章流程由界面负责"先落盘再切"；这里只保证"切得对"。
 #[tauri::command(rename_all = "snake_case")]
-pub fn open_chapter(data: State<'_, AppData>, node_id: i64) -> Result<EditorSnapshot, String> {
+pub fn open_chapter(data: State<'_, AppData>, node_id: i64) -> Result<EditorSnapshot, ApiError> {
     data.with_store(|store| {
         let target = store.editor_target(node_id)?;
         store.note_open_node(target.node_id)?;
@@ -136,7 +137,7 @@ pub fn open_chapter(data: State<'_, AppData>, node_id: i64) -> Result<EditorSnap
 ///
 /// "换书"与"换章"在界面上是同一套纪律（先落盘再换），所以这里也只管"落点对不对"。
 #[tauri::command(rename_all = "snake_case")]
-pub fn open_work_target(data: State<'_, AppData>, work_id: i64) -> Result<EditorSnapshot, String> {
+pub fn open_work_target(data: State<'_, AppData>, work_id: i64) -> Result<EditorSnapshot, ApiError> {
     data.with_store(|store| {
         let target = store.work_target(work_id)?;
         store.note_open_node(target.node_id)?;
@@ -152,7 +153,7 @@ pub fn create_chapter(
     data: State<'_, AppData>,
     node_id: i64,
     title: String,
-) -> Result<EditorSnapshot, String> {
+) -> Result<EditorSnapshot, ApiError> {
     data.with_store(|store| {
         let created = store.add_chapter_after(node_id, yanmo_core::model::NodeKind::Chapter, &title)?;
         let target = store.editor_target(created)?;
@@ -163,7 +164,7 @@ pub fn create_chapter(
 
 /// 上一章 / 下一章（按阅读顺序，跨卷）。
 #[tauri::command(rename_all = "snake_case")]
-pub fn chapter_neighbors(data: State<'_, AppData>, node_id: i64) -> Result<NeighborsDto, String> {
+pub fn chapter_neighbors(data: State<'_, AppData>, node_id: i64) -> Result<NeighborsDto, ApiError> {
     data.with_store(|store| {
         let neighbors = store.chapter_neighbors(node_id)?;
         let to_dto = |chapter: yanmo_core::store::ChapterSummary| ChapterSummaryDto {
@@ -188,7 +189,7 @@ pub fn save_cursor(
     anchor: i64,
     head: i64,
     scroll_top: i64,
-) -> Result<(), String> {
+) -> Result<(), ApiError> {
     data.with_store(|store| {
         store.save_cursor(node_id, EditorCursor { anchor, head, scroll_top })
     })
@@ -196,7 +197,7 @@ pub fn save_cursor(
 
 /// 落盘正文（防抖后调用）。内容没变时核心直接返回，不写库、不记日志。
 #[tauri::command(rename_all = "snake_case")]
-pub fn save_body(data: State<'_, AppData>, node_id: i64, body: String) -> Result<SaveAck, String> {
+pub fn save_body(data: State<'_, AppData>, node_id: i64, body: String) -> Result<SaveAck, ApiError> {
     data.with_store(|store| {
         let stats = store.write_body(node_id, &body)?;
         Ok(SaveAck {
@@ -211,7 +212,7 @@ pub fn save_body(data: State<'_, AppData>, node_id: i64, body: String) -> Result
 ///
 /// 界面每几秒就会调它一次，核心顺手把这次调用当作**心跳**（崩溃检测据此知道进程还活着）。
 #[tauri::command(rename_all = "snake_case")]
-pub fn body_fingerprint(data: State<'_, AppData>, node_id: i64) -> Result<String, String> {
+pub fn body_fingerprint(data: State<'_, AppData>, node_id: i64) -> Result<String, ApiError> {
     data.with_store(|store| store.body_fingerprint(node_id))
 }
 
@@ -222,7 +223,7 @@ pub fn emergency_snapshot(
     node_id: i64,
     body: String,
     reason: String,
-) -> Result<SaveAck, String> {
+) -> Result<SaveAck, ApiError> {
     data.with_store(|store| {
         let stats = store.emergency_snapshot(node_id, &body, &reason)?;
         Ok(SaveAck {
@@ -260,7 +261,7 @@ pub fn ack_close_request(data: State<'_, AppData>) {
 
 /// 正常退出前收尾：**留一份关窗快照 + 标记干净退出**。
 #[tauri::command(rename_all = "snake_case")]
-pub fn close_session(data: State<'_, AppData>, node_id: i64) -> Result<CloseAck, String> {
+pub fn close_session(data: State<'_, AppData>, node_id: i64) -> Result<CloseAck, ApiError> {
     data.with_store(|store| {
         Ok(CloseAck {
             snapshot_written: store.end_session(node_id)?,
@@ -270,7 +271,7 @@ pub fn close_session(data: State<'_, AppData>, node_id: i64) -> Result<CloseAck,
 
 /// 用户选择"仍然退出"：只标记干净退出，不写快照（把选择权交还给人）。
 #[tauri::command]
-pub fn abandon_session(data: State<'_, AppData>) -> Result<(), String> {
+pub fn abandon_session(data: State<'_, AppData>) -> Result<(), ApiError> {
     data.with_store(|store| store.abandon_session())
 }
 
@@ -279,7 +280,7 @@ pub fn abandon_session(data: State<'_, AppData>) -> Result<(), String> {
 /// 这是"存不下去"时唯一还能把字带走的通道——所以它自己必须是最可靠的那一段：
 /// 同目录临时文件 + 落盘 + rename，绝不会留下半截文件。
 #[tauri::command(rename_all = "snake_case")]
-pub fn escape_export(data: State<'_, AppData>, node_id: i64, body: String) -> Result<EscapeAck, String> {
+pub fn escape_export(data: State<'_, AppData>, node_id: i64, body: String) -> Result<EscapeAck, ApiError> {
     let title = data.with_store(|store| store.node_title(node_id))?;
     let file_name = format!(
         "{}-{}.txt",
@@ -287,7 +288,7 @@ pub fn escape_export(data: State<'_, AppData>, node_id: i64, body: String) -> Re
         yanmo_core::atomic::safe_file_name(&title)
     );
     let path = data.escape_dir().join(file_name);
-    yanmo_core::atomic::write_atomic(&path, body.as_bytes()).map_err(|e| e.to_string())?;
+    yanmo_core::atomic::write_atomic(&path, body.as_bytes()).map_err(ApiError::from)?;
     Ok(EscapeAck {
         path: path.display().to_string(),
     })

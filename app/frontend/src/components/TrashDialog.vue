@@ -4,6 +4,7 @@ import { ref } from "vue";
 
 import type { EditorSession } from "../editor/session";
 import { trashLabel } from "../editor/trash";
+import { t } from "../locales/index.ts";
 import { formatWhen } from "../editor/display";
 
 const props = defineProps<{ session: EditorSession }>();
@@ -11,6 +12,11 @@ const { entries, busy, close, restore, purge, empty, conflict, resolveConflict, 
   props.session.trash;
 /** 冲突时作者填的新名字（留空 = 照原样恢复，两章同名） */
 const renameTo = ref("");
+
+/** 名字可能为空（没起名的那一本 / 一个卷）：显示的永远是"有话说"的名字 */
+function nameOf(title: string): string {
+  return title || t("common.untitled");
+}
 
 /** 上一次动作的交代（"捞回来了""彻底删了 N 项"） */
 const note = ref("");
@@ -21,20 +27,21 @@ async function doRestore(entry: Parameters<typeof restore>[0]) {
 
 async function doPurge(entry: Parameters<typeof purge>[0]) {
   const what = trashLabel(entry);
-  if (!window.confirm(`彻底删除 ${what}？这一步没有后悔药。`)) return;
+  if (!window.confirm(t("trash.purge_confirm", { what }))) return;
   note.value = await purge(entry);
 }
 
 async function doResolve(rename: boolean) {
   await resolveConflict(rename && renameTo.value.trim() ? renameTo.value.trim() : null);
   renameTo.value = "";
-  note.value = rename ? "已按你给的名字恢复" : "已照原样恢复（目录里会有两章同名）";
+  note.value = t(rename ? "trash.restored_renamed" : "trash.restored_as_is");
 }
 
 async function doEmpty() {
-  if (!window.confirm(`清空回收站？里面的 ${entries.value.length} 项会被彻底删除，没有后悔药。`)) return;
+  const question = t("trash.empty_confirm", { count: entries.value.length });
+  if (!window.confirm(question)) return;
   await empty();
-  note.value = "回收站清空了";
+  note.value = t("trash.emptied");
 }
 </script>
 
@@ -42,59 +49,59 @@ async function doEmpty() {
   <div class="trash dialog" @click.self="close">
     <section class="trash__box dialog__box">
       <header class="trash__head dialog__head">
-        <h2 class="trash__title dialog__title">回收站</h2>
+        <h2 class="trash__title dialog__title">{{ t("trash.title") }}</h2>
         <button
           type="button"
           class="trash__button trash__button--danger dialog__button"
           :disabled="busy || entries.length === 0"
           @click="doEmpty"
         >
-          清空
+          {{ t("trash.empty") }}
         </button>
-        <button type="button" class="trash__button dialog__button" title="回到书架" @click="close">关闭</button>
+        <button type="button" class="trash__button dialog__button" :title="t('trash.close_title')" @click="close">{{ t("common.close") }}</button>
       </header>
 
       <p v-if="note" class="trash__note dialog__note">{{ note }}</p>
 
       <div v-if="conflict" class="trash__conflict">
         <p class="trash__conflict-title">
-          要恢复的「{{ conflict.entry.title }}」跟还活着的一章**重名**了：
+          {{ t("trash.conflict_title", { title: nameOf(conflict.entry.title) }) }}
         </p>
         <ul class="trash__clashes">
           <li v-for="clash in conflict.preview.name_clashes" :key="clash.id">
-            {{ clash.title }}（已写 {{ clash.word_count }} 字）
+            {{ t("trash.clash_line", { title: clash.title, words: clash.word_count }) }}
           </li>
         </ul>
         <p class="trash__conflict-hint">
-          恢复**不会覆盖**你已经写的那一章——两章都会在。要给它换个名字就填在下面。
+          {{ t("trash.conflict_hint") }}
         </p>
         <div class="trash__conflict-actions">
-          <input v-model="renameTo" class="trash__input dialog__input" type="text" placeholder="给它起个新名字（留空 = 照原样恢复）" />
+          <input v-model="renameTo" class="trash__input dialog__input" type="text" :placeholder="t('trash.rename_placeholder')" />
           <button type="button" class="trash__button dialog__button" :disabled="busy" @click="doResolve(true)">
-            恢复
+            {{ t("trash.restore") }}
           </button>
           <button type="button" class="trash__button dialog__button" :disabled="busy" @click="cancelConflict">
-            取消
+            {{ t("trash.cancel") }}
           </button>
         </div>
       </div>
-      <p v-if="entries.length === 0" class="trash__empty dialog__empty">回收站是空的</p>
+      <p v-if="entries.length === 0" class="trash__empty dialog__empty">{{ t("trash.empty_list") }}</p>
 
       <ul class="trash__list">
         <li v-for="entry in entries" :key="`${entry.kind}-${entry.id}`" class="trash__row">
           <div class="trash__main">
             <span class="trash__name">{{ trashLabel(entry) }}</span>
-            <span class="trash__meta">删于 {{ formatWhen(entry.deleted_at) }}</span>
+            <span class="trash__meta">{{ t("trash.deleted_at", { when: formatWhen(entry.deleted_at) }) }}</span>
           </div>
           <div class="trash__actions">
             <button
               type="button"
               class="trash__button dialog__button"
               :disabled="busy"
-              title="捞回原来待的地方"
+              :title="t('trash.restore_title')"
               @click="doRestore(entry)"
             >
-              恢复
+              {{ t("trash.restore") }}
             </button>
             <button
               type="button"
@@ -102,7 +109,7 @@ async function doEmpty() {
               :disabled="busy"
               @click="doPurge(entry)"
             >
-              彻底删除
+              {{ t("trash.purge") }}
             </button>
           </div>
         </li>

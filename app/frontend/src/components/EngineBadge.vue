@@ -2,12 +2,22 @@
 // 核心状态徽标：验证「壳 → 核心」链路已打通，并报告稿子落在哪。
 //
 // 纪律：这里不直接 invoke，也不碰文件系统——一律经 api 网关取数。
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
+
 import { readDataHome, readEngineInfo, type DataHome, type EngineInfo } from "../api/core";
+import { t } from "../locales/index.ts";
 
 const info = ref<EngineInfo | null>(null);
 const home = ref<DataHome | null>(null);
 const error = ref<string | null>(null);
+
+const engineLine = computed(() =>
+  t("badge.engine", {
+    version: info.value?.version ?? "",
+    protocol: info.value?.protocol_version ?? "",
+    format: info.value?.data_format_version ?? "",
+  }),
+);
 
 onMounted(async () => {
   try {
@@ -22,15 +32,13 @@ onMounted(async () => {
 <template>
   <span class="badge">
     <template v-if="info">
-      <span class="badge__ver">
-        engine {{ info.version }} · proto v{{ info.protocol_version }} · data v{{ info.data_format_version }}
-      </span>
-      <span v-if="home" class="badge__path" :title="`稿子在这里：${home.path}`">
-        数据 {{ home.path }}
+      <span class="badge__ver">{{ engineLine }}</span>
+      <span v-if="home" class="badge__path" :title="t('badge.data_path_title', { path: home.path })">
+        {{ t("badge.data_path", { path: home.path }) }}
       </span>
     </template>
-    <template v-else-if="error">核心未连接（浏览器预览模式）</template>
-    <template v-else>连接核心中…</template>
+    <template v-else-if="error">{{ t("badge.no_core") }}</template>
+    <template v-else>{{ t("badge.connecting") }}</template>
   </span>
 </template>
 

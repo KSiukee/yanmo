@@ -16,14 +16,12 @@ use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use super::Store;
-use crate::error::{Error, Result};
+use crate::error::{codes, Error, Result};
 use crate::model::{NodeKind, WorkKind};
 use crate::time::now_millis;
 
 /// 会话标记在 `settings` 里的键。
 const SESSION_KEY: &str = "session.last";
-/// 首次运行时的默认作品名（真正的书架与命名随后接管）。
-const DEFAULT_WORK_TITLE: &str = "我的第一篇";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Marker {
@@ -173,7 +171,9 @@ impl Store {
 
         let work_id = match self.list_works()?.first() {
             Some(existing) => existing.id,
-            None => self.create_work(WorkKind::Article, DEFAULT_WORK_TITLE)?.id,
+            // 首次运行给一本**无名**的书：名字由作者起，界面先显示占位——
+            // 不在库里写死一个中文默认名（换语言后它不会跟着变，那就成了脏数据）
+            None => self.create_work(WorkKind::Article, "")?.id,
         };
         self.ensure_target_in_work(work_id)
     }
@@ -221,7 +221,7 @@ impl Store {
     /// 适合启动引导；而用户明确点"切到这一章"时**绝不能悄悄换地方**。
     pub fn editor_target(&mut self, node_id: i64) -> Result<EditorTarget> {
         let target = self.editor_target_for(node_id)?.ok_or_else(|| {
-            Error::Invalid(format!("不能切到该节点（不存在 / 已删除 / 不承载正文）：{node_id}"))
+            Error::invalid_with(codes::NODE_NOT_EDITABLE, [("node_id", node_id.to_string())])
         })?;
         self.touch_work_opened(target.work_id)?;
         Ok(target)

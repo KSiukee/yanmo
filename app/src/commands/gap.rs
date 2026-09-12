@@ -7,6 +7,7 @@
 use serde::Serialize;
 use tauri::State;
 
+use crate::error::ApiError;
 use crate::storage::AppData;
 use yanmo_core::store::{ChapterGap, GapAnswer, Store};
 
@@ -48,7 +49,7 @@ pub fn tree_gap_check(
     data: State<'_, AppData>,
     work_id: i64,
     parent_id: Option<i64>,
-) -> Result<Option<GapDto>, String> {
+) -> Result<Option<GapDto>, ApiError> {
     data.with_store(|store: &mut Store| {
         Ok(store.gap_in_layer(work_id, parent_id)?.map(GapDto::from))
     })
@@ -62,12 +63,12 @@ pub fn tree_gap_answer(
     data: State<'_, AppData>,
     node_id: i64,
     answer: String,
-) -> Result<(), String> {
+) -> Result<(), ApiError> {
     data.with_store(|store: &mut Store| store.answer_gap(node_id, GapAnswer::parse(&answer)?))
 }
 
 /// 补写：在原来的层、用原来的名字与位置新建一个**空章**，返回新章 id。
 #[tauri::command(rename_all = "snake_case")]
-pub fn tree_fill_gap(data: State<'_, AppData>, node_id: i64) -> Result<i64, String> {
+pub fn tree_fill_gap(data: State<'_, AppData>, node_id: i64) -> Result<i64, ApiError> {
     data.with_store(|store: &mut Store| store.fill_gap_chapter(node_id))
 }

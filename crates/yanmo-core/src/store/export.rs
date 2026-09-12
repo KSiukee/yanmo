@@ -21,7 +21,7 @@ use std::collections::HashMap;
 
 use super::Store;
 use crate::atomic::safe_file_name;
-use crate::error::{Error, Result};
+use crate::error::{codes, Error, Result};
 
 /// 导出格式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,9 +44,10 @@ impl ExportFormat {
         match text {
             "txt" | "text" => Ok(ExportFormat::Text),
             "json" => Ok(ExportFormat::Json),
-            other => Err(Error::Invalid(format!(
-                "不认识的导出格式：{other}（只支持 txt / json）"
-            ))),
+            other => Err(Error::invalid_with(
+                codes::UNKNOWN_EXPORT_FORMAT,
+                [("value", other.to_string())],
+            )),
         }
     }
 }
@@ -69,9 +70,10 @@ impl Store {
                 let mut out = Vec::new();
                 collect_text(self, &nodes, &kids, None, "", &mut out)?;
                 if out.is_empty() {
-                    // 一个字都没有的书：留一句话，免得导出出一个空文件夹让人以为失败了
+                    // 一个字都没有的书：留一个文件，免得导出一个空文件夹让人以为失败了。
+                    // 文件名**语言无关**（它会留在作者磁盘上，不该随界面语言变）
                     out.push(RenderedFile {
-                        relative_path: "还没有正文.txt".to_string(),
+                        relative_path: "empty.txt".to_string(),
                         content: normalize(&work.title),
                     });
                 }
@@ -112,9 +114,19 @@ fn children_index(nodes: &[super::NodeSummary]) -> HashMap<Option<i64>, Vec<usiz
     kids
 }
 
+/// 节点名：标题为空（新建后还没起名）就退到**结构标识**
+/// （`volume` / `chapter` …）——那是语言无关的取值，比一个"未命名"有用得多。
+fn node_name(node: &super::NodeSummary) -> String {
+    if node.title.trim().is_empty() {
+        node.kind.as_str().to_string()
+    } else {
+        safe_file_name(&node.title)
+    }
+}
+
 /// 节点在这条路上的名字（带序号，顺序一眼可见）。
 fn segment(node: &super::NodeSummary) -> String {
-    format!("{:03}-{}", node.sort_order + 1, safe_file_name(&node.title))
+    format!("{:03}-{}", node.sort_order + 1, node_name(node))
 }
 
 fn join(path: &str, name: &str) -> String {

@@ -13,7 +13,7 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::json;
 
 use super::{Store, MAX_TREE_DEPTH};
-use crate::error::{Error, Result};
+use crate::error::{codes, Error, Result};
 
 /// 回收站里的东西是"整本书"还是"书里的某一段"。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,7 +151,7 @@ impl Store {
     /// 那是另一次删除，"恢复整本书"不该顺手把它撤销。
     pub fn restore_work(&mut self, work_id: i64) -> Result<usize> {
         if !self.trashed("works", work_id)? {
-            return Err(Error::Invalid(format!("回收站里没有这本书：{work_id}")));
+            return Err(Error::invalid_with(codes::WORK_NOT_TRASHED, [("work_id", work_id.to_string())]));
         }
         self.conn.execute(
             "UPDATE works SET deleted_at = NULL WHERE id = ?1",
@@ -169,7 +169,7 @@ impl Store {
     /// 返回恢复的节点数（含父链）。
     pub fn restore_node(&mut self, node_id: i64, rename_to: Option<&str>) -> Result<usize> {
         if !self.trashed("nodes", node_id)? {
-            return Err(Error::Invalid(format!("回收站里没有这一段：{node_id}")));
+            return Err(Error::invalid_with(codes::NODE_NOT_TRASHED, [("node_id", node_id.to_string())]));
         }
         let work_id = self.work_of_any(node_id)?;
         // 记下每一层"原来在第几位"当锚：被删那天它停在哪，恢复就回到那一带
@@ -177,9 +177,7 @@ impl Store {
         let mut current = Some(node_id);
         while let Some(id) = current {
             if anchors.len() > MAX_TREE_DEPTH {
-                return Err(Error::Invalid(
-                    "节点树深度异常（疑似成环），已拒绝继续".to_string(),
-                ));
+                return Err(Error::invalid(codes::TREE_CYCLE_SUSPECTED));
             }
             let (parent, order, deleted): (Option<i64>, i64, Option<i64>) = self
                 .conn
@@ -189,7 +187,7 @@ impl Store {
                     |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                 )
                 .optional()?
-                .ok_or_else(|| Error::Invalid(format!("节点不存在：{id}")))?;
+                .ok_or_else(|| Error::invalid_with(codes::NODE_NOT_FOUND, [("node_id", id.to_string())]))?;
             anchors.push((id, parent, order));
             if deleted.is_none() {
                 break; // 这条链往上已经都是活的了
@@ -235,7 +233,7 @@ impl Store {
     /// 恢复**之前**先看一眼：回到哪、会不会与同级某章重名。
     pub fn restore_preview(&self, node_id: i64) -> Result<RestorePreview> {
         if !self.trashed("nodes", node_id)? {
-            return Err(Error::Invalid(format!("回收站里没有这一段：{node_id}")));
+            return Err(Error::invalid_with(codes::NODE_NOT_TRASHED, [("node_id", node_id.to_string())]));
         }
         let work_id = self.work_of_any(node_id)?;
         let work_title: String = self
@@ -288,9 +286,10 @@ impl Store {
     /// 返回删掉的节点数。
     pub fn purge_node(&mut self, node_id: i64) -> Result<usize> {
         if !self.trashed("nodes", node_id)? {
-            return Err(Error::Invalid(format!(
-                "只能彻底删除已经在回收站里的东西：{node_id}"
-            )));
+            return Err(Error::invalid_with(
+                codes::TRASH_PURGE_NEEDS_TRASHED,
+                [("id", node_id.to_string())],
+            ));
         }
         let removed = self.conn.execute(
             "WITH RECURSIVE sub(id) AS (
@@ -308,9 +307,10 @@ impl Store {
     /// 彻底删除一本书（**不可恢复**）：书里所有节点、正文与快照一起走。
     pub fn purge_work(&mut self, work_id: i64) -> Result<usize> {
         if !self.trashed("works", work_id)? {
-            return Err(Error::Invalid(format!(
-                "只能彻底删除已经在回收站里的东西：{work_id}"
-            )));
+            return Err(Error::invalid_with(
+                codes::TRASH_PURGE_NEEDS_TRASHED,
+                [("id", work_id.to_string())],
+            ));
         }
         let nodes: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM nodes WHERE work_id = ?1",
@@ -354,7 +354,7 @@ impl Store {
         self.conn
             .query_row("SELECT work_id FROM nodes WHERE id = ?1", params![node_id], |r| r.get(0))
             .optional()?
-            .ok_or_else(|| Error::Invalid(format!("节点不存在：{node_id}")))
+            .ok_or_else(|| Error::invalid_with(codes::NODE_NOT_FOUND, [("node_id", node_id.to_string())]))
     }
 
     /// 子树里有几个节点（含自己）。

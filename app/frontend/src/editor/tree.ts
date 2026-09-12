@@ -10,6 +10,7 @@
 
 import type { TreeNode } from "../api/core";
 import { formatWords } from "./display.ts";
+import { t } from "../locales/index.ts";
 
 /** 交给界面渲染的一行——扁平化 + 缩进 + 展开态。 */
 export interface TreeRow {
@@ -68,9 +69,12 @@ export function containerLabel(
   row: Pick<TreeRow, "chapter_count" | "subtree_word_count">,
   target: number | null,
 ): string {
-  if (row.chapter_count === 0 && row.subtree_word_count === 0) return "空";
-  const chapters = target && target > 0 ? `${row.chapter_count}/${target}章` : `${row.chapter_count}章`;
-  return `${chapters} · ${formatWords(row.subtree_word_count)}`;
+  if (row.chapter_count === 0 && row.subtree_word_count === 0) return t("tree.container_empty");
+  const chapters =
+    target && target > 0
+      ? t("tree.chapter_ratio", { done: row.chapter_count, target })
+      : t("tree.chapter_count", { count: row.chapter_count });
+  return t("tree.container_label", { chapters, words: formatWords(row.subtree_word_count) });
 }
 
 /** 环检测的上行上限——树坏了要明确报错，不是转到天荒地老。 */
@@ -244,7 +248,7 @@ export class DirectoryTree {
   }
 
   private requireWork(): number {
-    if (this.work_id === null) throw new Error("还没有打开作品");
+    if (this.work_id === null) throw new Error(t("tree.no_work_open"));
     return this.work_id;
   }
 

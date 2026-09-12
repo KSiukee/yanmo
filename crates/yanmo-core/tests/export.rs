@@ -16,6 +16,8 @@ fn fresh() -> (tempfile::TempDir, Store) {
 fn novel(store: &mut Store) -> i64 {
     let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
     let one = store.list_nodes(work.id).unwrap()[0].id;
+    // 根卷默认是无名的（默认名不落库）；这里起个名，免得下面的路径断言被那件事带着走
+    store.rename_node(one, "第一卷").unwrap();
     let two = store.create_node(work.id, None, NodeKind::Volume, "第二卷").unwrap();
     for (parent, title, body) in [
         (one, "第一章", "第一章的正文。"),
@@ -145,6 +147,26 @@ fn an_empty_book_still_exports_something_readable() {
     let (_dir, mut store) = fresh();
     let work = store.create_work(WorkKind::Novel, "刚开的坑").unwrap();
     let files = store.render_work(work.id, ExportFormat::Text).unwrap();
-    assert_eq!(paths(&files), vec!["还没有正文.txt"], "空书也要有一句话，不是空文件夹");
-    assert_eq!(find(&files, "还没有正文.txt"), "刚开的坑\n");
+    assert_eq!(paths(&files), vec!["empty.txt"], "空书也要留下一个文件，不是空文件夹");
+    assert_eq!(find(&files, "empty.txt"), "刚开的坑\n");
+    assert!(
+        files.iter().all(|file| file.relative_path.is_ascii()),
+        "导出的文件名要语言无关——它会留在作者磁盘上，不该随界面语言变"
+    );
+}
+
+#[test]
+fn unnamed_containers_export_with_structural_names() {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "").unwrap(); // 首次运行那本无名书
+    let volume = store.list_nodes(work.id).unwrap()[0].id;
+    let chapter = store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap();
+    store.write_body(chapter, "正文。").unwrap();
+
+    let files = store.render_work(work.id, ExportFormat::Text).unwrap();
+    assert_eq!(
+        paths(&files),
+        vec!["001-volume/001-第1章.txt"],
+        "没起名的**容器**退到结构标识；章仍按同层取号自动命名（那是作者可改的名字）"
+    );
 }

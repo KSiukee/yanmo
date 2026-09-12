@@ -13,6 +13,7 @@ import { ref, type Ref } from "vue";
 
 import type { ChapterGap } from "../api/core";
 import { formatWhen, formatWords } from "./display.ts";
+import { t } from "../locales/index.ts";
 
 /** 删章路标要用的几个动作（会话层注入真命令，测试注入替身）。 */
 export interface GapTransport {
@@ -47,8 +48,17 @@ export interface Gaps {
 
 /** 弹窗上那几行字：哪儿缺了哪一章、什么时候删的、旧稿还有多少字。 */
 export function gapNote(gap: ChapterGap): string {
-  const where = gap.parent_title ? `「${gap.parent_title}」里缺了` : "目录里缺了";
-  return `${where}${gap.title}——${formatWhen(gap.deleted_at)}删的，旧稿 ${formatWords(gap.word_count)} 字还在回收站里。`;
+  const where = gap.parent_title
+    ? t("gap.where_in_volume", { parent: gap.parent_title })
+    : t("gap.where_root");
+  // 「查不到删除记录」那一种：核心只给编号，句子在这里拼（核心不产文案）
+  const title = gap.title || t("gap.missing_chapter", { n: gap.serial });
+  return t("gap.note", {
+    where,
+    title,
+    when: formatWhen(gap.deleted_at),
+    words: formatWords(gap.word_count),
+  });
 }
 
 export function useGaps(options: GapsOptions): Gaps {

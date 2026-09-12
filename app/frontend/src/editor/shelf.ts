@@ -12,6 +12,7 @@ import { ref, type Ref } from "vue";
 
 import type { ExportAck, ShelfEntry } from "../api/core";
 import { formatWords } from "./display.ts";
+import { t } from "../locales/index.ts";
 
 /** 删掉某一本之后该开哪一本：优先列表里的第一本；一本都不剩就交给核心去建默认的。 */
 export function nextWorkAfterDelete(entries: ShelfEntry[], deleted: number): number | null {
@@ -21,15 +22,18 @@ export function nextWorkAfterDelete(entries: ShelfEntry[], deleted: number): num
 /** 书架上那一行的小字：有章就报章数，单篇文章只报字数。 */
 export function shelfLabel(entry: Pick<ShelfEntry, "chapters" | "word_count">): string {
   return entry.chapters > 0
-    ? `${entry.chapters} 章 · ${formatWords(entry.word_count)} 字`
-    : `${formatWords(entry.word_count)} 字`;
+    ? t("shelf.label_with_chapters", {
+        chapters: entry.chapters,
+        words: formatWords(entry.word_count),
+      })
+    : t("shelf.label_words_only", { words: formatWords(entry.word_count) });
 }
 
 /** 作品类型的显示名（核心给的是取值，显示成中文是界面的事）。 */
 export function shelfKindLabel(kind: string): string {
-  if (kind === "novel") return "长篇";
-  if (kind === "collection") return "短篇集";
-  return "单篇";
+  if (kind === "novel") return t("shelf.kind_label_novel");
+  if (kind === "collection") return t("shelf.kind_label_collection");
+  return t("shelf.kind_label_article");
 }
 
 /** 书架要用的四个动作（会话层注入真命令，测试注入替身）。 */
@@ -152,8 +156,14 @@ export function useShelf(options: ShelfOptions): Shelf {
       busy.value = true;
       try {
         const ack = await options.transport.export(work_id, format);
-        const cleaned = ack.removed > 0 ? `，清掉 ${ack.removed} 个旧文件` : "";
-        note.value = `《${entry?.title ?? "这本书"}》已导出 ${ack.files} 个文件${cleaned}：${ack.path}`;
+        const cleaned =
+          ack.removed > 0 ? t("shelf.export_note_cleaned", { removed: ack.removed }) : "";
+        note.value = t("shelf.export_note", {
+          title: entry?.title || t("shelf.export_untitled"),
+          files: ack.files,
+          cleaned,
+          path: ack.path,
+        });
       } catch (error) {
         report(error);
       } finally {

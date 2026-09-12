@@ -3,6 +3,7 @@
 use serde::Serialize;
 use tauri::State;
 
+use crate::error::ApiError;
 use crate::storage::AppData;
 
 /// 引擎基本信息。
@@ -23,6 +24,7 @@ pub struct EngineInfo {
 #[tauri::command]
 pub fn engine_info() -> EngineInfo {
     EngineInfo {
+        // i18n-allow-next-line: 产品名（品牌），不翻译
         name: "研墨",
         version: yanmo_core::engine_version(),
         protocol_version: yanmo_proto::PROTOCOL_VERSION,
@@ -43,7 +45,7 @@ pub struct DataHome {
 }
 
 #[tauri::command]
-pub fn data_home(data: State<'_, AppData>) -> Result<DataHome, String> {
+pub fn data_home(data: State<'_, AppData>) -> Result<DataHome, ApiError> {
     Ok(DataHome {
         path: data.db_path().display().to_string(),
         schema_version: data.schema_version()?,

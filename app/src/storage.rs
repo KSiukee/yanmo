@@ -16,6 +16,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 use yanmo_core::store::{SessionReport, Store};
 
+use crate::error::ApiError;
 use crate::exitwatch::ExitWatch;
 
 /// 数据库文件名（位于应用数据目录内）。
@@ -23,8 +24,25 @@ const DB_FILE: &str = "yanmo.db";
 /// 逃生导出目录（关窗存不下去时，把手上这份正文原子写到这里）。
 const ESCAPE_DIR: &str = "escape";
 /// 导出目录名：优先落在作者的"文档"里（他自己找得到的地方），拿不到就退回数据目录。
-const EXPORT_FOLDER: &str = "研墨导出";
+///
+/// **语言无关**：它写在磁盘上，不该随界面语言变（导出的稿子是给作者带走的东西，
+/// 换一次语言就换个文件夹，只会让人以为文件丢了）。
+const EXPORT_FOLDER: &str = "YanmoExport";
+/// 早先版本用的导出目录名——**磁盘上已经有的数据**，不是界面文案，不能跟着语言走。
+// i18n-allow-next-line: 旧版目录名是既有数据（兼容用），不是要显示给用户的文案
+const LEGACY_EXPORT_FOLDER: &str = "研墨导出";
 const EXPORT_DIR: &str = "export";
+
+/// 选导出根：**老目录还在就继续用它**（把作者已经导出的东西留在原地更好找），
+/// 否则用语言无关的新名字。两边各导一份会让人以为稿子分家了。
+fn export_root(documents: &Path) -> PathBuf {
+    let legacy = documents.join(LEGACY_EXPORT_FOLDER);
+    if legacy.is_dir() {
+        legacy
+    } else {
+        documents.join(EXPORT_FOLDER)
+    }
+}
 
 /// 一次导出的结果（路径只报给界面看，界面拿到也改不了）。
 pub struct ExportOutcome {
@@ -39,7 +57,7 @@ pub struct ExportOutcome {
 fn prune_export(
     dir: &Path,
     files: &[yanmo_core::store::RenderedFile],
-) -> Result<usize, String> {
+) -> Result<usize, ApiError> {
     if !dir.is_dir() {
         return Ok(0);
     }
@@ -50,8 +68,13 @@ fn prune_export(
     let mut removed = 0;
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {
-        let entries = std::fs::read_dir(&current)
-            .map_err(|e| format!("读导出目录 {} 失败：{e}", current.display()))?;
+        let entries = std::fs::read_dir(&current).map_err(|e| {
+            ApiError::with(
+                "shell.export_dir_unreadable",
+                [("path", current.display().to_string())],
+            )
+            .caused_by(e)
+        })?;
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
@@ -69,8 +92,13 @@ fn prune_export(
                 .map(|rest| rest.to_string_lossy().to_string())
                 .unwrap_or_default();
             if !keep.contains(&relative) {
-                std::fs::remove_file(&path)
-                    .map_err(|e| format!("清旧导出文件 {} 失败：{e}", path.display()))?;
+                std::fs::remove_file(&path).map_err(|e| {
+                    ApiError::with(
+                        "shell.export_file_remove_failed",
+                        [("path", path.display().to_string())],
+                    )
+                    .caused_by(e)
+                })?;
                 removed += 1;
             }
         }
@@ -109,35 +137,40 @@ impl AppData {
     /// 启动期调用一次：解析数据目录 → 建目录 → 打开并迁移数据库 → 登记本次会话。
     ///
     /// 任何一步失败都直接返回错误，**绝不带病启动**（半个可用的数据层比不启动更危险）。
-    pub fn open(app: &AppHandle) -> Result<Self, String> {
+    pub fn open(app: &AppHandle) -> Result<Self, ApiError> {
         let dir = app
             .path()
             .app_data_dir()
-            .map_err(|e| format!("无法确定应用数据目录：{e}"))?;
-        // 导出放"文档/研墨导出"：那是作者自己找得到的地方；系统答不上来就退回数据目录
+            .map_err(|e| ApiError::new("shell.data_dir_unavailable").caused_by(e))?;
+        // 导出放"文档/导出目录"：那是作者自己找得到的地方；系统答不上来就退回数据目录
         let export_dir = app
             .path()
             .document_dir()
-            .map(|home| home.join(EXPORT_FOLDER))
+            .map(|home| export_root(&home))
             .unwrap_or_else(|_| dir.join(EXPORT_DIR));
         Self::open_at(&dir, export_dir)
     }
 
     /// 目录由调用方给出——供测试直接驱动。
     #[cfg(test)]
-    fn open_at_for_test(dir: &Path) -> Result<Self, String> {
+    fn open_at_for_test(dir: &Path) -> Result<Self, ApiError> {
         Self::open_at(dir, dir.join(EXPORT_DIR))
     }
 
-    fn open_at(dir: &Path, export_dir: PathBuf) -> Result<Self, String> {
-        std::fs::create_dir_all(dir).map_err(|e| format!("无法创建数据目录 {}：{e}", dir.display()))?;
+    fn open_at(dir: &Path, export_dir: PathBuf) -> Result<Self, ApiError> {
+        std::fs::create_dir_all(dir).map_err(|e| {
+            ApiError::with("shell.data_dir_create_failed", [("path", dir.display().to_string())])
+                .caused_by(e)
+        })?;
         let db_path = dir.join(DB_FILE);
-        let mut store = Store::open(&db_path)
-            .map_err(|e| format!("无法打开数据库 {}：{e}", db_path.display()))?;
+        let mut store = Store::open(&db_path).map_err(|e| {
+            ApiError::with("shell.db_open_failed", [("path", db_path.display().to_string())])
+                .caused_by(e)
+        })?;
         // 登记本次会话，同时拿到"上次退得干不干净"的交代
         let session = store
             .begin_session()
-            .map_err(|e| format!("无法登记本次会话：{e}"))?;
+            .map_err(|e| ApiError::new("shell.session_begin_failed").caused_by(e))?;
         Ok(Self {
             store: Mutex::new(store),
             db_path,
@@ -191,15 +224,20 @@ impl AppData {
         &self,
         work_title: &str,
         files: &[yanmo_core::store::RenderedFile],
-    ) -> Result<ExportOutcome, String> {
+    ) -> Result<ExportOutcome, ApiError> {
         let dir = self
             .export_dir
             .join(yanmo_core::atomic::safe_file_name(work_title));
         for file in files {
             let path = dir.join(&file.relative_path);
             if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| format!("无法创建导出目录 {}：{e}", parent.display()))?;
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    ApiError::with(
+                        "shell.export_dir_create_failed",
+                        [("path", parent.display().to_string())],
+                    )
+                    .caused_by(e)
+                })?;
             }
             let unchanged = std::fs::read_to_string(&path)
                 .map(|old| old == file.content)
@@ -207,8 +245,10 @@ impl AppData {
             if unchanged {
                 continue;
             }
-            yanmo_core::atomic::write_atomic(&path, file.content.as_bytes())
-                .map_err(|e| format!("写导出文件 {} 失败：{e}", path.display()))?;
+            yanmo_core::atomic::write_atomic(&path, file.content.as_bytes()).map_err(|e| {
+                ApiError::with("shell.export_write_failed", [("path", path.display().to_string())])
+                    .caused_by(e)
+            })?;
         }
         let removed = prune_export(&dir, files)?;
         Ok(ExportOutcome {
@@ -225,13 +265,13 @@ impl AppData {
     pub fn with_store<T>(
         &self,
         op: impl FnOnce(&mut Store) -> yanmo_core::Result<T>,
-    ) -> Result<T, String> {
-        let mut store = self.store.lock().map_err(|_| "数据库句柄不可用".to_string())?;
-        op(&mut store).map_err(|e| e.to_string())
+    ) -> Result<T, ApiError> {
+        let mut store = self.store.lock().map_err(|_| ApiError::new("shell.store_unavailable"))?;
+        op(&mut store).map_err(ApiError::from)
     }
 
     /// 库内实际的数据结构版本（迁移完成后应与引擎期望值一致）。
-    pub fn schema_version(&self) -> Result<u32, String> {
+    pub fn schema_version(&self) -> Result<u32, ApiError> {
         self.with_store(|store| yanmo_core::db::migrations::user_version(store.conn()))
     }
 }
@@ -281,7 +321,7 @@ mod tests {
             Ok(_) => panic!("父级是文件时不应打开成功"),
             Err(e) => e,
         };
-        assert!(err.contains("无法创建数据目录"), "错误信息应指明失败原因：{err}");
+        assert_eq!(err.code, "shell.data_dir_create_failed", "错误码应当指明失败原因：{err:?}");
     }
 
     #[test]
@@ -365,6 +405,16 @@ mod tests {
             "书名里的路径分隔符要被安全化，导出不许跑到目录外面去：{}",
             outcome.dir.display()
         );
+    }
+
+    #[test]
+    fn export_root_keeps_using_a_legacy_folder_that_already_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        // 没有老目录：用语言无关的新名字
+        assert_eq!(export_root(dir.path()), dir.path().join(EXPORT_FOLDER));
+        // 老目录在（早先版本导出过）：**继续用它**，别让作者以为文件丢了
+        std::fs::create_dir_all(dir.path().join(LEGACY_EXPORT_FOLDER)).unwrap();
+        assert_eq!(export_root(dir.path()), dir.path().join(LEGACY_EXPORT_FOLDER));
     }
 
     #[test]

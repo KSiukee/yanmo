@@ -67,12 +67,22 @@ fn weird_titles_and_bodies_are_handled() {
     }
 
     // 只有空白 / 零宽字符 / emoji 的标题
+    //
+    // 规矩：**纯空白 = 还没起名**（允许，界面按语言补占位）；零宽字符与 emoji 原样留着——
+    // 我们不替作者判断什么才算"好名字"，只把首尾空白去掉。
     for title in ["   ", "\u{200b}", "😀", "\t\n"] {
-        let outcome = store.create_work(WorkKind::Article, title);
-        if let Ok(work) = outcome {
-            assert!(!work.title.is_empty());
-        }
+        let work = store.create_work(WorkKind::Article, title).expect("这些标题都该被接受");
+        assert!(
+            !work.title.contains(char::is_whitespace),
+            "首尾空白要去掉：{:?}",
+            work.title
+        );
     }
+    assert_eq!(
+        store.create_work(WorkKind::Article, "   ").unwrap().title,
+        "",
+        "纯空白标题要落成空串，不能落成别的什么默认名"
+    );
 
     // 正文里塞进各种怪东西
     let work = store.create_work(WorkKind::Article, "怪正文").unwrap();

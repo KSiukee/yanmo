@@ -6,6 +6,7 @@
 // 与崩溃恢复配套：这里管的是"这一次"——正常退出前一定先落盘、再留一份关窗快照；
 // "上一次是不是正常退出"由核心里的会话标记负责，界面只在启动时提示一次。
 
+import { t } from "../locales/index.ts";
 import type { Autosave, AutosaveState } from "./autosave";
 
 /** 关窗请求的处理结果。 */
@@ -46,15 +47,15 @@ export function isSafeToExit(state: AutosaveState): boolean {
 function describe(state: AutosaveState): string {
   switch (state.status) {
     case "pending":
-      return "这一章还有改动没有落盘。";
+      return t("exit.reason_pending");
     case "saving":
-      return "正在往库里写，但还没写完。";
+      return t("exit.reason_saving");
     case "error":
-      return `落盘失败：${state.detail || "未知原因"}`;
+      return t("exit.reason_error", { detail: state.detail || t("exit.unknown_reason") });
     case "desync":
-      return `库里的正文与手上这份对不上：${state.detail || "已尝试抢救"}`;
+      return t("exit.reason_desync", { detail: state.detail || t("exit.tried_rescue") });
     default:
-      return "没能确认这一章已经安全落盘。";
+      return t("exit.reason_unknown");
   }
 }
 
@@ -110,7 +111,9 @@ export class ExitGate {
       this.setState({
         blocked: true,
         busy: false,
-        message: `导出到文件也失败了：${error instanceof Error ? error.message : String(error)}`,
+        message: t("exit.escape_failed", {
+          detail: error instanceof Error ? error.message : String(error),
+        }),
       });
       return null;
     }

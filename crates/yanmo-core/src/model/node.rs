@@ -1,6 +1,6 @@
 //! 结构节点（`nodes` 表）——**可变深度树**。
 
-use crate::error::{Error, Result};
+use crate::error::{codes, Error, Result};
 
 /// 节点类型。**"卷""章"只是这里的取值，不是表结构**——
 /// 深度不写死，所以单篇文章（零层级）与长篇（卷→章→场景卡）能共用一张表。
@@ -36,7 +36,9 @@ impl NodeKind {
             "section" => Ok(NodeKind::Section),
             "piece" => Ok(NodeKind::Piece),
             "scene" => Ok(NodeKind::Scene),
-            other => Err(Error::Invalid(format!("未知的节点类型：{other}"))),
+            other => {
+                Err(Error::invalid_with(codes::UNKNOWN_NODE_KIND, [("value", other.to_string())]))
+            }
         }
     }
 

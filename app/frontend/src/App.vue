@@ -6,6 +6,9 @@
 //   等引导问答功能落地时直接填充，不用重排布局。
 //
 // 壳层纪律：这里只搭布局与接线，不写业务逻辑（业务在 yanmo-core）。
+import { computed } from "vue";
+
+import { t } from "./locales/index.ts";
 import { useEditorSession } from "./editor/session";
 import DirectoryPane from "./components/DirectoryPane.vue";
 import EditorPane from "./components/EditorPane.vue";
@@ -21,29 +24,36 @@ const { chapterTitle, workId } = session;
 const { visible: shelfVisible, toggle: toggleShelf } = session.shelf;
 const { visible: trashVisible } = session.trash;
 const { visible: settingsVisible, values: settingsValues, open: openSettings } = session.appearance;
+
+// 顶栏那行小字：有章名就显示章名；开着书但还没起名就显示占位；没有书才说立场那句话
+const hint = computed(() => {
+  if (chapterTitle.value) return chapterTitle.value;
+  return workId.value ? t("common.untitled") : t("app.tagline");
+});
 </script>
 
 <template>
   <div class="shell">
     <header class="shell__bar">
+      <!-- i18n-allow-next-line: 产品名（品牌），不是界面文案 -->
       <span class="shell__brand">研墨</span>
       <button
         type="button"
         class="shell__shelf"
-        :title="workId ? '换一本书 / 新建一本书' : '打开书架'"
+        :title="workId ? t('app.shelf_title_switch') : t('app.shelf_title_open')"
         @click="toggleShelf()"
       >
-        书架
+        {{ t("app.shelf") }}
       </button>
       <button
         type="button"
         class="shell__settings"
-        title="外观与写作行为偏好"
+        :title="t('app.settings_title')"
         @click="void openSettings()"
       >
-        设置
+        {{ t("app.settings") }}
       </button>
-      <span class="shell__hint">{{ chapterTitle || "AI 只问，不写" }}</span>
+      <span class="shell__hint">{{ hint }}</span>
       <EngineBadge />
     </header>
 

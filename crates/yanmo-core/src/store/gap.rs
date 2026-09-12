@@ -15,7 +15,7 @@
 use rusqlite::{params, OptionalExtension};
 
 use super::Store;
-use crate::error::{Error, Result};
+use crate::error::{codes, Error, Result};
 use crate::model::NodeKind;
 
 /// 作者对一处空缺的答复。
@@ -40,7 +40,9 @@ impl GapAnswer {
         match text {
             "deferred" => Ok(GapAnswer::Deferred),
             "ignored" => Ok(GapAnswer::Ignored),
-            other => Err(Error::Invalid(format!("未知的答复：{other}"))),
+            other => {
+                Err(Error::invalid_with(codes::UNKNOWN_GAP_ANSWER, [("value", other.to_string())]))
+            }
         }
     }
 }
@@ -104,7 +106,9 @@ impl Store {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?
-            .ok_or_else(|| Error::Invalid(format!("回收站里没有这一段：{gap_node_id}")))?;
+            .ok_or_else(|| {
+                Error::invalid_with(codes::NODE_NOT_TRASHED, [("node_id", gap_node_id.to_string())])
+            })?;
 
         let created = self.create_node(work_id, parent, NodeKind::Chapter, &title)?;
         // 落回它原来那一带（复用"按原位锚回"那套：序号越界就夹到末尾）
@@ -148,7 +152,9 @@ impl Store {
                         parent_id: parent,
                         parent_title: self.layer_title(parent)?,
                         serial,
-                        title: format!("第{serial}章"),
+                        // 核心只报**编号**："缺第几章"那句话由界面按当前语言拼
+                        // （见界面字典的 `gap.missing_chapter`）
+                        title: String::new(),
                         deleted_at: 0,
                         word_count: 0,
                     }),
@@ -226,9 +232,11 @@ impl Store {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?
-            .ok_or_else(|| Error::Invalid(format!("回收站里没有这一段：{gap_node_id}")))?;
+            .ok_or_else(|| {
+                Error::invalid_with(codes::NODE_NOT_TRASHED, [("node_id", gap_node_id.to_string())])
+            })?;
         let serial = parse_serial(&title, NodeKind::Chapter)
-            .ok_or_else(|| Error::Invalid(format!("这一段没有编号可补：{title}")))?;
+            .ok_or_else(|| Error::invalid_with(codes::NODE_GAP_NO_SERIAL, [("title", title)]))?;
         Ok((parent, serial))
     }
 

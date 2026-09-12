@@ -9,7 +9,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::json;
 
 use super::{Store, MAX_TREE_DEPTH};
-use crate::error::{Error, Result};
+use crate::error::{codes, Error, Result};
 use crate::model::NodeKind;
 use crate::time::now_millis;
 
@@ -69,12 +69,11 @@ fn is_descendant(conn: &Connection, candidate: i64, ancestor: i64) -> Result<boo
             None => return Ok(false),
         }
     }
-    Err(Error::Invalid(
-        "节点树深度异常（疑似成环），已拒绝继续".to_string(),
-    ))
+    Err(Error::invalid(codes::TREE_CYCLE_SUSPECTED))
 }
 
 /// 默认名的"前缀 / 后缀"：`第 12 章` 这种编号的骨架（场景卡没有"第…章"的说法，给个朴素名字）。
+// i18n-allow-begin: 这张表产出的是**会写进库的默认名**（作者的数据，可随时改），不是界面文案
 fn naming(kind: NodeKind) -> (&'static str, &'static str) {
     match kind {
         NodeKind::Volume => ("第", "卷"),
@@ -84,6 +83,7 @@ fn naming(kind: NodeKind) -> (&'static str, &'static str) {
         NodeKind::Scene => ("场景卡", ""),
     }
 }
+// i18n-allow-end
 
 /// 从标题里认出编号：阿拉伯数字与中文数字都认（作者手打的「第一章」也算数），
 /// 其它名字一概不猜，也就不会误判成编号。
@@ -210,7 +210,7 @@ impl Store {
             params![title.trim(), now_millis(), id],
         )?;
         if affected == 0 {
-            return Err(Error::Invalid(format!("节点不存在或已删除：{id}")));
+            return Err(Error::invalid_with(codes::NODE_GONE, [("node_id", id.to_string())]));
         }
         self.record("nodes", id, "rename", json!({ "title": title.trim() }))
     }
@@ -225,9 +225,7 @@ impl Store {
         if let Some(parent) = new_parent {
             self.ensure_node_in_work(parent, work_id)?;
             if parent == id || is_descendant(&self.conn, parent, id)? {
-                return Err(Error::Invalid(
-                    "不能把节点移进自己的子孙里——那会形成环".to_string(),
-                ));
+                return Err(Error::invalid(codes::TREE_MOVE_INTO_DESCENDANT));
             }
         }
 
@@ -273,7 +271,7 @@ impl Store {
             params![id, now_millis()],
         )?;
         if affected == 0 {
-            return Err(Error::Invalid(format!("节点不存在或已删除：{id}")));
+            return Err(Error::invalid_with(codes::NODE_GONE, [("node_id", id.to_string())]));
         }
         // 同级会留一个洞：**当场收成密集序号**。这样"同级序号是密集的"这条不变量
         // 在任何时候都成立，恢复时也才有一个稳定的"原来在第几位"可锚。
@@ -299,7 +297,9 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?
-            .ok_or_else(|| Error::Invalid(format!("节点不存在或已删除：{node_id}")))?;
+            .ok_or_else(|| {
+                Error::invalid_with(codes::NODE_GONE, [("node_id", node_id.to_string())])
+            })?;
         let work_id = self.node_work(node_id)?;
         let index = sibling_ids(&self.conn, work_id, parent)?
             .iter()

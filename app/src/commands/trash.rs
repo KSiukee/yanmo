@@ -6,6 +6,7 @@
 use serde::Serialize;
 use tauri::State;
 
+use crate::error::ApiError;
 use crate::storage::AppData;
 use yanmo_core::store::{Store, TrashEntry};
 
@@ -37,13 +38,13 @@ fn to_dto(entry: TrashEntry) -> TrashEntryDto {
 
 /// 回收站里有什么（整本书在前，书里被删的段在后）。
 #[tauri::command]
-pub fn list_trash(data: State<'_, AppData>) -> Result<Vec<TrashEntryDto>, String> {
+pub fn list_trash(data: State<'_, AppData>) -> Result<Vec<TrashEntryDto>, ApiError> {
     data.with_store(|store: &mut Store| Ok(store.list_trash()?.into_iter().map(to_dto).collect()))
 }
 
 /// 恢复一本书。
 #[tauri::command(rename_all = "snake_case")]
-pub fn restore_work(data: State<'_, AppData>, work_id: i64) -> Result<usize, String> {
+pub fn restore_work(data: State<'_, AppData>, work_id: i64) -> Result<usize, ApiError> {
     data.with_store(|store: &mut Store| store.restore_work(work_id))
 }
 
@@ -69,7 +70,7 @@ pub struct RestorePreviewDto {
 
 /// 恢复前先看一眼：有没有同名冲突（有冲突时界面要让作者拿主意）。
 #[tauri::command(rename_all = "snake_case")]
-pub fn restore_preview(data: State<'_, AppData>, node_id: i64) -> Result<RestorePreviewDto, String> {
+pub fn restore_preview(data: State<'_, AppData>, node_id: i64) -> Result<RestorePreviewDto, ApiError> {
     data.with_store(|store: &mut Store| {
         let preview = store.restore_preview(node_id)?;
         Ok(RestorePreviewDto {
@@ -98,24 +99,24 @@ pub fn restore_node(
     data: State<'_, AppData>,
     node_id: i64,
     title: Option<String>,
-) -> Result<usize, String> {
+) -> Result<usize, ApiError> {
     data.with_store(|store: &mut Store| store.restore_node(node_id, title.as_deref()))
 }
 
 /// 彻底删除一段（**不可恢复**），返回删掉的节点数。
 #[tauri::command(rename_all = "snake_case")]
-pub fn purge_node(data: State<'_, AppData>, node_id: i64) -> Result<usize, String> {
+pub fn purge_node(data: State<'_, AppData>, node_id: i64) -> Result<usize, ApiError> {
     data.with_store(|store: &mut Store| store.purge_node(node_id))
 }
 
 /// 彻底删除一本书（**不可恢复**），返回删掉的节点数。
 #[tauri::command(rename_all = "snake_case")]
-pub fn purge_work(data: State<'_, AppData>, work_id: i64) -> Result<usize, String> {
+pub fn purge_work(data: State<'_, AppData>, work_id: i64) -> Result<usize, ApiError> {
     data.with_store(|store: &mut Store| store.purge_work(work_id))
 }
 
 /// 清空回收站，返回清掉的项数。
 #[tauri::command]
-pub fn empty_trash(data: State<'_, AppData>) -> Result<usize, String> {
+pub fn empty_trash(data: State<'_, AppData>) -> Result<usize, ApiError> {
     data.with_store(|store: &mut Store| store.empty_trash())
 }

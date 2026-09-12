@@ -10,12 +10,19 @@
 import { ref, type Ref } from "vue";
 
 import type { RestorePreview, TrashEntry } from "../api/core";
+import { t } from "../locales/index.ts";
+
+/** 名字可能为空（没起名的那一本）：显示的永远是"有话说"的名字。 */
+function nameOf(title: string): string {
+  return title || t("common.untitled");
+}
 
 /** 回收站的这一行叫什么。 */
 export function trashLabel(entry: Pick<TrashEntry, "kind" | "title" | "work_title" | "nodes">): string {
-  if (entry.kind === "work") return `整本《${entry.title}》`;
-  const more = entry.nodes > 1 ? `（连带 ${entry.nodes - 1} 项）` : "";
-  return `《${entry.work_title}》· ${entry.title}${more}`;
+  const title = nameOf(entry.title);
+  if (entry.kind === "work") return t("trash.label_work", { title });
+  const more = entry.nodes > 1 ? t("trash.label_more", { count: entry.nodes - 1 }) : "";
+  return t("trash.label_node", { work: nameOf(entry.work_title), title, more });
 }
 
 /** 回收站要用的几个动作（会话层注入真命令，测试注入替身）。 */
@@ -113,7 +120,7 @@ export function useTrash(options: TrashOptions): Trash {
     await act(async () => {
       const count = await options.transport.empty();
       if (losingCurrent) await options.reopen(); // 正在写的那本被抹了：得有地方可去
-      return `回收站清空了（${count} 项）`;
+      return t("trash.emptied_count", { count });
     });
   }
 
@@ -136,8 +143,10 @@ export function useTrash(options: TrashOptions): Trash {
         conflict.value = null;
         if (!pending) return "";
         const nodes = await options.transport.restoreNode(pending.entry.id, rename_to);
-        const what = rename_to ? `「${rename_to}」` : `「${pending.entry.title}」`;
-        return nodes > 1 ? `${what}连同 ${nodes - 1} 项一起回来了` : `${what}回来了`;
+        const what = t("trash.what_quoted", { title: rename_to || nameOf(pending.entry.title) });
+        return nodes > 1
+          ? t("trash.restored_more", { what, count: nodes - 1 })
+          : t("trash.restored", { what });
       }),
     cancelConflict: () => {
       conflict.value = null;
@@ -146,7 +155,7 @@ export function useTrash(options: TrashOptions): Trash {
       act(async () => {
         if (entry.kind === "work") {
           await options.transport.restoreWork(entry.id);
-          return `《${entry.title}》回到了书架`;
+          return t("trash.work_restored", { title: nameOf(entry.title) });
         }
         // 先看一眼会不会跟还活着的某章重名：**有冲突就把决定权交回作者**，
         // 不替他改名，也不悄悄恢复出两章同名（他可能正是删了旧的、又重写了这一章）
@@ -156,7 +165,10 @@ export function useTrash(options: TrashOptions): Trash {
           return "";
         }
         const nodes = await options.transport.restoreNode(entry.id, null);
-        return nodes > 1 ? `「${entry.title}」连同 ${nodes - 1} 项一起回来了` : `「${entry.title}」回来了`;
+        const what = t("trash.what_quoted", { title: nameOf(entry.title) });
+        return nodes > 1
+          ? t("trash.restored_more", { what, count: nodes - 1 })
+          : t("trash.restored", { what });
       }),
     purge: (entry) =>
       act(async () => {
@@ -166,7 +178,7 @@ export function useTrash(options: TrashOptions): Trash {
             ? await options.transport.purgeWork(entry.id)
             : await options.transport.purgeNode(entry.id);
         if (work_id === options.workId.value) await options.reopen(); // 正在写的那本被抹了
-        return `已彻底删除（${nodes} 项），这一步没有后悔药`;
+        return t("trash.purged", { nodes });
       }),
     empty,
   };

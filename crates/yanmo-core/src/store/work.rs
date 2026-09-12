@@ -4,7 +4,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::json;
 
 use super::Store;
-use crate::error::{Error, Result};
+use crate::error::{codes, Error, Result};
 use crate::model::{NodeKind, Work, WorkKind};
 use crate::time::now_millis;
 
@@ -57,20 +57,24 @@ fn build(row: WorkRow) -> Result<Work> {
 /// 新建作品的根节点模板：**只是给个起点，不是结构约束**（深度不写死）。
 ///
 /// 长篇给一个空卷，方便往里加章；文章与短篇集直接给"单篇"——**根节点即正文，零层级**。
+///
+/// ⚠️ 长篇的卷名**刻意留空、不写死一个默认名**：名字一旦落库就成了用户数据，
+/// 换界面语言后它还是老语言的样子。空名字由界面按当前语言补占位显示
+/// （见界面字典里的 `tree.volume_placeholder`），作者一起名就覆盖掉。
 fn root_template(kind: WorkKind, work_title: &str) -> (NodeKind, String) {
     match kind {
-        WorkKind::Novel => (NodeKind::Volume, "第一卷".to_string()),
+        WorkKind::Novel => (NodeKind::Volume, String::new()),
         WorkKind::Article | WorkKind::Collection => (NodeKind::Piece, work_title.to_string()),
     }
 }
 
 impl Store {
     /// 新建作品：**同一个事务里连根节点一起建**——失败不留半个作品。
+    ///
+    /// 标题**留空是允许的**（"还没起名"）：首次运行的默认作品就是无名的那一本，
+    /// 界面按语言补占位显示。改名则不允许清空（那是作者明确在给这一本起名）。
     pub fn create_work(&mut self, kind: WorkKind, title: &str) -> Result<Work> {
         let title = title.trim();
-        if title.is_empty() {
-            return Err(Error::Invalid("作品标题不能为空".to_string()));
-        }
         let now = now_millis();
         let (root_kind, root_title) = root_template(kind, title);
 
@@ -160,7 +164,7 @@ impl Store {
             .conn
             .query_row(&sql, params![id], read_row)
             .optional()?
-            .ok_or_else(|| Error::Invalid(format!("作品不存在：{id}")))?;
+            .ok_or_else(|| Error::invalid_with(codes::WORK_NOT_FOUND, [("work_id", id.to_string())]))?;
         build(raw)
     }
 
@@ -168,14 +172,14 @@ impl Store {
     pub fn rename_work(&mut self, id: i64, title: &str) -> Result<()> {
         let title = title.trim();
         if title.is_empty() {
-            return Err(Error::Invalid("作品标题不能为空".to_string()));
+            return Err(Error::invalid(codes::WORK_TITLE_EMPTY));
         }
         let affected = self.conn.execute(
             "UPDATE works SET title = ?1, updated_at = ?2 WHERE id = ?3 AND deleted_at IS NULL",
             params![title, now_millis(), id],
         )?;
         if affected == 0 {
-            return Err(Error::Invalid(format!("作品不存在或已删除：{id}")));
+            return Err(Error::invalid_with(codes::WORK_GONE, [("work_id", id.to_string())]));
         }
         self.record("works", id, "rename", json!({ "title": title }))
     }
@@ -187,7 +191,7 @@ impl Store {
             params![now_millis(), id],
         )?;
         if affected == 0 {
-            return Err(Error::Invalid(format!("作品不存在或已删除：{id}")));
+            return Err(Error::invalid_with(codes::WORK_GONE, [("work_id", id.to_string())]));
         }
         Ok(())
     }
@@ -199,7 +203,7 @@ impl Store {
             params![now_millis(), id],
         )?;
         if affected == 0 {
-            return Err(Error::Invalid(format!("作品不存在或已删除：{id}")));
+            return Err(Error::invalid_with(codes::WORK_GONE, [("work_id", id.to_string())]));
         }
         self.record("works", id, "delete", json!({}))
     }
@@ -257,7 +261,7 @@ pub(super) fn ensure_alive(conn: &Connection, work_id: i64) -> Result<()> {
         .optional()?;
     match alive {
         Some(_) => Ok(()),
-        None => Err(Error::Invalid(format!("作品不存在或已删除：{work_id}"))),
+        None => Err(Error::invalid_with(codes::WORK_GONE, [("work_id", work_id.to_string())])),
     }
 }
 
@@ -273,9 +277,9 @@ mod tests {
     }
 
     #[test]
-    fn novel_template_starts_with_a_volume() {
+    fn novel_template_starts_with_an_unnamed_volume() {
         let (kind, title) = root_template(WorkKind::Novel, "长夜");
         assert_eq!(kind, NodeKind::Volume);
-        assert_eq!(title, "第一卷");
+        assert_eq!(title, "", "默认卷名不落库：落了库就固化成某一种语言的名字了");
     }
 }

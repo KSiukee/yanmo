@@ -70,7 +70,7 @@ fn novel_supports_deep_tree_and_layer_by_layer_queries() {
 
     let root = store.list_nodes(work.id).unwrap()[0].clone();
     assert_eq!(root.kind, NodeKind::Volume);
-    assert_eq!(root.title, "第一卷");
+    assert_eq!(root.title, "", "默认卷名不落库：空名字由界面按语言补占位");
 
     let ch1 = store.create_node(work.id, Some(root.id), NodeKind::Chapter, "第一章").unwrap();
     let ch2 = store.create_node(work.id, Some(root.id), NodeKind::Chapter, "第二章").unwrap();
@@ -153,7 +153,7 @@ fn move_reorders_densely_and_refuses_cycles_and_cross_work() {
     // 全树列表：根级在前（父级为空的先出），同级按密集序号
     assert_eq!(
         titles(&store, work.id),
-        vec!["第二章", "第一卷", "第一章", "第三章"]
+        vec!["第二章", "", "第一章", "第三章"]
     );
 }
 

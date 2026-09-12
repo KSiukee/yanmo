@@ -6,6 +6,7 @@ import { nextTick, ref } from "vue";
 
 import type { EditorSession } from "../editor/session";
 import { shelfKindLabel, shelfLabel } from "../editor/shelf";
+import { t } from "../locales/index.ts";
 import { formatWhen } from "../editor/display";
 
 const props = defineProps<{ session: EditorSession }>();
@@ -32,10 +33,15 @@ const newKind = ref("novel");
 const newTitleEl = ref<HTMLInputElement | null>(null);
 
 const KINDS = [
-  { value: "novel", label: "长篇（卷 → 章）" },
-  { value: "collection", label: "短篇集（一篇一篇）" },
-  { value: "article", label: "单篇（零层级）" },
+  { value: "novel", label: "shelf.kind_novel" },
+  { value: "collection", label: "shelf.kind_collection" },
+  { value: "article", label: "shelf.kind_article" },
 ];
+
+/** 书架上的书名：没起名的那一本显示占位（默认名不落库，名字由作者起） */
+function workLabel(title: string): string {
+  return title || t("shelf.untitled_work");
+}
 
 async function startCreate() {
   creating.value = true;
@@ -68,7 +74,7 @@ async function commitRename(work_id: number) {
 
 /** 删书是不可逆的入口（虽然库里是软删），问一句再动手 */
 function confirmRemove(work_id: number, title: string) {
-  if (window.confirm(`删掉《${title}》？稿子会留在回收站里，之后可以捞回来。`)) {
+  if (window.confirm(t("shelf.delete_confirm", { title: workLabel(title) }))) {
     void remove(work_id);
   }
 }
@@ -78,14 +84,14 @@ function confirmRemove(work_id: number, title: string) {
   <div class="shelf dialog" @click.self="close">
     <section class="shelf__box dialog__box">
       <header class="shelf__head dialog__head">
-        <h2 class="shelf__title dialog__title">书架</h2>
+        <h2 class="shelf__title dialog__title">{{ t("shelf.title") }}</h2>
         <button type="button" class="shelf__button dialog__button" :disabled="busy" @click="startCreate">
-          + 新书
+          {{ t("shelf.new_work") }}
         </button>
-        <button type="button" class="shelf__button dialog__button" title="看看删掉的书与章节" @click="openTrash">
-          回收站
+        <button type="button" class="shelf__button dialog__button" :title="t('shelf.trash_title')" @click="openTrash">
+          {{ t("shelf.trash") }}
         </button>
-        <button type="button" class="shelf__button dialog__button" title="回到正文" @click="close">关闭</button>
+        <button type="button" class="shelf__button dialog__button" :title="t('shelf.close_title')" @click="close">{{ t("common.close") }}</button>
       </header>
 
       <form v-if="creating" class="shelf__new" @submit.prevent="submitCreate">
@@ -94,19 +100,21 @@ function confirmRemove(work_id: number, title: string) {
           v-model="newTitle"
           class="shelf__input"
           type="text"
-          placeholder="书名"
+          :placeholder="t('shelf.name_placeholder')"
           @keydown.esc="creating = false"
         />
         <select v-model="newKind" class="shelf__kind">
           <option v-for="kind in KINDS" :key="kind.value" :value="kind.value">
-            {{ kind.label }}
+            {{ t(kind.label) }}
           </option>
         </select>
-        <button type="submit" class="shelf__button dialog__button" :disabled="busy || !newTitle.trim()">建好就写</button>
+        <button type="submit" class="shelf__button dialog__button" :disabled="busy || !newTitle.trim()">
+           {{ t("shelf.create_and_write") }}
+         </button>
       </form>
 
       <p v-if="note" class="shelf__note dialog__note">{{ note }}</p>
-      <p v-if="entries.length === 0" class="shelf__empty dialog__empty">书架上还没有书</p>
+      <p v-if="entries.length === 0" class="shelf__empty dialog__empty">{{ t("shelf.empty") }}</p>
       <ul ref="listEl" class="shelf__list">
         <li
           v-for="entry in entries"
@@ -125,7 +133,7 @@ function confirmRemove(work_id: number, title: string) {
               @keydown.esc="renaming = null"
               @blur="commitRename(entry.id)"
             />
-            <span v-else class="shelf__name" :title="entry.title">{{ entry.title }}</span>
+            <span v-else class="shelf__name" :title="workLabel(entry.title)">{{ workLabel(entry.title) }}</span>
             <span class="shelf__meta">
               {{ shelfKindLabel(entry.kind) }} · {{ shelfLabel(entry) }} ·
               {{ formatWhen(entry.opened_at) }}
@@ -133,7 +141,7 @@ function confirmRemove(work_id: number, title: string) {
           </div>
 
           <div class="shelf__actions">
-            <span v-if="entry.id === workId" class="shelf__here">正在写</span>
+            <span v-if="entry.id === workId" class="shelf__here">{{ t("shelf.writing_now") }}</span>
             <button
               v-else
               type="button"
@@ -141,16 +149,16 @@ function confirmRemove(work_id: number, title: string) {
               :disabled="busy"
               @click="open(entry.id)"
             >
-              打开
+              {{ t("shelf.open") }}
             </button>
             <button
               type="button"
               class="shelf__button dialog__button"
               :disabled="busy"
-              title="导出成文件（分章 txt + 单文件 json），同样的内容不会重复写"
+              :title="t('shelf.export_title')"
               @click="exportWork(entry.id, 'both')"
             >
-              导出
+              {{ t("shelf.export") }}
             </button>
             <button
               type="button"
@@ -158,7 +166,7 @@ function confirmRemove(work_id: number, title: string) {
               :disabled="busy"
               @click="startRename(entry.id, entry.title)"
             >
-              改名
+              {{ t("shelf.rename") }}
             </button>
             <button
               type="button"
@@ -166,7 +174,7 @@ function confirmRemove(work_id: number, title: string) {
               :disabled="busy"
               @click="confirmRemove(entry.id, entry.title)"
             >
-              删除
+              {{ t("shelf.delete") }}
             </button>
           </div>
         </li>

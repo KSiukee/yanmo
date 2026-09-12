@@ -19,6 +19,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::exitwatch::RequestOutcome;
 
 mod commands;
+mod error;
 mod exitwatch;
 mod storage;
 
@@ -102,6 +103,7 @@ fn main() {
             commands::trash::empty_trash
         ])
         .run(tauri::generate_context!())
+        // i18n-allow-next-line: 进程级 panic 文本（开发者看），应用起不来时界面还不存在
         .expect("启动研墨失败");
 }
 

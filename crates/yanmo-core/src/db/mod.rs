@@ -8,7 +8,7 @@ use std::path::Path;
 /// 这样将来换驱动或换成「核心自有的数据句柄」时，壳一行都不用改。
 pub use rusqlite::Connection;
 
-use crate::error::{Error, Result};
+use crate::error::{codes, Error, Result};
 use crate::time::now_millis;
 
 pub mod migrations;
@@ -39,9 +39,10 @@ pub fn configure(conn: &Connection) -> Result<()> {
     // WAL：读写不互相阻塞，崩溃后可恢复（边写边存的前提）
     let mode: String = conn.query_row("PRAGMA journal_mode=WAL", [], |r| r.get(0))?;
     if !mode.eq_ignore_ascii_case("wal") {
-        return Err(Error::Unsupported(format!(
-            "无法启用 WAL（当前模式 {mode}）——网络盘/只读目录不支持"
-        )));
+        return Err(Error::unsupported_with(
+            codes::WAL_UNAVAILABLE,
+            [("mode", mode)],
+        ));
     }
     // 外键约束：级联删除靠它（默认是关的，必须显式打开）
     conn.pragma_update(None, "foreign_keys", true)?;
@@ -57,17 +58,17 @@ pub fn configure(conn: &Connection) -> Result<()> {
 pub fn verify_environment(conn: &Connection) -> Result<()> {
     let v = rusqlite::version_number();
     if v < MIN_SQLITE {
-        return Err(Error::Unsupported(format!(
-            "SQLite {} 过旧（需 >= 3.34，trigram 分词要用）",
-            rusqlite::version()
-        )));
+        return Err(Error::unsupported_with(
+            codes::SQLITE_TOO_OLD,
+            [("version", rusqlite::version().to_string())],
+        ));
     }
     // FTS5：用临时虚拟表做**真实功能探针**（查编译选项在部分构建下不可靠）
     conn.execute(
         "CREATE VIRTUAL TABLE IF NOT EXISTS temp.__fts5_probe USING fts5(x)",
         [],
     )
-    .map_err(|e| Error::Unsupported(format!("FTS5 不可用（全文检索会退化成扫描）：{e}")))?;
+    .map_err(|e| Error::unsupported_with(codes::FTS5_UNAVAILABLE, [("detail", e.to_string())]))?;
     conn.execute("DROP TABLE temp.__fts5_probe", [])?;
     Ok(())
 }

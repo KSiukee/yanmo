@@ -6,15 +6,23 @@
 //
 // ⚠️ 纪律：AI 只问不写，面板里永远不出现 AI 生成的正文句子。
 
-const planned = ["问题卡与状态机", "加权选题引擎", "延后 / 舍弃 / 记灵感", "键盘与语音双通道作答"];
+import { t } from "../locales/index.ts";
+
+/** 计划中的能力——显示的是字典里的句子，这里只登记键 */
+const planned = [
+  "flow.planned.problem_cards",
+  "flow.planned.topic_engine",
+  "flow.planned.defer_and_park",
+  "flow.planned.two_channels",
+];
 </script>
 
 <template>
   <aside class="pane">
-    <h2 class="pane__title">叩问</h2>
-    <p class="pane__todo">引导问答待实现（P1）</p>
+    <h2 class="pane__title">{{ t("flow.title") }}</h2>
+    <p class="pane__todo">{{ t("flow.todo") }}</p>
     <ul class="pane__list">
-      <li v-for="item in planned" :key="item">{{ item }}</li>
+      <li v-for="item in planned" :key="item">{{ t(item) }}</li>
     </ul>
   </aside>
 </template>

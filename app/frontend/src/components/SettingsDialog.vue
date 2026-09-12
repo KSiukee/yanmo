@@ -4,6 +4,7 @@
 // 视图只负责"显示与改"：偏好的真相在核心（单一真相源）；读不出来就如实说，不猜一个默认值糊上去。
 import { computed } from "vue";
 
+import { t } from "../locales/index.ts";
 import type { EditorSession } from "../editor/session";
 
 const props = defineProps<{ session: EditorSession }>();
@@ -24,20 +25,20 @@ function onToggle(event: Event) {
   <div class="settings dialog" @click.self="close">
     <section class="settings__box dialog__box">
       <header class="settings__head dialog__head">
-        <h2 class="settings__title dialog__title">设置</h2>
+        <h2 class="settings__title dialog__title">{{ t("settings.title") }}</h2>
         <button
           type="button"
           class="settings__button dialog__button"
           :disabled="busy"
-          title="回到核心里的默认值"
+          :title="t('settings.reset_title')"
           @click="resetToDefault"
         >
-          恢复默认
+          {{ t("settings.reset") }}
         </button>
-        <button type="button" class="settings__button dialog__button" @click="close">关闭</button>
+        <button type="button" class="settings__button dialog__button" @click="close">{{ t("common.close") }}</button>
       </header>
 
-      <p class="settings__group">写作行为</p>
+      <p class="settings__group">{{ t("settings.group_writing") }}</p>
       <label class="settings__row">
         <input
           type="checkbox"
@@ -45,14 +46,14 @@ function onToggle(event: Event) {
           :disabled="busy || unavailable"
           @change="onToggle"
         />
-        <span>打开最新一章时，跳到段末并聚焦输入光标</span>
+        <span>{{ t("settings.jump_to_end") }}</span>
       </label>
       <p class="settings__hint">
-        历史章节默认只看不写（打开时不会把光标放进正文，免得误触插进乱字符）；点一下正文即可编辑。
+        {{ t("settings.read_only_hint") }}
       </p>
-      <p class="settings__hint">这些偏好只影响显示与手感：不进导出，也不改动正文一个字。</p>
+      <p class="settings__hint">{{ t("settings.local_only_hint") }}</p>
       <p v-if="unavailable" class="settings__hint settings__hint--bad">
-        偏好没能读出来，这次按默认值走。
+        {{ t("settings.unavailable") }}
       </p>
     </section>
   </div>

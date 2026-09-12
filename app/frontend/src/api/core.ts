@@ -7,8 +7,16 @@
 //   界面拿到的只是被报告出来的结果。
 //
 // 命名：命令参数与返回值一律 snake_case，和 Rust 侧一致——不给"两套写法"留出错空间。
+//
+// 错误：Rust 侧只回**码 + 参数**（见 `src/locales/` 里的 `error.*`），
+// 本文件把它们渲染成句子——**界面文案只有这一处来源**，别在组件里另拼中文。
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+
+import { asError, CoreError, CoreUnavailableError } from "./errors";
+
+// 错误类型从 `api/errors.ts` 转出：用的人照旧从网关取，不必知道它住在哪。
+export { CoreError, CoreUnavailableError };
 
 /** 引擎基本信息（编译期常量）。 */
 export interface EngineInfo {
@@ -195,8 +203,6 @@ export interface EscapeAck {
   path: string;
 }
 
-/** 核心不可达：浏览器预览模式，或核心启动失败。 */
-export class CoreUnavailableError extends Error {}
 
 /** 命令白名单：新增命令先在这里登记，别在组件里裸调。 */
 const COMMANDS = {
@@ -250,7 +256,7 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
   try {
     return await invoke<T>(command, args);
   } catch (e) {
-    throw new CoreUnavailableError(typeof e === "string" ? e : String(e));
+    throw asError(e);
   }
 }
 

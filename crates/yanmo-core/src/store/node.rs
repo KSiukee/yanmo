@@ -7,7 +7,7 @@
 use rusqlite::{params, OptionalExtension};
 
 use super::{Store, MAX_TREE_DEPTH};
-use crate::error::{Error, Result};
+use crate::error::{codes, Error, Result};
 use crate::model::NodeKind;
 
 /// 目录树条目：**没有正文字段**。
@@ -108,7 +108,7 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?
-            .ok_or_else(|| Error::Invalid(format!("节点不存在或已删除：{node_id}")))
+            .ok_or_else(|| Error::invalid_with(codes::NODE_GONE, [("node_id", node_id.to_string())]))
     }
 
     /// 节点所属作品（顺带确认它存在且未删除）。
@@ -120,16 +120,21 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?
-            .ok_or_else(|| Error::Invalid(format!("节点不存在或已删除：{id}")))
+            .ok_or_else(|| Error::invalid_with(codes::NODE_GONE, [("node_id", id.to_string())]))
     }
 
     /// 确认节点属于指定作品——**防跨作品挂错父级**。
     pub(super) fn ensure_node_in_work(&self, node_id: i64, work_id: i64) -> Result<()> {
         let owner = self.node_work(node_id)?;
         if owner != work_id {
-            return Err(Error::Invalid(format!(
-                "节点 {node_id} 属于作品 {owner}，不能挂到作品 {work_id} 下"
-            )));
+            return Err(Error::invalid_with(
+                codes::NODE_FOREIGN_PARENT,
+                [
+                    ("node_id", node_id.to_string()),
+                    ("owner", owner.to_string()),
+                    ("work_id", work_id.to_string()),
+                ],
+            ));
         }
         Ok(())
     }
@@ -149,9 +154,7 @@ impl Store {
         let mut current = parent_of(node_id)?;
         while let Some(id) = current {
             if chain.len() >= MAX_TREE_DEPTH {
-                return Err(Error::Invalid(
-                    "节点树深度异常（疑似成环），已拒绝继续".to_string(),
-                ));
+                return Err(Error::invalid(codes::TREE_CYCLE_SUSPECTED));
             }
             chain.push(id);
             current = parent_of(id)?;
@@ -223,7 +226,9 @@ impl Store {
         let index = order
             .iter()
             .position(|chapter| chapter.id == node_id)
-            .ok_or_else(|| Error::Invalid(format!("节点不承载正文，不能当章节导航：{node_id}")))?;
+            .ok_or_else(|| {
+                Error::invalid_with(codes::NODE_NOT_BODY, [("node_id", node_id.to_string())])
+            })?;
         Ok(ChapterNeighbors {
             previous: index.checked_sub(1).and_then(|i| order.get(i).cloned()),
             next: order.get(index + 1).cloned(),

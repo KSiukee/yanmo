@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::error::ApiError;
 use crate::storage::AppData;
 use yanmo_core::store::{Appearance, ResolvedAppearance, Store};
 
@@ -38,7 +39,7 @@ impl From<AppearancePatch> for Appearance {
 pub fn appearance_read(
     data: State<'_, AppData>,
     work_id: Option<i64>,
-) -> Result<AppearanceDto, String> {
+) -> Result<AppearanceDto, ApiError> {
     data.with_store(|store: &mut Store| Ok(store.appearance(work_id)?.into()))
 }
 
@@ -48,7 +49,7 @@ pub fn appearance_write(
     data: State<'_, AppData>,
     work_id: Option<i64>,
     patch: AppearancePatch,
-) -> Result<AppearanceDto, String> {
+) -> Result<AppearanceDto, ApiError> {
     data.with_store(|store: &mut Store| {
         store.set_appearance(work_id, &patch.into())?;
         Ok(store.appearance(work_id)?.into())
@@ -60,7 +61,7 @@ pub fn appearance_write(
 pub fn appearance_reset(
     data: State<'_, AppData>,
     work_id: Option<i64>,
-) -> Result<AppearanceDto, String> {
+) -> Result<AppearanceDto, ApiError> {
     data.with_store(|store: &mut Store| {
         store.reset_appearance(work_id)?;
         Ok(store.appearance(work_id)?.into())

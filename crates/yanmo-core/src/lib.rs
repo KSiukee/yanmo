@@ -12,6 +12,7 @@
 pub mod atomic;
 pub mod db;
 pub mod error;
+pub mod error_codes;
 pub mod model;
 pub mod store;
 pub mod text;

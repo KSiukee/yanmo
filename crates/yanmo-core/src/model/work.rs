@@ -1,6 +1,6 @@
 //! 作品（`works` 表）。
 
-use crate::error::{Error, Result};
+use crate::error::{codes, Error, Result};
 
 /// 作品类型——**一等公民**。
 ///
@@ -29,7 +29,9 @@ impl WorkKind {
             "novel" => Ok(WorkKind::Novel),
             "article" => Ok(WorkKind::Article),
             "collection" => Ok(WorkKind::Collection),
-            other => Err(Error::Invalid(format!("未知的作品类型：{other}"))),
+            other => {
+                Err(Error::invalid_with(codes::UNKNOWN_WORK_KIND, [("value", other.to_string())]))
+            }
         }
     }
 

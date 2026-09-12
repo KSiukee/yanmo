@@ -3,6 +3,8 @@
 //
 // 三个出口，都不替用户做决定：重试保存 / 导出到文件 / 仍然退出。
 // 导出路径由核心给出（界面不碰文件系统），这里只负责显示与说清楚它是什么。
+import { t } from "../locales/index.ts";
+
 defineProps<{
   message: string;
   escapePath: string | null;
@@ -15,24 +17,24 @@ const emit = defineEmits<{ retry: []; escape: []; force: [] }>();
 <template>
   <div class="mask" role="alertdialog" aria-modal="true">
     <div class="card">
-      <h2 class="card__title">还有内容没有存下去</h2>
+      <h2 class="card__title">{{ t("exit.title") }}</h2>
       <p class="card__message">{{ message }}</p>
-      <p class="card__lead">这一章先别急着关。可以重试保存，也可以把手上这份导出成文件带走。</p>
+      <p class="card__lead">{{ t("exit.lead") }}</p>
 
       <p v-if="escapePath" class="card__path">
-        已导出到：<code>{{ escapePath }}</code>
+        {{ t("exit.exported_to") }}<code>{{ escapePath }}</code>
       </p>
 
       <div class="card__actions">
-        <button type="button" :disabled="busy" @click="emit('retry')">重试保存</button>
-        <button type="button" :disabled="busy" @click="emit('escape')">导出到文件</button>
+        <button type="button" :disabled="busy" @click="emit('retry')">{{ t("exit.retry") }}</button>
+        <button type="button" :disabled="busy" @click="emit('escape')">{{ t("exit.export") }}</button>
         <button type="button" class="card__danger" :disabled="busy" @click="emit('force')">
-          仍然退出
+          {{ t("exit.force") }}
         </button>
       </div>
 
       <p class="card__note">
-        选「仍然退出」不会删除任何东西：已经存进库里的字都在；只是这一次没能确认落盘的内容会丢。
+        {{ t("exit.note") }}
       </p>
     </div>
   </div>

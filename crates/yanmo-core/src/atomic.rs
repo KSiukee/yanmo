@@ -12,7 +12,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use crate::error::{Error, Result};
+use crate::error::{codes, Error, Result};
 
 /// 临时文件后缀（崩溃后残留的 `.part` 一眼能认出来）。
 const TEMP_SUFFIX: &str = ".part";
@@ -27,7 +27,9 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path
         .parent()
         .filter(|dir| !dir.as_os_str().is_empty())
-        .ok_or_else(|| Error::Invalid(format!("路径没有上级目录：{}", path.display())))?;
+        .ok_or_else(|| {
+            Error::invalid_with(codes::PATH_NO_PARENT, [("path", path.display().to_string())])
+        })?;
     fs::create_dir_all(parent)?;
 
     let temp = temp_path(path);
@@ -55,7 +57,8 @@ fn temp_path(path: &Path) -> PathBuf {
 /// 把任意标题变成**能安全当文件名**的名字。
 ///
 /// 去掉 Windows 不允许的字符与首尾的点/空格，压掉连续下划线，超长截断；
-/// 实在什么都剩不下时给一个中性名字（宁可叫"未命名"，也不要写出非法文件名）。
+/// 实在什么都剩不下时给一个**语言无关**的中性名字（文件名会写到磁盘上，
+/// 不该随界面语言变；也别写出非法文件名）。
 pub fn safe_file_name(name: &str) -> String {
     let mut cleaned = String::new();
     let mut last_was_underscore = false;
@@ -80,7 +83,7 @@ pub fn safe_file_name(name: &str) -> String {
     let limited: String = trimmed.chars().take(MAX_NAME_CHARS).collect();
     let result = limited.trim().to_string();
     if result.is_empty() {
-        "未命名".to_string()
+        "untitled".to_string()
     } else {
         result
     }
@@ -138,8 +141,8 @@ mod tests {
         assert_eq!(safe_file_name("第一章/雨夜"), "第一章_雨夜");
         assert_eq!(safe_file_name("a<b>c:d\"e|f?g*h"), "a_b_c_d_e_f_g_h");
         assert_eq!(safe_file_name("  拖尾点...  "), "拖尾点");
-        assert_eq!(safe_file_name(""), "未命名");
-        assert_eq!(safe_file_name("///"), "未命名");
+        assert_eq!(safe_file_name(""), "untitled");
+        assert_eq!(safe_file_name("///"), "untitled");
         assert_eq!(safe_file_name(&"很长".repeat(100)).chars().count(), MAX_NAME_CHARS);
     }
 }

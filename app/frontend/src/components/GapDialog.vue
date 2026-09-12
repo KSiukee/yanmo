@@ -5,6 +5,7 @@
 // 外加一条"去回收站看看"：他只是想先看一眼，**还没拿主意，所以不记答复**——下次点「+」还会问。
 import type { ChapterGap } from "../api/core";
 import { gapNote } from "../editor/gaps";
+import { t } from "../locales/index.ts";
 
 defineProps<{ gap: ChapterGap; busy: boolean }>();
 defineEmits<{ fill: []; defer: []; ignore: []; trash: []; close: [] }>();
@@ -13,23 +14,23 @@ defineEmits<{ fill: []; defer: []; ignore: []; trash: []; close: [] }>();
 <template>
   <div class="gap dialog dialog--above" @click.self="$emit('close')">
     <section class="gap__box dialog__box">
-      <h2 class="gap__title dialog__title">这一层少了一章</h2>
+      <h2 class="gap__title dialog__title">{{ t("gap.title") }}</h2>
       <p class="gap__note">{{ gapNote(gap) }}</p>
       <p class="gap__hint">
-        要在原来的位置上补写一个空章吗？——补写是<strong>新建一章</strong>，回收站里那份旧稿不会动。
+        {{ t("gap.fill_hint") }}<strong>{{ t("gap.fill_hint_strong") }}</strong>{{ t("gap.fill_hint_tail") }}
       </p>
       <div class="gap__actions">
         <button type="button" class="gap__button gap__button--primary dialog__button" :disabled="busy" @click="$emit('fill')">
-          补写这一章
+          {{ t("gap.fill") }}
         </button>
         <button type="button" class="gap__button dialog__button" :disabled="busy" @click="$emit('defer')">
-          稍后再说
+          {{ t("gap.defer") }}
         </button>
         <button type="button" class="gap__button dialog__button" :disabled="busy" @click="$emit('ignore')">
-          不用了，别再问
+          {{ t("gap.ignore") }}
         </button>
         <button type="button" class="gap__button gap__button--ghost dialog__button" :disabled="busy" @click="$emit('trash')">
-          去回收站看看
+          {{ t("gap.trash") }}
         </button>
       </div>
     </section>

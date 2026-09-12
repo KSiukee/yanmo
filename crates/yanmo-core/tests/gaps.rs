@@ -178,7 +178,7 @@ fn the_summary_counts_gaps_by_number_even_without_a_deletion_record() {
     let all = store.list_gaps(work).unwrap();
     let hole = all.iter().find(|gap| gap.serial == 2).expect("改名造成的空档也要列出来");
     assert_eq!(hole.node_id, 0, "查不到删除记录：只报「缺第几号」");
-    assert_eq!(hole.title, "第2章");
+    assert_eq!(hole.title, "", "核心不产文案：「缺第几章」那句话由界面按语言补");
 }
 
 #[test]
