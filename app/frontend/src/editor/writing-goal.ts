@@ -31,6 +31,19 @@ export interface DailyGoal {
   set: (value: number | null, target: GoalTarget) => Promise<void>;
 }
 
+/**
+ * 目标输入框那一格的值 → 目标数字（清空 / 非正数 / 认不出来 = 不设目标，返回 0）。
+ *
+ * ⚠️ 参数为什么收 `string | number`：`v-model` 挂在 `<input type="number">` 上时，
+ * Vue 会**把值转成数字**（runtime-dom 里 `castToNumber = number || props.type === "number"`），
+ * 于是这里拿到的不一定是字符串。当字符串处理（`.trim()`）会在作者一点「存下」时抛异常，
+ * 界面上看着就是"设置了不保存"——这条踩过一次，测试里钉住了。
+ */
+export function parseGoalInput(value: string | number | null | undefined): number {
+  const parsed = typeof value === "number" ? value : Number(String(value ?? "").trim());
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0;
+}
+
 export function useDailyGoal(transport: GoalTransport, workId: Ref<number | null>): DailyGoal {
   const goal = ref<number | null>(null);
   const defaultGoal = ref<number | null>(null);

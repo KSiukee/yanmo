@@ -8,6 +8,7 @@ import { computed, ref, watch } from "vue";
 
 import { t } from "../locales/index.ts";
 import type { EditorSession } from "../editor/session";
+import { parseGoalInput } from "../editor/writing-goal";
 import {
   countByDay,
   intensityOf,
@@ -63,7 +64,9 @@ const cellTitle = (day: string | null, count: number) =>
   day === null ? "" : t("writing.cell_title", { day, count });
 
 /** 目标输入框：进面板时按当前生效的那一份填上（清空 = 不设目标） */
-const goalDraft = ref("");
+// 类型写成 string | number：`<input type="number">` 的 v-model 会给回数字，
+// 解析统一走 parseGoalInput（见那个函数的说明——这里曾因此"设置了不保存"）
+const goalDraft = ref<string | number>("");
 const goalTarget = ref<"work" | "default">("work");
 watch(
   () => goal.value,
@@ -80,8 +83,7 @@ const hasOverride = computed(
 );
 
 function saveGoal(): void {
-  const parsed = Number.parseInt(goalDraft.value.trim(), 10);
-  void setGoal(Number.isFinite(parsed) && parsed > 0 ? parsed : 0, goalTarget.value);
+  void setGoal(parseGoalInput(goalDraft.value), goalTarget.value);
 }
 
 /** 跟默认：把这本书的单独设置清掉（核心那边写 0 = 回到继承全局） */
