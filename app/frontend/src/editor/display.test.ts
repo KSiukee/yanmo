@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { formatWhen, formatWords } from "./display.ts";
+import { formatBytes, formatWhen, formatWords } from "./display.ts";
 import { nextWorkAfterDelete, shelfKindLabel, shelfLabel } from "./shelf.ts";
 import type { ShelfEntry } from "../api/core.ts";
 
@@ -76,4 +76,14 @@ test("删掉当前这本之后：开列表里的下一本；一本不剩交给�
   assert.equal(nextWorkAfterDelete(shelf, 3), 2, "删的是第一本，就开它后面那本");
   assert.equal(nextWorkAfterDelete(shelf, 2), 3, "删的是中间那本，就开排最前的那本");
   assert.equal(nextWorkAfterDelete([entry(9, 1, 10)], 9), null, "一本不剩 → 交给核心建默认的");
+});
+
+test("容量给人看：KB / MB / GB 换算对，不出现「几十 GB 显示成 11 MB」那种错", () => {
+  assert.equal(formatBytes(0), "", "没有数就不显示（不写 0 KB 糊人）");
+  assert.equal(formatBytes(512 * 1024), "512 KB");
+  assert.equal(formatBytes(1024 ** 2 * 3), "3 MB");
+  assert.equal(formatBytes(1024 ** 3 * 11.5), "11.5 GB");
+  assert.equal(formatBytes(1024 ** 3 * 102), "102 GB");
+  // 量纲错一位是这类显示最常见的 bug：50 GB 绝不该显示成 MB 级的小数
+  assert.match(formatBytes(50 * 1024 ** 3), /GB$/);
 });

@@ -462,9 +462,15 @@ impl Store {
         at: i64,
     ) -> (TargetOutcome, LedgerEntry) {
         let root = PathBuf::from(&target.path);
-        // 目标不可达（盘没插 / 路径没了）：**跳过并记账**，不做隐式补做
+        // 目标不可达：**跳过并记账**，不做隐式补做。
+        // 原因要分清——"盘不在"是常态（拔了盘），"写不进去"是真故障（权限/路径被占），
+        // 一句"盘没插？"糊过去会让人查错方向。
         if let Err(error) = std::fs::create_dir_all(&root) {
-            let reason = format!("目标不在或写不进去（盘没插？）：{error}");
+            let reason = if volume_root_exists(&target.path) {
+                format!("写不进去：{error}")
+            } else {
+                "盘不在（没插？）".to_string()
+            };
             return (
                 outcome(target, "skipped", &reason, "", 0, 0, 0, "", at),
                 entry(target, date, stamp, "skipped", &reason, "", at),
@@ -660,6 +666,20 @@ fn entry(
 fn write_ledger(data_dir: &Path, ledger: &BackupLedger) {
     let bytes = serde_json::to_vec_pretty(ledger).unwrap_or_default();
     write_atomic(&data_dir.join(LEDGER_FILE), &bytes).ok();
+}
+
+/// 目标路径所在盘的根在不在（区分"盘不在"与"写不进去"用）。
+///
+/// 一路往上找到最顶层那一级（`X:\` 或相对路径的第一段），再问它在不在。
+fn volume_root_exists(path: &str) -> bool {
+    let mut root = PathBuf::from(path);
+    while let Some(parent) = root.parent() {
+        if parent.as_os_str().is_empty() {
+            break;
+        }
+        root = parent.to_path_buf();
+    }
+    root.exists()
 }
 
 /// 同名包换一个带序号的目录（同一分钟里做两次也不覆盖）。

@@ -9,7 +9,7 @@
 //!
 //! 安全边界提醒：备份**失败绝不阻断写作与关窗**——每个目标各自成败，逐目标回报。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tauri::State;
@@ -17,7 +17,8 @@ use tauri::State;
 use crate::error::ApiError;
 use crate::storage::AppData;
 use yanmo_core::store::{
-    gaps_for, has_other_volume, read_ledger, BackupConfig, BackupReport, BackupRequest, Store,
+    gaps_for, has_other_volume, read_ledger, BackupConfig, BackupReport, BackupRequest, BackupTarget,
+    Store,
 };
 use yanmo_core::time::{local_date, now_millis};
 
@@ -46,8 +47,10 @@ pub struct TargetStatusDto {
     pub last_success: Option<String>,
     /// 最近一次没成的原话（成功之后清掉）
     pub last_problem: Option<String>,
-    /// 这个目标此刻在不在（盘插着没有）
-    pub reachable: bool,
+    /// 这块盘此刻在不在（**按卷序列号认**；不在才是真的"没插/被拔了"）
+    pub volume_present: bool,
+    /// 目标目录建了没有——**没建是常态**（第一次备份会自动创建），不该当成故障
+    pub dir_exists: bool,
     /// 最近 7 天里缺了哪几天
     pub gaps: Vec<String>,
 }
@@ -65,6 +68,29 @@ pub struct BackupStatusDto {
     pub should_nudge: bool,
     pub targets: Vec<TargetStatusDto>,
     pub today: String,
+}
+
+/// 这个目标的盘此刻在不在。
+///
+/// 有卷序列号就按它认（盘符变来变去也不慌）；老配置没记序列号，就退回"盘根在不在"——
+/// **注意不是"目标目录在不在"**：还没备份过的目标目录本来就不存在，那不是故障。
+fn target_volume_present(target: &BackupTarget, present_ids: &[&str]) -> bool {
+    if !target.volume_id.is_empty() {
+        return present_ids.contains(&target.volume_id.as_str());
+    }
+    volume_root(&target.path).is_dir()
+}
+
+/// 目标路径所在盘的根（形如"一个盘符加一个反斜杠"）；取不出来就退回原路径。
+fn volume_root(path: &str) -> PathBuf {
+    let mut root = PathBuf::from(path);
+    while let Some(parent) = root.parent() {
+        if parent.as_os_str().is_empty() {
+            break;
+        }
+        root = parent.to_path_buf();
+    }
+    root
 }
 
 /// 当前机器名（多机共用一个备份盘时，一眼看出这份备份是谁写的）。
@@ -94,6 +120,8 @@ pub fn backup_status(
 
     let volumes = list_volumes(&data_dir);
     let data_volume_id = volume_id_for(&data_dir);
+    // 盘在不在按**卷序列号**判（盘符会变）；拿不到序列号的老配置退回"盘根在不在"
+    let present_ids: Vec<&str> = volumes.iter().map(|v| v.volume_id.as_str()).collect();
     let targets = config
         .targets
         .iter()
@@ -112,7 +140,8 @@ pub fn backup_status(
                 volume_label: target.volume_label.clone(),
                 last_success,
                 last_problem,
-                reachable: Path::new(&target.path).is_dir(),
+                volume_present: target_volume_present(target, &present_ids),
+                dir_exists: Path::new(&target.path).is_dir(),
                 gaps: gaps_for(&ledger, &target.path, &today, 7),
             }
         })

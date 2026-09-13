@@ -171,7 +171,11 @@ fn an_unreachable_target_is_skipped_and_recorded_without_blocking_others() {
     assert_eq!(report.succeeded(), 1, "好目标照样成功");
     assert_eq!(report.skipped(), 1, "拔掉的盘算跳过，不算失败也不静默补做");
     let skipped = report.outcomes.iter().find(|o| o.status == "skipped").unwrap();
-    assert!(skipped.reason.contains("盘没插"), "原因要给人话：{}", skipped.reason);
+    assert!(
+        skipped.reason.contains("写不进去"),
+        "父级是个文件、盘根却在——原因要如实说「写不进去」，别赖给「盘没插」：{}",
+        skipped.reason
+    );
 
     // 跳过也记账（"缺了哪几天"靠它）
     let ledger = read_ledger(&f.data_dir);

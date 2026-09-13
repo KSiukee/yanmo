@@ -196,7 +196,10 @@ export interface BackupTargetStatus {
   last_success: string | null;
   /** 最近一次没成的原话（成功过就不再提旧的） */
   last_problem: string | null;
-  reachable: boolean;
+  /** 这块盘现在在不在（**按卷序列号认**；不在才是真的"没插/拔了"） */
+  volume_present: boolean;
+  /** 目标目录建了没——**没建是常态**（第一次备份会自动创建），不该当成故障 */
+  dir_exists: boolean;
   /** 最近 7 天里缺了哪几天 */
   gaps: string[];
 }

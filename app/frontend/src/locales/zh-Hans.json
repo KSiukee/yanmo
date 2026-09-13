@@ -268,7 +268,6 @@
   "backup.target_gaps": "最近 7 天缺 {days} 天",
   "backup.target_no_gaps": "最近 7 天没缺",
   "backup.target_problem": "上回没成：{reason}",
-  "backup.target_unreachable": "现在连不上（盘没插？）",
   "backup.remove": "移除",
   "backup.keep": "每个位置保留最近几份",
   "backup.keep_hint": "（默认 7；只删研墨自己写的旧备份）",
@@ -286,5 +285,7 @@
   "backup.tip": "稿子还没有第二份：去设置里勾一块备份盘吧。",
   "backup.tip_open": "去设置",
   "backup.tip_dismiss": "不用了",
-  "session.backup_failed": "备份出错：{detail}"
+  "session.backup_failed": "备份出错：{detail}",
+  "backup.target_missing_volume": "这块盘现在不在（没插？）",
+  "backup.target_no_dir": "目录还没建——第一次备份会自动创建"
 }

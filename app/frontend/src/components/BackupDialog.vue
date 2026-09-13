@@ -7,7 +7,7 @@ import { computed, ref } from "vue";
 
 import { t } from "../locales/index.ts";
 import type { EditorSession } from "../editor/session";
-import { formatWords } from "../editor/display.ts";
+import { formatBytes } from "../editor/display.ts";
 import type { BackupConfig, BackupTarget } from "../api/core";
 
 const props = defineProps<{ session: EditorSession }>();
@@ -77,15 +77,14 @@ function toggleAuto(key: "auto_on_start" | "auto_on_close"): void {
   void save({ ...current.config, [key]: !current.config[key] });
 }
 
-function sizeText(bytes: number): string {
-  if (!bytes) return "";
-  return `${formatWords(Math.round(bytes / 1024 / 1024 / 10000) * 10000 / 10000)} MB`;
-}
+// 容量统一走 formatBytes（KB/MB/GB 一位小数）——**别在这里自己除**（上一版就是除错量纲，
+// 把几十 GB 显示成「11 MB」，差点吓着人）
+const sizeText = (bytes: number): string => formatBytes(bytes);
 </script>
 
 <template>
-  <div class="dialog__mask" @click.self="close()">
-    <section class="dialog backup">
+  <div class="dialog" @click.self="close()">
+    <section class="dialog__box backup">
       <header class="dialog__head">
         <h2 class="dialog__title">{{ t("backup.title") }}</h2>
         <button type="button" class="dialog__button" :title="t('backup.close_title')" @click="close()">
@@ -122,7 +121,8 @@ function sizeText(bytes: number): string {
                 ? t("backup.target_gaps", { days: target.gaps.length })
                 : t("backup.target_no_gaps") }}
             </span>
-            <span v-if="!target.reachable" class="backup__bad">{{ t("backup.target_unreachable") }}</span>
+            <span v-if="!target.volume_present" class="backup__bad">{{ t("backup.target_missing_volume") }}</span>
+            <span v-else-if="!target.dir_exists" class="backup__hint">{{ t("backup.target_no_dir") }}</span>
             <span v-else-if="target.last_problem" class="backup__bad">
               {{ t("backup.target_problem", { reason: target.last_problem }) }}
             </span>
@@ -225,10 +225,11 @@ function sizeText(bytes: number): string {
   </div>
 </template>
 
+<!-- 公共壳（遮罩 / 盒子 / 标题 / 按钮）：**必须引**，否则弹窗就是一堆裸内容叠在正文上 -->
+<style scoped src="./dialog.css"></style>
 <style scoped>
 .backup {
-  max-width: 720px;
-  max-height: 84vh;
+  width: min(720px, 100%);
   overflow: auto;
 }
 

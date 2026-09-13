@@ -13,6 +13,21 @@ export function formatWords(words: number): string {
   return t("display.words_wan", { value: Math.round(words / 1000) / 10 });
 }
 
+/**
+ * 容量给人看：KB / MB / GB，一位小数。
+ *
+ * **只在展示层换算一次**——调用方别自己除（上一版备份面板就是这么错的：除错量纲，
+ * 把几十 GB 的剩余空间显示成「11 MB」，差点把作者吓一跳）。
+ */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "";
+  const gb = bytes / 1024 ** 3;
+  if (gb >= 1) return `${Math.round(gb * 10) / 10} GB`;
+  const mb = bytes / 1024 ** 2;
+  if (mb >= 1) return `${Math.round(mb)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
 /** 最近打开时间给人看：今天 / 昨天 / N 天前 / 具体日期；从没打开过就直说。 */
 export function formatWhen(ms: number | null, now: number = Date.now()): string {
   if (ms === null) return t("display.never_opened");
