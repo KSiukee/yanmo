@@ -181,6 +181,44 @@ fn the_shell_keeps_the_page_still_when_the_prose_gets_long() {
     );
 }
 
+/// 状态栏右边那一组**每一格都钉住宽度**：文案长短变化不许把整条栏推着左右晃。
+///
+/// 真报过：保存状态在「待落盘…」（4 字位）与「已保存」（3 字位）之间来回切，右端这一组的
+/// 宽度跟着变，前面那排按钮（版本/排版/一句话）就一直小幅左右跳——正写着字的人被晃得没法
+/// 专注。修法是每格 `min-width` 钉死 + 右对齐（要变长只能往左长，右边界不动）。
+/// 这类毛病只有**真机连续打字**才看得出，短稿与静态截图都测不出来，所以让机器盯着。
+#[test]
+fn the_status_bar_slots_keep_their_width_when_the_words_change() {
+    let css = read(&package_root().join("frontend/src/components/editor-pane.css"));
+
+    for (selector, min_width) in [
+        (".editor__count", "min-width: 5.5em"),
+        (".editor__lang", "min-width: 4.3em"),
+        (".editor__status", "min-width: 4.6em"),
+        (".editor__today", "min-width: 6.5em"),
+        (".editor__today--goal", "min-width: 13em"),
+    ] {
+        let block = rule_block(&css, selector);
+        assert!(
+            block.contains(min_width),
+            "{selector} 必须钉住宽度（{min_width}），否则文案一变长就会推着整条栏晃：{block}"
+        );
+    }
+
+    // 保存状态是个 span：min-width 对行内元素不生效，得先是能拿宽度的盒子
+    let status = rule_block(&css, ".editor__status");
+    assert!(
+        status.contains("display: inline-block"),
+        "状态那格要先成为能拿宽度的盒子，min-width 才管用：{status}"
+    );
+
+    // 共用的那几条：宽度不再参与收缩（flex: none）、变长只能往左长（右对齐）、不换行
+    let shared = rule_block(&css, ".editor__count,\n.editor__lang,\n.editor__today,\n.editor__status");
+    for needed in ["flex: none", "text-align: right", "white-space: nowrap"] {
+        assert!(shared.contains(needed), "状态栏各格共用规则缺 `{needed}`：{shared}");
+    }
+}
+
 #[test]
 fn frontend_talks_to_core_only_through_the_gateway() {
     let src = package_root().join("frontend/src");

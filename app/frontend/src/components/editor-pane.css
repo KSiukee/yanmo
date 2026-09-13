@@ -58,6 +58,38 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 状态栏右边这一组：**每一格都钉住宽度**。
+ *
+ * 为什么：文案长度一变，整组宽度就变，前面那排按钮（版本/排版/一句话）跟着小幅左右晃。
+ * 真机报过——保存状态在「待落盘…」（4 字位）与「已保存」（3 字位）之间来回切，正写着字
+ * 的人被晃得没法专注。规矩：**宽度钉死 + 右对齐**（要变长只能往左长，右边界不动）+ 不换行。
+ */
+/* 字数：「12,345 字」这类最长的一档也放得下 */
+.editor__count {
+  min-width: 5.5em;
+}
+
+/* 语言：中文 / English / 日本語 三档共用一格 */
+.editor__lang {
+  min-width: 4.3em;
+}
+
+/* 保存状态：尚未落盘 / 待落盘… / 保存中… / 已保存 / 保存异常 / 已抢救 共用一格。
+   span 默认是行内元素，**要先变成能拿宽度的盒子**，min-width 才生效。 */
+.editor__status {
+  display: inline-block;
+  min-width: 4.6em;
+}
+
+.editor__count,
+.editor__lang,
+.editor__today,
+.editor__status {
+  flex: none;
+  text-align: right;
+  white-space: nowrap;
+}
+
 /* 状态栏那个字数与语言：**可点**（点一下换一个），但平时长得像普通文字，不喧宾夺主 */
 .editor__count,
 .editor__lang {
@@ -89,9 +121,10 @@
 .editor__today {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 5px;
-  /* 不换行：今日数从 0 涨到几万，这行小字都不许把状态栏挤成两行 */
-  white-space: nowrap;
+  /* 没设目标时只有「今日 120」：给到五位数不出格 */
+  min-width: 6.5em;
   padding: 0 4px;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -100,6 +133,12 @@
   font: inherit;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
+}
+
+/* 设过目标就多出「 / 2,000」与那条进度条：**另给一格更宽的**（换宽度只在设/清目标那一刻，
+   不会跟着击键抖）。宽度按「今日 12,345 / 20,000」那一档量。 */
+.editor__today--goal {
+  min-width: 13em;
 }
 
 .editor__today:hover {
