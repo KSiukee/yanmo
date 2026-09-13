@@ -167,12 +167,19 @@ export function useEditorSession(): EditorSession {
   const autosave = shallowRef<Autosave | null>(null);
   let gate: ExitGate | null = null;
   let stopCloseListener: (() => void) | null = null;
+  let stopCompositionWatch: (() => void) | null = null;
 
   const editor = useEditor({
     content: "",
     extensions: [StarterKit],
     // 击键只进这里，不跨进程；真正的落盘由 autosave 按节奏发起
-    onUpdate: ({ editor: instance }) => autosave.value?.changed(docToText(instance)),
+    onUpdate: ({ editor: instance }) => {
+      // **输入法组字中途不算改动**：这时正文里还是拼音字母（还没成字），算进字数会让
+      // 状态栏"先跳一个数、选完字再刷新"——作者会怀疑字数到底准不准。
+      // 组字结束时（compositionend）再按最终正文算一次（见 watchComposition）。
+      if (instance.view.composing) return;
+      autosave.value?.changed(docToText(instance));
+    },
   });
 
   // ── 落盘控制器（一章一个，旧的先退场） ─────────────────────────────
@@ -254,6 +261,46 @@ export function useEditorSession(): EditorSession {
   async function flushCurrent(): Promise<void> {
     const engine = autosave.value;
     if (engine) await engine.flush();
+  }
+
+  /**
+   * 组字收尾时补算一次。
+   *
+   * 为什么需要"补"：WebView2 在 `contentEditable` 上的输入法集成并不总是按预期发 update
+   * （上游有未修的报告），只在 `onUpdate` 里躲开组字态，可能出现"最后一次没算上"。
+   * 这里显式补一刀——`changed` 对相同文本是幂等的（内容没变直接返回），重复调用无害。
+   */
+  function watchComposition(): () => void {
+    const dom = editor.value?.view.dom;
+    if (!dom) return () => {};
+    const onEnd = () => {
+      const instance = editor.value;
+      if (instance) autosave.value?.changed(docToText(instance));
+    };
+    dom.addEventListener("compositionend", onEnd);
+    return () => dom.removeEventListener("compositionend", onEnd);
+  }
+
+  /**
+   * 等窗口**真的被激活**，再决定编辑器的初始焦点。
+   *
+   * 为什么等：Windows 的输入法是随"窗口被激活"挂到输入元素上的。窗口还藏着的时候就把
+   * 编辑器聚焦了，Win10 上会出现「中文输入法点不出来、要先切英文打几个字母再切回来」；
+   * 同样的代码在 Win11 上恰好不露。最多等 3 秒——**别为了输入法把启动卡住**；
+   * 到点还没等到也照常聚焦（页内聚焦不会去抢别的窗口）。
+   */
+  function whenWindowFocused(): Promise<void> {
+    if (document.hasFocus()) return Promise.resolve();
+    return new Promise((resolve) => {
+      let timer = 0;
+      const finish = () => {
+        window.removeEventListener("focus", finish);
+        window.clearTimeout(timer);
+        resolve();
+      };
+      window.addEventListener("focus", finish);
+      timer = window.setTimeout(finish, 3000);
+    });
   }
 
   /** 落盘 + 记光标：失焦、切后台、切章、关窗前都要来一次（**不跟着击键走**）。 */
@@ -608,7 +655,10 @@ export function useEditorSession(): EditorSession {
       const snapshot = await openEditorTarget();
       applyChapter(snapshot);
       makeAutosave(snapshot);
+      stopCompositionWatch = watchComposition();
       await refreshNeighbors();
+      // 先等窗口被激活再定初始焦点：见 whenWindowFocused 的说明（Win10 输入法）
+      await whenWindowFocused();
       settleFocus(false);
 
       // 关窗闸门：先落盘，存不下去就别想走
@@ -654,6 +704,7 @@ export function useEditorSession(): EditorSession {
     window.removeEventListener("blur", persistNow);
     document.removeEventListener("visibilitychange", onVisibilityChange);
     stopCloseListener?.();
+    stopCompositionWatch?.();
     void autosave.value?.flush(); // 先发起落盘（已在飞的不受 dispose 影响）
     autosave.value?.dispose();
   });

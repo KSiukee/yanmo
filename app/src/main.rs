@@ -33,7 +33,12 @@ fn main() {
         // 这里等页面**加载完成**再把窗口显示出来——用户看到的就是已经画好的界面。
         .on_page_load(|webview, payload| {
             if payload.event() == PageLoadEvent::Finished {
-                let _ = webview.window().show();
+                let window = webview.window();
+                let _ = window.show();
+                // **显示之后还要把它激活**：Windows 的输入法是随"窗口被激活"挂到输入元素上的。
+                // 只 show 不激活，Win10 上会出现「中文输入法点不出来、要先切英文打几个字母再切回来」
+                // （同样的代码在 Win11 上恰好不露）。这里补一刀，别指望系统替我们做。
+                let _ = window.set_focus();
             }
         })
         .setup(|app| {
