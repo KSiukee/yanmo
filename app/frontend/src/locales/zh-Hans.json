@@ -496,5 +496,6 @@
   "writing.goal_follow_title": "取消这本书的单独设置，改用默认目标",
   "writing.goal_note_work": "只影响这本书，其他作品照默认来",
   "writing.goal_note_default": "其他没单独设过的作品都照这个来",
-  "session.writing_failed": "码字统计读不出来：{detail}"
+  "session.writing_failed": "码字统计读不出来：{detail}",
+  "editor.today_done": "达标"
 }

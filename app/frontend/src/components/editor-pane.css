@@ -139,7 +139,8 @@
 
 /* 细进度条：**固定宽度**——今日数从 0 涨到几万，这条都不许把状态栏撑变形 */
 .editor__today-bar {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   width: 36px;
   height: 4px;
   border-radius: 2px;
@@ -151,6 +152,16 @@
   display: block;
   height: 100%;
   background: var(--ym-accent);
+}
+
+/* 达标：满格的条是一条没有信息的常驻占位（真机提的），换成短记号。
+   ⚠️ **宽度仍是那 36px**（只把轨道与高度让掉）：槽位不变，达标那一刻整条栏不会重排。 */
+.editor__today-bar--done {
+  height: auto;
+  background: none;
+  overflow: visible;
+  color: var(--ym-accent);
+  font-size: 11px;
 }
 
 .editor__status--pending,

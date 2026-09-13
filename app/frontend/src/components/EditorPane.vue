@@ -149,8 +149,10 @@ function statusText(status: AutosaveState["status"]): string {
           >
             {{ languageText }}
           </button>
-          <!-- 今日进度：点一下开码字日历（进度条只在设过目标时画）。宽度不钉死：
-               它只在进位数/设目标时才变宽，钉了反而会在格与格之间撑出空白 -->
+          <!-- 今日进度：点一下开码字日历。进度条只在"还没达标"时画——满格的条是一条
+               没有信息的常驻占位（真机提的）；达标后它在**同一个槽位**里换成一个短记号，
+               于是达标那一刻整条栏不会重排。宽度不钉死：它只在进位数/设目标时变宽，
+               钉了反而会在格与格之间撑出空白 -->
           <button
             type="button"
             class="editor__today"
@@ -160,11 +162,18 @@ function statusText(status: AutosaveState["status"]): string {
             <span class="editor__today-num" :class="{ 'editor__today-num--done': todayReached }">
               {{ todayText }}
             </span>
-            <span v-if="todayProgress !== null" class="editor__today-bar">
+            <span
+              v-if="todayProgress !== null"
+              class="editor__today-bar"
+              :class="{ 'editor__today-bar--done': todayReached }"
+              :title="todayReached ? t('editor.today_reached') : undefined"
+            >
               <span
+                v-if="!todayReached"
                 class="editor__today-fill"
                 :style="{ width: `${Math.round(todayProgress * 100)}%` }"
               />
+              <template v-else>{{ t("editor.today_done") }}</template>
             </span>
           </button>
           <span

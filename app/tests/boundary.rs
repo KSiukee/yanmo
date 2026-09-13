@@ -231,6 +231,14 @@ fn only_the_flipping_status_slot_is_width_pinned() {
     for needed in ["flex: none", "white-space: nowrap"] {
         assert!(shared.contains(needed), "状态栏各格共用规则缺 `{needed}`：{shared}");
     }
+
+    // ④ 达标后的短记号（进度条让位给它）必须**沿用**进度条那 36px 的槽位——自己另定宽度的话，
+    //    作者写到目标那一刻整条栏就会重排。满格的进度条没有信息量，但"去掉它"不等于"改槽位"。
+    let done = rule_block(&css, ".editor__today-bar--done");
+    assert!(
+        !done.contains("width:"),
+        "达标记号不该自己另定宽度（要沿用进度条的槽位，否则达标瞬间整条栏会重排）：{done}"
+    );
 }
 
 #[test]
