@@ -43,6 +43,10 @@ import {
   restoreWork,
   saveBody,
   readBackupStatus,
+  readRestoreSources,
+  previewRestoreSource,
+  applyRestore,
+  pickRestoreDatabase,
   runBackupNow,
   saveCursor,
   setWorkLanguage,
@@ -83,6 +87,7 @@ import { focusPlan } from "./focus";
 import { useGaps, type Gaps } from "./gaps";
 import { useShelf, type Shelf } from "./shelf";
 import { useSnapshots, type Snapshots } from "./snapshots";
+import { useRestore, type RestoreState } from "./restore";
 import { useTrash, type Trash } from "./trash";
 
 export interface EditorSession {
@@ -131,6 +136,8 @@ export interface EditorSession {
   cycleLanguage: () => Promise<void>;
   /** 备份：设置页、自动触发（每日首启 / 关窗）与那条插盘提示 */
   backup: BackupState;
+  /** 从备份恢复：列出来源、看清会丢什么、确认换库（换完壳会重启） */
+  restore: RestoreState;
 }
 
 const IDLE: AutosaveState = {
@@ -462,7 +469,7 @@ export function useEditorSession(): EditorSession {
    * 挂载时会直接抛错，真机上就是白屏（这条踩过一次）。约定：
    * ① `directory` / `gaps` / `appearance` 先行（后面的要靠它们）；
    * ② 再建 `adding`（它同时要 directory + gaps + 建章那条路）；
-   * ③ `trash` / `shelf` / `snapshots` 最后（它们只在回调里互相引用，运行时才碰）。
+   * ③ `trash` / `shelf` / `snapshots` / `restore` 最后（它们只在回调里互相引用，运行时才碰）。
    */
   function createParts() {
     // 目录树：只接"看得见、点得动、拖得走"，切章仍走上面那条（先落盘再切）
@@ -568,11 +575,28 @@ export function useEditorSession(): EditorSession {
       },
     });
 
-    return { directory, gaps, appearance, backup, adding, trash, shelf, snapshots };
+    // 从备份恢复：列来源 / 体检预览 / 换库。**换库前先落盘**——万一没换成、原库回滚，
+    // 作者这一章不至于留个缺口；真正动文件的是壳与核心，这里只管叫它。
+    const restore = useRestore({
+      transport: {
+        sources: readRestoreSources,
+        preview: previewRestoreSource,
+        apply: applyRestore,
+        pick: pickRestoreDatabase,
+      },
+      tzOffsetMinutes: localOffsetMinutes,
+      beforeApply: () => flushCurrent(),
+      onError: (message) => {
+        failure.value = t("session.restore_failed", { detail: message });
+      },
+    });
+
+    return { directory, gaps, appearance, backup, restore, adding, trash, shelf, snapshots };
   }
 
   // 装配一次，之后各处只用解出来的这几个（顺序约定见 createParts）
-  const { directory, gaps, appearance, backup, adding, trash, shelf, snapshots } = createParts();
+  const { directory, gaps, appearance, backup, restore, adding, trash, shelf, snapshots } =
+    createParts();
 
   onMounted(async () => {
     window.addEventListener("blur", persistNow);
@@ -648,6 +672,7 @@ export function useEditorSession(): EditorSession {
     workId,
     switchWork,
     backup,
+    restore,
     language,
     caliber,
     cycleCaliber,

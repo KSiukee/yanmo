@@ -22,6 +22,12 @@ yanmo-proto.workspace = true
 [dev-dependencies]
 tempfile = "3"
 
-# 盘符探测（卷序列号 / 卷标 / 可移动判定）：**只在 Windows 上编**，其余平台不引入
+# Windows API：盘符探测（卷序列号 / 卷标 / 可移动判定）+ 恢复时的"选一个库文件"对话框。
+# **只在 Windows 上编**，其余平台不引入。
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_UI_Controls_Dialogs",
+    "Win32_UI_WindowsAndMessaging",
+] }

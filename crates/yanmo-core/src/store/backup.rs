@@ -249,7 +249,9 @@ pub struct BackupVerify {
 }
 
 /// 逐书的规模账（活库与快照用**同一条 SQL** 取，否则体检就成了两套口径）。
-fn work_stamps(conn: &Connection) -> Result<Vec<(i64, String, i64, i64, i64)>> {
+///
+/// `pub(super)`：从备份恢复那边也要用它读"这份备份里有什么"——两处必须同一口径。
+pub(super) fn work_stamps(conn: &Connection) -> Result<Vec<(i64, String, i64, i64, i64)>> {
     let mut stmt = conn.prepare(
         "SELECT w.id, w.title,
                 (SELECT COUNT(*) FROM nodes n
@@ -271,7 +273,7 @@ fn work_stamps(conn: &Connection) -> Result<Vec<(i64, String, i64, i64, i64)>> {
 }
 
 /// 库最后一次写入时间（恢复时算"会丢多少天"）。
-fn last_write_at(conn: &Connection) -> Result<i64> {
+pub(super) fn last_write_at(conn: &Connection) -> Result<i64> {
     Ok(conn
         .query_row("SELECT COALESCE(MAX(updated_at), 0) FROM nodes", [], |r| r.get(0))
         .optional()?
@@ -529,36 +531,16 @@ impl Store {
         if !snapshot.is_file() {
             problems.push(format!("找不到快照：{}", manifest.snapshot_file));
         } else {
-            // 体检跑在**临时副本**上，理由有两条：
-            // ① FTS5 的索引校验需要写权限，只读连接会报 "attempt to write a readonly database"；
-            // ② 备份包是"写一次、之后只读"的东西，不该因为体检而改动（连 -wal/-shm 都不该出现）。
-            // 复制本身也是一道读校验：整份文件读不出来的话，这里就失败了。
-            // 临时名必须**每次唯一**：并行体检（或同一份包体检两次）时共用一个名字会互相踩
-            // ——一个刚删掉另一个正要打开的文件。进程号 + 纳秒 + 进程内序号，三样一起才够。
-            static PROBE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-            let nanos = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0);
-            let seq = PROBE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let probe = std::env::temp_dir()
-                .join(format!("yanmo-verify-{}-{nanos}-{seq}.db", std::process::id()));
-            let opened = std::fs::copy(&snapshot, &probe)
-                .map_err(|error| format!("快照读不出来：{error}"))
-                .and_then(|_| {
-                    Connection::open_with_flags(&probe, OpenFlags::SQLITE_OPEN_READ_WRITE)
-                        .map_err(|error| format!("快照打不开：{error}"))
-                });
-            match opened {
+            match Probe::open(&snapshot) {
                 Err(problem) => problems.push(problem),
-                Ok(conn) => {
-                    match crate::db::quick_check(&conn) {
+                Ok(probe) => {
+                    match crate::db::quick_check(probe.conn()) {
                         Ok(verdict) if verdict == "ok" => {}
                         Ok(verdict) => problems.push(format!("快照结构有问题：{verdict}")),
                         Err(error) => problems.push(format!("快照体检失败：{error}")),
                     }
                     // 逐书比对：章节数 + 字数（与清单里记的对得上，才说明这份快照是"完整的")
-                    match work_stamps(&conn) {
+                    match work_stamps(probe.conn()) {
                         Err(error) => problems.push(format!("快照读不出书目：{error}")),
                         Ok(rows) => {
                             if rows.len() != manifest.works.len() {
@@ -588,10 +570,6 @@ impl Store {
                     }
                 }
             }
-            // 临时副本连同它可能生成的 -wal/-shm 一起收掉
-            std::fs::remove_file(&probe).ok();
-            std::fs::remove_file(probe.with_extension("db-wal")).ok();
-            std::fs::remove_file(probe.with_extension("db-shm")).ok();
         }
 
         // 成稿文件：在、指纹对得上（文件被改坏/少了一个，这里就会说话）
@@ -614,6 +592,60 @@ impl Store {
 
         BackupVerify { ok: problems.is_empty(), problems }
     }
+}
+
+/// 体检用的**临时副本**：把库复制到临时文件再打开（绝不改动原库）。
+///
+/// 两条理由：
+/// ① FTS5 的索引校验需要写权限，只读连接会报 "attempt to write a readonly database"；
+/// ② 备份包是"写一次、之后只读"的东西，不该因为体检而改动（连 `-wal`/`-shm` 都不该出现）。
+/// 复制本身也是一道读校验：整份文件读不出来的话，这里就失败了。
+///
+/// 临时名必须**每次唯一**：并行体检（或同一份包体检两次）时共用一个名字会互相踩——
+/// 一个刚删掉另一个正要打开的文件。进程号 + 纳秒 + 进程内序号，三样一起才够。
+pub(super) struct Probe {
+    /// `None` 表示连接已经收了。Drop 里**先收连接再删文件**：Windows 上占着句柄删不掉。
+    conn: Option<Connection>,
+    path: PathBuf,
+}
+
+impl Probe {
+    pub(super) fn open(db: &Path) -> std::result::Result<Self, String> {
+        static PROBE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let seq = PROBE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = std::env::temp_dir()
+            .join(format!("yanmo-verify-{}-{nanos}-{seq}.db", std::process::id()));
+        std::fs::copy(db, &path).map_err(|error| format!("快照读不出来：{error}"))?;
+        match Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE) {
+            Ok(conn) => Ok(Self { conn: Some(conn), path }),
+            Err(error) => {
+                cleanup_probe(&path);
+                Err(format!("快照打不开：{error}"))
+            }
+        }
+    }
+
+    pub(super) fn conn(&self) -> &Connection {
+        self.conn.as_ref().expect("体检副本的连接还没到收的时候")
+    }
+}
+
+impl Drop for Probe {
+    fn drop(&mut self) {
+        self.conn.take();
+        cleanup_probe(&self.path);
+    }
+}
+
+/// 收掉临时副本连同它可能生成的 `-wal` / `-shm`。
+fn cleanup_probe(probe: &Path) {
+    std::fs::remove_file(probe).ok();
+    std::fs::remove_file(probe.with_extension("db-wal")).ok();
+    std::fs::remove_file(probe.with_extension("db-shm")).ok();
 }
 
 fn outcome(

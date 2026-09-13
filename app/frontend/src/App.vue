@@ -15,6 +15,7 @@ import EditorPane from "./components/EditorPane.vue";
 import FlowPane from "./components/FlowPane.vue";
 import EngineBadge from "./components/EngineBadge.vue";
 import BackupDialog from "./components/BackupDialog.vue";
+import RestoreDialog from "./components/RestoreDialog.vue";
 import SettingsDialog from "./components/SettingsDialog.vue";
 import ShelfDialog from "./components/ShelfDialog.vue";
 import SnapshotDialog from "./components/SnapshotDialog.vue";
@@ -29,6 +30,8 @@ const { visible: snapshotsVisible } = session.snapshots;
 const { visible: settingsVisible, values: settingsValues, open: openSettings } = session.appearance;
 // 备份：入口在顶栏；没有异盘目标时给一条**非阻塞**小条（拒过就不再自动弹）
 const { visible: backupVisible, status: backupStatus, open: openBackup } = session.backup;
+// 从备份恢复：入口在备份面板里（换库是重动作，不放在顶栏随手可点）
+const { visible: restoreVisible } = session.restore;
 
 // 顶栏那行小字：有章名就显示章名；开着书但还没起名就显示占位；没有书才说立场那句话
 const hint = computed(() => {
@@ -91,6 +94,7 @@ const hint = computed(() => {
     <SnapshotDialog v-if="snapshotsVisible" :session="session" />
     <SettingsDialog v-if="settingsVisible && settingsValues" :session="session" />
     <BackupDialog v-if="backupVisible && backupStatus" :session="session" />
+    <RestoreDialog v-if="restoreVisible" :session="session" />
   </div>
 </template>
 

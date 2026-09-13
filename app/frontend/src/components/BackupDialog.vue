@@ -80,6 +80,12 @@ function toggleAuto(key: "auto_on_start" | "auto_on_close"): void {
 // 容量统一走 formatBytes（KB/MB/GB 一位小数）——**别在这里自己除**（上一版就是除错量纲，
 // 把几十 GB 显示成「11 MB」，差点吓着人）
 const sizeText = (bytes: number): string => formatBytes(bytes);
+
+/** 从备份恢复：换到恢复页（先把这一页收起来，别两层弹窗叠着） */
+function openRestore(): void {
+  close();
+  void props.session.restore.open();
+}
 </script>
 
 <template>
@@ -189,6 +195,9 @@ const sizeText = (bytes: number): string => formatBytes(bytes);
       <div class="backup__actions">
         <button type="button" class="dialog__button dialog__button--primary" :disabled="busy" @click="runNow()">
           {{ busy ? t("backup.running") : t("backup.run") }}
+        </button>
+        <button type="button" class="dialog__button" :disabled="busy" @click="openRestore()">
+          {{ t("backup.restore_entry") }}
         </button>
         <span v-if="status && !status.has_other_volume" class="backup__hint">
           <button type="button" class="backup__link" @click="dismissTip()">

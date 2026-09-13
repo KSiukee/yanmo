@@ -237,6 +237,62 @@ export interface BackupReport {
   outcomes: BackupTargetOutcome[];
 }
 
+/** 一份备份包的摘要（恢复页列表用；只看清单，不做体检）。 */
+export interface BackupPackage {
+  path: string;
+  stamp: string;
+  created_at: number;
+  device: string;
+  works: number;
+  chapters: number;
+  words: number;
+  bytes: number;
+  data_format_version: number;
+}
+
+/** 能恢复的来源：看得见的备份包 + 扫过的位置 + 留底目录。 */
+export interface RestoreSources {
+  packages: BackupPackage[];
+  roots: string[];
+  data_dir: string;
+  keep_dir: string;
+}
+
+/** 恢复前的体检结论 + "会退回多少"。 */
+export interface RestorePreview {
+  source: string;
+  /** package（备份包）/ database（单个库文件） */
+  kind: string;
+  verify: { ok: boolean; problems: string[] };
+  created_at: number;
+  device: string;
+  engine_version: string;
+  data_format_version: number;
+  source_last_write_at: number;
+  source_works: number;
+  source_chapters: number;
+  source_words: number;
+  source_bytes: number;
+  live_last_write_at: number;
+  live_works: number;
+  live_words: number;
+  lost_days: number;
+  lost_words: number;
+  /** 选中的正是现在用的那个库（不能拿它恢复它自己） */
+  is_live_database: boolean;
+  can_restore: boolean;
+  keep_dir: string;
+}
+
+/** 换库结果。 */
+export interface RestoreOutcome {
+  restored_from: string;
+  /** 原库留底目录（原来就没有库时是空串） */
+  quarantine: string;
+  bytes: number;
+  stamp: string;
+}
+
 /** 同级里与它重名的那一个（恢复前会摆给作者看）。 */
 export interface NameClash {
   id: number;
@@ -399,6 +455,10 @@ const COMMANDS = {
   backupStatus: "backup_status",
   backupConfigWrite: "backup_config_write",
   backupNow: "backup_now",
+  backupRestoreSources: "backup_restore_sources",
+  backupRestorePreview: "backup_restore_preview",
+  backupRestoreApply: "backup_restore_apply",
+  backupRestorePick: "backup_restore_pick",
   deleteWork: "delete_work",
   listTrash: "list_trash",
   restoreWork: "restore_work",
@@ -456,6 +516,21 @@ export const writeBackupConfig = (config: BackupConfig) =>
 /** 立即备份到所有目标（逐目标成败，一个盘写不进去不影响别的盘）。 */
 export const runBackupNow = (tz_offset_minutes: number) =>
   call<BackupReport>(COMMANDS.backupNow, { tz_offset_minutes });
+
+/** 能恢复的备份包（扫作者勾过的每个备份位置；盘不在就扫不到）。 */
+export const readRestoreSources = () => call<RestoreSources>(COMMANDS.backupRestoreSources);
+
+/** 恢复前看一眼：体检结论 + 会退回几天 / 少多少字。**不动任何文件。** */
+export const previewRestoreSource = (source: string) =>
+  call<RestorePreview>(COMMANDS.backupRestorePreview, { source });
+
+/** 真正换库（先关库、原库留底；成功后壳会重启）。 */
+export const applyRestore = (source: string, tz_offset_minutes: number) =>
+  call<RestoreOutcome>(COMMANDS.backupRestoreApply, { source, tz_offset_minutes });
+
+/** 让作者从磁盘上挑一个库文件（标题与筛选项由界面给，壳不产文案）。 */
+export const pickRestoreDatabase = (title: string, filter_label: string) =>
+  call<string | null>(COMMANDS.backupRestorePick, { title, filter_label });
 
 /** 改作品语言的回执：改完的语言 + **落定后的字数口径**（界面照着刷新那个数字）。 */
 export interface WorkLanguageAck {

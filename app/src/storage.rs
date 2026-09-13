@@ -106,8 +106,12 @@ fn prune_export(
 }
 
 /// 壳持有的数据句柄：核心的存储层句柄（唯一读写入口），加上它落在哪里。
+///
+/// `store` 是 `Option`：换库那一下必须**先把连接收干净**（[`AppData::close_store`]），
+/// 换完再挂上（[`AppData::reopen_store`]）。没有这个"可关"的形态，就只能带着开着的
+/// 连接去动库文件——那是拿作者的稿子冒险。
 pub struct AppData {
-    store: Mutex<Store>,
+    store: Mutex<Option<Store>>,
     db_path: PathBuf,
     /// 导出根目录（**路径策略在壳**：界面既不选路径也不碰文件系统）
     export_dir: PathBuf,
@@ -172,7 +176,7 @@ impl AppData {
             .begin_session()
             .map_err(|e| ApiError::new("shell.session_begin_failed").caused_by(e))?;
         Ok(Self {
-            store: Mutex::new(store),
+            store: Mutex::new(Some(store)),
             db_path,
             export_dir,
             session,
@@ -266,8 +270,60 @@ impl AppData {
         &self,
         op: impl FnOnce(&mut Store) -> yanmo_core::Result<T>,
     ) -> Result<T, ApiError> {
-        let mut store = self.store.lock().map_err(|_| ApiError::new("shell.store_unavailable"))?;
-        op(&mut store).map_err(ApiError::from)
+        let mut guard = self.store.lock().map_err(|_| ApiError::new("shell.store_unavailable"))?;
+        let store = guard.as_mut().ok_or_else(|| ApiError::new("shell.store_closed"))?;
+        op(store).map_err(ApiError::from)
+    }
+
+    /// 关库：把连接收干净。
+    ///
+    /// 换库之前**必须**先做这一步——文件还开着就动它，等于拿作者的稿子冒险。
+    /// 关掉最后一个连接时 SQLite 会把 WAL 归并回主库，这正是留底需要的状态。
+    pub fn close_store(&self) -> Result<(), ApiError> {
+        let mut guard = self.store.lock().map_err(|_| ApiError::new("shell.store_unavailable"))?;
+        guard.take();
+        Ok(())
+    }
+
+    /// 把库重新挂上（启动时用的是 `open`；"换库失败要回到原状"时走这条）。
+    pub fn reopen_store(&self) -> Result<(), ApiError> {
+        let mut guard = self.store.lock().map_err(|_| ApiError::new("shell.store_unavailable"))?;
+        if guard.is_some() {
+            return Ok(());
+        }
+        let store = Store::open(&self.db_path).map_err(|error| {
+            ApiError::with("shell.store_reopen_failed", [("path", self.db_path.display().to_string())])
+                .caused_by(error)
+        })?;
+        *guard = Some(store);
+        Ok(())
+    }
+
+    /// 换库：**先关库 → 留底 → 换库**；失败时把原库重新挂上再报错。
+    ///
+    /// 返回成功就意味着数据目录里已经是备份里那一份了；调用方接着重启壳。
+    /// **换了库却打不开软件，比不换还糟**——所以这条路上没有"半途而废"这个状态。
+    pub fn restore_apply(
+        &self,
+        source: &Path,
+        tz_offset_minutes: i32,
+    ) -> Result<yanmo_core::store::RestoreOutcome, ApiError> {
+        let data_dir = self
+            .db_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| Path::new(".").to_path_buf());
+        self.close_store()?;
+        let stamp =
+            yanmo_core::time::local_stamp(yanmo_core::time::now_millis(), tz_offset_minutes);
+        match yanmo_core::store::swap_in(source, &data_dir, &stamp) {
+            Ok(outcome) => Ok(outcome),
+            Err(error) => {
+                // 换库没成：原库已经被 swap_in 搬回原处，重新挂上让作者接着写
+                self.reopen_store()?;
+                Err(ApiError::from(error))
+            }
+        }
     }
 
     /// 库内实际的数据结构版本（迁移完成后应与引擎期望值一致）。

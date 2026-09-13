@@ -67,6 +67,12 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     UNKNOWN_WORK_LANGUAGE => "value.unknown_work_language" : "未知的作品语言：{value}" : ["value"],
     BACKUP_SNAPSHOT_FAILED => "backup.snapshot_failed"
         : "做一致性快照失败（库可能有问题）：{detail}" : ["detail"],
+    BACKUP_RESTORE_SOURCE_INVALID => "backup.restore_source_invalid"
+        : "这个位置不是一个备份包或库文件：{path}" : ["path"],
+    BACKUP_RESTORE_BLOCKED => "backup.restore_blocked"
+        : "这份备份不能用来恢复：{reason}" : ["reason"],
+    BACKUP_RESTORE_SWAP_FAILED => "backup.restore_swap_failed"
+        : "换库没成功（原库已放回原处）：{detail}" : ["detail"],
     UNKNOWN_WORD_CALIBER => "value.unknown_word_caliber"
         : "未知的字数口径：{value}（只有 chars / chars_no_punct / words）" : ["value"],
     UNKNOWN_EXPORT_FORMAT => "value.unknown_export_format"
