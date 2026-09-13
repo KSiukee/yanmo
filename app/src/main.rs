@@ -33,6 +33,14 @@ fn main() {
     // **验收模式**（`--self-test-bench` / `--self-test-ui` / `--check`）：只由启动参数进入，
     // 不带参数双击图标的行为一字不变。前两个在独立目录里干活，**绝不碰真实稿库**。
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    // `--version`：报版本号，并明说"这一份有没有验收模式"。
+    // 为什么要报后者：老版本的 研墨.exe 会把 --self-test-* 当普通参数忽略掉、直接弹窗口干等，
+    // 脚本看着就像卡死。让脚本先问一句，老版本就明确停下来（见 tools/acceptance/*.bat）。
+    if argv.iter().any(|arg| arg == "--version") {
+        // i18n-allow-next-line: 命令行的机器可读输出（给脚本判断用），不是界面文案
+        println!("{} acceptance={}", yanmo_core::engine_version(), acceptance::SUPPORTED);
+        std::process::exit(0);
+    }
     if let Some(plan) = acceptance::parse(&argv) {
         match plan.mode {
             acceptance::Mode::Check => std::process::exit(acceptance::run_check(&plan)),

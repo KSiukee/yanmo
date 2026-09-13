@@ -32,6 +32,9 @@ use yanmo_core::db;
 use yanmo_core::model::{NodeKind, WorkKind};
 use yanmo_core::store::{BackupRequest, BackupTarget, Store};
 
+/// 这一份程序支不支持验收模式（`--version` 会把它报出去，脚本据此挡老版本）。
+pub const SUPPORTED: u32 = 1;
+
 /// 一章的正文：一小段可复现的话反复拼——**同一份数据，谁跑都一样**。
 const SENTENCE: &str = "雨下了整夜，屋檐上的水声一直没停。她把灯芯挑亮了一点，又低头写下去。";
 

@@ -1,8 +1,8 @@
 # 研墨验收数据（自己跑得出来的那种）
 
 > 竞品常见的是"只写文案不给证据"。这份文档反过来：**每条承诺都给出怎么验、实测多少、你怎么自己复核**。
-> 数字由 `研墨.exe --self-test` 量出来，脚本在 [`tools/acceptance/`](tools/acceptance/README.md)——
-> 不用装 Rust、不用装 Python，双击 `run-acceptance.bat` 就行。
+> 数字由 `研墨.exe --self-test` 量出来（**0.28.0 起**），脚本在 [`tools/acceptance/`](tools/acceptance/README.md)——
+> 不用装 Rust、不用装 Python，双击 `run-acceptance.bat` 就行；脚本会先核对版本，老版本会明确停下。
 
 **我们不承诺具体数字**（机器不同，数字不同；承诺一个数字再拿它去要求别人是耍流氓），
 但承诺三件事：**测量方法公开、数字可以复现、边界如实写出来**。
