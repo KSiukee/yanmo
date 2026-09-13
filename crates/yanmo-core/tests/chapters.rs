@@ -170,6 +170,98 @@ fn cursor_survives_reopen_and_refuses_deleted_nodes() {
     assert_eq!(store.load_cursor(node).unwrap(), None);
 }
 
+/// ★ 没有编号传统的那一类（散文 / 文集：作者都用自起的名字）——**不许被"第N篇"接管**。
+///
+/// 这一层一个能认出的编号都没有时，新条目就该插在**点的那一行后面**。真机上会看见的毛病是：
+/// 文集里点「+」，新篇跑到整层最上面去（"没有兄弟的号比它小"算出来下标就是 0）。
+#[test]
+fn a_layer_without_numbers_still_inserts_where_you_click() {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Collection, "故园随笔").unwrap();
+    let first = store.list_nodes(work.id).unwrap()[0].id; // 建书时按书名起的那一篇
+    let mut pieces = vec![first];
+    for title in ["秋天的怀念", "背影"] {
+        pieces.push(store.create_node(work.id, None, NodeKind::Piece, title).unwrap());
+    }
+
+    // 点中间那一篇的「+」：新篇要插在它后面，而不是跑到最上面
+    let created = store.add_chapter_after(pieces[1], NodeKind::Piece, "").unwrap();
+    let after = store.chapter_neighbors(pieces[1]).unwrap();
+    assert_eq!(
+        after.next.as_ref().map(|piece| piece.id),
+        Some(created),
+        "文集里没有编号可归位，就该按点的位置插"
+    );
+    let top = store.chapter_neighbors(pieces[0]).unwrap();
+    assert_eq!(
+        top.next.as_ref().map(|piece| piece.id),
+        Some(pieces[1]),
+        "第一篇后面仍旧是第二篇，新篇不该插到最前面"
+    );
+}
+
+/// ★ 真机回归：**自动编号的新章必须按号归位**，不能"号说 22、位置说插在点的那一行后面"。
+///
+/// 现场是这么长出来的：同层已经有 18/19/20/21，作者在第20章上点「+」→ 号取到 22（同层最大 +1），
+/// 位置却插在 20 后面，屏幕上就成了 `20 / 22 / 23 / 21`——看着就是"排序又乱了"。
+/// 规矩：标题留空（号由核心取）时按号归位；作者自己写了标题才"点哪儿插哪儿"（见两条既有验收）。
+#[test]
+fn an_auto_numbered_chapter_lands_by_its_number_not_by_the_clicked_row() {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let volume = store.list_nodes(work.id).unwrap()[0].id;
+    let mut chapters = Vec::new();
+    for serial in 18..=21 {
+        let id = store
+            .create_node(work.id, Some(volume), NodeKind::Chapter, &format!("第{serial}章"))
+            .unwrap();
+        chapters.push(id);
+    }
+    let (ch20, ch21) = (chapters[2], chapters[3]);
+
+    // 在第20章上点「+」（界面上标题是留空的）
+    let created = store.add_chapter_after(ch20, NodeKind::Chapter, "").unwrap();
+
+    assert_eq!(store.node_title(created).unwrap(), "第22章", "号还是「同层最大 +1」");
+    let after_21 = store.chapter_neighbors(ch21).unwrap();
+    assert_eq!(
+        after_21.next.as_ref().map(|chapter| chapter.id),
+        Some(created),
+        "第22章必须落在第21章之后，而不是插回第20章后面"
+    );
+    let before_21 = store.chapter_neighbors(ch20).unwrap();
+    assert_eq!(
+        before_21.next.as_ref().map(|chapter| chapter.id),
+        Some(ch21),
+        "第20章后面仍旧紧接第21章（不能被新章挤开）"
+    );
+}
+
+/// 作者自己写了标题时：**点哪儿插哪儿**（这条规矩没被上一条改掉）。
+#[test]
+fn a_named_chapter_still_lands_right_after_the_clicked_row() {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let volume = store.list_nodes(work.id).unwrap()[0].id;
+    let mut chapters = Vec::new();
+    for serial in 18..=21 {
+        let id = store
+            .create_node(work.id, Some(volume), NodeKind::Chapter, &format!("第{serial}章"))
+            .unwrap();
+        chapters.push(id);
+    }
+
+    let inserted = store
+        .add_chapter_after(chapters[2], NodeKind::Chapter, "番外·夜谈")
+        .unwrap();
+    let after_20 = store.chapter_neighbors(chapters[2]).unwrap();
+    assert_eq!(
+        after_20.next.as_ref().map(|chapter| chapter.id),
+        Some(inserted),
+        "作者给了名字，落点就听他的：插在点的那一行后面"
+    );
+}
+
 #[test]
 fn new_chapter_lands_right_after_the_current_one() {
     let mut book = two_volume_book();

@@ -531,9 +531,14 @@ fn default_name_rule_table() {
     }
 }
 
+/// ★ 策略改过一次（v0.35.5，真机反馈）：**自动取号的新章按号归位**，不再"号是号、位置是位置"。
+///
+/// 旧规矩是"名字是顺序号，插在谁后面只管位置——两者各管各的"，于是同层 18/19/20/21 时，
+/// 在第20章上点「+」会取号 22 却插在 20 后面，屏幕上成了 `20 / 22 / 23 / 21`。
+/// 现在：**标题留空（号由核心取）→ 按号归位**；**作者自己写了标题 → 点哪儿插哪儿**
+/// （名字是他定的，落点听他的：`a_named_chapter_still_lands_right_after_the_clicked_row`）。
 #[test]
-fn new_chapter_lands_where_you_clicked() {
-    // 名字是顺序号，"插在谁后面"只管**位置**——两者各管各的，作者要改号就改名
+fn an_auto_numbered_chapter_lands_by_its_number() {
     let (_dir, mut store) = fresh();
     let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
     let volume = store.list_nodes(work.id).unwrap()[0].id;
@@ -549,7 +554,11 @@ fn new_chapter_lands_where_you_clicked() {
         .filter(|n| n.parent_id == Some(volume))
         .map(|n| n.id)
         .collect();
-    assert_eq!(order, vec![first, inserted, second], "位置就在点的那一章后面");
+    assert_eq!(
+        order,
+        vec![first, second, inserted],
+        "第3章落在最后一个有编号的章（第2章）之后，列表按号递增"
+    );
 }
 
 #[test]

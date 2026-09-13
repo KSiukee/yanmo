@@ -521,8 +521,9 @@ export function useEditorSession(): EditorSession {
     switching.value = true;
     failure.value = null;
     try {
-      // 核心的"插在这一章之后"：同级、紧随其后、序号密集、不跨卷
-      // 标题留空＝由核心按**同层序号**取名（按全书取号的话，分卷之后会跳号）
+      // 标题留空＝由核心按**同层序号**取名（按全书取号的话，分卷之后会跳号）；
+      // 落点也由核心定：编号能认出来就**按号归位**，认不出来才退回"插在点的那一行之后"
+      // （见 store::node_edit::add_chapter_after 的说明）
       const created = await createChapter(node_id, "");
       if ((await switcher.to(created)) === "switched") {
         await refreshNeighbors();

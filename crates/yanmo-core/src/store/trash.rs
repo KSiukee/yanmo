@@ -13,6 +13,7 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::json;
 
 use super::{Store, MAX_TREE_DEPTH};
+use crate::model::NodeKind;
 use crate::error::{codes, Error, Result};
 
 /// 回收站里的东西是"整本书"还是"书里的某一段"。
@@ -200,6 +201,26 @@ impl Store {
             current = parent;
         }
 
+        // 捞回来**落在哪儿**：有编号的（第N章 / 第N卷）按号归位，没编号的回原位。
+        //
+        // 为什么不能照抄删除前那个 `sort_order`：它只是"被删那天停在哪"，中间又删过、建过之后
+        // 早就过期了。压测第 8 步抓到的正是这个——捞回「第19章」时它按旧位置落回，
+        // 结果排在 20/21 后面：`… 第20章 / 第21章 / 第19章 / 第22章`。
+        // （要放进去的那个此刻还躺在回收站里，不在同层名单上，所以 `ignore` 传 None 正好。）
+        let mut targets: Vec<(i64, Option<i64>, usize, bool)> = Vec::new();
+        for (id, parent, order) in &anchors {
+            let (title, kind_text): (String, String) = self.conn.query_row(
+                "SELECT title, node_kind FROM nodes WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
+            let kind = NodeKind::parse(&kind_text)?;
+            match self.index_by_serial(&title, work_id, *parent, kind, None)? {
+                Some(index) => targets.push((*id, *parent, index, true)),
+                None => targets.push((*id, *parent, (*order).max(0) as usize, false)),
+            }
+        }
+
         let tx = self.conn.transaction()?;
         let restored = tx.execute(
             "WITH RECURSIVE sub(id) AS (
@@ -220,9 +241,10 @@ impl Store {
                 params![title, node_id],
             )?;
         }
-        // 每一层都按"原来的位置"锚回去，再收成密集序号——回到原来那一带，且不与谁同号
-        for (id, parent, order) in &anchors {
-            super::node_edit::renumber(&tx, work_id, *parent, Some((*id, *order as usize)))?;
+        // 每一层都锚回去，再收成密集序号——不与谁同号，也不留空洞
+        for (id, parent, index, by_number) in &targets {
+            let _ = by_number; // 位置已经在上面算好（按号归位 / 回原位），这里只管落下去
+            super::node_edit::renumber(&tx, work_id, *parent, Some((*id, *index)))?;
         }
         tx.commit()?;
 
