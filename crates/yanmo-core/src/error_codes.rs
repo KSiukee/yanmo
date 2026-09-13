@@ -65,6 +65,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     UNKNOWN_NODE_KIND => "value.unknown_node_kind" : "未知的节点类型：{value}" : ["value"],
     UNKNOWN_WORK_KIND => "value.unknown_work_kind" : "未知的作品类型：{value}" : ["value"],
     UNKNOWN_WORK_LANGUAGE => "value.unknown_work_language" : "未知的作品语言：{value}" : ["value"],
+    BACKUP_SNAPSHOT_FAILED => "backup.snapshot_failed"
+        : "做一致性快照失败（库可能有问题）：{detail}" : ["detail"],
     UNKNOWN_WORD_CALIBER => "value.unknown_word_caliber"
         : "未知的字数口径：{value}（只有 chars / chars_no_punct / words）" : ["value"],
     UNKNOWN_EXPORT_FORMAT => "value.unknown_export_format"

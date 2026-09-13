@@ -15,6 +15,7 @@
 //! 节点的**读**与**编辑**特意分开：目录树查询和树结构变更的变化理由不一样。
 
 mod appearance;
+mod backup;
 mod content;
 mod device;
 mod export;
@@ -28,6 +29,11 @@ mod trash;
 mod work;
 
 pub use appearance::{Appearance, ResolvedAppearance};
+pub use backup::{
+    gaps_for, has_other_volume, ledger_summary, read_ledger, read_manifest, BackupConfig,
+    BackupLedger, BackupManifest, BackupReport, BackupRequest, BackupTarget, BackupVerify,
+    LedgerEntry, TargetOutcome, WorkStamp,
+};
 pub use content::ContentStats;
 pub use export::{ExportFormat, RenderedFile};
 pub use gap::{ChapterGap, GapAnswer};
