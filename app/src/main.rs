@@ -21,13 +21,25 @@ use crate::exitwatch::RequestOutcome;
 mod commands;
 mod error;
 mod exitwatch;
+mod single;
 mod storage;
 
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
             // 打开失败就让启动失败：半个可用的数据层比不启动更危险。
-            let data = storage::AppData::open(app.handle())?;
+            let data = match storage::AppData::open(app.handle()) {
+                Ok(data) => data,
+                Err(error) => {
+                    // 「这个数据目录已经开着一个研墨了」是唯一要在启动期单独辨出来的失败：
+                    // 界面还没起来，得弹一句人话，而不是静默退出（绝不静默失败）。
+                    if error.code == "shell.already_running" {
+                        let dir = error.params.get("path").cloned().unwrap_or_default();
+                        crate::single::announce_already_running(&dir);
+                    }
+                    return Err(Box::new(error));
+                }
+            };
             app.manage(data);
             Ok(())
         })

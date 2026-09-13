@@ -112,6 +112,11 @@ fn prune_export(
 /// 连接去动库文件——那是拿作者的稿子冒险。
 pub struct AppData {
     store: Mutex<Option<Store>>,
+    /// 单实例守卫：**活着就占着这个数据目录**（见 [`crate::single`]）。
+    ///
+    /// `Option` 是为了换库重启那一条路：先把锁收出来交给后台线程，让它在重启前松开，
+    /// 新进程马上就能要到同一把锁。
+    instance: Mutex<Option<crate::single::InstanceLock>>,
     db_path: PathBuf,
     /// 导出根目录（**路径策略在壳**：界面既不选路径也不碰文件系统）
     export_dir: PathBuf,
@@ -166,6 +171,10 @@ impl AppData {
             ApiError::with("shell.data_dir_create_failed", [("path", dir.display().to_string())])
                 .caused_by(e)
         })?;
+        // 同一个数据目录只允许一个研墨：两个进程同时写一个库是真实的损坏来源。
+        // 放在打开库**之前**——绝不能先开库、再发现自己本来不该开。
+        let instance = crate::single::InstanceLock::acquire(dir)
+            .map_err(|()| ApiError::with("shell.already_running", [("path", dir.display().to_string())]))?;
         let db_path = dir.join(yanmo_core::paths::DB_FILE);
         let mut store = Store::open(&db_path).map_err(|e| {
             ApiError::with("shell.db_open_failed", [("path", db_path.display().to_string())])
@@ -177,6 +186,7 @@ impl AppData {
             .map_err(|e| ApiError::new("shell.session_begin_failed").caused_by(e))?;
         Ok(Self {
             store: Mutex::new(Some(store)),
+            instance: Mutex::new(Some(instance)),
             db_path,
             export_dir,
             session,
@@ -326,6 +336,14 @@ impl AppData {
         }
     }
 
+    /// 把单实例守卫收出来交给调用方（换库重启用）。
+    ///
+    /// 重启是**先起新进程、旧进程随后退出**：新进程要在启动期来要同一把锁，
+    /// 所以旧进程必须**在换代之前**松开它，否则新进程只会看见「已经在运行」。
+    pub fn take_instance_lock(&self) -> Option<crate::single::InstanceLock> {
+        self.instance.lock().ok().and_then(|mut guard| guard.take())
+    }
+
     /// 库内实际的数据结构版本（迁移完成后应与引擎期望值一致）。
     pub fn schema_version(&self) -> Result<u32, ApiError> {
         self.with_store(|store| yanmo_core::db::migrations::user_version(store.conn()))
@@ -473,8 +491,32 @@ mod tests {
         assert!(second.session().unclean, "第二次启动必须报出上次是异常退出");
     }
 
+    // ── 单实例守卫：同一个数据目录不许开第二个 ────────────────────────────────
+
+    #[test]
+    fn a_second_instance_on_the_same_data_directory_is_refused_and_can_start_after_release() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = AppData::open_at_for_test(dir.path()).unwrap();
+
+        let error = match AppData::open_at_for_test(dir.path()) {
+            Ok(_) => panic!("同一个数据目录不该能开第二个"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code, "shell.already_running", "{error:?}");
+        assert_eq!(
+            error.params.get("path").map(String::as_str),
+            Some(dir.path().to_string_lossy().as_ref()),
+            "提示里要说清是哪个数据目录"
+        );
+
+        drop(first);
+        assert!(
+            AppData::open_at_for_test(dir.path()).is_ok(),
+            "关掉之后必须还能再开（否则软件就永远打不开了）"
+        );
+    }
+
     // ── 换库这条路的**壳侧**验收：关库 → 换库 → （失败）重挂 ────────────────────
-    //
     // 核心那边验的是文件动作；这里验的是壳有没有把"库句柄"这件事管对：
     // 换库必须先把连接收干净，失败之后软件还得能用。全程只碰临时目录。
 

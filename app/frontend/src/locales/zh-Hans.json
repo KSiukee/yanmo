@@ -68,6 +68,7 @@
   "error.shell.export_write_failed": "写导出文件 {path} 失败：{detail}",
   "error.shell.portable_dir_readonly": "程序旁边的数据文件夹写不进去：{path}。请把研墨放到你有写权限的位置（例如 D 盘或「文档」里的文件夹），再重新打开。",
   "error.shell.session_begin_failed": "无法登记本次会话：{detail}",
+  "error.shell.already_running": "这个数据目录已经开着一个研墨了：{path}。请用已经打开的那个窗口，或先把它关掉。",
   "error.shell.store_closed": "库已经关掉了（正在换库）",
   "error.shell.store_reopen_failed": "无法重新打开数据库 {path}：{detail}",
   "error.shell.store_unavailable": "数据库句柄不可用",

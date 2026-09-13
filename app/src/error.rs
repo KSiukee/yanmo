@@ -26,6 +26,7 @@ pub const SHELL_CODES: &[(&str, &[&str])] = &[
     ("shell.store_unavailable", &[]),
     ("shell.store_closed", &[]),
     ("shell.store_reopen_failed", &["path"]),
+    ("shell.already_running", &["path"]),
     ("shell.export_dir_unreadable", &["path"]),
     ("shell.export_file_remove_failed", &["path"]),
     ("shell.export_dir_create_failed", &["path"]),

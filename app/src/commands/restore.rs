@@ -86,17 +86,24 @@ pub fn backup_restore_apply(
     // 当场再体检一次（界面上看过的那遍不算数）
     let preview = data.with_store(|store: &mut Store| Ok(store.preview_restore(&path)?))?;
     if !preview.can_restore {
+        // i18n-allow-next-line: 中文分隔符（把若干条诊断串接成一句），不是文案
+        let joined = preview.verify.problems.join("；");
         return Err(ApiError::from(yanmo_core::Error::invalid_with(
             yanmo_core::error_codes::codes::BACKUP_RESTORE_BLOCKED,
-            [("reason", preview.verify.problems.join("；"))],
+            [("reason", joined)],
         )));
     }
     let outcome = data.restore_apply(&path, tz_offset_minutes)?;
     // 换库成功：给界面一点时间把这句"换好了"显示出来，然后重启。
     // 用后台线程而不是让界面再调一次："界面卡住"不该把软件留在没有库的状态。
+    //
+    // 单实例锁先**收出来**、在重启前松开：新进程启动时回来要同一把锁，
+    // 旧进程不放，新进程就只会看见"已经在运行"而退出——软件就再也回不来了。
+    let instance = data.take_instance_lock();
     let handle = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(1200));
+        drop(instance);
         handle.restart();
     });
     Ok(outcome)
