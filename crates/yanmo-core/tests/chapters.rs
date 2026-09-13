@@ -257,3 +257,30 @@ fn ancestors_run_from_root_down_to_the_parent() {
     // 不存在的节点要明确报错，而不是给一条空链
     assert!(book.store.node_ancestors(999_999).is_err());
 }
+
+/// 回归：**标题里带章名时，也要认得出编号**。
+///
+/// 真踩过（用户 2026-09-13 报）：第二卷里已有「第6章 灯 … 第10章 灯」这种最常见的写法，
+/// 点「+」新建时却从「第6章」重新数起——旧实现要求标题**以「章」结尾**才认编号，
+/// 认不出就退回"同层现有几章 + 1"；连点几次就成了 第6…第16 章排在一起（看着像章号倒着长）。
+#[test]
+fn new_chapters_continue_the_numbering_even_when_titles_carry_a_name() {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let volume = store.list_nodes(work.id).unwrap()[0].id;
+
+    let mut last = volume;
+    for serial in 6..=10 {
+        let title = format!("第{serial}章 {}", if serial % 2 == 0 { "灯" } else { "门" });
+        last = store.create_node(work.id, Some(volume), NodeKind::Chapter, &title).unwrap();
+        store.write_body(last, "正文。").unwrap();
+    }
+
+    // 在第10章后面点「+」（标题留空＝按同层取号）：要继续数到第11章，而不是回到第6章
+    let created = store.add_chapter_after(last, NodeKind::Chapter, "").unwrap();
+    assert_eq!(store.node_title(created).unwrap(), "第11章");
+
+    // 再点一次：继续往上数（而不是又算成第7章）
+    let again = store.add_chapter_after(created, NodeKind::Chapter, "").unwrap();
+    assert_eq!(store.node_title(again).unwrap(), "第12章");
+}

@@ -85,15 +85,30 @@ fn naming(kind: NodeKind) -> (&'static str, &'static str) {
 }
 // i18n-allow-end
 
-/// 从标题里认出编号：阿拉伯数字与中文数字都认（作者手打的「第一章」也算数），
-/// 其它名字一概不猜，也就不会误判成编号。
+/// 从标题里认出编号：阿拉伯数字与中文数字都认（作者手打的「第一章」也算数）。
+///
+/// **只管开头**：编号后面挂着章名是常态（`第6章 灯`、`第十二章（上）`），不能因为后面有字
+/// 就认不出来。认不出的后果不是"少认一个号"，而是取号退回**按数量算**——于是作者连点几次「+」
+/// 就出现重复章号（真踩过：第二卷里已有 第6~10 章，新章却从「第6章」重新数起，
+/// 看上去像章号倒着长）。
+///
+/// 认不出编号的名字（`序章` / `楔子` / `第一次见面`）一概不猜，也就不会误判成编号。
 pub(super) fn parse_serial(title: &str, kind: NodeKind) -> Option<i64> {
     let (prefix, suffix) = naming(kind);
-    let inner = title.strip_prefix(prefix)?.strip_suffix(suffix)?.trim();
-    inner
+    let rest = title.trim().strip_prefix(prefix)?;
+    let number = if suffix.is_empty() {
+        // 场景卡没有"第…卡"这种骨架：整串都得是数字才算，免得把「场景卡牌」当成编号
+        rest
+    } else {
+        // 数字与后缀之间不许夹别的字：`第1-2章`、`第一次见面` 都不算
+        let at = rest.find(suffix)?;
+        &rest[..at]
+    };
+    let number = number.trim();
+    number
         .parse::<i64>()
         .ok()
-        .or_else(|| parse_cn_number(inner))
+        .or_else(|| parse_cn_number(number))
         .filter(|serial| *serial > 0)
 }
 
@@ -326,5 +341,36 @@ impl Store {
         let created = self.create_node(work_id, parent, kind, title)?;
         self.move_node(created, parent, index)?;
         Ok(created)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 认编号：只管开头、后缀可带尾巴；认不出的名字一概不算。
+    #[test]
+    fn parse_serial_reads_the_number_at_the_head() {
+        let cases: &[(&str, Option<i64>)] = &[
+            ("第12章", Some(12)),
+            ("第12章 灯", Some(12)),
+            ("第12章灯", Some(12)),
+            ("第 12 章", Some(12)),
+            ("第十二章", Some(12)),
+            ("第十二章（上）", Some(12)),
+            ("第二卷 夜行", Some(2)),
+            ("序章", None),
+            ("楔子", None),
+            ("第一次见面", None),
+            ("第1-2章", None),
+            ("场景卡", None),
+            ("场景卡3", Some(3)),
+            ("场景卡牌", None),
+        ];
+        for (title, want) in cases {
+            let kind = if title.contains("卷") { NodeKind::Volume } else { NodeKind::Chapter };
+            let kind = if title.starts_with("场景卡") { NodeKind::Scene } else { kind };
+            assert_eq!(parse_serial(title, kind), *want, "标题「{title}」");
+        }
     }
 }
