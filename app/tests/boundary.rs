@@ -1,11 +1,12 @@
 //! 边界守卫：把「Rust 持有全部读写、界面不碰文件系统」从口头约定变成**机械检查**。
 //!
-//! 四条断言，破了任何一条都在 `cargo test` 里红：
+//! 五条断言，破了任何一条都在 `cargo test` 里红：
 //!
 //! 1. 核心不依赖任何界面框架（核心必须能被单测 / 命令行直接驱动）；
 //! 2. 界面不出现文件系统或取路径的 API；
 //! 3. 界面只经 `src/api/` 这一条通道与核心对话；
-//! 4. 权限集逐项最小化，不含路径与文件读写能力。
+//! 4. 权限集逐项最小化，不含路径与文件读写能力；
+//! 5. 三栏骨架的布局不变量：正文再长，也只有正文区自己滚。
 //!
 //! 取舍：这里读的是**源文件文本**，不追求完整解析语法。守卫要的是「一眼看懂、破了就拦」，
 //! 真正的类型与结构检查留给编译器。
@@ -135,6 +136,39 @@ fn frontend_never_touches_the_filesystem() {
             );
         }
     }
+}
+
+/// 取样式文件里的某条规则（`选择器 {` 到第一个 `}`）。
+fn rule_block(text: &str, selector: &str) -> String {
+    let start = text
+        .find(&format!("{selector} {{"))
+        .unwrap_or_else(|| panic!("找不到 {selector} 的规则块"));
+    let end = text[start..].find('}').map(|at| start + at).expect("规则块没闭合");
+    text[start..end].to_string()
+}
+
+/// 三栏骨架的布局不变量：**正文再长，也只有正文区自己滚**。
+///
+/// 真踩过：长章节把 CSS 网格的隐含行顶高（网格项默认 `min-height: auto`），整个页面跟着滚，
+/// 顶栏与两侧栏一起飘出视野。这类毛病**短稿永远测不出来**（只有内容够长才犯），正适合机器盯着。
+#[test]
+fn the_shell_keeps_the_page_still_when_the_prose_gets_long() {
+    let app = read(&package_root().join("frontend/src/App.vue"));
+    let shell = rule_block(&app, ".shell__body");
+    assert!(
+        shell.contains("grid-template-rows: minmax(0, 1fr)"),
+        "三栏容器必须钉住行高，否则长正文会把整页顶开：{shell}"
+    );
+    assert!(shell.contains("overflow: hidden"), "三栏容器还要裁住溢出：{shell}");
+
+    let css = read(&package_root().join("frontend/src/components/editor-pane.css"));
+    let editor = rule_block(&css, ".editor");
+    assert!(
+        editor.contains("min-height: 0"),
+        "编辑栏是网格项，必须显式 min-height: 0（默认 auto 会被内容顶高）：{editor}"
+    );
+    let area = rule_block(&css, ".editor__area");
+    assert!(area.contains("overflow: auto"), "正文区自己滚：{area}");
 }
 
 #[test]
