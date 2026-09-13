@@ -52,20 +52,25 @@ async function move(): Promise<void> {
   // 搬成功：窗口马上重启，所以这里不再收起面板（保持忙态，不给再按一次的机会）
 }
 
-function dismiss(): void {
+async function dismiss(): Promise<void> {
+  // 首启第一步关掉 = 接受推荐位置（稿子本来就在那儿）：**把记录写上**。
+  // 否则每次打开都弹这一下——而弹窗会抢焦点，正文拿不到焦点，中文输入法就挂不上来。
+  if (props.mode === "first-run" && step.value === "place") {
+    await useCurrent();
+  }
   close();
   emit("close");
 }
 </script>
 
 <template>
-  <div class="dialog" :class="{ 'dialog--above': mode === 'settings' }" @click.self="dismiss()">
+  <div class="dialog" :class="{ 'dialog--above': mode === 'settings' }" @click.self="void dismiss()">
     <section class="dialog__box location">
       <header class="dialog__head">
         <h2 class="dialog__title">
           {{ step === "place" ? t("location.title_place") : t("location.title_backup") }}
         </h2>
-        <button type="button" class="dialog__button" @click="dismiss()">
+        <button type="button" class="dialog__button" @click="void dismiss()">
           {{ t("common.close") }}
         </button>
       </header>
@@ -145,7 +150,7 @@ function dismiss(): void {
         <p class="location__lead">{{ t("location.backup_lead") }}</p>
         <p class="location__hint">{{ t("location.backup_hint") }}</p>
         <footer class="location__actions">
-          <button type="button" class="dialog__button" @click="dismiss()">
+          <button type="button" class="dialog__button" @click="void dismiss()">
             {{ t("location.backup_later") }}
           </button>
           <button

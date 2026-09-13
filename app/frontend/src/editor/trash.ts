@@ -61,8 +61,13 @@ export interface Trash {
   busy: Ref<boolean>;
   /** 非空时界面要弹一次选择：照原样恢复 / 恢复并改名 / 取消 */
   conflict: Ref<TrashConflict | null>;
-  /** 冲突时作者拿的主意：给新名字就改名恢复，null = 照原样恢复 */
-  resolveConflict: (rename_to: string | null) => Promise<void>;
+  /**
+   * 冲突时作者拿的主意：给新名字就改名恢复，null = 照原样恢复。
+   *
+   * 与 [`Trash::restore`] 同形：返回一句交代（界面对"改名恢复 / 照原样恢复"有更细的措辞，所以那句
+   * 由界面自己组织，这里的返回值供日志或将来复用）。
+   */
+  resolveConflict: (rename_to: string | null) => Promise<string>;
   /** 冲突时选择取消：什么都不做 */
   cancelConflict: () => void;
   /** 打开 / 收起（打开时刷新一次） */

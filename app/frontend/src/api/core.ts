@@ -445,6 +445,7 @@ const COMMANDS = {
   engineInfo: "engine_info",
   dataHome: "data_home",
   openDataDir: "open_data_dir",
+  diagnoseNote: "diagnose_note",
   locationInfo: "data_location_info",
   locationConfirm: "data_location_confirm",
   locationPick: "data_location_pick",
@@ -522,6 +523,13 @@ export const readDataHome = () => call<DataHome>(COMMANDS.dataHome);
 
 /** 在文件管理器里打开稿子所在的目录（壳自己打开自己的目录，界面不传路径）。 */
 export const openDataDir = () => call<void>(COMMANDS.openDataDir);
+
+/**
+ * 启动诊断：把界面上观察到的焦点/输入法事件递给壳。
+ *
+ * 壳没开 `--diagnose` 时这条命令是空转——所以界面这边不做开关判断，少一处"诊断没生效"的可能。
+ */
+export const diagnoseNote = (text: string) => call<void>(COMMANDS.diagnoseNote, { text });
 
 /** 稿子现在放哪、要不要首启引导、推荐放哪。 */
 export const readLocationInfo = () => call<LocationInfo>(COMMANDS.locationInfo);

@@ -21,6 +21,7 @@ use crate::exitwatch::RequestOutcome;
 
 mod acceptance;
 mod commands;
+mod diagnose;
 mod error;
 mod exitwatch;
 mod open_folder;
@@ -33,6 +34,9 @@ fn main() {
     // **验收模式**（`--self-test-bench` / `--self-test-ui` / `--check`）：只由启动参数进入，
     // 不带参数双击图标的行为一字不变。前两个在独立目录里干活，**绝不碰真实稿库**。
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    // **启动诊断**（`--diagnose`）：把"开窗 → 窗口被激活 → 界面就绪 → 输入法有没有挂上"记成时间线。
+    // 只在某些 Win10 机器上出现的输入法毛病，靠这份现场证据定位（日志写文件，控制台里看不到输出）。
+    diagnose::parse(&argv);
     // `--version`：报版本号，并明说"这一份有没有验收模式"。
     // 为什么要报后者：老版本的 研墨.exe 会把 --self-test-* 当普通参数忽略掉、直接弹窗口干等，
     // 脚本看着就像卡死。让脚本先问一句，老版本就明确停下来（见 tools/acceptance/*.bat）。
@@ -71,14 +75,28 @@ fn main() {
             if payload.event() == PageLoadEvent::Finished {
                 acceptance::note_command("window.page_loaded");
                 acceptance::note_page_loaded();
-            }
-            if payload.event() == PageLoadEvent::Finished {
                 let window = webview.window();
+                diagnose::page_loaded();
                 let _ = window.show();
                 // **显示之后还要把它激活**：Windows 的输入法是随"窗口被激活"挂到输入元素上的。
                 // 只 show 不激活，Win10 上会出现「中文输入法点不出来、要先切英文打几个字母再切回来」
                 // （同样的代码在 Win11 上恰好不露）。这里补一刀，别指望系统替我们做。
                 let _ = window.set_focus();
+                diagnose::note_window(&window);
+                // 有些机器上"激活"这一步会**静默失败**（前台进程切换限制）。给它几次机会：
+                // 隔几百毫秒看一眼，没焦点就再要一次（只在前几秒做，之后交给用户）。
+                let probe = window.clone();
+                std::thread::spawn(move || {
+                    for round in 1..=6 {
+                        std::thread::sleep(Duration::from_millis(400));
+                        let activated = probe.is_focused().unwrap_or(true);
+                        diagnose::activation_round(round, activated);
+                        if activated {
+                            return;
+                        }
+                        let _ = probe.set_focus();
+                    }
+                });
             }
         })
         .setup(|app| {
@@ -91,6 +109,7 @@ fn main() {
             if acceptance::ui_plan().is_some() {
                 acceptance::note_command("shell.data_ready");
             }
+            diagnose::data_ready();
             let data = match opened {
                 Ok(data) => data,
                 Err(error) => {
@@ -129,6 +148,13 @@ fn main() {
         // 关窗不直接放行：交给界面先落盘，存不下去就别想走。
         // 闸门未武装（界面还没就绪）时一律放行——否则前端一出问题窗口就关不掉了。
         .on_window_event(|window, event| {
+            // 诊断：窗口的焦点进进出出，是判断"输入法挂没挂上"的第一现场
+            match event {
+                tauri::WindowEvent::Focused(gained) => diagnose::focus_event(*gained),
+                tauri::WindowEvent::Resized(_) => diagnose::resized(),
+                tauri::WindowEvent::Destroyed => diagnose::destroyed(),
+                _ => {}
+            }
             let tauri::WindowEvent::CloseRequested { api, .. } = event else {
                 return;
             };
@@ -153,6 +179,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::system::engine_info,
+            commands::system::diagnose_note,
             commands::system::data_home,
             commands::system::open_data_dir,
             commands::system::exit_app,

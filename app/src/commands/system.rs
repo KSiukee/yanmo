@@ -72,6 +72,15 @@ pub fn open_data_dir(data: State<'_, AppData>) -> Result<(), ApiError> {
     })
 }
 
+/// 启动诊断：前端把它观察到的焦点与输入法事件递进来（**没开诊断时什么都不做**）。
+///
+/// 为什么要前端说话：只有页面里能看清"焦点到底在哪个元素上""输入法组字事件有没有来"，
+/// 而这两件事正是那个 Win10 输入法毛病的分水岭。
+#[tauri::command(rename_all = "snake_case")]
+pub fn diagnose_note(text: String) {
+    crate::diagnose::note(&text);
+}
+
 /// 退出应用。
 ///
 /// **只由退出闸门通过后调用**：关窗那一步已经先落盘、并留好了关窗快照；

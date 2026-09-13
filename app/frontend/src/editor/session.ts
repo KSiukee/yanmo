@@ -8,7 +8,7 @@
 // - 击键只进编辑器，**逐键绝不跨边界**；只有落盘/校验/切章这些低频动作才过边界；
 // - 切章、关窗都先落盘：没落干净就不切 / 就不放行。
 
-import { onBeforeUnmount, onMounted, ref, shallowRef, type Ref, type ShallowRef } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref, type ShallowRef } from "vue";
 import { useEditor, type Editor } from "@tiptap/vue-3";
 import StarterKit from "@tiptap/starter-kit";
 
@@ -87,6 +87,7 @@ import {
 } from "./wordcount.ts";
 import { useDirectory, type Directory } from "./directory";
 import { docToText, textToHtml } from "./doc";
+import { watchFocusAndIme } from "./diagnose";
 import { ExitGate, type ExitGateState } from "./exitguard";
 import { focusPlan } from "./focus";
 import { useGaps, type Gaps } from "./gaps";
@@ -97,7 +98,7 @@ import { useRestore, type RestoreState } from "./restore";
 import { useTrash, type Trash } from "./trash";
 
 export interface EditorSession {
-  editor: ShallowRef<Editor | null>;
+  editor: ShallowRef<Editor | undefined>;
   chapterTitle: Ref<string>;
   saveState: Ref<AutosaveState>;
   exitState: Ref<ExitGateState>;
@@ -176,6 +177,10 @@ export function useEditorSession(): EditorSession {
   let gate: ExitGate | null = null;
   let stopCloseListener: (() => void) | null = null;
   let stopCompositionWatch: (() => void) | null = null;
+  /** 启动诊断的清理句柄（焦点/输入法事件监听） */
+  let stopDiagnoseWatch: (() => void) | null = null;
+  /** "弹窗关掉就把焦点还给正文"的观察者 */
+  let stopDialogFocusWatch: (() => void) | null = null;
 
   const editor = useEditor({
     content: "",
@@ -232,8 +237,8 @@ export function useEditorSession(): EditorSession {
     };
     language.value = asLanguage(snapshot.work_language);
     caliber.value = asCaliber(snapshot.word_caliber);
-    // 第二个参数 false：载入内容不算"作者改动"，不触发落盘
-    editor.value?.commands.setContent(textToHtml(snapshot.body), false);
+    // emitUpdate: false —— 载入内容不算"作者改动"，不触发落盘
+    editor.value?.commands.setContent(textToHtml(snapshot.body), { emitUpdate: false });
     applyCursor(snapshot.cursor);
   }
 
@@ -297,6 +302,26 @@ export function useEditorSession(): EditorSession {
    * 同样的代码在 Win11 上恰好不露。最多等 3 秒——**别为了输入法把启动卡住**；
    * 到点还没等到也照常聚焦（页内聚焦不会去抢别的窗口）。
    */
+  /**
+   * 现在有没有弹窗盖在界面上（首启引导、书架、回收站、设置、备份、恢复、快照、删章路标）。
+   *
+   * 为什么要有这个：Windows 的输入法是随"焦点落到输入元素"挂上去的，而**弹窗会抢走焦点**。
+   * 启动时若正弹着首启引导就急着给正文定焦点，焦点会被弹窗拿走；等弹窗关掉又没人把焦点还回来——
+   * 表现就是"中文输入法点不出来，要切英文打几个字母再切回来"。所以：**弹窗盖着就先不定焦点，
+   * 等它关掉再定**（见 anyDialogOpen 的 watch）。
+   */
+  const anyDialogOpen = computed(
+    () =>
+      shelf.visible.value ||
+      trash.visible.value ||
+      snapshots.visible.value ||
+      appearance.visible.value ||
+      backup.visible.value ||
+      restore.visible.value ||
+      location.visible.value ||
+      gaps.pending.value !== null,
+  );
+
   function whenWindowFocused(): Promise<void> {
     if (document.hasFocus()) return Promise.resolve();
     return new Promise((resolve) => {
@@ -374,7 +399,7 @@ export function useEditorSession(): EditorSession {
    */
   function applyRestored(ack: SnapshotRestoreAck) {
     if (currentNodeId.value !== ack.node_id) return; // 回滚途中切了章：不动现在这一章
-    editor.value?.commands.setContent(textToHtml(ack.body), false);
+    editor.value?.commands.setContent(textToHtml(ack.body), { emitUpdate: false });
     autosave.value?.attach(ack.body, {
       char_count: ack.char_count,
       chars_no_punct: ack.chars_no_punct,
@@ -682,10 +707,21 @@ export function useEditorSession(): EditorSession {
       applyChapter(snapshot);
       makeAutosave(snapshot);
       stopCompositionWatch = watchComposition();
+      // 启动诊断：盯着"焦点在不在正文里""输入法有没有组字"（壳没开诊断时这些上报是空转）
+      const dom = editor.value?.view.dom;
+      if (dom) stopDiagnoseWatch = watchFocusAndIme(dom as HTMLElement);
       await refreshNeighbors();
-      // 先等窗口被激活再定初始焦点：见 whenWindowFocused 的说明（Win10 输入法）
+      // 先等窗口被激活再定初始焦点：见 whenWindowFocused 的说明（Win10 输入法）。
+      // 但**弹窗盖着的时候不定**——那会把焦点白送给弹窗，等它关掉又没人还回来（见 anyDialogOpen）。
       await whenWindowFocused();
-      settleFocus(false);
+      if (!anyDialogOpen.value) settleFocus(false);
+      // 弹窗一关就把焦点还给正文（正文已经拿着焦点时不动，免得跟切章/新建的焦点计划打架）
+      stopDialogFocusWatch = watch(anyDialogOpen, (open) => {
+        if (open) return;
+        const dom = editor.value?.view.dom;
+        if (dom && document.activeElement === dom) return;
+        settleFocus(false);
+      });
 
       // 关窗闸门：先落盘，存不下去就别想走
       gate = new ExitGate({
@@ -731,6 +767,8 @@ export function useEditorSession(): EditorSession {
     document.removeEventListener("visibilitychange", onVisibilityChange);
     stopCloseListener?.();
     stopCompositionWatch?.();
+    stopDiagnoseWatch?.();
+    stopDialogFocusWatch?.();
     void autosave.value?.flush(); // 先发起落盘（已在飞的不受 dispose 影响）
     autosave.value?.dispose();
   });
