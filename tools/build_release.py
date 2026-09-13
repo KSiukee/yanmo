@@ -260,18 +260,38 @@ def bundle(tauri_cmd: list, no_bundle: bool) -> tuple[bool, str]:
 
 
 def collect(out_dir: Path, version: str, no_bundle: bool) -> tuple[Path | None, str]:
-    """把产物收进 `dist/`，名字带版本号。"""
+    """把产物收进 `dist/`，名字带版本号。
+
+    选包**按当前版本号精确匹配**，不是"字典序取最后一个"——后者在 `0.26.9` 之后出
+    `0.26.10` 时会挑错包（字典序里 `9` 比 `1` 大）。这个坑是用户在真机上发现的：
+    他手上那个安装包的属性写着旧版本号，一查是我们老早复制出去的那一份。
+    """
     if no_bundle:
         built = ROOT / "target/release/yanmo.exe"
         wanted = f"研墨-{version}.exe"
     else:
         folder = ROOT / "target/release/bundle/nsis"
         candidates = sorted(folder.glob("*.exe")) if folder.is_dir() else []
-        built = candidates[-1] if candidates else None
+        matched = [path for path in candidates if f"_{version}_" in path.name]
+        if not matched:
+            return None, (
+                f"bundle 目录里没有 {version} 的安装包（现有："
+                + ("、".join(path.name for path in candidates) or "空")
+                + "）——版本号是不是没同步？"
+            )
+        built = matched[-1]
         wanted = f"研墨-{version}-setup.exe"
     if not built or not built.is_file():
         return None, f"没找到打包产物（找过 {built or 'bundle 目录不存在'}）"
     out_dir.mkdir(parents=True, exist_ok=True)
+    # 顺手提醒：dist 里还躺着别的版本，别拿旧包去装（用户已经踩过一次）
+    stale = sorted(
+        path.name
+        for path in out_dir.glob("研墨-*")
+        if version not in path.name and path.suffix in {".exe", ".sha256"}
+    )
+    if stale:
+        say(True, "旧包提醒", f"dist 里还有别的版本：{'、'.join(stale)}")
     target = out_dir / wanted
     shutil.copy2(built, target)
     digest = hashlib.sha256(target.read_bytes()).hexdigest()

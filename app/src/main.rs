@@ -22,6 +22,7 @@ use crate::exitwatch::RequestOutcome;
 mod commands;
 mod error;
 mod exitwatch;
+mod open_folder;
 mod single;
 mod storage;
 
@@ -91,6 +92,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::system::engine_info,
             commands::system::data_home,
+            commands::system::open_data_dir,
             commands::system::exit_app,
             commands::editor::open_editor_target,
             commands::editor::open_chapter,

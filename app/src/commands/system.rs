@@ -52,6 +52,26 @@ pub fn data_home(data: State<'_, AppData>) -> Result<DataHome, ApiError> {
     })
 }
 
+/// 在文件管理器中打开稿子所在的目录。
+///
+/// **不接受路径参数**：只打开壳自己持有的数据目录（界面无从指定别处）。
+/// 「稿子到底在哪」是作者最常见的疑问，比让他去地址栏里手抄路径友好得多。
+#[tauri::command(rename_all = "snake_case")]
+pub fn open_data_dir(data: State<'_, AppData>) -> Result<(), ApiError> {
+    let dir = data
+        .db_path()
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .ok_or_else(|| {
+            // detail 是给日志与排查用的技术说明（不是界面文案），所以写英文
+            ApiError::new("shell.data_dir_unavailable").caused_by("data path has no parent directory")
+        })?;
+    crate::open_folder::open(&dir).map_err(|detail| {
+        ApiError::with("shell.open_dir_failed", [("path", dir.display().to_string())])
+            .caused_by(detail)
+    })
+}
+
 /// 退出应用。
 ///
 /// **只由退出闸门通过后调用**：关窗那一步已经先落盘、并留好了关窗快照；

@@ -415,6 +415,7 @@ export interface EscapeAck {
 const COMMANDS = {
   engineInfo: "engine_info",
   dataHome: "data_home",
+  openDataDir: "open_data_dir",
   exitApp: "exit_app",
   openEditorTarget: "open_editor_target",
   openChapter: "open_chapter",
@@ -484,6 +485,9 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
 
 export const readEngineInfo = () => call<EngineInfo>(COMMANDS.engineInfo);
 export const readDataHome = () => call<DataHome>(COMMANDS.dataHome);
+
+/** 在文件管理器里打开稿子所在的目录（壳自己打开自己的目录，界面不传路径）。 */
+export const openDataDir = () => call<void>(COMMANDS.openDataDir);
 
 /** 当前该编辑的一章（首次运行会引导出一篇默认作品；上次被杀则回到崩前那一章）。 */
 export const openEditorTarget = () => call<EditorSnapshot>(COMMANDS.openEditorTarget);

@@ -24,6 +24,7 @@ pub const SHELL_CODES: &[(&str, &[&str])] = &[
     ("shell.db_open_failed", &["path"]),
     ("shell.session_begin_failed", &[]),
     ("shell.store_unavailable", &[]),
+    ("shell.open_dir_failed", &["path"]),
     ("shell.store_closed", &[]),
     ("shell.store_reopen_failed", &["path"]),
     ("shell.already_running", &["path"]),
@@ -234,30 +235,57 @@ fn placeholders(text: &str) -> Vec<String> {
         assert!(checked > 20, "一个占位符都没检查到，这条测试会假绿");
     }
 
+    /// 壳里的全部源码（`src/**/*.rs`），**排除 `error.rs`**——那份是码表声明处：
+    /// 把它算进来，任何码都能"自己证明自己有人用"，这条守卫就假绿了。
+    fn shell_sources() -> Vec<(String, String)> {
+        fn walk(dir: &std::path::Path, out: &mut Vec<(String, String)>) {
+            for entry in std::fs::read_dir(dir).expect("读壳源码目录失败").flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, out);
+                } else if path.extension().is_some_and(|ext| ext == "rs")
+                    && path.file_name().is_some_and(|name| name != "error.rs")
+                {
+                    out.push((path.display().to_string(), std::fs::read_to_string(&path).unwrap_or_default()));
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut out);
+        assert!(out.len() > 3, "没扫到壳源码，这条守卫会假绿");
+        out
+    }
+
     /// 壳层码：既要有调用点，**字典里写了 `{detail}` 的还必须接上 `caused_by`**。
     ///
     /// 这一条守的是最容易漏的一处：文案里有 `{detail}`、调用点却忘了把底层原因交上来，
     /// 界面就会显示成「无法创建目录 {path}：{detail}」——不报错，只是把内部占位符露给作者。
+    ///
+    /// 扫的是**整个壳**（不只 `storage.rs`）：命令域里的失败同样要守这条规矩。
     #[test]
     fn every_shell_code_is_used_and_hands_over_its_reason() {
-        let source = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/storage.rs"),
-        )
-        .expect("读取壳源码失败");
+        let sources = shell_sources();
         let dict = dictionary();
         for (code, _) in SHELL_CODES {
             let needle = format!("{code}\"");
-            let at = source
-                .find(&needle)
+            let mut hit: Option<(usize, usize)> = None;
+            for (index, (_, text)) in sources.iter().enumerate() {
+                if let Some(at) = text.find(&needle) {
+                    hit = Some((index, at));
+                    break;
+                }
+            }
+            let (index, at) = hit
                 .unwrap_or_else(|| panic!("壳层错误码 {code} 没人用——要么补上，要么从码表里删掉"));
+            let (where_, text) = &sources[index];
             // 取这一句（到分号为止）看它有没有接上底层原因。
             // 注意按**字符**截断：按字节切会把中文切成半个字（UTF-8 边界）
-            let tail: String = source[at..].chars().take(400).collect();
+            let tail: String = text[at..].chars().take(400).collect();
             let statement = tail.split(';').next().unwrap_or(&tail);
             if dict[&format!("error.{code}")].contains("{detail}") {
                 assert!(
                     statement.contains("caused_by"),
-                    "error.{code} 的文案里有 {{detail}}，但调用点没接 caused_by——界面上会显示成 {{detail}}"
+                    "error.{code} 的文案里有 {{detail}}，但 {where_} 的调用点没接 caused_by——界面上会显示成 {{detail}}"
                 );
             }
         }
