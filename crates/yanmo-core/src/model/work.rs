@@ -36,6 +36,17 @@ impl WorkKind {
         }
     }
 
+    /// 这个类型**默认**用什么命名规则（作者没在设置里选过时）。
+    ///
+    /// 长篇天生是"第N章"的写法；单篇与短篇集（散文 / 随笔）里作者都自己起名，
+    /// 硬塞一个"第N篇"只会碍事。作者随时可以在设置里改成别的（全局或单本覆盖）。
+    pub const fn default_naming(self) -> super::node::NamingStyle {
+        match self {
+            WorkKind::Novel => super::node::NamingStyle::Arabic,
+            WorkKind::Article | WorkKind::Collection => super::node::NamingStyle::NoNumber,
+        }
+    }
+
     /// 该类型是否默认使用多层级结构（仅影响 UI 默认，**不影响表结构**）。
     pub const fn default_hierarchical(self) -> bool {
         matches!(self, WorkKind::Novel)

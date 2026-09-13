@@ -22,12 +22,19 @@ export interface AppearanceTransport {
 
 export interface AppearanceOptions {
   transport: AppearanceTransport;
+  /** 当前作品（null = 还没打开书）——"只设这本书"要用它 */
+  workId: Ref<number | null>;
   onError?: (message: string) => void;
 }
+
+/** 设命名规则时写哪一层：全局默认 / 只设当前这本书。 */
+export type NamingTarget = "default" | "work";
 
 export interface AppearanceState {
   /** 库里那份（**读失败或还没读是 null**）；设置面板据此显示 */
   values: Ref<Appearance | null>;
+  /** **当前作品生效的那一份**（全局 + 每书覆盖合并后）；没打开书时是 null */
+  workValues: Ref<Appearance | null>;
   /** 设置面板开着没有 */
   visible: Ref<boolean>;
   busy: Ref<boolean>;
@@ -42,10 +49,15 @@ export interface AppearanceState {
   setQuoteStyle: (value: string) => Promise<void>;
   /** 回到默认（核心的默认值） */
   resetToDefault: () => Promise<void>;
+  /** 跟当前作品重读一次（打开章节、换书时用） */
+  loadWork: () => Promise<void>;
+  /** 设命名规则：`target` 决定写全局默认还是只写这本书；值传 `"auto"` = 清掉那一层 */
+  setNaming: (value: string, target: NamingTarget) => Promise<void>;
 }
 
 export function useAppearance(options: AppearanceOptions): AppearanceState {
   const values = ref<Appearance | null>(null);
+  const workValues = ref<Appearance | null>(null);
   const visible = ref(false);
   const busy = ref(false);
   const report = (error: unknown) => {
@@ -65,8 +77,9 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
     }
   }
 
-  return {
+  const state: AppearanceState = {
     values,
+    workValues,
     visible,
     busy,
     load: async () => {
@@ -78,6 +91,8 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
     },
     open: async () => {
       if (values.value === null) await act(() => options.transport.read(null));
+      // 打开设置时把"这本书生效的那一份"也重读一次（每书覆盖的项要显示当前值）
+      await state.loadWork();
       visible.value = true;
     },
     close: () => {
@@ -86,6 +101,29 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
     setJumpToEnd: (value) =>
       act(() => options.transport.write(null, { jump_to_end_on_latest: value })),
     setQuoteStyle: (value) => act(() => options.transport.write(null, { quote_style: value })),
+    loadWork: async () => {
+      const work_id = options.workId.value;
+      if (work_id === null) {
+        workValues.value = null;
+        return;
+      }
+      try {
+        workValues.value = await options.transport.read(work_id);
+      } catch {
+        workValues.value = null; // 读不到就不显示"这本书生效的是哪一档"，不猜
+      }
+    },
+    setNaming: async (value, target) => {
+      const work_id = target === "work" ? options.workId.value : null;
+      if (target === "work" && work_id === null) return;
+      await act(async () => {
+        const written = await options.transport.write(work_id, { naming: value });
+        // 这一本生效的那一份也跟着刷（设置面板同时显示"现在生效"）
+        workValues.value = work_id === null ? workValues.value : written;
+        return written;
+      });
+    },
     resetToDefault: () => act(() => options.transport.reset(null)),
   };
+  return state;
 }

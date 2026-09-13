@@ -120,6 +120,8 @@ export interface Appearance {
   quote_style: string;
   /** 每日码字目标（跟状态栏当前口径走）；null = 没设目标 */
   daily_goal: number | null;
+  /** 没选过（null）= 按作品类型：长篇给号、单篇与文集不编号 */
+  naming: string | null;
 }
 
 /** 要改的偏好项：**只写传进来的**，没传的保持原样。 */
@@ -129,6 +131,8 @@ export interface AppearancePatch {
   quote_style?: string;
   /** 传 0 就是**清掉目标**，传正数就是设成它 */
   daily_goal?: number;
+  /** arabic / chinese / padded / none；传 "auto" 就是**清掉这一层**（回到按作品类型） */
+  naming?: string;
 }
 
 /** 某一天的字数（三个口径都给，界面按当前口径显示）。 */

@@ -482,5 +482,20 @@
   "writing.goal_note_work": "只影响这本书，其他作品照默认来",
   "writing.goal_note_default": "其他没单独设过的作品都照这个来",
   "session.writing_failed": "码字统计读不出来：{detail}",
-  "editor.today_done": "达标"
+  "editor.today_done": "达标",
+  "error.value.unknown_naming_style": "不认识的命名规则：{value}",
+  "settings.group_naming": "新建条目",
+  "settings.naming": "命名规则",
+  "settings.naming.arabic": "第1章（阿拉伯数字）",
+  "settings.naming.chinese": "第一章（中文数字）",
+  "settings.naming.padded": "第001章（补零到三位）",
+  "settings.naming.none": "不编号（自己起名）",
+  "settings.naming_scope": "作用范围",
+  "settings.naming_scope_default": "所有作品的默认",
+  "settings.naming_scope_work": "只设《{title}》",
+  "settings.naming_effective": "现在生效：{name}",
+  "settings.naming_hint": "只影响新建的条目；已有名字一个字都不动。长篇默认按数字编号，单篇与文集默认不编号。",
+  "settings.naming_macro_hint": "想自己写编号写法也可以：标题里可以用自动编号宏，显示时会按位置渲染（写法见下）。",
+  "settings.naming_no_work": "先打开一本书才能只对它生效",
+  "settings.naming.auto": "按作品类型（默认）"
 }

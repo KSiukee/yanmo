@@ -261,7 +261,8 @@ export function useEditorSession(): EditorSession {
     };
     language.value = asLanguage(snapshot.work_language);
     caliber.value = asCaliber(snapshot.word_caliber);
-    // 换书就重读目标（每本书可以各设各的）并刷今日：状态栏那行小字跟着换
+    // 换书就重读目标（每本书可以各设各的）与偏好（每书覆盖项），并刷今日
+    void appearance.loadWork();
     void writing.loadGoal();
     void writing.refreshToday();
     // "一句话"跟着章走：核心给什么就是什么（编辑器里没存的草稿随切章丢掉）
@@ -616,6 +617,8 @@ export function useEditorSession(): EditorSession {
     // 外观 / 写作行为偏好：全局一份（默认值只在核心那一处）；会话启动时读一次
     const appearance = useAppearance({
       transport: { read: readAppearance, write: writeAppearance, reset: resetAppearance },
+      // "只设这本书"要知道当前是哪一本（workId 在下面才声明，所以这里用取值函数）
+      workId,
       onError: (message) => {
         failure.value = t("session.settings_failed", { detail: message });
       },

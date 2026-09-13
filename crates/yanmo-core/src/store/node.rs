@@ -8,7 +8,7 @@ use rusqlite::{params, OptionalExtension};
 
 use super::{Store, MAX_TREE_DEPTH};
 use crate::error::{codes, Error, Result};
-use crate::model::NodeKind;
+use crate::model::{NamingStyle, NodeKind};
 
 /// 目录树条目：**没有正文字段**。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,7 +96,7 @@ fn build_summary(row: SummaryRow) -> Result<NodeSummary> {
 ///
 /// 为什么分批到"层 + 同类"：`{$N}` 是同层序号，混进别的类型（比如一层里既有卷又有章）时
 /// 不该互相推号——取号、补写、默认名一直也是按"同层同类"算的。
-fn render_titles(nodes: &mut [NodeSummary]) {
+fn render_titles(nodes: &mut [NodeSummary], style: NamingStyle) {
     let mut seen: Vec<(i64, Option<i64>, String)> = Vec::new();
     for node in nodes.iter() {
         let key = (node.work_id, node.parent_id, node.kind.as_str().to_string());
@@ -121,7 +121,7 @@ fn render_titles(nodes: &mut [NodeSummary]) {
                 let node = &nodes[*at];
                 let positional = node.kind == crate::model::NodeKind::Volume;
                 if positional && node.title.trim().is_empty() {
-                    super::node_edit::template_for(node.kind).to_string()
+                    super::node_edit::template_for(node.kind, style)
                 } else {
                     node.title.clone()
                 }
@@ -156,7 +156,7 @@ impl Store {
         for row in rows {
             out.push(build_summary(row?)?);
         }
-        render_titles(&mut out);
+        render_titles(&mut out, self.naming_style(work_id)?);
         Ok(out)
     }
 
@@ -171,7 +171,7 @@ impl Store {
         for row in rows {
             out.push(build_summary(row?)?);
         }
-        render_titles(&mut out);
+        render_titles(&mut out, self.naming_style(work_id)?);
         Ok(out)
     }
 
@@ -207,11 +207,12 @@ impl Store {
         }
         let positional = kind == crate::model::NodeKind::Volume.as_str();
         let kind_parsed = crate::model::NodeKind::parse(&kind)?;
+        let style = self.naming_style(work_id)?;
         let blanks: Vec<String> = siblings
             .iter()
             .map(|(_, candidate)| {
                 if positional && candidate.trim().is_empty() {
-                    super::node_edit::template_for(kind_parsed).to_string()
+                    super::node_edit::template_for(kind_parsed, style)
                 } else {
                     candidate.clone()
                 }

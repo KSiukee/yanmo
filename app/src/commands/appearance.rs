@@ -20,6 +20,8 @@ pub struct AppearanceDto {
     pub quote_style: String,
     /// 每日码字目标（跟状态栏当前口径走）；null = 没设目标
     pub daily_goal: Option<i64>,
+    /// 新建条目的命名规则（arabic / chinese / padded / none）；null = 没选过（按作品类型）
+    pub naming: Option<String>,
 }
 
 impl From<ResolvedAppearance> for AppearanceDto {
@@ -29,6 +31,7 @@ impl From<ResolvedAppearance> for AppearanceDto {
             word_count_caliber: value.word_count_caliber.map(|c| c.as_str().to_string()),
             quote_style: value.quote_style.as_str().to_string(),
             daily_goal: value.daily_goal,
+            naming: value.naming.map(|style| style.as_str().to_string()),
         }
     }
 }
@@ -42,6 +45,8 @@ pub struct AppearancePatch {
     pub word_count_caliber: Option<String>,
     pub quote_style: Option<String>,
     pub daily_goal: Option<i64>,
+    /// 传四个稳定代码之一；认不出来会被核心明确拒绝
+    pub naming: Option<String>,
 }
 
 impl From<AppearancePatch> for Appearance {
@@ -51,6 +56,7 @@ impl From<AppearancePatch> for Appearance {
             word_count_caliber: patch.word_count_caliber,
             quote_style: patch.quote_style,
             daily_goal: patch.daily_goal,
+            naming: patch.naming,
         }
     }
 }

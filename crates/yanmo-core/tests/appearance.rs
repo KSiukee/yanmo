@@ -6,7 +6,7 @@
 //! 3. 书的覆盖 **只覆盖它真设过的项**，其余继承全局；
 //! 4. 坏 JSON 不报错、当没设过——界面不该被一条坏记录卡住。
 
-use yanmo_core::model::WorkKind;
+use yanmo_core::model::{NodeKind, WorkKind};
 use yanmo_core::store::{Appearance, Store};
 use yanmo_core::text::WordCaliber;
 use yanmo_core::typeset::QuoteStyle;
@@ -187,4 +187,80 @@ fn an_unusable_caliber_is_rejected_on_write_and_ignored_on_read() {
         )
         .unwrap();
     assert_eq!(store.appearance(None).unwrap().word_count_caliber, None);
+}
+
+/// 命名规则：**默认按作品类型，作者选了就听作者的，每本书可以各设各的**。
+///
+/// 这是"新建条目叫什么"的落定规则（号本身是位置的函数，见 `numbering`）：
+/// 长篇默认 `第{$N}章`；单篇与文集默认**不编号**（名字留给作者）。
+#[test]
+fn naming_style_follows_the_work_kind_until_the_author_chooses() {
+    use yanmo_core::model::NamingStyle;
+
+    let (_dir, mut store) = fresh();
+    let novel = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let collection = store.create_work(WorkKind::Collection, "故园随笔").unwrap();
+
+    // ① 没选过：跟作品类型
+    assert_eq!(store.naming_style(novel.id).unwrap(), NamingStyle::Arabic);
+    assert_eq!(store.naming_style(collection.id).unwrap(), NamingStyle::NoNumber);
+
+    // ② 全局设成中文数字：两本都跟着变
+    store
+        .set_appearance(None, &Appearance { naming: Some("chinese".into()), ..Default::default() })
+        .unwrap();
+    assert_eq!(store.naming_style(novel.id).unwrap(), NamingStyle::Chinese);
+    assert_eq!(store.naming_style(collection.id).unwrap(), NamingStyle::Chinese);
+
+    // ③ 单本覆盖：只影响它
+    store
+        .set_appearance(
+            Some(novel.id),
+            &Appearance { naming: Some("padded".into()), ..Default::default() },
+        )
+        .unwrap();
+    assert_eq!(store.naming_style(novel.id).unwrap(), NamingStyle::Padded);
+    assert_eq!(store.naming_style(collection.id).unwrap(), NamingStyle::Chinese, "另一本不受影响");
+
+    // ④ "auto" = 清掉这一层：回到继承默认（这里继承的是全局那份 chinese）
+    store
+        .set_appearance(Some(novel.id), &Appearance { naming: Some("auto".into()), ..Default::default() })
+        .unwrap();
+    assert_eq!(store.naming_style(novel.id).unwrap(), NamingStyle::Chinese);
+
+    // ⑤ 认不出来的代码写不进去（界面不该被埋一个"未知规则"）
+    assert!(store
+        .set_appearance(None, &Appearance { naming: Some("乱写的".into()), ..Default::default() })
+        .is_err());
+}
+
+/// 命名规则**真的贯穿到新建的章上**：库里存的是对应模板，渲染出来才对得上。
+#[test]
+fn the_chosen_naming_style_shows_up_in_new_chapters() {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let first = store.list_nodes(work.id).unwrap()[0].id;
+
+    for (at, (code, raw, rendered)) in [
+        ("arabic", "第{$N}章", "第1章"),
+        ("chinese", "第{$N_ZH}章", "第一章"),
+        ("padded", "第{$N:3}章", "第001章"),
+        ("none", "", ""),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        store
+            .set_appearance(None, &Appearance { naming: Some(code.into()), ..Default::default() })
+            .unwrap();
+        // 每种规则各放一卷：同一层里换规则会让计数接着上一档往下数（那是另一回事）
+        let volume = if at == 0 {
+            first
+        } else {
+            store.create_node(work.id, None, NodeKind::Volume, "").unwrap()
+        };
+        let chapter = store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap();
+        assert_eq!(store.node_title(chapter).unwrap(), raw, "{code}：库里存的模板");
+        assert_eq!(store.rendered_title(chapter).unwrap(), rendered, "{code}：显示出来的样子");
+    }
 }

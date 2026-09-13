@@ -79,6 +79,7 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "不认识的导出格式：{value}（只支持 txt / json）" : ["value"],
     UNKNOWN_COMPILE_PRESET => "value.unknown_compile_preset"
         : "不认识的编译预设：{value}" : ["value"],
+    UNKNOWN_NAMING_STYLE => "value.unknown_naming_style" : "不认识的命名规则：{value}" : ["value"],
     UNKNOWN_QUOTE_STYLE => "value.unknown_quote_style"
         : "不认识的引号风格：{value}（只有 curly / corner）" : ["value"],
     TYPESET_CHANGE_UNKNOWN => "typeset.change_unknown"

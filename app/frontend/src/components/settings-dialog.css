@@ -30,3 +30,14 @@
 .settings__hint--bad {
   color: #b3261e;
 }
+
+/* 设置面板里的下拉（比如新建条目的命名规则）：与输入框同一套长相 */
+.settings__select {
+  padding: 3px 6px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}

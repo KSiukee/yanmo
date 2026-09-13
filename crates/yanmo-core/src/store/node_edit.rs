@@ -10,7 +10,7 @@ use serde_json::json;
 
 use super::{Store, MAX_TREE_DEPTH};
 use crate::error::{codes, Error, Result};
-use crate::model::NodeKind;
+use crate::model::{NamingStyle, NodeKind};
 use crate::time::now_millis;
 
 /// 同父下的节点 id，按现有顺序。
@@ -72,29 +72,39 @@ fn is_descendant(conn: &Connection, candidate: i64, ancestor: i64) -> Result<boo
     Err(Error::invalid(codes::TREE_CYCLE_SUSPECTED))
 }
 
-/// 新建节点时的**默认名模板**（`{$N}` 会在显示/导出时按同层位置渲染）。
-///
-/// - 长篇的卷 / 章 / 节都带编号宏；
-/// - **单篇与场景卡不带号**（散文、随笔、文集里作者自己起名）——给空标题，
-///   界面按当前语言补占位显示（见界面字典的 `common.untitled` / `tree.volume_placeholder`）。
+/// 编号骨架的前后缀：`第 12 章` 里的「第」「章」。
 // i18n-allow-begin: 这张表产出的是**会写进库的默认名**（作者的数据，可随时改），不是界面文案
-pub(super) fn template_for(kind: NodeKind) -> &'static str {
+fn naming_words(kind: NodeKind) -> (&'static str, &'static str) {
     match kind {
-        NodeKind::Volume => "第{$N}卷",
-        NodeKind::Chapter => "第{$N}章",
-        NodeKind::Section => "第{$N}节",
-        NodeKind::Piece | NodeKind::Scene => "",
+        NodeKind::Volume => ("第", "卷"),
+        NodeKind::Chapter => ("第", "章"),
+        NodeKind::Section => ("第", "节"),
+        NodeKind::Piece => ("第", "篇"),
+        // 场景卡没有"第…卡"这种骨架：整串都得是数，所以它压根不编号
+        NodeKind::Scene => ("", ""),
     }
 }
 // i18n-allow-end
+
+/// 新建节点时的**默认名模板**（`{$N}` 在显示/导出时按同层位置渲染）。
+///
+/// - 编号规则由作者在设置里选（`NamingStyle`），没选过就跟**作品类型**走；
+/// - 选「不编号」或本来就是场景卡 → 给空标题，名字留给作者（界面按语言补占位显示）。
+pub(super) fn template_for(kind: NodeKind, style: NamingStyle) -> String {
+    if kind == NodeKind::Scene || style == NamingStyle::NoNumber {
+        return String::new();
+    }
+    let (prefix, suffix) = naming_words(kind);
+    format!("{prefix}{}{suffix}", style.counter())
+}
 
 /// 标题留空时的默认名 = **模板**。
 ///
 /// 为什么不再"扫描同层取最大号 + 1"：那个号是**位置**的函数，不是文本的函数——写死进标题
 /// 之后就得靠解析再读回来，于是每冒一个场景（中间插章、删章、捞回、中文数字、繁体）都要加一条
 /// 规则。现在只给模板，号由 [`crate::numbering`] 按同层位置渲染。
-fn default_title(kind: NodeKind) -> String {
-    template_for(kind).to_string()
+fn default_title(kind: NodeKind, style: NamingStyle) -> String {
+    template_for(kind, style)
 }
 
 impl Store {
@@ -114,7 +124,12 @@ impl Store {
             self.ensure_node_in_work(parent, work_id)?;
         }
         let title = title.trim();
-        let title = if title.is_empty() { default_title(kind) } else { title.to_string() };
+        let title = if title.is_empty() {
+            // 命名规则由核心落定（作者选过 → 它；没选过 → 作品类型的默认）——只写在一处
+            default_title(kind, self.naming_style(work_id)?)
+        } else {
+            title.to_string()
+        };
         let now = now_millis();
         let tx = self.conn.transaction()?;
         let next: i64 = tx.query_row(
@@ -276,13 +291,20 @@ mod tests {
     /// 单篇与场景卡不带号（散文、随笔、文集里作者自己起名）。
     #[test]
     fn default_names_are_templates_not_baked_numbers() {
-        assert_eq!(default_title(NodeKind::Volume), "第{$N}卷");
-        assert_eq!(default_title(NodeKind::Chapter), "第{$N}章");
-        assert_eq!(default_title(NodeKind::Section), "第{$N}节");
-        assert_eq!(default_title(NodeKind::Piece), "", "单篇 / 文集不编号：名字留给作者");
-        assert_eq!(default_title(NodeKind::Scene), "", "场景卡自起名");
+        use crate::model::NamingStyle;
+        use NamingStyle::{Arabic, Chinese, NoNumber, Padded};
+        assert_eq!(default_title(NodeKind::Chapter, Arabic), "第{$N}章");
+        assert_eq!(default_title(NodeKind::Chapter, Chinese), "第{$N_ZH}章");
+        assert_eq!(default_title(NodeKind::Chapter, Padded), "第{$N:3}章");
+        assert_eq!(default_title(NodeKind::Volume, Arabic), "第{$N}卷");
+        assert_eq!(default_title(NodeKind::Section, Arabic), "第{$N}节");
+        assert_eq!(default_title(NodeKind::Piece, Arabic), "第{$N}篇");
+        assert_eq!(default_title(NodeKind::Chapter, NoNumber), "", "不编号：名字留给作者");
+        assert_eq!(default_title(NodeKind::Piece, NoNumber), "");
+        assert_eq!(default_title(NodeKind::Scene, Arabic), "", "场景卡自起名");
         // 渲染出来才是给人看的号（规则全在 numbering 套件里）
-        assert_eq!(crate::numbering::render(&default_title(NodeKind::Chapter), 3), "第3章");
-        assert_eq!(crate::numbering::render(&default_title(NodeKind::Volume), 2), "第2卷");
+        assert_eq!(crate::numbering::render(&default_title(NodeKind::Chapter, Arabic), 3), "第3章");
+        assert_eq!(crate::numbering::render(&default_title(NodeKind::Chapter, Chinese), 3), "第三章");
+        assert_eq!(crate::numbering::render(&default_title(NodeKind::Chapter, Padded), 3), "第003章");
     }
 }

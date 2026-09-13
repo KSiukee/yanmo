@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 设置面板：「写作行为」偏好 + 「稿子放在哪」。
+// 设置面板：「写作行为」偏好 + 「新建条目」命名规则 + 「稿子放在哪」。
 //
 // 视图只负责"显示与改"：偏好的真相在核心（单一真相源）；读不出来就如实说，不猜一个默认值糊上去。
 // 「稿子放在哪」只显示壳报告出来的路径，另外把"换位置"那个面板请出来（它自己那套分寸见组件里）。
@@ -10,7 +10,8 @@ import type { EditorSession } from "../editor/session";
 import LocationDialog from "./LocationDialog.vue";
 
 const props = defineProps<{ session: EditorSession }>();
-const { values, busy, close, setJumpToEnd, resetToDefault } = props.session.appearance;
+const { values, workValues, busy, close, setJumpToEnd, resetToDefault, setNaming, loadWork } =
+  props.session.appearance;
 
 /** 勾选框的当前值（读不出来就显示未勾选，并禁用） */
 const jumpToEnd = computed(() => values.value?.jump_to_end_on_latest ?? false);
@@ -30,6 +31,39 @@ function startRelocate(): void {
 function onToggle(event: Event) {
   const box = event.target as HTMLInputElement;
   void setJumpToEnd(box.checked);
+}
+
+// ── 新建条目的命名规则 ─────────────────────────────────────────
+// 号是位置的函数（标题里写 `第{$N}章`，显示时按位置渲染）；这里选的是**新建时用哪套写法**。
+// 写哪一层由"作用范围"决定：所有作品的默认 / 只设当前这本书（每书覆盖）。
+const namingScope = ref<"default" | "work">("default");
+const workTitle = computed(() => props.session.chapterTitle.value || t("common.untitled"));
+const hasWork = computed(() => props.session.workId.value !== null);
+
+/** 选择框显示的那一档：看当前作用范围，读不到就当"按作品类型" */
+const namingValue = computed(() => {
+  const source = namingScope.value === "work" ? workValues.value : values.value;
+  return source?.naming ?? "auto";
+});
+
+const NAMING_OPTIONS = [
+  { code: "auto", key: "settings.naming.auto" },
+  { code: "arabic", key: "settings.naming.arabic" },
+  { code: "chinese", key: "settings.naming.chinese" },
+  { code: "padded", key: "settings.naming.padded" },
+  { code: "none", key: "settings.naming.none" },
+];
+
+function onScope(event: Event) {
+  const next = (event.target as HTMLSelectElement).value === "work" ? "work" : "default";
+  namingScope.value = next;
+  // 切到"只设这本书"时把它生效的那一份重读一下
+  if (next === "work") void loadWork();
+}
+
+function onNaming(event: Event) {
+  const code = (event.target as HTMLSelectElement).value;
+  void setNaming(code, namingScope.value === "work" ? "work" : "default");
 }
 </script>
 
@@ -64,6 +98,40 @@ function onToggle(event: Event) {
         {{ t("settings.read_only_hint") }}
       </p>
       <p class="settings__hint">{{ t("settings.local_only_hint") }}</p>
+
+      <!-- 新建条目：命名规则（写哪一层由"作用范围"决定） -->
+      <p class="settings__group settings__group--naming">{{ t("settings.group_naming") }}</p>
+      <p class="settings__row">
+        <span class="settings__label">{{ t("settings.naming_scope") }}</span>
+        <select class="settings__select" :disabled="busy" @change="onScope">
+          <option value="default" :selected="namingScope === 'default'">
+            {{ t("settings.naming_scope_default") }}
+          </option>
+          <option value="work" :selected="namingScope === 'work'" :disabled="!hasWork">
+            {{ hasWork ? t("settings.naming_scope_work", { title: workTitle }) : t("settings.naming_no_work") }}
+          </option>
+        </select>
+      </p>
+      <p class="settings__row">
+        <span class="settings__label">{{ t("settings.naming") }}</span>
+        <select class="settings__select" :disabled="busy" @change="onNaming">
+          <option
+            v-for="option in NAMING_OPTIONS"
+            :key="option.code"
+            :value="option.code"
+            :selected="option.code === namingValue"
+          >
+            {{ t(option.key) }}
+          </option>
+        </select>
+      </p>
+      <p class="settings__hint">{{ t("settings.naming_hint") }}</p>
+      <p class="settings__hint">{{ t("settings.naming_macro_hint") }}</p>
+      <!-- i18n-allow-next-line: 自动编号宏的写法是**代码语法**（作者照抄用），不是可翻译的界面文案 -->
+      <p class="settings__hint">
+        <code>第{$N}章</code> · <code>第{$N_ZH}章</code> · <code>第{$N:3}章</code> ·
+        <code>{$N_RESET:101}</code>
+      </p>
 
       <p class="settings__group settings__group--data">{{ t("settings.group_data") }}</p>
       <p class="settings__row settings__row--path">

@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use super::Store;
 use crate::error::Result;
+use crate::model::NamingStyle;
 use crate::text::WordCaliber;
 use crate::time::now_millis;
 use crate::typeset::QuoteStyle;
@@ -52,6 +53,12 @@ pub struct Appearance {
     /// 口径本身是另一项偏好，这里只存"多少个字"，不替作者把两件事绑死。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub daily_goal: Option<i64>,
+    /// 新建条目用什么命名规则（`NamingStyle` 的稳定代码）。
+    ///
+    /// `None` = 没改过 → **跟作品类型走**（长篇给号、单篇与文集不编号），
+    /// 由 [`Store::naming_style`] 落定——核心这里不替它猜。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub naming: Option<String>,
 }
 
 impl Appearance {
@@ -61,6 +68,7 @@ impl Appearance {
             && self.word_count_caliber.is_none()
             && self.quote_style.is_none()
             && self.daily_goal.is_none()
+            && self.naming.is_none()
     }
 
     /// 把 `over`（书的覆盖）盖在 `self`（全局）上：**只覆盖它真设过的项**。
@@ -73,6 +81,7 @@ impl Appearance {
                 .or_else(|| self.word_count_caliber.clone()),
             quote_style: over.quote_style.clone().or_else(|| self.quote_style.clone()),
             daily_goal: over.daily_goal.or(self.daily_goal),
+            naming: over.naming.clone().or_else(|| self.naming.clone()),
         }
     }
 }
@@ -87,6 +96,8 @@ pub struct ResolvedAppearance {
     pub quote_style: QuoteStyle,
     /// 每日码字目标；`None` = 没设目标（界面就不显示进度条，只显示今日写了多少）。
     pub daily_goal: Option<i64>,
+    /// 作者选过的命名规则；`None` = 没选过（界面按作品类型显示默认那一档）。
+    pub naming: Option<NamingStyle>,
 }
 
 impl Default for ResolvedAppearance {
@@ -97,6 +108,7 @@ impl Default for ResolvedAppearance {
             word_count_caliber: None,
             quote_style: QuoteStyle::default(),
             daily_goal: None,
+            naming: None,
         }
     }
 }
@@ -129,6 +141,8 @@ impl Store {
                 .unwrap_or_default(),
             // 目标：非正数当没设过（0 = 作者把目标清掉了）；上限挡一下手滑输入的离谱数
             daily_goal: merged.daily_goal.filter(|v| *v > 0).map(|v| v.min(MAX_DAILY_GOAL)),
+            // 认不出来的代码当没设过（与口径 / 引号同一条规矩），界面回"按作品类型"
+            naming: merged.naming.as_deref().and_then(NamingStyle::parse),
         })
     }
 
@@ -141,6 +155,17 @@ impl Store {
             return Ok(chosen);
         }
         Ok(self.get_work(work_id)?.language.default_caliber())
+    }
+
+    /// **落定后的命名规则**：作者选过就听作者的，没选过跟作品类型的默认。
+    ///
+    /// 与 [`Store::word_caliber`] 同一条思路：规则只写在这里，壳与界面都不许自己抄一份
+    /// "类型 → 规则"对照表（两份迟早走偏）。
+    pub fn naming_style(&self, work_id: i64) -> Result<NamingStyle> {
+        if let Some(chosen) = self.appearance(Some(work_id))?.naming {
+            return Ok(chosen);
+        }
+        Ok(self.get_work(work_id)?.kind.default_naming())
     }
 
     /// 写偏好（**稀疏合并**）：只覆盖传进来的项，没传的保持原样。
@@ -171,6 +196,22 @@ impl Store {
             })?;
             stored.quote_style = Some(parsed.as_str().to_string());
         }
+        if let Some(value) = patch.naming.as_deref() {
+            // `"auto"` = **清掉这一层**（回到"按作品类型"）——与每日目标用 0 清掉同一条思路：
+            // 界面要能表达"这一本不要单独设了"，而 `None`（不传）表达的是"这项不改"。
+            if value == "auto" {
+                stored.naming = None;
+            } else {
+            // 同一条纪律：只认四个稳定代码，写进来不认识的等于给界面埋"未知规则"
+            let parsed = NamingStyle::parse(value).ok_or_else(|| {
+                crate::error::Error::invalid_with(
+                    crate::error::codes::UNKNOWN_NAMING_STYLE,
+                    [("value", value.to_string())],
+                )
+            })?;
+            stored.naming = Some(parsed.as_str().to_string());
+            }
+        }
         if let Some(value) = patch.daily_goal {
             // 0 / 负数 = **把目标清掉**（界面上的"不设目标"就是发一个 0 过来）；
             // 超大的值夹到上限，免得手滑多打几个零后进度条永远不动
@@ -186,6 +227,7 @@ impl Store {
                 "word_count_caliber": patch.word_count_caliber,
                 "quote_style": patch.quote_style,
                 "daily_goal": patch.daily_goal,
+                "naming": patch.naming,
             }),
         )
     }
