@@ -40,7 +40,7 @@ fn find<'a>(files: &'a [yanmo_core::store::RenderedFile], path: &str) -> &'a str
     files
         .iter()
         .find(|file| file.relative_path == path)
-        .map(|file| file.content.as_str())
+        .map(|file| std::str::from_utf8(&file.content).unwrap())
         .unwrap_or_else(|| panic!("没有这个文件：{path}；实际有 {:?}", paths(files)))
 }
 
@@ -125,7 +125,8 @@ fn json_export_carries_structure_and_bodies() {
 
     let files = store.render_work(work, ExportFormat::Json).unwrap();
     assert_eq!(paths(&files), vec!["work.json"]);
-    let parsed: serde_json::Value = serde_json::from_str(&files[0].content).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&files[0].content).unwrap()).unwrap();
     assert_eq!(parsed["title"], "长夜");
     assert_eq!(parsed["kind"], "novel");
 

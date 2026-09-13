@@ -17,6 +17,9 @@ rusqlite.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
+# 只为**验收**服务：把编出来的 docx 当 ZIP 打开、逐件读回来看（发布产物不依赖任何打包库，
+# ZIP 是核心自己写的——见 crates/yanmo-core/src/compile/zip.rs）
+zip = { version = "4", default-features = false }
 
 [lints.rust]
 unsafe_code = "forbid"

@@ -233,11 +233,12 @@ pub(crate) fn write_rendered(
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let unchanged = std::fs::read_to_string(&path).map(|old| old == file.content).unwrap_or(false);
+        // 比字节：产物可能是二进制（docx），按字符串比会永远"不相等"而反复重写
+        let unchanged = std::fs::read(&path).map(|old| old == file.content).unwrap_or(false);
         if unchanged {
             continue;
         }
-        yanmo_core::atomic::write_atomic(&path, file.content.as_bytes())?;
+        yanmo_core::atomic::write_atomic(&path, &file.content)?;
         written += 1;
     }
     Ok(written)

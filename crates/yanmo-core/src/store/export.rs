@@ -56,7 +56,16 @@ impl ExportFormat {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderedFile {
     pub relative_path: String,
-    pub content: String,
+    /// 文件内容一律是**字节**：文本与二进制（`docx` 那种打包文件）走同一条渲染 → 落盘通道，
+    /// 落盘那边不必分两套写法。
+    pub content: Vec<u8>,
+}
+
+impl RenderedFile {
+    /// 文本产物：按 UTF-8 编成字节（换行归一与"末尾一个换行"由调用方的口径保证）。
+    pub fn text(relative_path: impl Into<String>, content: String) -> Self {
+        Self { relative_path: relative_path.into(), content: content.into_bytes() }
+    }
 }
 
 impl Store {
@@ -72,10 +81,7 @@ impl Store {
                 if out.is_empty() {
                     // 一个字都没有的书：留一个文件，免得导出一个空文件夹让人以为失败了。
                     // 文件名**语言无关**（它会留在作者磁盘上，不该随界面语言变）
-                    out.push(RenderedFile {
-                        relative_path: "empty.txt".to_string(),
-                        content: normalize(&work.title),
-                    });
+                    out.push(RenderedFile::text("empty.txt", normalize(&work.title)));
                 }
                 Ok(out)
             }
@@ -85,18 +91,18 @@ impl Store {
                     "kind": work.kind.as_str(),
                     "nodes": json_nodes(self, &nodes, &kids, None)?,
                 });
-                Ok(vec![RenderedFile {
-                    relative_path: "work.json".to_string(),
+                Ok(vec![RenderedFile::text(
+                    "work.json",
                     // 固定缩进 + 不写时间戳：同样的内容永远渲染出同样的字节
-                    content: format!("{}\n", serde_json::to_string_pretty(&payload).unwrap_or_default()),
-                }])
+                    format!("{}\n", serde_json::to_string_pretty(&payload).unwrap_or_default()),
+                )])
             }
         }
     }
 }
 
 /// 一份内容写成文件时的统一口径：换行归一、末尾留一个换行；空内容就是空文件。
-fn normalize(body: &str) -> String {
+pub(crate) fn normalize(body: &str) -> String {
     let unified = body.replace("\r\n", "\n").replace('\r', "\n");
     let trimmed = unified.trim_end_matches('\n');
     if trimmed.is_empty() {
@@ -154,10 +160,10 @@ fn collect_text(
             path.to_string()
         };
         if node.kind.holds_body() {
-            out.push(RenderedFile {
-                relative_path: format!("{}.txt", join(path, &segment(node))),
-                content: normalize(&store.read_body(node.id)?),
-            });
+            out.push(RenderedFile::text(
+                format!("{}.txt", join(path, &segment(node))),
+                normalize(&store.read_body(node.id)?),
+            ));
         }
         if node.kind.accepts_children() {
             collect_text(store, nodes, kids, Some(node.id), &here, out)?;

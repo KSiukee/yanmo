@@ -40,6 +40,7 @@ pub use backup::{
 };
 pub use content::ContentStats;
 pub use export::{ExportFormat, RenderedFile};
+pub(crate) use export::normalize;
 pub use gap::{ChapterGap, GapAnswer};
 pub use node::{ChapterNeighbors, ChapterSummary, NodeSummary, SubtreeRollup};
 pub use relocate::{copy_dir, verify_same_scale, Relocation};

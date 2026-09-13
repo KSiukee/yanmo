@@ -395,10 +395,10 @@ impl Store {
                     if let Some(parent) = path.parent() {
                         std::fs::create_dir_all(parent)?;
                     }
-                    std::fs::write(&path, file.content.as_bytes())?;
+                    std::fs::write(&path, &file.content)?;
                     // 指纹只算文本成稿（人读的那一份）：够判断"内容是不是这一版"
                     if format == ExportFormat::Text {
-                        combined.push_str(&file.content);
+                        combined.push_str(&String::from_utf8_lossy(&file.content));
                     }
                     files.push(relative.replace('\\', "/"));
                 }

@@ -383,13 +383,13 @@ impl AppData {
                     .caused_by(e)
                 })?;
             }
-            let unchanged = std::fs::read_to_string(&path)
-                .map(|old| old == file.content)
-                .unwrap_or(false);
+            // 比字节：docx 这类产物根本不是 UTF-8 文本，按字符串比会永远"不相等"而反复重写
+            let unchanged =
+                std::fs::read(&path).map(|old| old == file.content).unwrap_or(false);
             if unchanged {
                 continue;
             }
-            yanmo_core::atomic::write_atomic(&path, file.content.as_bytes()).map_err(|e| {
+            yanmo_core::atomic::write_atomic(&path, &file.content).map_err(|e| {
                 ApiError::with("shell.export_write_failed", [("path", path.display().to_string())])
                     .caused_by(e)
             })?;
@@ -486,10 +486,7 @@ mod tests {
 
     /// 造一个"渲染好的文件"，省得每个测试都写一遍。
     fn file(path: &str, content: &str) -> yanmo_core::store::RenderedFile {
-        yanmo_core::store::RenderedFile {
-            relative_path: path.to_string(),
-            content: content.to_string(),
-        }
+        yanmo_core::store::RenderedFile::text(path, content.to_string())
     }
 
     #[test]

@@ -10,6 +10,7 @@
 //! 4. **不提供网络接口**：核心只做本机数据处理，对外通道另行设计且默认关闭。
 
 pub mod atomic;
+pub mod compile;
 pub mod db;
 pub mod diff;
 pub mod error;

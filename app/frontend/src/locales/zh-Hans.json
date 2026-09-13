@@ -429,5 +429,6 @@
   "session.note_failed": "存这一章的一句话出错：{detail}",
   "shelf.summary_button": "简介",
   "shelf.summary_title": "这本书讲什么（投稿包的大纲要用它）",
-  "shelf.summary_placeholder": "给编辑看的一段介绍"
+  "shelf.summary_placeholder": "给编辑看的一段介绍",
+  "error.value.unknown_compile_preset": "不认识的编译预设：{value}"
 }
