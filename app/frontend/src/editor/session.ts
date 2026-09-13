@@ -76,6 +76,8 @@ import {
   typesetRules,
   typesetScan,
   writeAppearance,
+  writingToday,
+  writingOverview,
   type ChapterNeighbors,
   type EditorCursor,
   type EditorSnapshot,
@@ -84,6 +86,7 @@ import {
 import { Autosave, type AutosaveState } from "./autosave";
 import { useAddChapter, type AddChapter } from "./add-chapter";
 import { useAppearance, type AppearanceState } from "./appearance";
+import { useWriting, type WritingState } from "./writing";
 import { localOffsetMinutes, useBackup, type BackupState } from "./backup";
 import { ChapterSwitch } from "./chapters";
 import { t } from "../locales/index.ts";
@@ -140,6 +143,8 @@ export interface EditorSession {
   adding: AddChapter;
   /** 外观 / 写作行为偏好（设置面板用；焦点策略也读它） */
   appearance: AppearanceState;
+  /** 码字统计：今日进度（状态栏）与码字日历（面板） */
+  writing: WritingState;
   /** 当前作品 id（书架用来标"正在写这本"） */
   workId: Ref<number | null>;
   persistNow: () => void;
@@ -221,12 +226,17 @@ export function useEditorSession(): EditorSession {
     const engine = new Autosave({
       node_id: snapshot.node_id,
       transport: {
-        save: saveBody,
+        // 落盘带上本地时区偏移：核心拿它算"这一笔算哪一天"（账本见 store::writing）
+        save: (node_id, body) => saveBody(node_id, body, localOffsetMinutes()),
         fingerprint: bodyFingerprint,
-        emergency: (node_id, body, reason) => emergencySnapshot(node_id, body, reason),
+        emergency: (node_id, body, reason) =>
+          emergencySnapshot(node_id, body, reason, localOffsetMinutes()),
       },
       onState: (next) => {
         saveState.value = next;
+        // 每次落盘成功刷一次"今日"：这一笔刚记进账本（核心那边与正文同一个事务）。
+        // 跨零点时也只有下一笔落盘才刷新——不需要额外定时器，作者一动手就是最新的。
+        if (next.status === "saved") void writing.refreshToday();
       },
     });
     engine.attach(snapshot.body, {
@@ -257,6 +267,9 @@ export function useEditorSession(): EditorSession {
     };
     language.value = asLanguage(snapshot.work_language);
     caliber.value = asCaliber(snapshot.word_caliber);
+    // 换书就重读目标（每本书可以各设各的）并刷今日：状态栏那行小字跟着换
+    void writing.loadGoal();
+    void writing.refreshToday();
     // "一句话"跟着章走：核心给什么就是什么（编辑器里没存的草稿随切章丢掉）
     note.reset(snapshot.summary);
     // emitUpdate: false —— 载入内容不算"作者改动"，不触发落盘
@@ -325,7 +338,7 @@ export function useEditorSession(): EditorSession {
    * 到点还没等到也照常聚焦（页内聚焦不会去抢别的窗口）。
    */
   /**
-   * 现在有没有弹窗盖在界面上（首启引导、书架、回收站、设置、备份、恢复、快照、删章路标）。
+   * 现在有没有弹窗盖在界面上（首启引导、书架、回收站、设置、备份、恢复、快照、排版、码字日历、删章路标）。
    *
    * 为什么要有这个：Windows 的输入法是随"焦点落到输入元素"挂上去的，而**弹窗会抢走焦点**。
    * 启动时若正弹着首启引导就急着给正文定焦点，焦点会被弹窗拿走；等弹窗关掉又没人把焦点还回来——
@@ -339,6 +352,7 @@ export function useEditorSession(): EditorSession {
       snapshots.visible.value ||
       typeset.visible.value ||
       appearance.visible.value ||
+      writing.visible.value ||
       backup.visible.value ||
       restore.visible.value ||
       location.visible.value ||
@@ -622,6 +636,21 @@ export function useEditorSession(): EditorSession {
       },
     });
 
+    // 码字统计：今日进度 + 码字日历（账本在核心；今日跟着落盘走，见 makeAutosave）
+    const writing = useWriting({
+      transport: {
+        today: writingToday,
+        overview: writingOverview,
+        readGoal: readAppearance,
+        writeGoal: writeAppearance,
+        tzOffsetMinutes: localOffsetMinutes,
+      },
+      workId,
+      onError: (message) => {
+        failure.value = t("session.writing_failed", { detail: message });
+      },
+    });
+
     // 备份：把库的一致性快照写到作者指定的几处（快照/体检/保留/账本都在核心）
     const backup = useBackup({
       transport: { status: readBackupStatus, write: writeBackupConfig, run: runBackupNow },
@@ -777,6 +806,7 @@ export function useEditorSession(): EditorSession {
       directory,
       gaps,
       appearance,
+      writing,
       backup,
       restore,
       location,
@@ -795,6 +825,7 @@ export function useEditorSession(): EditorSession {
     directory,
     gaps,
     appearance,
+    writing,
     backup,
     restore,
     location,
@@ -903,6 +934,7 @@ export function useEditorSession(): EditorSession {
     gaps,
     adding,
     appearance,
+    writing,
     shelf,
     trash,
     snapshots,

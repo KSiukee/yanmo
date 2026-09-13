@@ -227,10 +227,18 @@ pub fn set_node_summary(
 }
 
 /// 落盘正文（防抖后调用）。内容没变时核心直接返回，不写库、不记日志。
+///
+/// `tz_offset_minutes` 是作者本地时区相对 UTC 的偏移（东八区 = 480）：
+/// 核心拿它算"这一笔算哪一天"，账本记在 `writing_days` 上（今日进度 / 码字日历）。
 #[tauri::command(rename_all = "snake_case")]
-pub fn save_body(data: State<'_, AppData>, node_id: i64, body: String) -> Result<SaveAck, ApiError> {
+pub fn save_body(
+    data: State<'_, AppData>,
+    node_id: i64,
+    body: String,
+    tz_offset_minutes: i32,
+) -> Result<SaveAck, ApiError> {
     data.with_store(|store| {
-        let stats = store.write_body(node_id, &body)?;
+        let stats = store.write_body_counted(node_id, &body, tz_offset_minutes)?;
         Ok(SaveAck {
             char_count: stats.char_count,
             chars_no_punct: stats.chars_no_punct,
@@ -249,15 +257,18 @@ pub fn body_fingerprint(data: State<'_, AppData>, node_id: i64) -> Result<String
 }
 
 /// 发现"库里的正文和手上这份对不上"时的抢救：先留快照，再把库改回手上的版本。
+///
+/// `tz_offset_minutes` 一并记进「每日码字」——抢救回来的字也是今天敲的。
 #[tauri::command(rename_all = "snake_case")]
 pub fn emergency_snapshot(
     data: State<'_, AppData>,
     node_id: i64,
     body: String,
     reason: String,
+    tz_offset_minutes: i32,
 ) -> Result<SaveAck, ApiError> {
     data.with_store(|store| {
-        let stats = store.emergency_snapshot(node_id, &body, &reason)?;
+        let stats = store.emergency_snapshot(node_id, &body, &reason, tz_offset_minutes)?;
         Ok(SaveAck {
             char_count: stats.char_count,
             chars_no_punct: stats.chars_no_punct,

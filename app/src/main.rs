@@ -213,6 +213,8 @@ fn main() {
             commands::appearance::appearance_read,
             commands::appearance::appearance_write,
             commands::appearance::appearance_reset,
+            commands::writing::writing_today,
+            commands::writing::writing_overview,
             commands::typeset::typeset_rules,
             commands::typeset::typeset_scan,
             commands::typeset::typeset_apply,

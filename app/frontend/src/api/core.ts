@@ -115,6 +115,8 @@ export interface Appearance {
   word_count_caliber: string | null;
   /** 引号用哪一套（curly / corner）：排版清理按它统一引号 */
   quote_style: string;
+  /** 每日码字目标（跟状态栏当前口径走）；null = 没设目标 */
+  daily_goal: number | null;
 }
 
 /** 要改的偏好项：**只写传进来的**，没传的保持原样。 */
@@ -122,6 +124,25 @@ export interface AppearancePatch {
   jump_to_end_on_latest?: boolean;
   word_count_caliber?: string;
   quote_style?: string;
+  /** 传 0 就是**清掉目标**，传正数就是设成它 */
+  daily_goal?: number;
+}
+
+/** 某一天的字数（三个口径都给，界面按当前口径显示）。 */
+export interface WritingDay {
+  /** 本地日期 `2026-09-14` */
+  day: string;
+  chars: number;
+  chars_no_punct: number;
+  words: number;
+}
+
+/** 日历面板的全部数据：今日、区间内的每一天、连续天数。 */
+export interface WritingOverview {
+  today: WritingDay;
+  /** 区间内**有记录**的日子（没记录的日子不返回，界面自己补齐） */
+  days: WritingDay[];
+  streak: number;
 }
 
 /** 一条排版规则：稳定代码 + 风险档（safe 默认勾 / careful 自己勾 / style 默认不动）。 */
@@ -548,6 +569,8 @@ const COMMANDS = {
   appearanceRead: "appearance_read",
   appearanceWrite: "appearance_write",
   appearanceReset: "appearance_reset",
+  writingToday: "writing_today",
+  writingOverview: "writing_overview",
   typesetRules: "typeset_rules",
   typesetScan: "typeset_scan",
   typesetApply: "typeset_apply",
@@ -820,6 +843,18 @@ export const writeAppearance = (work_id: number | null, patch: AppearancePatch) 
 export const resetAppearance = (work_id: number | null) =>
   call<Appearance>(COMMANDS.appearanceReset, { work_id });
 
+/** 今日码字（状态栏那行小字用）——`work_id` 给 null 就是全部作品合计。 */
+export const writingToday = (work_id: number | null, tz_offset_minutes: number) =>
+  call<WritingDay>(COMMANDS.writingToday, { work_id, tz_offset_minutes });
+
+/** 日历数据：`from_day` / `to_day` 是本地日期（闭区间）。 */
+export const writingOverview = (
+  work_id: number | null,
+  tz_offset_minutes: number,
+  from_day: string,
+  to_day: string,
+) => call<WritingOverview>(COMMANDS.writingOverview, { work_id, tz_offset_minutes, from_day, to_day });
+
 /** 排版规则清单（代码 + 风险档）——界面不自己抄一份"有哪些规则"。 */
 export const typesetRules = () => call<TypesetRule[]>(COMMANDS.typesetRules);
 
@@ -862,9 +897,14 @@ export const setWorkSummary = (work_id: number, summary: string) =>
 export const saveCursor = (node_id: number, cursor: EditorCursor) =>
   call<void>(COMMANDS.saveCursor, { node_id, ...cursor });
 
-/** 落盘正文（防抖后调用；内容没变时核心不写库）。 */
-export const saveBody = (node_id: number, body: string) =>
-  call<SaveAck>(COMMANDS.saveBody, { node_id, body });
+/**
+ * 落盘正文（防抖后调用；内容没变时核心不写库）。
+ *
+ * `tz_offset_minutes` 是本地时区相对 UTC 的偏移（东八区 = 480，见 `editor/backup.ts`
+ * 的 `localOffsetMinutes`）：核心拿它算"这一笔算哪一天"，账本在 `writing_days`。
+ */
+export const saveBody = (node_id: number, body: string, tz_offset_minutes: number) =>
+  call<SaveAck>(COMMANDS.saveBody, { node_id, body, tz_offset_minutes });
 
 /** 写当前章的"一句话"（投稿包的大纲要用它）；正文一个字都不动。 */
 export const setNodeSummary = (node_id: number, summary: string) =>
@@ -874,9 +914,13 @@ export const setNodeSummary = (node_id: number, summary: string) =>
 export const bodyFingerprint = (node_id: number) =>
   call<string>(COMMANDS.bodyFingerprint, { node_id });
 
-/** 抢救：先把手上这份留成快照，再把库改回这一版。 */
-export const emergencySnapshot = (node_id: number, body: string, reason: string) =>
-  call<SaveAck>(COMMANDS.emergencySnapshot, { node_id, body, reason });
+/** 抢救：先把手上这份留成快照，再把库改回这一版（抢救回来的字也记进今日进度）。 */
+export const emergencySnapshot = (
+  node_id: number,
+  body: string,
+  reason: string,
+  tz_offset_minutes: number,
+) => call<SaveAck>(COMMANDS.emergencySnapshot, { node_id, body, reason, tz_offset_minutes });
 
 /** 上次会话的交代（崩溃检测）。 */
 export const sessionReport = () => call<SessionNotice>(COMMANDS.sessionReport);

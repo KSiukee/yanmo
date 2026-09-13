@@ -65,7 +65,7 @@ fn emergency_snapshot_keeps_memory_text_then_restores_the_database() {
     overwrite_behind_the_store(&store, node, "库里的另一份正文。");
     assert_ne!(store.body_fingerprint(node).unwrap(), content_hash("我手上这份正文。"));
 
-    let stats = store.emergency_snapshot(node, "我手上这份正文。", "desync").unwrap();
+    let stats = store.emergency_snapshot(node, "我手上这份正文。", "desync", 0).unwrap();
     assert_eq!(stats.char_count, yanmo_core::text::count_chars("我手上这份正文。"));
 
     // ① 内存态先被留成快照（先保险）
@@ -90,7 +90,7 @@ fn emergency_snapshot_keeps_memory_text_then_restores_the_database() {
 
     // 抢救之后再存同一份内容就是空操作（不会又写一次）
     let before: i64 = store.conn().query_row("SELECT COUNT(*) FROM snapshots", [], |r| r.get(0)).unwrap();
-    store.emergency_snapshot(node, "我手上这份正文。", "desync").unwrap();
+    store.emergency_snapshot(node, "我手上这份正文。", "desync", 0).unwrap();
     let after: i64 = store.conn().query_row("SELECT COUNT(*) FROM snapshots", [], |r| r.get(0)).unwrap();
     assert_eq!(after, before + 1, "每次抢救都该留一份快照，哪怕正文本身没变");
 }
@@ -104,7 +104,7 @@ fn failed_write_never_leaves_half_a_body() {
 
     store.soft_delete_node(node).unwrap();
     assert!(store.write_body(node, "往回收站里写。").is_err());
-    assert!(store.emergency_snapshot(node, "抢救已删节点。", "desync").is_err());
+    assert!(store.emergency_snapshot(node, "抢救已删节点。", "desync", 0).is_err());
     assert_eq!(store.read_body(node).unwrap(), "原来的正文。", "失败的写入不得改动库里的正文");
     assert!(snapshot_rows(&store, node).is_empty(), "失败就不该留下快照垃圾");
 }

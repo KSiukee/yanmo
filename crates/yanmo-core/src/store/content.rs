@@ -67,8 +67,34 @@ impl Store {
     /// - 节点不存在或已删除 → 明确报错（不往回收站里写东西）；
     /// - 内容指纹与库里一致 → **不写库、不记日志**，但仍返回**现算**的三个字数；
     /// - 否则一个事务里更新正文、回算字数、更新时间戳。
+    ///
+    /// **不记账**：快照回滚、备份恢复、导入这类"不是作者今天敲出来的字"走这条。
+    /// 编辑器落盘走 [`Store::write_body_counted`]。
     pub fn write_body(&mut self, node_id: i64, body: &str) -> Result<ContentStats> {
-        self.node_work(node_id)?;
+        self.write_body_inner(node_id, body, None)
+    }
+
+    /// 编辑器落盘：写正文，**并把这笔增减记进「每日码字」**。
+    ///
+    /// `tz_offset_minutes` 决定算哪一天（作者本地时区相对 UTC 的偏移，东八区 = 480）。
+    /// 记账与正文**同一个事务**：要么两个都成，要么都不成——账本不会记着一笔没落盘的账。
+    pub fn write_body_counted(
+        &mut self,
+        node_id: i64,
+        body: &str,
+        tz_offset_minutes: i32,
+    ) -> Result<ContentStats> {
+        self.write_body_inner(node_id, body, Some(tz_offset_minutes))
+    }
+
+    fn write_body_inner(
+        &mut self,
+        node_id: i64,
+        body: &str,
+        count_tz: Option<i32>,
+    ) -> Result<ContentStats> {
+        // 这一章属于哪本书——记账要按书记（日历里可以只看一本书）
+        let work_id = self.node_work(node_id)?;
 
         let hash = text::content_hash(body);
         let stats = stats_of(body);
@@ -91,6 +117,11 @@ impl Store {
 
         let now = now_millis();
         let tx = self.conn.transaction()?;
+        // 记账前先拿旧值：这一笔增减 = 新字数 − 库里旧字数（在同一个事务里读，不会被别人插队）
+        let previous = match count_tz {
+            Some(_) => Some(super::writing::node_counts(&tx, node_id)?),
+            None => None,
+        };
         tx.execute(
             "INSERT INTO node_contents(node_id, body, content_hash, char_count, updated_at)
              VALUES(?1, ?2, ?3, ?4, ?5)
@@ -107,6 +138,14 @@ impl Store {
              WHERE id = ?5",
             params![stats.word_count, stats.char_count, stats.chars_no_punct, now, node_id],
         )?;
+        if let (Some(tz), Some(previous)) = (count_tz, previous) {
+            let delta = ContentStats {
+                char_count: stats.char_count - previous.char_count,
+                chars_no_punct: stats.chars_no_punct - previous.chars_no_punct,
+                word_count: stats.word_count - previous.word_count,
+            };
+            super::writing::add_delta(&tx, work_id, &crate::time::local_date(now, tz), &delta)?;
+        }
         tx.commit()?;
 
         self.record(

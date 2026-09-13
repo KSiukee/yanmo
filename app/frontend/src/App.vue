@@ -23,6 +23,7 @@ import SnapshotDialog from "./components/SnapshotDialog.vue";
 import TrashDialog from "./components/TrashDialog.vue";
 import CompileDialog from "./components/CompileDialog.vue";
 import TypesetDialog from "./components/TypesetDialog.vue";
+import WritingDialog from "./components/WritingDialog.vue";
 
 // 会话在布局层建**一次**：目录树、书架与正文编辑器说的必须是同一本书、同一章
 const session = useEditorSession();
@@ -33,6 +34,8 @@ const { visible: snapshotsVisible } = session.snapshots;
 const { visible: typesetVisible } = session.typeset;
 const { visible: compileVisible } = session.compile;
 const { visible: settingsVisible, values: settingsValues, open: openSettings } = session.appearance;
+// 码字日历：入口在编辑器状态栏那行「今日 …」（也就是"每天手感"那一块）
+const { visible: writingVisible } = session.writing;
 // 备份：入口在顶栏；没有异盘目标时给一条**非阻塞**小条（拒过就不再自动弹）
 const { visible: backupVisible, status: backupStatus, open: openBackup } = session.backup;
 // 从备份恢复：入口在备份面板里（换库是重动作，不放在顶栏随手可点）
@@ -100,6 +103,7 @@ const hint = computed(() => {
     <TrashDialog v-if="trashVisible" :session="session" />
     <SnapshotDialog v-if="snapshotsVisible" :session="session" />
     <TypesetDialog v-if="typesetVisible" :session="session" />
+    <WritingDialog v-if="writingVisible" :session="session" />
     <CompileDialog v-if="compileVisible" :session="session" />
     <SettingsDialog v-if="settingsVisible && settingsValues" :session="session" />
     <BackupDialog v-if="backupVisible && backupStatus" :session="session" />

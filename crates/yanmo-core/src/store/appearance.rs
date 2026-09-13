@@ -23,6 +23,9 @@ use crate::text::WordCaliber;
 use crate::time::now_millis;
 use crate::typeset::QuoteStyle;
 
+/// 每日目标的上限：手滑多打几个零的兜底（一天 100 万字已远超任何人的手速）。
+const MAX_DAILY_GOAL: i64 = 1_000_000;
+
 /// 作者改过的项（`None` = 没改过，用默认）。
 ///
 /// 加新项就往这里加一个 `Option<...>` 字段：老库读得进来（缺的字段算没改过），
@@ -43,6 +46,12 @@ pub struct Appearance {
     /// `None` = 没改过 → 默认弯引号；排版清理时用它，作者选一次就记住。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quote_style: Option<String>,
+    /// 每日码字目标（`None` = 没设过 / 不想设）。
+    ///
+    /// 数字的含义跟着**状态栏当前的字数口径**走（逐字 / 无标点 / 按词）——
+    /// 口径本身是另一项偏好，这里只存"多少个字"，不替作者把两件事绑死。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub daily_goal: Option<i64>,
 }
 
 impl Appearance {
@@ -51,6 +60,7 @@ impl Appearance {
         self.jump_to_end_on_latest.is_none()
             && self.word_count_caliber.is_none()
             && self.quote_style.is_none()
+            && self.daily_goal.is_none()
     }
 
     /// 把 `over`（书的覆盖）盖在 `self`（全局）上：**只覆盖它真设过的项**。
@@ -62,6 +72,7 @@ impl Appearance {
                 .clone()
                 .or_else(|| self.word_count_caliber.clone()),
             quote_style: over.quote_style.clone().or_else(|| self.quote_style.clone()),
+            daily_goal: over.daily_goal.or(self.daily_goal),
         }
     }
 }
@@ -74,6 +85,8 @@ pub struct ResolvedAppearance {
     pub word_count_caliber: Option<WordCaliber>,
     /// 引号用哪一套（没选过就是弯引号）。
     pub quote_style: QuoteStyle,
+    /// 每日码字目标；`None` = 没设目标（界面就不显示进度条，只显示今日写了多少）。
+    pub daily_goal: Option<i64>,
 }
 
 impl Default for ResolvedAppearance {
@@ -83,6 +96,7 @@ impl Default for ResolvedAppearance {
             jump_to_end_on_latest: true,
             word_count_caliber: None,
             quote_style: QuoteStyle::default(),
+            daily_goal: None,
         }
     }
 }
@@ -113,6 +127,8 @@ impl Store {
                 .as_deref()
                 .and_then(QuoteStyle::parse)
                 .unwrap_or_default(),
+            // 目标：非正数当没设过（0 = 作者把目标清掉了）；上限挡一下手滑输入的离谱数
+            daily_goal: merged.daily_goal.filter(|v| *v > 0).map(|v| v.min(MAX_DAILY_GOAL)),
         })
     }
 
@@ -155,6 +171,11 @@ impl Store {
             })?;
             stored.quote_style = Some(parsed.as_str().to_string());
         }
+        if let Some(value) = patch.daily_goal {
+            // 0 / 负数 = **把目标清掉**（界面上的"不设目标"就是发一个 0 过来）；
+            // 超大的值夹到上限，免得手滑多打几个零后进度条永远不动
+            stored.daily_goal = (value > 0).then(|| value.min(MAX_DAILY_GOAL));
+        }
         self.write_appearance(work_id, &stored)?;
         self.record(
             "settings",
@@ -164,6 +185,7 @@ impl Store {
                 "jump_to_end_on_latest": patch.jump_to_end_on_latest,
                 "word_count_caliber": patch.word_count_caliber,
                 "quote_style": patch.quote_style,
+                "daily_goal": patch.daily_goal,
             }),
         )
     }

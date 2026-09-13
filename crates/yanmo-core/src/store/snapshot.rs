@@ -37,11 +37,20 @@ impl Store {
     /// **紧急快照**：内存里的正文先落一条快照（保证这份字不丢），再把库里的正文改回内存态。
     ///
     /// 顺序是有意的：先保险，再修复。任何一步失败都不会让"手上这份字"消失。
-    pub fn emergency_snapshot(&mut self, node_id: i64, body: &str, reason: &str) -> Result<ContentStats> {
+    ///
+    /// 走**记账**那条写正文：这些字是作者刚敲的（上一次落盘没成功才走到这里），
+    /// 不记的话「今日进度」会少掉这一段。`tz_offset_minutes` 决定算哪一天。
+    pub fn emergency_snapshot(
+        &mut self,
+        node_id: i64,
+        body: &str,
+        reason: &str,
+        tz_offset_minutes: i32,
+    ) -> Result<ContentStats> {
         self.node_work(node_id)?;
         self.write_snapshot(node_id, body, reason, false)?;
         self.record("snapshots", node_id, "emergency", json!({ "reason": reason }))?;
-        self.write_body(node_id, body)
+        self.write_body_counted(node_id, body, tz_offset_minutes)
     }
 
     /// 内容变了才留快照（**幂等**）。返回是否真的写了新快照。

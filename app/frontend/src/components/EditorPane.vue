@@ -13,6 +13,7 @@ import {
   languageLabelKey,
   pickCount,
 } from "../editor/wordcount.ts";
+import { goalProgress, goalReached, pickDayCount } from "../editor/writing-days.ts";
 import type { EditorSession } from "../editor/session";
 import type { AutosaveState } from "../editor/autosave";
 import ExitDialog from "./ExitDialog.vue";
@@ -34,6 +35,22 @@ const {
   cycleCaliber,
   cycleLanguage,
 } = props.session;
+
+// 今日进度：账本在核心（`writing_days`），会话在每次落盘成功后刷一次。
+// 没设目标就只显示"今天写了多少"——不拿一个假目标糊弄作者。
+const {
+  today: todayWriting,
+  goal: dailyGoal,
+  open: openWriting,
+} = props.session.writing;
+const todayCount = computed(() => pickDayCount(todayWriting.value, caliber.value));
+const todayProgress = computed(() => goalProgress(todayCount.value, dailyGoal.value));
+const todayReached = computed(() => goalReached(todayCount.value, dailyGoal.value));
+const todayText = computed(() =>
+  dailyGoal.value === null
+    ? t("editor.today", { count: todayCount.value })
+    : t("editor.today_of_goal", { count: todayCount.value, goal: dailyGoal.value }),
+);
 
 // 状态栏那个数字：三个口径都在手上（落盘时一起回来），**点一下就换一个**。
 // 口径名与单位都从字典取（核心只给码，文案在 locales 里）。
@@ -131,6 +148,23 @@ function statusText(status: AutosaveState["status"]): string {
             @click="cycleLanguage()"
           >
             {{ languageText }}
+          </button>
+          <!-- 今日进度：点一下开码字日历（进度条只在设过目标时画） -->
+          <button
+            type="button"
+            class="editor__today"
+            :title="t('editor.today_title')"
+            @click="void openWriting()"
+          >
+            <span class="editor__today-num" :class="{ 'editor__today-num--done': todayReached }">
+              {{ todayText }}
+            </span>
+            <span v-if="todayProgress !== null" class="editor__today-bar">
+              <span
+                class="editor__today-fill"
+                :style="{ width: `${Math.round(todayProgress * 100)}%` }"
+              />
+            </span>
           </button>
           <span
             class="editor__status"

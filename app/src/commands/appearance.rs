@@ -18,6 +18,8 @@ pub struct AppearanceDto {
     pub word_count_caliber: Option<String>,
     /// 引号用哪一套（`curly` / `corner`）：排版清理按它统一引号
     pub quote_style: String,
+    /// 每日码字目标（跟状态栏当前口径走）；null = 没设目标
+    pub daily_goal: Option<i64>,
 }
 
 impl From<ResolvedAppearance> for AppearanceDto {
@@ -26,16 +28,20 @@ impl From<ResolvedAppearance> for AppearanceDto {
             jump_to_end_on_latest: value.jump_to_end_on_latest,
             word_count_caliber: value.word_count_caliber.map(|c| c.as_str().to_string()),
             quote_style: value.quote_style.as_str().to_string(),
+            daily_goal: value.daily_goal,
         }
     }
 }
 
 /// 要改的项：**只写传进来的**，没传的保持原样。
+///
+/// `daily_goal` 传 0（或负数）＝**清掉目标**，传正数＝设成它。
 #[derive(Debug, Deserialize)]
 pub struct AppearancePatch {
     pub jump_to_end_on_latest: Option<bool>,
     pub word_count_caliber: Option<String>,
     pub quote_style: Option<String>,
+    pub daily_goal: Option<i64>,
 }
 
 impl From<AppearancePatch> for Appearance {
@@ -44,6 +50,7 @@ impl From<AppearancePatch> for Appearance {
             jump_to_end_on_latest: patch.jump_to_end_on_latest,
             word_count_caliber: patch.word_count_caliber,
             quote_style: patch.quote_style,
+            daily_goal: patch.daily_goal,
         }
     }
 }

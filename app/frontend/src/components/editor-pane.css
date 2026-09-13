@@ -84,6 +84,49 @@
   color: var(--ym-ink-soft);
 }
 
+/* ── 今日进度（状态栏那行小字） ─────────────────────────────── */
+
+.editor__today {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  /* 不换行：今日数从 0 涨到几万，这行小字都不许把状态栏挤成两行 */
+  white-space: nowrap;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.editor__today:hover {
+  border-color: var(--ym-line);
+  color: var(--ym-accent);
+}
+
+.editor__today-num--done {
+  color: var(--ym-accent);
+}
+
+/* 细进度条：**固定宽度**——今日数从 0 涨到几万，这条都不许把状态栏撑变形 */
+.editor__today-bar {
+  display: inline-block;
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ym-line);
+  overflow: hidden;
+}
+
+.editor__today-fill {
+  display: block;
+  height: 100%;
+  background: var(--ym-accent);
+}
+
 .editor__status--pending,
 .editor__status--saving {
   opacity: 0.75;

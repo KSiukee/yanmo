@@ -95,6 +95,39 @@ pub fn local_date(millis: i64, offset_minutes: i32) -> String {
     format!("{y:04}-{mo:02}-{d:02}")
 }
 
+/// 天数（1970-01-01 起）← `(年, 月, 日)`：上面 [`civil_from_days`] 的反函数。
+///
+/// 用途是**算日期差**（"昨天 / 前天 / 连续了几天"）：把两个日期都变成天数再相减，
+/// 中间不必知道那个月有几天。同样是 Howard Hinnant 的公有领域算法。
+pub fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = (y - era * 400) as u64; // [0, 399]
+    let mp = if month > 2 { month - 3 } else { month + 9 } as u64; // 三月=0 … 二月=11
+    let doy = (153 * mp + 2) / 5 + u64::from(day) - 1; // [0, 365]
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy; // [0, 146096]
+    era * 146_097 + doe as i64 - 719_468
+}
+
+/// 把 `YYYY-MM-DD`（[`local_date`] 的产物）读成"天数"；**格式不严就返回 `None`**。
+///
+/// 账本里的日期是自己写进去的，但库文件可能被人手改、也可能来自旧版本——
+/// 读不动就当没有这一天，而不是 panic（与"坏记录当没设过"同一条规矩）。
+pub fn parse_local_date(text: &str) -> Option<i64> {
+    let bytes = text.as_bytes();
+    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
+        return None;
+    }
+    let number = |from: usize, to: usize| text.get(from..to)?.parse::<u32>().ok();
+    let year = text.get(0..4)?.parse::<i64>().ok()?;
+    let (month, day) = (number(5, 7)?, number(8, 10)?);
+    // 只认合法日期：`2026-13-40` 这种读进来只会把"连续天数"算歪
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    Some(days_from_civil(year, month, day))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,6 +184,38 @@ mod tests {
         assert_eq!(local_parts(951_782_400_000, 0), (2000, 2, 29, 0, 0, 0));
         assert_eq!(local_parts(-2_203_891_200_000, 0), (1900, 3, 1, 0, 0, 0), "1970 之前（负数时间戳）也要算得对");
         assert_eq!(local_parts(4_107_542_400_000, 0), (2100, 3, 1, 0, 0, 0));
+    }
+
+    /// 天数的正反换算必须严丝合缝：`days_from_civil` 与 `local_parts` 互为逆运算。
+    ///
+    /// 期望值取自本条公式的独立推导（`(毫秒 + 偏移) / 一天`），不是拿同一个函数自证。
+    #[test]
+    fn day_numbers_round_trip_with_civil_dates() {
+        for (millis, offset) in
+            [(0i64, 0i32), (1_787_000_100_000, 480), (1_709_208_000_000, 0), (951_782_400_000, 0)]
+        {
+            let (y, mo, d, _, _, _) = local_parts(millis, offset);
+            let expected = (millis + i64::from(offset) * 60_000).div_euclid(86_400_000);
+            assert_eq!(days_from_civil(y, mo, d), expected, "{y}-{mo}-{d} 的天数不对");
+        }
+        // 闰日与世纪闰年的边界：差一天就是差一天
+        let leap = days_from_civil(2024, 2, 29);
+        assert_eq!(days_from_civil(2024, 3, 1) - leap, 1);
+        assert_eq!(days_from_civil(1900, 3, 1) - days_from_civil(1900, 2, 28), 1, "1900 不是闰年");
+    }
+
+    /// 读日期：只认 `YYYY-MM-DD`，读不动就当没有这一天（账本里宁可少算，不可 panic）。
+    #[test]
+    fn parse_local_date_reads_only_well_formed_days() {
+        assert_eq!(parse_local_date("1970-01-01"), Some(0));
+        assert_eq!(
+            parse_local_date(&local_date(1_787_000_100_000, 480)),
+            Some(days_from_civil(2026, 8, 18))
+        );
+        for bad in ["", "2026-9-13", "2026/09/13", "2026-13-01", "2026-09-32", "abcd-ef-gh", "2026-09-1"]
+        {
+            assert_eq!(parse_local_date(bad), None, "不该读得动：{bad}");
+        }
     }
 
     #[test]

@@ -31,6 +31,7 @@ mod session;
 mod snapshot;
 mod trash;
 mod work;
+mod writing;
 
 pub use appearance::{Appearance, ResolvedAppearance};
 pub use backup::{
@@ -52,6 +53,7 @@ pub use session::{EditorCursor, EditorTarget, SessionReport};
 pub use snapshot::{SnapshotSummary, AUTO_SNAPSHOTS_KEPT};
 pub use trash::{TrashEntry, TrashKind};
 pub use work::ShelfEntry;
+pub use writing::WritingDay;
 
 use std::path::Path;
 
