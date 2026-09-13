@@ -71,6 +71,9 @@ echo [2/2] UI cold start: a window opens and closes by itself ...
 if errorlevel 1 echo UI step did not finish cleanly - see the report note.
 
 echo.
-echo done. open the .md file next to this script to read the numbers.
+echo done. Files written next to this script:
+for %%F in ("%REPORT%*.md" "%REPORT%*.json") do echo   %%~nxF
+echo.
+echo Open the .md file to read the numbers.
 echo.
 pause

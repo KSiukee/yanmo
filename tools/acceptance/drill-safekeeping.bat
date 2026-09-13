@@ -60,8 +60,12 @@ echo portable> "%SANDBOX%\yanmo-portable.txt"
 echo [1/5] seeding a small library ...
 "%SANDBOX%\yanmo.exe" --self-test-bench --dir "%SANDBOX%\data" --report "%REPORT%-before" --chapters 50 --chars 300
 if errorlevel 1 goto :failed
-echo       before:
-"%SANDBOX%\yanmo.exe" --check "%SANDBOX%\data"
+rem The check result goes to a file: yanmo is a GUI-subsystem program, so its stdout is
+rem invisible in a console. Writing a file cannot lie, and "type" shows it here.
+"%SANDBOX%\yanmo.exe" --check "%SANDBOX%\data" --out "%REPORT%-check-before.json"
+echo.
+echo       before you type anything:
+type "%REPORT%-check-before.json"
 
 echo.
 echo [2/5] opening the app on that library ...
@@ -72,11 +76,12 @@ pause
 
 echo [3/5] killing that copy hard - no clean shutdown, like a power cut ...
 powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='yanmo.exe'\" | Where-Object { $_.ExecutablePath -like '*yanmo-drill*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
-timeout /t 2 /nobreak >nul
+ping -n 3 127.0.0.1 >nul
 
 echo [4/5] checking the library as it is now ...
-echo       after:
-"%SANDBOX%\yanmo.exe" --check "%SANDBOX%\data"
+echo       after the hard kill:
+"%SANDBOX%\yanmo.exe" --check "%SANDBOX%\data" --out "%REPORT%-check-after.json"
+type "%REPORT%-check-after.json"
 
 echo.
 echo [5/5] opening it again - your text should still be there ...
@@ -85,8 +90,12 @@ pause
 powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='yanmo.exe'\" | Where-Object { $_.ExecutablePath -like '*yanmo-drill*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
 
 echo.
-echo done. Compare the before/after lines above: chapters and words must never go down.
-echo Reports: %REPORT%*.json and *.md
+echo done. Compare the two lines above - the ones starting with { and ending with }:
+echo   before you typed  vs  after the hard kill.
+echo   chapters must stay the same, words must never go down, integrity must be "ok".
+echo.
+echo Files written next to this script:
+for %%F in ("%REPORT%*.json" "%REPORT%*.md") do echo   %%~nxF
 echo.
 pause
 exit /b 0

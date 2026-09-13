@@ -57,6 +57,12 @@ pub struct Plan {
     pub dir: PathBuf,
     /// 报告写到哪（前缀：真正落盘时会补上版本号与时间戳）
     pub report: PathBuf,
+    /// `--check` 的结果写哪个文件。
+    ///
+    /// **不能靠 stdout**：研墨是 GUI 子系统程序（`windows_subsystem = "windows"`），
+    /// 在 cmd 里拿不到可用的标准输出——`println!` 写了也看不见（演练当场踩到）。
+    /// 所以体检结果一律落文件，脚本用 `type` 打出来给人看，文件本身也留作证据。
+    pub out: Option<PathBuf>,
     pub chapters: usize,
     pub chars: usize,
 }
@@ -67,6 +73,7 @@ impl Default for Plan {
             mode: Mode::Bench,
             dir: std::env::temp_dir().join("yanmo-acceptance"),
             report: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).join("验收报告"),
+            out: None,
             chapters: 1000,
             chars: 3000,
         }
@@ -102,6 +109,11 @@ pub fn parse(argv: &[String]) -> Option<Plan> {
             "--report" => {
                 if let Some(path) = argv.get(index + 1) {
                     plan.report = PathBuf::from(path);
+                }
+            }
+            "--out" => {
+                if let Some(path) = argv.get(index + 1) {
+                    plan.out = Some(PathBuf::from(path));
                 }
             }
             "--chapters" => {
@@ -303,29 +315,47 @@ pub fn run_bench(plan: &Plan) -> Report {
     report
 }
 
-/// 只读体检一份库（给"不丢稿"演练核对用）：打印 JSON，**不写任何东西**。
+/// 只读体检一份库（给"不丢稿"演练核对用）：把 JSON **写到文件**（`--out`），返回退出码。
+///
+/// 为什么写文件而不是打印：研墨是 GUI 子系统程序，在 cmd 控制台里标准输出是无效的，
+/// `println!` 写了看不见（演练当场踩到）。文件不会骗人，脚本再用 `type` 打出来。
+/// 体检本身不改稿库；`Store::open` 可能写 `-wal`，那是 SQLite 的正常行为。
 pub fn run_check(plan: &Plan) -> i32 {
     let db_path = plan.dir.join(yanmo_core::paths::DB_FILE);
-    let store = match Store::open(&db_path) {
-        Ok(store) => store,
-        Err(error) => {
-            // i18n-allow-next-line: 命令行的机器可读输出（给脚本看），不是界面文案
-            println!("{{\"ok\":false,\"error\":\"打不开库：{error}\"}}");
-            return 2;
+    let json = match Store::open(&db_path) {
+        Ok(store) => {
+            let integrity = db::quick_check(store.conn()).unwrap_or_else(|error| error.to_string());
+            let works = store.list_works().map(|list| list.len()).unwrap_or(0);
+            let mut chapters = 0i64;
+            let mut words = 0i64;
+            for entry in store.shelf().unwrap_or_default() {
+                chapters += entry.chapters;
+                words += entry.word_count;
+            }
+            format!(
+                "{{\"ok\":true,\"integrity\":\"{integrity}\",\"works\":{works},\"chapters\":{chapters},\"words\":{words}}}"
+            )
         }
+        Err(error) => format!("{{\"ok\":false,\"error\":{}}}", json_string(&error.to_string())),
     };
-    let integrity = db::quick_check(store.conn()).unwrap_or_else(|error| error.to_string());
-    let works = store.list_works().map(|list| list.len()).unwrap_or(0);
-    let shelf = store.shelf().map(|list| list.len()).unwrap_or(0);
-    let mut chapters = 0i64;
-    let mut words = 0i64;
-    for entry in store.shelf().unwrap_or_default() {
-        chapters += entry.chapters;
-        words += entry.word_count;
+    // 落到文件（有 --out 就听它的；没给就放在库旁边）
+    let target = plan
+        .out
+        .clone()
+        .unwrap_or_else(|| plan.dir.join("yanmo-check.json"));
+    if let Some(parent) = target.parent() {
+        let _ = std::fs::create_dir_all(parent);
     }
-    println!(
-        "{{\"ok\":true,\"integrity\":\"{integrity}\",\"works\":{works},\"shelf\":{shelf},\"chapters\":{chapters},\"words\":{words}}}"
-    );
+    if let Err(error) = std::fs::write(&target, format!("{json}\n")) {
+        // i18n-allow-next-line: 命令行的机器可读输出（给脚本看），不是界面文案
+        eprintln!("体检结果没写成：{error}");
+        return 2;
+    }
+    // 顺带写一份 stdout（从管道/文件重定向读的时候能看到；控制台里看不到是正常的）
+    println!("{json}");
+    if json.contains("\"ok\":false") {
+        return 2;
+    }
     0
 }
 
