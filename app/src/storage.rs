@@ -414,6 +414,16 @@ impl AppData {
         })
     }
 
+    /// 某种预设的产物目录：`<导出目录>/<书名>/<预设子目录>`。
+    ///
+    /// 路径**在壳里算**，界面只说要哪本书、哪种预设——与"命令不接受路径参数"同一条纪律。
+    /// 写产物与"打开这个目录"都用它，两处不会走偏。
+    pub fn compile_dir(&self, work_title: &str, folder: &str) -> std::path::PathBuf {
+        self.export_dir
+            .join(yanmo_core::atomic::safe_file_name(work_title))
+            .join(folder)
+    }
+
     /// 把**编译产物**写进 `<导出目录>/<书名>/<预设子目录>`，并只清这个子目录里的旧产物。
     ///
     /// 为什么按子目录清：换一种预设编译时，不能把上一种的产物（作者刚拿去投稿的那份）删掉。
@@ -425,10 +435,7 @@ impl AppData {
         extension: &str,
         files: &[yanmo_core::store::RenderedFile],
     ) -> Result<ExportOutcome, ApiError> {
-        let dir = self
-            .export_dir
-            .join(yanmo_core::atomic::safe_file_name(work_title))
-            .join(folder);
+        let dir = self.compile_dir(work_title, folder);
         let prefix = format!("{folder}/");
         let stripped: Vec<yanmo_core::store::RenderedFile> = files
             .iter()

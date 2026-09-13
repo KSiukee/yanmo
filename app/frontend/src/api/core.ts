@@ -591,6 +591,7 @@ const COMMANDS = {
   compilePresets: "compile_presets",
   compilePreview: "compile_preview",
   compileWork: "compile_work",
+  compileOpenFolder: "compile_open_folder",
 } as const;
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -848,6 +849,10 @@ export const compileWork = (
   body_limit: number | null,
   with_outline: boolean,
 ) => call<CompileAck>(COMMANDS.compileWork, { work_id, preset, body_limit, with_outline });
+
+/** 打开某种预设的产物目录（路径由壳自己算，界面不传路径）。 */
+export const compileOpenFolder = (work_id: number, preset: string) =>
+  call<void>(COMMANDS.compileOpenFolder, { work_id, preset });
 
 /** 写作品简介（投稿包的大纲要用它）。 */
 export const setWorkSummary = (work_id: number, summary: string) =>

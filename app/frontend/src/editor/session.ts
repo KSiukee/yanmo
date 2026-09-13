@@ -63,6 +63,7 @@ import {
   snapshotKeep,
   snapshotList,
   snapshotRestore,
+  compileOpenFolder,
   compilePresets,
   compilePreview,
   compileWork,
@@ -747,7 +748,12 @@ export function useEditorSession(): EditorSession {
 
     // 编译：先说清会生成哪些文件，再动手（渲染在核心，落盘在壳）。
     const compile = useCompile({
-      transport: { presets: compilePresets, preview: compilePreview, run: compileWork },
+      transport: {
+        presets: compilePresets,
+        preview: compilePreview,
+        run: compileWork,
+        openFolder: compileOpenFolder,
+      },
       onError: (message) => {
         failure.value = t("session.compile_failed", { detail: message });
       },

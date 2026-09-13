@@ -16,7 +16,18 @@
   --ym-font-ui: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
   --ym-font-body: "Songti SC", "SimSun", "Source Han Serif SC", serif;
 
-  color-scheme: light dark;
+  /* ⚠️ 只能写 light，不能写 `light dark`：那样系统一开深色，WebView 就把**默认滚动条**
+     按深色画——浅色稿纸配一条黑滚动条，又丑又跳（用户真报过）。暗色模式是另一条任务，
+     等它落地时这里要跟着改成动态的。守卫见 app/tests/boundary.rs。 */
+  color-scheme: light;
+}
+
+/* 滚动条：细一点、跟稿纸同色系。默认那根又粗又灰，配这套纸色很跳。
+ * 用标准属性（Chromium 121+ / WebView2 都认），不再叠 ::-webkit-scrollbar——
+ * 两者同时写时前者优先，混着写只会让人以为样式没生效。 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ym-line) transparent;
 }
 
 * {

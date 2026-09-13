@@ -91,6 +91,28 @@ pub fn compile_preview(
     })
 }
 
+/// 打开某种预设的产物目录（**路径由壳自己算**，界面不传路径）。
+///
+/// 目录还不存在就先建出来：作者点了"打开目录"却弹一个"路径不存在"最没道理。
+#[tauri::command(rename_all = "snake_case")]
+pub fn compile_open_folder(
+    data: State<'_, AppData>,
+    work_id: i64,
+    preset: String,
+) -> Result<(), ApiError> {
+    let preset = Preset::parse(&preset).map_err(ApiError::from)?;
+    let title = data.with_store(|store: &mut Store| Ok(store.get_work(work_id)?.title))?;
+    let dir = data.compile_dir(&title, preset.folder());
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        ApiError::with("shell.export_dir_create_failed", [("path", dir.display().to_string())])
+            .caused_by(e)
+    })?;
+    crate::open_folder::open(&dir).map_err(|detail| {
+        ApiError::with("shell.open_dir_failed", [("path", dir.display().to_string())])
+            .caused_by(detail)
+    })
+}
+
 /// 真编译：渲染 + 落盘。
 #[tauri::command(rename_all = "snake_case")]
 pub fn compile_work(

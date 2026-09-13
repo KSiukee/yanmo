@@ -36,6 +36,14 @@ function openTrash() {
 const renaming = ref<number | null>(null);
 const draft = ref("");
 
+/** 展开了"更多"动作的那一本（同时只可能有一本）：日常只用「打开 / 编译」，
+ *  导出、简介、改名、删除这些低频动作收进去，免得一行挤六个按钮。 */
+const expanded = ref<number | null>(null);
+
+function toggleMore(work_id: number) {
+  expanded.value = expanded.value === work_id ? null : work_id;
+}
+
 /** 正在写简介的那一本（投稿包的大纲要用它）：多行，所以跟改名的单行输入分开 */
 const noting = ref<number | null>(null);
 const noteDraft = ref("");
@@ -218,15 +226,6 @@ function confirmRemove(work_id: number, title: string) {
               type="button"
               class="shelf__button dialog__button"
               :disabled="busy"
-              :title="t('shelf.export_title')"
-              @click="exportWork(entry.id, 'both')"
-            >
-              {{ t("shelf.export") }}
-            </button>
-            <button
-              type="button"
-              class="shelf__button dialog__button"
-              :disabled="busy"
               :title="t('compile.button_title')"
               @click="void openCompile(entry.id)"
             >
@@ -236,27 +235,49 @@ function confirmRemove(work_id: number, title: string) {
               type="button"
               class="shelf__button dialog__button"
               :disabled="busy"
-              :title="t('shelf.summary_title')"
-              @click="startNote(entry.id, entry.summary)"
+              :title="t('shelf.more_title')"
+              @click="toggleMore(entry.id)"
             >
-              {{ t("shelf.summary_button") }}
+              {{ expanded === entry.id ? t("shelf.more_close") : t("shelf.more") }}
             </button>
-            <button
-              type="button"
-              class="shelf__button dialog__button"
-              :disabled="busy"
-              @click="startRename(entry.id, entry.title)"
-            >
-              {{ t("shelf.rename") }}
-            </button>
-            <button
-              type="button"
-              class="shelf__button shelf__button--danger dialog__button"
-              :disabled="busy"
-              @click="confirmRemove(entry.id, entry.title)"
-            >
-              {{ t("shelf.delete") }}
-            </button>
+
+            <!-- 低频动作：收在「更多」里 -->
+            <template v-if="expanded === entry.id">
+              <button
+                type="button"
+                class="shelf__button dialog__button"
+                :disabled="busy"
+                :title="t('shelf.summary_title')"
+                @click="startNote(entry.id, entry.summary)"
+              >
+                {{ t("shelf.summary_button") }}
+              </button>
+              <button
+                type="button"
+                class="shelf__button dialog__button"
+                :disabled="busy"
+                :title="t('shelf.export_title')"
+                @click="exportWork(entry.id, 'both')"
+              >
+                {{ t("shelf.export") }}
+              </button>
+              <button
+                type="button"
+                class="shelf__button dialog__button"
+                :disabled="busy"
+                @click="startRename(entry.id, entry.title)"
+              >
+                {{ t("shelf.rename") }}
+              </button>
+              <button
+                type="button"
+                class="shelf__button shelf__button--danger dialog__button"
+                :disabled="busy"
+                @click="confirmRemove(entry.id, entry.title)"
+              >
+                {{ t("shelf.delete") }}
+              </button>
+            </template>
           </div>
         </li>
       </ul>

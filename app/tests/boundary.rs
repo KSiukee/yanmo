@@ -169,6 +169,16 @@ fn the_shell_keeps_the_page_still_when_the_prose_gets_long() {
     );
     let area = rule_block(&css, ".editor__area");
     assert!(area.contains("overflow: auto"), "正文区自己滚：{area}");
+
+    // 界面目前只有亮色一套：color-scheme 写 `light dark` 会让系统深色偏好把**默认滚动条**
+    // 画成深色（浅色稿纸配黑滚动条，真报过）。等暗色模式那条任务落地时，这条要跟着改。
+    let base = read(&package_root().join("frontend/src/style.css"));
+    let root = rule_block(&base, ":root");
+    // 盯的是**声明**本身，不是注释里出现的字样（注释里解释这件事时会提到那个写法）
+    assert!(
+        root.contains("color-scheme: light;") && !root.contains("color-scheme: light dark"),
+        "界面只有亮色一套：:root 的 color-scheme 要写 light（别写 light dark）：{root}"
+    );
 }
 
 #[test]

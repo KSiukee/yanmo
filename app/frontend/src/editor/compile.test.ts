@@ -28,6 +28,9 @@ function build() {
       const files: CompileFile[] = [{ path: `${preset}/长夜.docx`, bytes: 2048 }];
       return { path: "导出目录/长夜/submission", files, removed: 1 };
     },
+    openFolder: async (work_id, preset) => {
+      calls.push(`open:${work_id}:${preset}`);
+    },
   };
   const state = useCompile({ transport, onError: (message) => errors.push(message) });
   return { state, calls, errors };
@@ -81,6 +84,15 @@ test("空上限＝全书都带", async () => {
   state.setBodyLimit(null);
   await state.preview();
   assert.ok(calls.includes("preview:7:submission_docx:null:true"), calls.join("|"));
+});
+
+test("打开目录：只叫这一个动作，不动文件、也不改参数", async () => {
+  const { state, calls } = build();
+  await state.open(7);
+  state.selectPreset("merged_txt");
+  await state.openFolder();
+  assert.deepEqual(calls, ["open:7:merged_txt"]);
+  assert.deepEqual(state.files.value, [], "打开目录不该顺手预览或编译");
 });
 
 test("预设查不到就退回第一项；文件大小给人看的说法", () => {

@@ -24,6 +24,7 @@ const {
   setOutline,
   preview,
   run,
+  openFolder,
 } = props.session.compile;
 
 /** 预设名在字典里（核心只给码）。 */
@@ -107,6 +108,15 @@ function onOutline(event: Event) {
 
       <footer class="compile__foot">
         <span class="compile__note">{{ note }}</span>
+        <button
+          v-if="files.length > 0"
+          type="button"
+          class="dialog__button"
+          :title="t('compile.open_folder_title')"
+          @click="void openFolder()"
+        >
+          {{ t("compile.open_folder") }}
+        </button>
         <button type="button" class="dialog__button compile__run" :disabled="busy" @click="void run()">
           {{ busy ? t("compile.running") : t("compile.run") }}
         </button>

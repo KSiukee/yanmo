@@ -453,5 +453,10 @@
   "compile.done": "编译完成：{count} 个文件 → {path}",
   "compile.cleaned": "顺带清掉了 {count} 个上次留下的旧文件",
   "compile.empty": "这本书还没有正文，编译出来会是空的。",
-  "session.compile_failed": "编译出错：{detail}"
+  "session.compile_failed": "编译出错：{detail}",
+  "compile.open_folder": "打开目录",
+  "compile.open_folder_title": "在文件管理器里打开这个预设的产物目录",
+  "shelf.more": "更多",
+  "shelf.more_close": "收起",
+  "shelf.more_title": "导出、简介、改名、删除"
 }

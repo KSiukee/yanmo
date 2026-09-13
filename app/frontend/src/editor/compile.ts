@@ -27,6 +27,8 @@ export interface CompileTransport {
     body_limit: number | null,
     with_outline: boolean,
   ) => Promise<CompileAck>;
+  /** 打开这一种预设的产物目录（路径壳里算，界面不传） */
+  openFolder: (work_id: number, preset: string) => Promise<void>;
 }
 
 export interface CompileOptionsIn {
@@ -55,6 +57,8 @@ export interface CompileState {
   setOutline: (on: boolean) => void;
   preview: () => Promise<void>;
   run: () => Promise<void>;
+  /** 在文件管理器里打开产物目录 */
+  openFolder: () => Promise<void>;
 }
 
 /** 当前选中的那一种预设（核心给的清单里查；查不到就是第一项）。 */
@@ -145,6 +149,14 @@ export function useCompile(options: CompileOptionsIn): CompileState {
         report(error);
       } finally {
         busy.value = false;
+      }
+    },
+    openFolder: async () => {
+      if (workId === null) return;
+      try {
+        await options.transport.openFolder(workId, preset.value);
+      } catch (error) {
+        report(error);
       }
     },
     run: async () => {
