@@ -670,7 +670,7 @@ fn write_ledger(data_dir: &Path, ledger: &BackupLedger) {
 
 /// 目标路径所在盘的根在不在（区分"盘不在"与"写不进去"用）。
 ///
-/// 一路往上找到最顶层那一级（`X:\` 或相对路径的第一段），再问它在不在。
+/// 一路往上找到最顶层那一级（盘根或相对路径的第一段），再问它在不在。
 fn volume_root_exists(path: &str) -> bool {
     let mut root = PathBuf::from(path);
     while let Some(parent) = root.parent() {
