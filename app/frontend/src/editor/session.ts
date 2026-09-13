@@ -36,6 +36,8 @@ import {
   openWorkTarget,
   purgeNode,
   purgeWork,
+  namingRewriteApply,
+  namingRewritePreview,
   renameWork,
   requestExit,
   restoreNode,
@@ -616,7 +618,13 @@ export function useEditorSession(): EditorSession {
 
     // 外观 / 写作行为偏好：全局一份（默认值只在核心那一处）；会话启动时读一次
     const appearance = useAppearance({
-      transport: { read: readAppearance, write: writeAppearance, reset: resetAppearance },
+      transport: {
+        read: readAppearance,
+        write: writeAppearance,
+        reset: resetAppearance,
+        previewNaming: namingRewritePreview,
+        applyNaming: namingRewriteApply,
+      },
       // "只设这本书"要知道当前是哪一本（workId 在下面才声明，所以这里用取值函数）
       workId,
       onError: (message) => {

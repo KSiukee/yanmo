@@ -497,5 +497,15 @@
   "settings.naming_hint": "只影响新建的条目；已有名字一个字都不动。长篇默认按数字编号，单篇与文集默认不编号。",
   "settings.naming_macro_hint": "想自己写编号写法也可以：标题里可以用自动编号宏，显示时会按位置渲染（写法见下）。",
   "settings.naming_no_work": "先打开一本书才能只对它生效",
-  "settings.naming.auto": "按作品类型（默认）"
+  "settings.naming.auto": "按作品类型（默认）",
+  "settings.naming_rewrite": "把《{title}》已有的 {count} 章一起换成这个写法",
+  "settings.naming_rewrite_title": "这些章会这样改",
+  "settings.naming_rewrite_more": "…另有 {count} 章",
+  "settings.naming_rewrite_confirm": "确认都改掉",
+  "settings.naming_rewrite_apply": "改",
+  "settings.naming_rewrite_done": "已改 {count} 章",
+  "settings.naming_rewrite_none": "这本书已经是这个写法了，不用换",
+  "settings.naming_rewrite_plain": "选「不编号」只影响以后新建的条目——已有章节的名字一个字都不动。",
+  "settings.naming_rewrite_hint": "只换编号写法，章名一个字不动；序章 / 楔子 / 番外这类没有编号的不会被碰。",
+  "settings.naming_rewrite_busy": "正在改…"
 }

@@ -31,6 +31,8 @@
 //!
 //! 纯函数、零依赖：可以脱离数据库单测。
 
+use crate::model::NamingStyle;
+
 /// 一个可识别的宏。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Macro {
@@ -218,6 +220,77 @@ pub fn cn(number: i64) -> String {
     out
 }
 
+/// 把标题里**已有的计数宏**换成 `style` 那一档，其余文字一个字不动。
+///
+/// 偏移与"从 0 起"是**作者对某章的特意安排**，换档时保留（`{$N+49}` → `{$N_ZH+49}`）；
+/// 补零是"哪一档写法"的一部分，所以跟着目标走（换成阿拉伯就 `{$N}`、换成中文就 `{$N_ZH}`）。
+///
+/// 返回 `None` = 不用改（没有宏，或者本来就是这一档）。
+pub fn rewrite_counter(title: &str, style: NamingStyle) -> Option<String> {
+    if style == NamingStyle::NoNumber {
+        return None; // 见 rewrite_literal 的说明
+    }
+    let found = macros(title);
+    if !found.iter().any(|(_, _, found)| matches!(found, Macro::Counter { .. })) {
+        return None;
+    }
+    let mut out = String::with_capacity(title.len());
+    let mut at = 0usize;
+    for (start, end, found) in found {
+        out.push_str(&title[at..start]);
+        match found {
+            Macro::Reset(_) => out.push_str(&title[start..end]), // 重置指令原样留着
+            Macro::Counter { base0, offset, pad, .. } => {
+                let body = match style {
+                    NamingStyle::Arabic => format!("N{}", sign(offset)),
+                    NamingStyle::Chinese => format!("N_ZH{}", sign(offset)),
+                    NamingStyle::Padded => format!("N:3{}", sign(offset)),
+                    NamingStyle::NoNumber => String::new(),
+                };
+                let body = if base0 { body.replacen('N', "N0", 1) } else { body };
+                let _ = pad;
+                out.push_str(&format!("{{${body}}}"));
+            }
+        }
+        at = end;
+    }
+    out.push_str(&title[at..]);
+    (out != title).then_some(out)
+}
+
+/// `+49` / `-1` / 空。
+fn sign(offset: i64) -> String {
+    match offset {
+        0 => String::new(),
+        n if n > 0 => format!("+{n}"),
+        n => n.to_string(),
+    }
+}
+
+/// 把**手写的编号**（`第12章 灯`）换成宏（`第{$N}章 灯`），其余文字一个字不动。
+///
+/// 只认**阿拉伯数字**：中文数字那种（`第十三章`）本来就是"中文档"的样子，不用换；
+/// 认不出的一概返回 `None`（序章 / 楔子 / 番外 / 自定义标题都在这条路上，一个字都不动）。
+///
+/// ⚠️ `style = NoNumber`（不编号）时返回 `None`：那是"以后新建的不编号"，
+/// **把已有章的名字抹掉不是这个动作该干的事**。
+pub fn rewrite_literal(title: &str, prefix: &str, suffix: &str, style: NamingStyle) -> Option<String> {
+    if style == NamingStyle::NoNumber || prefix.is_empty() {
+        return None;
+    }
+    let rest = title.strip_prefix(prefix)?;
+    let digits: String = rest.trim_start().chars().take_while(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        return None;
+    }
+    // 「第 3 节」中间可以有空格：数字与后缀各自 trim 一下再对
+    let after_number = rest.trim_start()[digits.len()..].trim_start();
+    let name = after_number.strip_prefix(suffix.trim())?;
+    let counter = style.counter();
+    let out = format!("{prefix}{counter}{suffix}{name}");
+    (out != title).then_some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -295,6 +368,53 @@ mod tests {
         // 只写重置、不写 `{$N}`：那是指令，不是文字——它不显示、也不占号，
         // 但从它开始后面接着它给的数字（作者要显示号就得同时写 `{$N}`）
         assert_eq!(layer(&["第{$N}章", "第{$N_RESET:101}章", "第{$N}章"]), ["第1章", "第章", "第101章"]);
+    }
+
+    #[test]
+    fn switching_the_style_rewrites_the_macro_and_keeps_the_name() {
+        // 作者写了 30 章阿拉伯数字，改主意想要中文数字：换档只动编号，章名一个字不动
+        assert_eq!(
+            rewrite_counter("第{$N}章 灯", NamingStyle::Chinese).as_deref(),
+            Some("第{$N_ZH}章 灯")
+        );
+        assert_eq!(
+            rewrite_counter("第{$N_ZH}章", NamingStyle::Padded).as_deref(),
+            Some("第{$N:3}章")
+        );
+        assert_eq!(
+            rewrite_counter("第{$N:3}章 门", NamingStyle::Arabic).as_deref(),
+            Some("第{$N}章 门")
+        );
+        // 偏移与"从 0 起"是作者对某章的特意安排：换档保留
+        assert_eq!(
+            rewrite_counter("第{$N+49}章", NamingStyle::Chinese).as_deref(),
+            Some("第{$N_ZH+49}章")
+        );
+        assert_eq!(
+            rewrite_counter("第{$N0}章", NamingStyle::Chinese).as_deref(),
+            Some("第{$N0_ZH}章")
+        );
+        // 已经是这一档 / 压根没有宏：不用改
+        assert_eq!(rewrite_counter("第{$N}章", NamingStyle::Arabic), None);
+        assert_eq!(rewrite_counter("序章", NamingStyle::Chinese), None);
+        // "不编号"不动已有章的名字
+        assert_eq!(rewrite_counter("第{$N}章", NamingStyle::NoNumber), None);
+    }
+
+    #[test]
+    fn hand_written_numbers_become_macros() {
+        assert_eq!(
+            rewrite_literal("第12章 灯", "第", "章", NamingStyle::Arabic).as_deref(),
+            Some("第{$N}章 灯")
+        );
+        assert_eq!(
+            rewrite_literal("第 3 节", "第", "节", NamingStyle::Chinese).as_deref(),
+            Some("第{$N_ZH}节")
+        );
+        // 认不出来的一概不动
+        assert_eq!(rewrite_literal("序章", "第", "章", NamingStyle::Arabic), None);
+        assert_eq!(rewrite_literal("第十三章", "第", "章", NamingStyle::Arabic), None);
+        assert_eq!(rewrite_literal("第12章", "第", "章", NamingStyle::NoNumber), None);
     }
 
     #[test]

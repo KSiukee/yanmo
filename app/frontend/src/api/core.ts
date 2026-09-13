@@ -598,6 +598,8 @@ const COMMANDS = {
   emptyTrash: "empty_trash",
   exportWork: "export_work",
   setWorkSummary: "set_work_summary",
+  namingRewritePreview: "naming_rewrite_preview",
+  namingRewriteApply: "naming_rewrite_apply",
   compilePresets: "compile_presets",
   compilePreview: "compile_preview",
   compileWork: "compile_work",
@@ -805,6 +807,22 @@ export const treeVolumeTarget = (work_id: number) =>
 /** 设定 / 清除每卷目标章数（null = 清掉）。 */
 export const treeSetVolumeTarget = (work_id: number, chapters: number | null) =>
   call<void>(COMMANDS.treeSetVolumeTarget, { work_id, chapters });
+
+/** 一处将要发生的编号写法改动（界面照着它摆预览）。 */
+export interface NamingRewrite {
+  node_id: number;
+  kind: string;
+  before: string;
+  after: string;
+}
+
+/** 编号写法：先看会改哪几章、改成什么（只算不改）。 */
+export const namingRewritePreview = (work_id: number) =>
+  call<NamingRewrite[]>(COMMANDS.namingRewritePreview, { work_id });
+
+/** 编号写法：照预览那份清单执行（作者点过确认才走到这里）。 */
+export const namingRewriteApply = (work_id: number, rewrites: NamingRewrite[]) =>
+  call<number>(COMMANDS.namingRewriteApply, { work_id, rewrites });
 
 /** 读外观 / 写作行为偏好；`work_id` 给 null 就是只看全局那份。 */
 export const readAppearance = (work_id: number | null) =>

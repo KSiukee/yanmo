@@ -11,13 +11,17 @@
 
 import { ref, type Ref } from "vue";
 
-import type { Appearance, AppearancePatch } from "../api/core";
+import type { Appearance, AppearancePatch, NamingRewrite } from "../api/core";
 
 /** 偏好要用的几个动作（会话层注入真命令，测试注入替身）。 */
 export interface AppearanceTransport {
   read: (work_id: number | null) => Promise<Appearance>;
   write: (work_id: number | null, patch: AppearancePatch) => Promise<Appearance>;
   reset: (work_id: number | null) => Promise<Appearance>;
+  /** 编号写法：先看会改哪几章、改成什么（只算不改） */
+  previewNaming: (work_id: number) => Promise<NamingRewrite[]>;
+  /** 编号写法：照预览那份清单执行（作者点过确认才走到这里） */
+  applyNaming: (work_id: number, rewrites: NamingRewrite[]) => Promise<number>;
 }
 
 export interface AppearanceOptions {
@@ -53,12 +57,19 @@ export interface AppearanceState {
   loadWork: () => Promise<void>;
   /** 设命名规则：`target` 决定写全局默认还是只写这本书；值传 `"auto"` = 清掉那一层 */
   setNaming: (value: string, target: NamingTarget) => Promise<void>;
+  /** 整本书换编号写法的清单（还没问回来是 null；空数组 = 不用换） */
+  namingPlan: Ref<NamingRewrite[] | null>;
+  /** 问一次"这本书哪些章会换" */
+  previewNaming: () => Promise<void>;
+  /** 执行（照那份清单），回来把目录树刷新交给调用方 */
+  applyNaming: () => Promise<number | null>;
 }
 
 export function useAppearance(options: AppearanceOptions): AppearanceState {
   const values = ref<Appearance | null>(null);
   const workValues = ref<Appearance | null>(null);
   const visible = ref(false);
+  const namingPlan = ref<NamingRewrite[] | null>(null);
   const busy = ref(false);
   const report = (error: unknown) => {
     options.onError?.(error instanceof Error ? error.message : String(error));
@@ -91,12 +102,45 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
     },
     open: async () => {
       if (values.value === null) await act(() => options.transport.read(null));
-      // 打开设置时把"这本书生效的那一份"也重读一次（每书覆盖的项要显示当前值）
+      // 打开设置时把"这本书生效的那一份"也重读一次（每书覆盖的项要显示当前值），
+      // 并算一次"已有章节要不要换写法"——面板上那行提示一打开就是准的
       await state.loadWork();
+      await state.previewNaming();
       visible.value = true;
     },
     close: () => {
       visible.value = false;
+      namingPlan.value = null;
+    },
+    namingPlan,
+    previewNaming: async () => {
+      const work_id = options.workId.value;
+      if (work_id === null) {
+        namingPlan.value = null;
+        return;
+      }
+      try {
+        namingPlan.value = await options.transport.previewNaming(work_id);
+      } catch (error) {
+        report(error);
+        namingPlan.value = null;
+      }
+    },
+    applyNaming: async () => {
+      const work_id = options.workId.value;
+      const plan = namingPlan.value;
+      if (work_id === null || plan === null || plan.length === 0) return null;
+      busy.value = true;
+      try {
+        const changed = await options.transport.applyNaming(work_id, plan);
+        namingPlan.value = null;
+        return changed;
+      } catch (error) {
+        report(error);
+        return null;
+      } finally {
+        busy.value = false;
+      }
     },
     setJumpToEnd: (value) =>
       act(() => options.transport.write(null, { jump_to_end_on_latest: value })),
@@ -120,6 +164,10 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
         const written = await options.transport.write(work_id, { naming: value });
         // 这一本生效的那一份也跟着刷（设置面板同时显示"现在生效"）
         workValues.value = work_id === null ? workValues.value : written;
+        // 规则一变，"已有章节要换哪些"也跟着变——顺手重算，面板上那行提示才是最新的
+        const target = options.workId.value;
+        namingPlan.value =
+          target === null ? null : await options.transport.previewNaming(target);
         return written;
       });
     },

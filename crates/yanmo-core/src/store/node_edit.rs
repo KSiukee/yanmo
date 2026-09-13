@@ -74,7 +74,7 @@ fn is_descendant(conn: &Connection, candidate: i64, ancestor: i64) -> Result<boo
 
 /// 编号骨架的前后缀：`第 12 章` 里的「第」「章」。
 // i18n-allow-begin: 这张表产出的是**会写进库的默认名**（作者的数据，可随时改），不是界面文案
-fn naming_words(kind: NodeKind) -> (&'static str, &'static str) {
+pub(super) fn naming_words(kind: NodeKind) -> (&'static str, &'static str) {
     match kind {
         NodeKind::Volume => ("第", "卷"),
         NodeKind::Chapter => ("第", "章"),

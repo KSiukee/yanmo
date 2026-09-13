@@ -20,6 +20,7 @@ mod content;
 mod device;
 mod export;
 mod node;
+mod naming;
 mod node_edit;
 mod relocate;
 mod restore;
@@ -41,6 +42,7 @@ pub use backup::{
 pub use content::ContentStats;
 pub use export::{ExportFormat, RenderedFile};
 pub(crate) use export::normalize;
+pub use naming::NamingRewrite;
 pub use node::{ChapterNeighbors, ChapterSummary, NodeSummary, SubtreeRollup};
 pub use relocate::{copy_dir, verify_same_scale, Relocation};
 pub use restore::RestorePreview;

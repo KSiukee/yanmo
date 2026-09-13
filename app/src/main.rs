@@ -225,6 +225,8 @@ fn main() {
             commands::work::rename_work,
             commands::work::set_work_language,
             commands::work::set_work_summary,
+            commands::work::naming_rewrite_preview,
+            commands::work::naming_rewrite_apply,
             commands::backup::backup_status,
             commands::backup::backup_config_write,
             commands::backup::backup_now,

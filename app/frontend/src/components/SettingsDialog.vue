@@ -10,8 +10,19 @@ import type { EditorSession } from "../editor/session";
 import LocationDialog from "./LocationDialog.vue";
 
 const props = defineProps<{ session: EditorSession }>();
-const { values, workValues, busy, close, setJumpToEnd, resetToDefault, setNaming, loadWork } =
-  props.session.appearance;
+const {
+  values,
+  workValues,
+  busy,
+  close,
+  setJumpToEnd,
+  resetToDefault,
+  setNaming,
+  loadWork,
+  namingPlan,
+  previewNaming,
+  applyNaming,
+} = props.session.appearance;
 
 /** 勾选框的当前值（读不出来就显示未勾选，并禁用） */
 const jumpToEnd = computed(() => values.value?.jump_to_end_on_latest ?? false);
@@ -64,6 +75,38 @@ function onScope(event: Event) {
 function onNaming(event: Event) {
   const code = (event.target as HTMLSelectElement).value;
   void setNaming(code, namingScope.value === "work" ? "work" : "default");
+}
+
+// ── 把已有章节一起换写法（显式动作：先预览再确认，绝不静默改稿）─────────────
+const rewriteVisible = ref(false);
+const rewriteBusy = ref(false);
+const rewriteDone = ref<number | null>(null);
+
+/** 预览里最多摆几条（多了就"另有 N 章"） */
+const PREVIEW_LIMIT = 8;
+const previewHead = computed(() => (namingPlan.value ?? []).slice(0, PREVIEW_LIMIT));
+const previewRest = computed(() => Math.max(0, (namingPlan.value?.length ?? 0) - PREVIEW_LIMIT));
+
+/** 命名规则刚改过、这本书又有要换的章，就把"一起换"这行提示摆出来 */
+async function openRewrite() {
+  await previewNaming();
+  rewriteDone.value = null;
+  rewriteVisible.value = true;
+}
+
+async function runRewrite() {
+  rewriteBusy.value = true;
+  try {
+    const changed = await applyNaming();
+    if (changed !== null) {
+      rewriteDone.value = changed;
+      rewriteVisible.value = false;
+      // 目录树上的名字得跟着更新（会话那边的刷新入口）
+      await props.session.directory.refresh();
+    }
+  } finally {
+    rewriteBusy.value = false;
+  }
 }
 </script>
 
@@ -126,6 +169,22 @@ function onNaming(event: Event) {
         </select>
       </p>
       <p class="settings__hint">{{ t("settings.naming_hint") }}</p>
+      <!-- 把已有章节一起换写法：显式动作 + 先预览（改的是作者的文字，绝不静默做） -->
+      <button
+        v-if="namingPlan !== null && namingPlan.length > 0"
+        type="button"
+        class="settings__button dialog__button"
+        :disabled="busy"
+        @click="void openRewrite()"
+      >
+        {{ t("settings.naming_rewrite", { title: workTitle, count: namingPlan.length }) }}
+      </button>
+      <p v-else-if="namingPlan !== null" class="settings__hint">
+        {{ namingValue === "none" ? t("settings.naming_rewrite_plain") : t("settings.naming_rewrite_none") }}
+      </p>
+      <p v-if="rewriteDone !== null" class="settings__hint">
+        {{ t("settings.naming_rewrite_done", { count: rewriteDone }) }}
+      </p>
       <p class="settings__hint">{{ t("settings.naming_macro_hint") }}</p>
       <!-- i18n-allow-next-line: 自动编号宏的写法是**代码语法**（作者照抄用），不是可翻译的界面文案 -->
       <p class="settings__hint">
@@ -146,6 +205,37 @@ function onNaming(event: Event) {
       <p v-if="unavailable" class="settings__hint settings__hint--bad">
         {{ t("settings.unavailable") }}
       </p>
+
+      <!-- 预览：会改哪几章、改成什么（确认才动手） -->
+      <div v-if="rewriteVisible" class="settings dialog dialog--above" @click.self="rewriteVisible = false">
+        <section class="settings__box dialog__box">
+          <header class="settings__head dialog__head">
+            <h2 class="settings__title dialog__title">{{ t("settings.naming_rewrite_title") }}</h2>
+            <button type="button" class="settings__button dialog__button" @click="rewriteVisible = false">
+              {{ t("common.cancel") }}
+            </button>
+          </header>
+          <p class="settings__hint">{{ t("settings.naming_rewrite_hint") }}</p>
+          <ul class="settings__plan">
+            <li v-for="item in previewHead" :key="item.node_id" class="settings__plan-row">
+              <span class="settings__plan-before">{{ item.before }}</span>
+              <span class="settings__plan-arrow">→</span>
+              <span class="settings__plan-after">{{ item.after }}</span>
+            </li>
+          </ul>
+          <p v-if="previewRest > 0" class="settings__hint">
+            {{ t("settings.naming_rewrite_more", { count: previewRest }) }}
+          </p>
+          <button
+            type="button"
+            class="settings__button dialog__button"
+            :disabled="rewriteBusy"
+            @click="void runRewrite()"
+          >
+            {{ rewriteBusy ? t("settings.naming_rewrite_busy") : t("settings.naming_rewrite_confirm") }}
+          </button>
+        </section>
+      </div>
 
       <LocationDialog v-if="relocating" :session="session" mode="settings" @close="relocating = false" />
     </section>

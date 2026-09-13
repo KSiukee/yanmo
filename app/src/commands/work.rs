@@ -12,7 +12,7 @@ use tauri::State;
 use crate::error::ApiError;
 use crate::storage::AppData;
 use yanmo_core::model::{WorkKind, WorkLanguage};
-use yanmo_core::store::{ExportFormat, ShelfEntry, Store};
+use yanmo_core::store::{ExportFormat, NamingRewrite, ShelfEntry, Store};
 
 /// 书架的一行。
 #[derive(Debug, Serialize)]
@@ -170,4 +170,25 @@ pub fn export_work(
         files: outcome.files,
         removed: outcome.removed,
     })
+}
+
+/// 编号写法：**先说清会改哪几章、改成什么**（只算不改）。
+///
+/// 规则由核心落定（作者选过 → 它；没选过 → 作品类型），界面不必知道自己抄一份规则。
+#[tauri::command(rename_all = "snake_case")]
+pub fn naming_rewrite_preview(
+    data: State<'_, AppData>,
+    work_id: i64,
+) -> Result<Vec<NamingRewrite>, ApiError> {
+    data.with_store(|store: &mut Store| store.preview_naming_rewrite(work_id))
+}
+
+/// 编号写法：**照预览里的那份清单执行**（作者点过确认才走到这里）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn naming_rewrite_apply(
+    data: State<'_, AppData>,
+    work_id: i64,
+    rewrites: Vec<NamingRewrite>,
+) -> Result<usize, ApiError> {
+    data.with_store(|store: &mut Store| store.apply_naming_rewrite(work_id, &rewrites))
 }

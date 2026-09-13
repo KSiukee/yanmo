@@ -41,3 +41,33 @@
   font: inherit;
   font-size: 12px;
 }
+
+/* 编号写法预览：一行一条 before → after */
+.settings__plan {
+  max-height: 240px;
+  overflow: auto;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.settings__plan-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.settings__plan-before {
+  color: var(--ym-ink-soft);
+  text-decoration: line-through;
+}
+
+.settings__plan-arrow {
+  color: var(--ym-ink-soft);
+}
+
+.settings__plan-after {
+  color: var(--ym-accent);
+}
