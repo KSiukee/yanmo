@@ -507,5 +507,13 @@
   "settings.naming_rewrite_none": "这本书已经是这个写法了，不用换",
   "settings.naming_rewrite_plain": "选「不编号」只影响以后新建的条目——已有章节的名字一个字都不动。",
   "settings.naming_rewrite_hint": "只换编号写法，章名一个字不动；序章 / 楔子 / 番外这类没有编号的不会被碰。",
-  "settings.naming_rewrite_busy": "正在改…"
+  "settings.naming_rewrite_busy": "正在改…",
+  "shelf.new_work_title": "新建作品",
+  "shelf.field_title": "书名",
+  "shelf.field_kind": "作品类型",
+  "shelf.field_summary": "简介",
+  "shelf.field_naming": "卷/章命名",
+  "shelf.naming_follow": "跟随设置（{name}）",
+  "shelf.naming_not_needed": "单篇与短篇集不编号，名字由你自己起（想改去「设置 → 新建条目」）。",
+  "shelf.new_work_hint": "简介可以以后再补；命名规则只影响以后新建的条目，已有名字不会被改。"
 }

@@ -4,6 +4,8 @@
 // 只在打开时拉一次列表（书架不是常驻画面），切书交给会话层（先落盘再切）。
 import { nextTick, ref } from "vue";
 
+import NewWorkDialog from "./NewWorkDialog.vue";
+
 import type { EditorSession } from "../editor/session";
 import { shelfKindLabel, shelfLabel } from "../editor/shelf";
 import { t } from "../locales/index.ts";
@@ -63,35 +65,22 @@ async function commitNote(work_id: number) {
 }
 const listEl = ref<HTMLElement | null>(null);
 
-/** 新建那本的表单 */
+/** 建书页开着没有（书名、类型、简介、命名规则都在那一页里问） */
 const creating = ref(false);
-const newTitle = ref("");
-const newKind = ref("novel");
-const newTitleEl = ref<HTMLInputElement | null>(null);
 
-const KINDS = [
-  { value: "novel", label: "shelf.kind_novel" },
-  { value: "collection", label: "shelf.kind_collection" },
-  { value: "article", label: "shelf.kind_article" },
-];
-
-/** 书架上的书名：没起名的那一本显示占位（默认名不落库，名字由作者起） */
+/** 书架上的书名：没起名的显示占位（默认名不落库，名字由作者起） */
 function workLabel(title: string): string {
   return title || t("shelf.untitled_work");
 }
 
-async function startCreate() {
+/** 打开建书页（那一页自己负责问全、建完直接开写） */
+function startCreate() {
   creating.value = true;
-  newTitle.value = "";
-  await nextTick();
-  newTitleEl.value?.focus();
 }
 
-async function submitCreate() {
-  const title = newTitle.value.trim();
-  if (!title) return;
+/** 建书页关掉：它自己是弹层，关的时候把状态收回来 */
+function closeCreate() {
   creating.value = false;
-  await create(newKind.value, title);
 }
 
 async function startRename(work_id: number, title: string) {
@@ -131,27 +120,6 @@ function confirmRemove(work_id: number, title: string) {
         <button type="button" class="shelf__button dialog__button" :title="t('shelf.close_title')" @click="close">{{ t("common.close") }}</button>
       </header>
 
-      <form v-if="creating" class="shelf__new" @submit.prevent="submitCreate">
-        <input
-          ref="newTitleEl"
-          v-model="newTitle"
-          class="shelf__input"
-          type="text"
-          :placeholder="t('shelf.name_placeholder')"
-          @keydown.esc="creating = false"
-        />
-        <select v-model="newKind" class="shelf__kind">
-          <option v-for="kind in KINDS" :key="kind.value" :value="kind.value">
-            {{ t(kind.label) }}
-          </option>
-        </select>
-        <button type="submit" class="shelf__button dialog__button" :disabled="busy || !newTitle.trim()">
-           {{ t("shelf.create_and_write") }}
-         </button>
-      </form>
-
-      <p v-if="note" class="shelf__note dialog__note">{{ note }}</p>
-      <p v-if="entries.length === 0" class="shelf__empty dialog__empty">{{ t("shelf.empty") }}</p>
       <ul ref="listEl" class="shelf__list">
         <li
           v-for="entry in entries"
@@ -282,6 +250,8 @@ function confirmRemove(work_id: number, title: string) {
         </li>
       </ul>
     </section>
+
+    <NewWorkDialog v-if="creating" :session="session" @close="closeCreate" />
   </div>
 </template>
 

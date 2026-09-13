@@ -695,6 +695,8 @@ export function useEditorSession(): EditorSession {
         remove: deleteWork,
         export: exportWork,
         writeSummary: setWorkSummary,
+        // 命名规则就是外观偏好里那一项，写到"这本书"那一层（每书覆盖）
+        writeNaming: (work_id, naming) => writeAppearance(work_id, { naming }).then(() => undefined),
       },
       workId,
       openWork: (target) => switchWork(target),

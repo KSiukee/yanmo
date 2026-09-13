@@ -1,0 +1,60 @@
+/* 建书页：一列字段，宽度够看清简介；与其它弹窗共用 dialog.css 的壳。 */
+
+.newwork__box {
+  width: min(520px, 100%);
+}
+
+.newwork__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.newwork__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+/* 简介是多行：标签跑到上面去 */
+.newwork__row--block {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.newwork__label {
+  flex: none;
+  min-width: 4.5em;
+  color: var(--ym-ink-soft);
+}
+
+.newwork__input,
+.newwork__summary,
+.newwork__select {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 3px 8px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+
+.newwork__summary {
+  resize: vertical;
+}
+
+.newwork__hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ym-ink-soft);
+}
+
+.newwork__button {
+  align-self: flex-end;
+}

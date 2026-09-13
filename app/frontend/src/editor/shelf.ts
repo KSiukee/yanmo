@@ -38,6 +38,16 @@ export function shelfKindLabel(kind: string): string {
   return t("shelf.kind_label_article");
 }
 
+/** 建书页填的那几样：书名、类型、简介、卷/章命名规则。 */
+export interface NewWorkDraft {
+  kind: string;
+  title: string;
+  /** 作品简介（投稿包的大纲要用它）；空串 = 先不写 */
+  summary: string;
+  /** 卷 / 章的命名规则（`NamingStyle` 的稳定代码）；`null` = **跟随设置**（不写这本书的覆盖） */
+  naming: string | null;
+}
+
 /** 书架要用的四个动作（会话层注入真命令，测试注入替身）。 */
 export interface ShelfTransport {
   list: () => Promise<ShelfEntry[]>;
@@ -48,6 +58,8 @@ export interface ShelfTransport {
   export: (work_id: number, format: string) => Promise<ExportAck>;
   /** 写作品简介（投稿包的大纲要用它） */
   writeSummary: (work_id: number, summary: string) => Promise<void>;
+  /** 把"这本书用哪套卷/章命名规则"写成它的覆盖（留 null 就是跟随设置，不调它） */
+  writeNaming: (work_id: number, naming: string) => Promise<void>;
 }
 
 export interface ShelfOptions {
@@ -74,7 +86,8 @@ export interface Shelf {
   toggle: () => void;
   close: () => void;
   refresh: () => Promise<void>;
-  create: (kind: string, title: string) => Promise<void>;
+  /** 建一本新书：**先建、再补简介与这本书的命名规则**，最后切过去开写 */
+  create: (draft: NewWorkDraft) => Promise<void>;
   rename: (work_id: number, title: string) => Promise<void>;
   remove: (work_id: number) => Promise<void>;
   open: (work_id: number) => Promise<void>;
@@ -140,9 +153,16 @@ export function useShelf(options: ShelfOptions): Shelf {
     },
     refresh,
     open,
-    create: (kind, title) =>
+    create: (draft) =>
       act(async () => {
-        const work_id = await options.transport.create(kind, title);
+        const work_id = await options.transport.create(draft.kind, draft.title);
+        // 建书页上填的简介与命名规则**一次落好**：作者填完就不用再去别处补
+        if (draft.summary.trim()) {
+          await options.transport.writeSummary(work_id, draft.summary.trim());
+        }
+        if (draft.naming !== null) {
+          await options.transport.writeNaming(work_id, draft.naming);
+        }
         if (await options.openWork(work_id)) visible.value = false;
       }),
     rename: (work_id, title) =>
