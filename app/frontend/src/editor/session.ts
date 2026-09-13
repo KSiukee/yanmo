@@ -50,6 +50,11 @@ import {
   runBackupNow,
   saveCursor,
   setWorkLanguage,
+  readLocationInfo,
+  pickDataDir,
+  confirmLocation,
+  moveDataDir,
+  cancelDataDir,
   writeBackupConfig,
   sessionReport,
   snapshotDiff,
@@ -87,6 +92,7 @@ import { focusPlan } from "./focus";
 import { useGaps, type Gaps } from "./gaps";
 import { useShelf, type Shelf } from "./shelf";
 import { useSnapshots, type Snapshots } from "./snapshots";
+import { useLocation, type LocationState } from "./location";
 import { useRestore, type RestoreState } from "./restore";
 import { useTrash, type Trash } from "./trash";
 
@@ -138,6 +144,8 @@ export interface EditorSession {
   backup: BackupState;
   /** 从备份恢复：列出来源、看清会丢什么、确认换库（换完壳会重启） */
   restore: RestoreState;
+  /** 稿子放在哪：首启确认位置、设置里换位置（换完壳会重启；旧位置不删） */
+  location: LocationState;
 }
 
 const IDLE: AutosaveState = {
@@ -638,11 +646,27 @@ export function useEditorSession(): EditorSession {
       },
     });
 
-    return { directory, gaps, appearance, backup, restore, adding, trash, shelf, snapshots };
+    // 稿子放在哪：首启确认 + 设置里换位置。**搬家前先落盘**——手上这一章存不下去就绝不搬；
+    // 真正动文件的是壳与核心（复制、核对、写记录），这里只管叫它。
+    const location = useLocation({
+      transport: {
+        info: readLocationInfo,
+        pick: pickDataDir,
+        confirm: confirmLocation,
+        move: moveDataDir,
+        cancel: cancelDataDir,
+      },
+      beforeMove: () => flushCurrent(),
+      onError: (message) => {
+        failure.value = t("session.location_failed", { detail: message });
+      },
+    });
+
+    return { directory, gaps, appearance, backup, restore, location, adding, trash, shelf, snapshots };
   }
 
   // 装配一次，之后各处只用解出来的这几个（顺序约定见 createParts）
-  const { directory, gaps, appearance, backup, restore, adding, trash, shelf, snapshots } =
+  const { directory, gaps, appearance, backup, restore, location, adding, trash, shelf, snapshots } =
     createParts();
 
   onMounted(async () => {
@@ -652,6 +676,8 @@ export function useEditorSession(): EditorSession {
       await appearance.load(); // 先读偏好：焦点策略要用（读失败按"不抢焦点"走）
       // 备份：读现状 + 今天还没备份过就自动做一次（**不 await**：别拖慢开窗能写字的时间）
       void backup.onStart();
+      // 稿子放在哪：读一次现状；壳说"第一次用"才把首启引导亮出来（不 await，同上）
+      void location.load();
       const snapshot = await openEditorTarget();
       applyChapter(snapshot);
       makeAutosave(snapshot);
@@ -724,6 +750,7 @@ export function useEditorSession(): EditorSession {
     switchWork,
     backup,
     restore,
+    location,
     language,
     caliber,
     cycleCaliber,

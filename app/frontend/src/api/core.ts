@@ -410,12 +410,46 @@ export interface EscapeAck {
   path: string;
 }
 
+/** 稿子放在哪、要不要首启引导、推荐放哪（都是壳的只读报告）。 */
+export interface LocationInfo {
+  /** 当前数据目录 */
+  path: string;
+  /** 位置记录文件（"你凭什么记得稿子在哪"的答案） */
+  pointer: string;
+  /** 第一次用：界面该弹首启引导 */
+  first_run: boolean;
+  /** 推荐位置（首启时与 path 相同） */
+  suggested_path: string | null;
+  /** 推荐它的理由码：portable / documents / documents_synced / profile */
+  suggested_reason: string | null;
+}
+
+/** 刚选好的新位置：落在哪、有什么坑、那儿现在有多少东西。 */
+export interface PickedDir {
+  path: string;
+  /** 风险码：synced / desktop / drive_root / inside_data / occupied / removable */
+  risks: string[];
+  entries: number;
+}
+
+/** 搬完的账（旧位置一个字没删）。 */
+export interface RelocationReport {
+  path: string;
+  files: number;
+  bytes: number;
+}
+
 
 /** 命令白名单：新增命令先在这里登记，别在组件里裸调。 */
 const COMMANDS = {
   engineInfo: "engine_info",
   dataHome: "data_home",
   openDataDir: "open_data_dir",
+  locationInfo: "data_location_info",
+  locationConfirm: "data_location_confirm",
+  locationPick: "data_location_pick",
+  locationMove: "data_location_move",
+  locationCancel: "data_location_cancel",
   exitApp: "exit_app",
   openEditorTarget: "open_editor_target",
   openChapter: "open_chapter",
@@ -488,6 +522,27 @@ export const readDataHome = () => call<DataHome>(COMMANDS.dataHome);
 
 /** 在文件管理器里打开稿子所在的目录（壳自己打开自己的目录，界面不传路径）。 */
 export const openDataDir = () => call<void>(COMMANDS.openDataDir);
+
+/** 稿子现在放哪、要不要首启引导、推荐放哪。 */
+export const readLocationInfo = () => call<LocationInfo>(COMMANDS.locationInfo);
+
+/** 首启选「就用这里」：把当前位置记下来，之后不再弹引导。 */
+export const confirmLocation = () => call<void>(COMMANDS.locationConfirm);
+
+/**
+ * 让作者挑一个新位置（窗口标题由界面给，壳不产文案）。
+ *
+ * **返回的只是一个"选到哪了"的报告**：那条路径同时被壳记在它自己手里，
+ * 界面拿它去搬家是没有入口的——这是刻意的（见 `commands::location`）。
+ */
+export const pickDataDir = (title: string) =>
+  call<PickedDir | null>(COMMANDS.locationPick, { title });
+
+/** 搬到刚才选的位置（复制 + 核对 + 记下新位置；旧位置不删；成功后壳会重启）。 */
+export const moveDataDir = () => call<RelocationReport>(COMMANDS.locationMove);
+
+/** 放弃这次选择。 */
+export const cancelDataDir = () => call<void>(COMMANDS.locationCancel);
 
 /** 当前该编辑的一章（首次运行会引导出一篇默认作品；上次被杀则回到崩前那一章）。 */
 export const openEditorTarget = () => call<EditorSnapshot>(COMMANDS.openEditorTarget);

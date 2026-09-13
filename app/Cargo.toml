@@ -32,5 +32,7 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_Threading",
     "Win32_UI_Controls_Dialogs",
     "Win32_UI_Shell",
+    # 选文件夹对话框（SHBrowseForFolderW + PIDL 释放）要用到 Shell 的 Common 子集
+    "Win32_UI_Shell_Common",
     "Win32_UI_WindowsAndMessaging",
 ] }

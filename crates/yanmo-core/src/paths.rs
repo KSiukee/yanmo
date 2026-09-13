@@ -27,28 +27,31 @@ pub const PORTABLE_MARKER: &str = "yanmo-portable.txt";
 /// 便携模式下数据目录的名字（程序目录里的子目录）。
 pub const PORTABLE_DATA_FOLDER: &str = "data";
 
-/// 数据目录定在哪。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DataDir {
-    /// 程序目录旁（便携）：`<程序目录>/data`
-    Portable(PathBuf),
-    /// 系统数据目录（默认）
-    System(PathBuf),
-}
+/// **位置记录**（指针文件）的名字：作者把稿子放到哪，记在这里。
+///
+/// 它是"稿子在哪"的权威记录——界面、命令行救援入口都先读它。
+/// 文件里只有一行：数据目录的绝对路径。
+pub const LOCATION_FILE: &str = "yanmo-location.txt";
+
+/// 数据目录的默认文件夹名。
+///
+/// ★ 这里**破例**不守"磁盘目录名一律语言无关"（见本文件头）：它是**给作者看的入口**，
+/// 作者要在资源管理器里一眼认出自己的稿子在哪。跟着稿子走的导出/交换路径仍守那条纪律。
+// i18n-allow-next-line: 磁盘上的文件夹名（作者的入口），文件头已写明这是对"目录名语言无关"的破例
+pub const DATA_FOLDER_NAME: &str = "研墨";
 
 /// 程序目录里有没有便携标记（只看，不创建、不修改任何东西）。
 pub fn is_portable(exe_dir: &Path) -> bool {
     exe_dir.join(PORTABLE_MARKER).is_file()
 }
 
-/// 定下数据目录：带便携标记就走程序目录旁，否则走系统数据目录。
-///
-/// 返回 `None` 表示"系统数据目录都拿不到"——调用方要给人话提示，而不是自己瞎猜一个位置。
-pub fn resolve_data_dir(exe_dir: &Path) -> Option<DataDir> {
-    if is_portable(exe_dir) {
-        return Some(DataDir::Portable(exe_dir.join(PORTABLE_DATA_FOLDER)));
-    }
-    default_data_dir().map(DataDir::System)
+/// 作者的主目录（Windows 是 `%USERPROFILE%`，别处是 `$HOME`）。
+pub fn home_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    let home = std::env::var_os("USERPROFILE");
+    #[cfg(not(windows))]
+    let home = std::env::var_os("HOME");
+    Some(PathBuf::from(home?)).filter(|path| path.is_dir())
 }
 
 /// 这个目录能不能写——**真的试一下**（建目录 → 写探针 → 删掉）。
@@ -161,20 +164,19 @@ mod tests {
     }
 
     #[test]
-    fn without_the_marker_it_stays_on_the_system_directory() {
+    fn without_the_marker_it_is_not_portable() {
         let dir = tempfile::tempdir().unwrap();
-        let chosen = resolve_data_dir(dir.path()).expect("本机应当能取到系统数据目录");
-        assert!(matches!(chosen, DataDir::System(_)), "没有标记就不该走便携：{chosen:?}");
-        assert!(!is_portable(dir.path()));
+        assert!(!is_portable(dir.path()), "没有标记就不该算便携");
+        std::fs::write(dir.path().join(PORTABLE_MARKER), b"portable").unwrap();
+        assert!(is_portable(dir.path()), "放了标记才算便携");
     }
 
     #[test]
-    fn the_marker_switches_to_the_folder_next_to_the_program() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join(PORTABLE_MARKER), b"portable").unwrap();
-        let chosen = resolve_data_dir(dir.path()).expect("有标记就该定下便携目录");
-        assert_eq!(chosen, DataDir::Portable(dir.path().join(PORTABLE_DATA_FOLDER)));
-        assert!(is_portable(dir.path()));
+    fn home_dir_points_at_something_that_exists() {
+        // 拿不到也算正常（沙箱/精简环境），拿得到就必须是真的
+        if let Some(home) = home_dir() {
+            assert!(home.is_dir(), "主目录拿得到就该真的存在：{}", home.display());
+        }
     }
 
     #[test]

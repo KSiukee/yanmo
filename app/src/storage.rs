@@ -14,7 +14,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Manager};
-use yanmo_core::store::{SessionReport, Store};
+use yanmo_core::location::{self, DataLocation, DirSource, Suggestion, Sources};
+use yanmo_core::store::{Relocation, SessionReport, Store};
 
 use crate::error::ApiError;
 use crate::exitwatch::ExitWatch;
@@ -120,60 +121,102 @@ pub struct AppData {
     db_path: PathBuf,
     /// 导出根目录（**路径策略在壳**：界面既不选路径也不碰文件系统）
     export_dir: PathBuf,
+    /// 位置记录文件：**"稿子放在哪"的权威记录**（见 [`yanmo_core::location`]）。
+    pointer: PathBuf,
+    /// 启动时定下来的数据目录 + 它是怎么定下来的。
+    location: DataLocation,
+    /// 首启推荐（界面拿它显示"建议放这里，因为…"）。
+    suggestion: Option<Suggestion>,
+    /// 定位置时问到的事实（"选新位置"要拿它算风险：同步盘 / 桌面 / 是不是可移动盘）。
+    sources: Sources,
+    /// 界面选好、等着确认的新位置。**路径只活在壳里**：界面拿不到，也递不进来。
+    pending: Mutex<Option<PathBuf>>,
     session: SessionReport,
     exit_gate_armed: AtomicBool,
     exit_watch: ExitWatch,
 }
 
+/// 启动期定下来的事：数据目录在哪、位置记录写哪、要不要首启引导。
+struct Plan {
+    location: DataLocation,
+    pointer: PathBuf,
+    suggestion: Option<Suggestion>,
+    sources: Sources,
+}
+
 impl AppData {
-    /// 启动期调用一次：解析数据目录 → 建目录 → 打开并迁移数据库 → 登记本次会话。
+    /// 启动期调用一次：定数据目录 → 建目录 → 打开并迁移数据库 → 登记本次会话。
+    ///
+    /// 数据目录由 [`yanmo_core::location`] 定夺（位置记录优先 → 老位置认领 → 首启推荐）：
+    /// 这里**不再靠"程序目录能不能写"去猜**——exe 被单独放到桌面时那种目录也可写，
+    /// 猜出来的结果是稿库落在最容易误删、最容易被同步盘扫到的地方。
     ///
     /// 任何一步失败都直接返回错误，**绝不带病启动**（半个可用的数据层比不启动更危险）。
     pub fn open(app: &AppHandle) -> Result<Self, ApiError> {
-        // 数据目录由**发布形态**决定（见 `yanmo_core::paths`）：
-        // 程序目录里带便携标记 → 数据就在旁边的 `data/`；没有标记 → 走系统数据目录（默认，行为不变）。
-        // 为什么不用"程序目录能不能写"来猜：exe 被单独放到桌面时那种目录也可写，
-        // 自动判定会把稿库落到桌面——最容易被误删、被同步盘扫到的地方。
-        let exe_dir = std::env::current_exe().ok().and_then(|exe| exe.parent().map(Path::to_path_buf));
-        let (dir, portable) = match exe_dir.as_deref().and_then(yanmo_core::paths::resolve_data_dir) {
-            Some(yanmo_core::paths::DataDir::Portable(dir)) => (dir, true),
-            Some(yanmo_core::paths::DataDir::System(dir)) => (dir, false),
-            None => {
-                return Err(ApiError::new("shell.data_dir_unavailable")
-                    .caused_by("系统数据目录取不到，程序目录里也没有便携标记"));
-            }
-        };
-        if portable && !yanmo_core::paths::is_writable(&dir) {
-            // 便携目录写不进去：**明确报错**，绝不静默换地方——
-            // 否则作者会以为稿子在程序旁边，实际却写去了别处（或干脆没写进去）。
-            return Err(ApiError::with(
-                "shell.portable_dir_readonly",
-                [("path", dir.display().to_string())],
-            ));
-        }
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(Path::to_path_buf))
+            .unwrap_or_else(|| PathBuf::from("."));
+        // 「文档」「桌面」由**壳**问（走 Windows 已知文件夹，拿得到被 OneDrive 重定向后的真值）；
+        // 命令行救援入口没有壳，那边用环境变量拼出来的近似值。
+        let sources = Sources::from_env(exe_dir)
+            .with_documents(app.path().document_dir().ok())
+            .with_desktop(app.path().desktop_dir().ok());
+        let pointer = location::pointer_path(&sources).ok_or_else(|| {
+            ApiError::new("shell.data_dir_unavailable")
+                .caused_by("no system data directory to keep the location record in")
+        })?;
+        let found = location::resolve(&sources).ok_or_else(|| {
+            ApiError::new("shell.data_dir_unavailable")
+                .caused_by("no data directory could be worked out")
+        })?;
+        let suggestion = location::suggest(&sources);
         // 导出放"文档/导出目录"：那是作者自己找得到的地方；系统答不上来就退回数据目录
         let export_dir = app
             .path()
             .document_dir()
             .map(|home| yanmo_core::paths::export_root(&home))
-            .unwrap_or_else(|_| dir.join(EXPORT_DIR));
-        Self::open_at(&dir, export_dir)
+            .unwrap_or_else(|_| found.dir.join(EXPORT_DIR));
+        let plan = Plan { location: found, pointer, suggestion, sources };
+        let data = Self::open_at(plan, export_dir)?;
+        // 老位置认领来的：**顺手把记录补上**，下次不用再认领一遍。
+        // 写不进去不算启动失败——认领是确定性的（老位置就在那儿），下次还会落在同一个地方。
+        if !data.location.source.is_first_run() && data.location.source != DirSource::Recorded {
+            let _ = location::write_record(&data.pointer, &data.data_dir());
+        }
+        Ok(data)
     }
 
     /// 目录由调用方给出——供测试直接驱动。
     #[cfg(test)]
     fn open_at_for_test(dir: &Path) -> Result<Self, ApiError> {
-        Self::open_at(dir, dir.join(EXPORT_DIR))
+        let plan = Plan {
+            location: DataLocation { dir: dir.to_path_buf(), source: DirSource::Recorded },
+            pointer: dir.join(yanmo_core::paths::LOCATION_FILE),
+            suggestion: None,
+            sources: Sources::from_env(dir.to_path_buf()),
+        };
+        Self::open_at(plan, dir.join(EXPORT_DIR))
     }
 
-    fn open_at(dir: &Path, export_dir: PathBuf) -> Result<Self, ApiError> {
-        std::fs::create_dir_all(dir).map_err(|e| {
+    fn open_at(plan: Plan, export_dir: PathBuf) -> Result<Self, ApiError> {
+        let Plan { location, pointer, suggestion, sources } = plan;
+        let dir = location.dir.clone();
+        std::fs::create_dir_all(&dir).map_err(|e| {
             ApiError::with("shell.data_dir_create_failed", [("path", dir.display().to_string())])
                 .caused_by(e)
         })?;
+        // 能不能写**真探一下**：只看权限位会被 ACL、只读介质、UAC 重定向骗过。
+        // 探不通就明确报错，绝不静默换地方（换了地方作者会以为稿子丢了）。
+        if !yanmo_core::paths::is_writable(&dir) {
+            return Err(ApiError::with(
+                "shell.data_dir_readonly",
+                [("path", dir.display().to_string())],
+            ));
+        }
         // 同一个数据目录只允许一个研墨：两个进程同时写一个库是真实的损坏来源。
         // 放在打开库**之前**——绝不能先开库、再发现自己本来不该开。
-        let instance = crate::single::InstanceLock::acquire(dir)
+        let instance = crate::single::InstanceLock::acquire(&dir)
             .map_err(|()| ApiError::with("shell.already_running", [("path", dir.display().to_string())]))?;
         let db_path = dir.join(yanmo_core::paths::DB_FILE);
         let mut store = Store::open(&db_path).map_err(|e| {
@@ -189,6 +232,11 @@ impl AppData {
             instance: Mutex::new(Some(instance)),
             db_path,
             export_dir,
+            pointer,
+            location,
+            suggestion,
+            sources,
+            pending: Mutex::new(None),
             session,
             exit_gate_armed: AtomicBool::new(false),
             exit_watch: ExitWatch::default(),
@@ -198,6 +246,72 @@ impl AppData {
     /// 数据库文件位置——**只读报告**，界面拿它做展示，拿到也改不了。
     pub fn db_path(&self) -> &Path {
         &self.db_path
+    }
+
+    /// 数据目录（库文件所在的那一层）。
+    pub fn data_dir(&self) -> PathBuf {
+        self.db_path.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    /// 是不是第一次用（界面据此弹首启引导）。
+    pub fn is_first_run(&self) -> bool {
+        self.location.source.is_first_run()
+    }
+
+    /// 首启推荐的位置与理由（不是首启就是 `None`）。
+    pub fn suggestion(&self) -> Option<&Suggestion> {
+        self.suggestion.as_ref()
+    }
+
+    /// 定位置时问到的事实（"选新位置"要拿它算风险）。
+    pub fn sources(&self) -> &Sources {
+        &self.sources
+    }
+
+    /// 位置记录文件（界面只拿它做展示）。
+    pub fn pointer(&self) -> &Path {
+        &self.pointer
+    }
+
+    /// 首启确认「就用这里」：把当前目录记下来，之后不再弹引导。
+    pub fn confirm_location(&self) -> Result<(), ApiError> {
+        location::write_record(&self.pointer, &self.data_dir()).map_err(ApiError::from)
+    }
+
+    /// 记下界面刚选好的新位置（**路径只留在壳里**，界面拿不回去）。
+    pub fn set_pending_dir(&self, dir: PathBuf) {
+        if let Ok(mut guard) = self.pending.lock() {
+            *guard = Some(dir);
+        }
+    }
+
+    /// 取出待确认的新位置。
+    pub fn take_pending_dir(&self) -> Option<PathBuf> {
+        self.pending.lock().ok().and_then(|mut guard| guard.take())
+    }
+
+    /// 换位置：**复制 → 核对 → 记下新位置**；哪一步不成，原位置与记录都不动。
+    ///
+    /// 返回成功意味着"新位置已经有一份核对过的稿子"，界面接着重启壳（与换库同一条路）。
+    /// **旧位置一字不删**：删不删由作者自己看过之后定——那是唯一一份稿子的备份。
+    pub fn relocate(&self, target: &Path) -> Result<Relocation, ApiError> {
+        let from = self.data_dir();
+        // 先把这次会话**正常收尾**：否则复制过去的那份库里留着一个"没关干净"的记录，
+        // 下次在新位置打开时会弹一句"上次异常退出"的假警报（作者刚搬完家，最怕这种吓人话）。
+        self.with_store(|store: &mut Store| store.abandon_session())?;
+        self.close_store()?;
+        let outcome = yanmo_core::store::copy_dir(&from, target)
+            .map_err(ApiError::from)
+            .and_then(|report| {
+                yanmo_core::store::verify_same_scale(target, &from).map_err(ApiError::from)?;
+                location::write_record(&self.pointer, target).map_err(ApiError::from)?;
+                Ok(report)
+            });
+        if outcome.is_err() {
+            // 没搬成：把原库重新挂上，让作者接着写（不能留在"没有库"的状态）
+            self.reopen_store()?;
+        }
+        outcome
     }
 
     /// 上一次会话留下的交代（崩溃检测结果）。
@@ -598,5 +712,118 @@ mod tests {
         // 原库留底留得住（含"备份之后写的那一版"）
         let kept = Path::new(&outcome.quarantine).join(yanmo_core::paths::DB_FILE);
         assert!(kept.is_file(), "原库要留底：{}", kept.display());
+    }
+
+    // ── 换位置这条路的**壳侧**验收：复制 → 核对 → 记下新位置 ──────────────────
+    // 核心那边验的是"复制与核对"；这里验的是壳有没有把三件事做对：
+    // ① 搬成功之后库句柄是关着的（马上要重启）；② 旧位置一个字不删；③ 没搬成就还能接着写。
+
+    /// 造一本一章的书，返回那一章的 id。
+    fn seed_chapter(data: &AppData) -> i64 {
+        data.with_store(|store| {
+            let work = store.create_work(yanmo_core::model::WorkKind::Novel, "长夜")?;
+            let volume = store.list_nodes(work.id)?[0].id;
+            let chapter = store.create_node(
+                work.id,
+                Some(volume),
+                yanmo_core::model::NodeKind::Chapter,
+                "第一章",
+            )?;
+            store.write_body(chapter, "雨下了整夜。")?;
+            Ok(chapter)
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn moving_the_library_copies_it_records_the_new_place_and_keeps_the_old_one() {
+        let home = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let data = AppData::open_at_for_test(home.path()).unwrap();
+        let chapter = seed_chapter(&data);
+        let target = elsewhere.path().join("我的稿子");
+
+        let report = data.relocate(&target).unwrap();
+        assert_eq!(report.dir, target);
+        assert!(report.files >= 1, "至少库文件要复制过去：{report:?}");
+
+        // ① 搬完库句柄是关着的：壳马上要重启（界面此时显示"正在重新打开"）
+        let closed = data.with_store(|store| store.read_body(chapter)).unwrap_err();
+        assert_eq!(closed.code, "shell.store_closed");
+
+        // ② 旧位置**一个字都不删**（删不删是作者看过新位置之后的事）
+        assert!(
+            home.path().join(yanmo_core::paths::DB_FILE).is_file(),
+            "旧位置必须原样留着"
+        );
+
+        // ③ 位置记录写的是新位置
+        let pointer = home.path().join(yanmo_core::paths::LOCATION_FILE);
+        assert_eq!(
+            yanmo_core::location::read_record(&pointer),
+            Some(target.clone()),
+            "记录没写对，下次启动就会回到旧位置"
+        );
+
+        // ④ 新位置那份库真能用（直接打开读回来）
+        let moved = yanmo_core::store::Store::open(target.join(yanmo_core::paths::DB_FILE)).unwrap();
+        assert_eq!(moved.read_body(chapter).unwrap(), "雨下了整夜。");
+    }
+
+    #[test]
+    fn a_move_that_cannot_copy_leaves_the_old_place_and_the_record_alone() {
+        let home = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let data = AppData::open_at_for_test(home.path()).unwrap();
+        let chapter = seed_chapter(&data);
+
+        // 目标里已经有一份稿子：壳必须**拒绝**，绝不覆盖别人的库
+        let occupied = elsewhere.path().join("已经有一份");
+        std::fs::create_dir_all(&occupied).unwrap();
+        yanmo_core::store::Store::open(occupied.join(yanmo_core::paths::DB_FILE)).unwrap();
+
+        let error = data.relocate(&occupied).unwrap_err();
+        assert_eq!(error.code, "store.relocate_target_in_use", "{error:?}");
+
+        // ★ 没搬成：库要重新挂上（作者还得接着写），记录也不能动
+        let alive = data.with_store(|store| store.read_body(chapter)).unwrap();
+        assert_eq!(alive, "雨下了整夜。");
+        assert_eq!(
+            yanmo_core::location::read_record(&home.path().join(yanmo_core::paths::LOCATION_FILE)),
+            None,
+            "没搬成就不该留下记录"
+        );
+    }
+
+    #[test]
+    fn a_move_never_lands_inside_the_current_folder() {
+        let home = tempfile::tempdir().unwrap();
+        let data = AppData::open_at_for_test(home.path()).unwrap();
+        let chapter = seed_chapter(&data);
+
+        // 往自己里面搬：会把稿子复制进自己的子目录（而且越复制越多）
+        let inside = home.path().join("子目录/我的稿子");
+        let error = data.relocate(&inside).unwrap_err();
+        assert_eq!(error.code, "store.relocate_inside", "{error:?}");
+        assert_eq!(data.with_store(|store| store.read_body(chapter)).unwrap(), "雨下了整夜。");
+    }
+
+    #[test]
+    fn confirming_the_first_run_writes_the_record_and_cancelling_drops_the_pick() {
+        let home = tempfile::tempdir().unwrap();
+        let data = AppData::open_at_for_test(home.path()).unwrap();
+
+        data.confirm_location().unwrap();
+        let pointer = home.path().join(yanmo_core::paths::LOCATION_FILE);
+        assert_eq!(
+            yanmo_core::location::read_record(&pointer),
+            Some(home.path().to_path_buf()),
+            "确认之后必须记得住"
+        );
+
+        // 选中 → 取走（壳只让取一次：取走了界面就没法拿旧选择再搬一遍）
+        data.set_pending_dir(home.path().join("新家"));
+        assert_eq!(data.take_pending_dir(), Some(home.path().join("新家")));
+        assert_eq!(data.take_pending_dir(), None);
     }
 }

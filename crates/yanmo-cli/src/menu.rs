@@ -17,7 +17,7 @@ use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 
 use yanmo_core::store::{ExportFormat, Store};
-use yanmo_core::{atomic, db, paths, version};
+use yanmo_core::{atomic, db, location, paths, version};
 
 use crate::commands;
 
@@ -106,20 +106,24 @@ fn pick_data_dir(
             dir.display()
         ));
     }
-    // 与图形界面**同一份判定**：程序目录里带便携标记 → 数据就在旁边的 `data/`；
-    // 没有标记 → 系统数据目录（默认）。
-    let chosen = std::env::current_exe()
+    // 与图形界面**同一份判定**（`core::location`）：位置记录优先 → 老位置认领 → 首启推荐。
+    // 两个壳必须说同一句话，否则作者会以为稿子分家了。
+    let looked_up = std::env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(Path::to_path_buf))
-        .and_then(|exe_dir| paths::resolve_data_dir(&exe_dir));
-    if let Some(choice) = chosen {
-        let dir = match choice {
-            paths::DataDir::Portable(dir) | paths::DataDir::System(dir) => dir,
-        };
-        if has_database(&dir) {
-            return Ok(dir);
+        .map(location::Sources::from_env)
+        .and_then(|sources| location::resolve(&sources).map(|found| (sources, found)));
+    if let Some((sources, found)) = looked_up {
+        if has_database(&found.dir) {
+            // 认领/记录来的位置顺手写回记录：下次（以及图形界面）问出的是同一个地方
+            if !found.source.is_first_run() {
+                if let Some(pointer) = location::pointer_path(&sources) {
+                    let _ = location::write_record(&pointer, &found.dir);
+                }
+            }
+            return Ok(found.dir);
         }
-        let _ = writeln!(out, "\n在预期位置没找到稿子库：{}", dir.display());
+        let _ = writeln!(out, "\n在预期位置没找到稿子库：{}", found.dir.display());
     } else {
         let _ = writeln!(out, "\n没能问出系统的数据目录在哪。");
     }

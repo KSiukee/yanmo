@@ -23,8 +23,10 @@ mod commands;
 mod error;
 mod exitwatch;
 mod open_folder;
+mod pick_dir;
 mod single;
 mod storage;
+mod volume;
 
 fn main() {
     tauri::Builder::default()
@@ -144,6 +146,11 @@ fn main() {
             commands::restore::backup_restore_preview,
             commands::restore::backup_restore_apply,
             commands::restore::backup_restore_pick,
+            commands::location::data_location_info,
+            commands::location::data_location_confirm,
+            commands::location::data_location_pick,
+            commands::location::data_location_move,
+            commands::location::data_location_cancel,
             commands::work::delete_work,
             commands::work::export_work,
             commands::trash::list_trash,

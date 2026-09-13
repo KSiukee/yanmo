@@ -15,6 +15,7 @@ import EditorPane from "./components/EditorPane.vue";
 import FlowPane from "./components/FlowPane.vue";
 import EngineBadge from "./components/EngineBadge.vue";
 import BackupDialog from "./components/BackupDialog.vue";
+import LocationDialog from "./components/LocationDialog.vue";
 import RestoreDialog from "./components/RestoreDialog.vue";
 import SettingsDialog from "./components/SettingsDialog.vue";
 import ShelfDialog from "./components/ShelfDialog.vue";
@@ -32,6 +33,8 @@ const { visible: settingsVisible, values: settingsValues, open: openSettings } =
 const { visible: backupVisible, status: backupStatus, open: openBackup } = session.backup;
 // 从备份恢复：入口在备份面板里（换库是重动作，不放在顶栏随手可点）
 const { visible: restoreVisible } = session.restore;
+// 稿子放在哪：第一次用才引导（壳说"这是第一次"才亮），之后要换位置去「设置」
+const { visible: locationVisible, info: locationInfo } = session.location;
 
 // 顶栏那行小字：有章名就显示章名；开着书但还没起名就显示占位；没有书才说立场那句话
 const hint = computed(() => {
@@ -95,6 +98,11 @@ const hint = computed(() => {
     <SettingsDialog v-if="settingsVisible && settingsValues" :session="session" />
     <BackupDialog v-if="backupVisible && backupStatus" :session="session" />
     <RestoreDialog v-if="restoreVisible" :session="session" />
+    <LocationDialog
+      v-if="locationVisible && locationInfo"
+      :session="session"
+      mode="first-run"
+    />
   </div>
 </template>
 

@@ -1,10 +1,10 @@
-//! 备份命令域：偏好读写、立即备份、账本，以及**盘符探测**。
+//! 备份命令域：偏好读写、立即备份、账本，以及**列出盘符**。
 //!
 //! 业务全在核心（`store::backup`：一致性快照、读回体检、保留滚动、账本）；
 //! 这里只做两件事：
 //!
-//! 1. 把界面要的**盘**信息探测出来——这要调 Windows API，而核心必须零平台依赖干净
-//!    （能单测、能在任何机器上跑），所以探测留在壳里；
+//! 1. 把界面要的**盘**列出来——底层探测在 `crate::volume`（卷标/序列号/是否可移动），
+//!    本模块只管拼成界面要的形状；
 //! 2. 把参数递进核心、把结果递回界面。
 //!
 //! 安全边界提醒：备份**失败绝不阻断写作与关窗**——每个目标各自成败，逐目标回报。
@@ -119,7 +119,7 @@ pub fn backup_status(
     let today = local_date(now_millis(), tz_offset_minutes);
 
     let volumes = list_volumes(&data_dir);
-    let data_volume_id = volume_id_for(&data_dir);
+    let data_volume_id = crate::volume::volume_id_for(&data_dir);
     // 盘在不在按**卷序列号**判（盘符会变）；拿不到序列号的老配置退回"盘根在不在"
     let present_ids: Vec<&str> = volumes.iter().map(|v| v.volume_id.as_str()).collect();
     let targets = config
@@ -199,15 +199,15 @@ pub fn backup_now(
 fn list_volumes(data_dir: &Path) -> Vec<VolumeDto> {
     use windows_sys::Win32::Storage::FileSystem::GetLogicalDrives;
     let mask = unsafe { GetLogicalDrives() };
-    let data_volume = volume_id_for(data_dir);
+    let data_volume = crate::volume::volume_id_for(data_dir);
     let mut out = Vec::new();
     for index in 0..26u32 {
         if mask & (1 << index) == 0 {
             continue;
         }
         let root = format!("{}:\\", (b'A' + index as u8) as char);
-        let Some(info) = volume_info(&root) else { continue };
-        let (free_bytes, total_bytes) = free_space(&root);
+        let Some(info) = crate::volume::volume_info(&root) else { continue };
+        let (free_bytes, total_bytes) = crate::volume::free_space(&root);
         out.push(VolumeDto {
             holds_data: !data_volume.is_empty() && info.volume_id == data_volume,
             root,
@@ -224,87 +224,4 @@ fn list_volumes(data_dir: &Path) -> Vec<VolumeDto> {
 #[cfg(not(windows))]
 fn list_volumes(_data_dir: &Path) -> Vec<VolumeDto> {
     Vec::new()
-}
-
-/// 某个路径所在盘的卷序列号（**识别"哪块盘"一律用它，不用盘符**：换 USB 口盘符会变）。
-#[cfg(windows)]
-fn volume_id_for(path: &Path) -> String {
-    use windows_sys::Win32::Storage::FileSystem::GetVolumePathNameW;
-    let Ok(path) = std::fs::canonicalize(path) else {
-        return String::new();
-    };
-    let wide: Vec<u16> = path.to_string_lossy().encode_utf16().chain(std::iter::once(0)).collect();
-    let mut root = vec![0u16; 8];
-    let ok = unsafe { GetVolumePathNameW(wide.as_ptr(), root.as_mut_ptr(), root.len() as u32) };
-    if ok == 0 {
-        return String::new();
-    }
-    let end = root.iter().position(|c| *c == 0).unwrap_or(0);
-    let root = String::from_utf16_lossy(&root[..end]);
-    volume_info(&root).map(|i| i.volume_id).unwrap_or_default()
-}
-
-#[cfg(not(windows))]
-fn volume_id_for(_path: &Path) -> String {
-    String::new()
-}
-
-#[cfg(windows)]
-struct VolumeInfo {
-    label: String,
-    volume_id: String,
-    removable: bool,
-}
-
-/// 卷标 / 序列号 / 是不是可移动盘。
-#[cfg(windows)]
-fn volume_info(root: &str) -> Option<VolumeInfo> {
-    use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, GetVolumeInformationW};
-    /// `GetDriveTypeW` 的取值之一（winbase.h：DRIVE_REMOVABLE = 2）。
-    /// 自己写常量而不是从 windows-sys 引：那是 C 宏，不是所有版本都导出。
-    const DRIVE_REMOVABLE: u32 = 2;
-    let wide: Vec<u16> = root.encode_utf16().chain(std::iter::once(0)).collect();
-    let mut label = vec![0u16; 256];
-    let mut serial: u32 = 0;
-    let ok = unsafe {
-        GetVolumeInformationW(
-            wide.as_ptr(),
-            label.as_mut_ptr(),
-            label.len() as u32,
-            &mut serial,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            0,
-        )
-    };
-    if ok == 0 {
-        return None; // 光驱没盘、没权限之类：这块跳过就好
-    }
-    let end = label.iter().position(|c| *c == 0).unwrap_or(0);
-    let drive_type = unsafe { GetDriveTypeW(wide.as_ptr()) };
-    Some(VolumeInfo {
-        label: String::from_utf16_lossy(&label[..end]),
-        volume_id: format!("{serial:08X}"),
-        removable: drive_type == DRIVE_REMOVABLE,
-    })
-}
-
-/// 剩余 / 总容量（给人看"这个盘还放得下吗"）。
-#[cfg(windows)]
-fn free_space(root: &str) -> (u64, u64) {
-    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
-    let wide: Vec<u16> = root.encode_utf16().chain(std::iter::once(0)).collect();
-    let (mut free, mut total) = (0u64, 0u64);
-    let ok = unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut free, &mut total, std::ptr::null_mut()) };
-    if ok == 0 {
-        (0, 0)
-    } else {
-        (free, total)
-    }
-}
-
-#[cfg(not(windows))]
-fn free_space(_root: &str) -> (u64, u64) {
-    (0, 0)
 }

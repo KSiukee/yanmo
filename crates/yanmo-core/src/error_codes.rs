@@ -98,6 +98,19 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "只能彻底删除已经在回收站里的东西：{id}" : ["id"],
     SNAPSHOT_NOT_FOUND => "snapshot.not_found"
         : "版本快照不存在：{snapshot_id}" : ["snapshot_id"],
+    LOCATION_RECORD_WRITE_FAILED => "location.record_write_failed"
+        : "记不下稿子的位置（{path}）：{detail}" : ["path", "detail"],
+    STORE_RELOCATE_SOURCE_MISSING => "store.relocate_source_missing"
+        : "原目录里找不到稿子库：{path}" : ["path"],
+    STORE_RELOCATE_INSIDE => "store.relocate_inside"
+        : "新位置在现在的稿子目录里面（{from} → {to}），不能往自己里面搬" : ["from", "to"],
+    STORE_RELOCATE_TARGET_IN_USE => "store.relocate_target_in_use"
+        : "新位置里已经有一份稿子：{path}（换个空目录，别让两份稿子混在一起）" : ["path"],
+    STORE_RELOCATE_COPY_FAILED => "store.relocate_copy_failed"
+        : "往新位置复制稿子失败（{path}）：{detail}" : ["path", "detail"],
+    STORE_RELOCATE_VERIFY_FAILED => "store.relocate_verify_failed"
+        : "新位置复制过去的稿子核对不上（{path}）：原位置没动过，稿子还在原处（{detail}）"
+        : ["path", "detail"],
 }
 
 /// 按码把参数填进日志模板；模板不认识这个码就退回 `码(名字=取值, …)`。

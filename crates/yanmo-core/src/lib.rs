@@ -14,6 +14,7 @@ pub mod db;
 pub mod diff;
 pub mod error;
 pub mod error_codes;
+pub mod location;
 pub mod model;
 pub mod paths;
 pub mod store;
