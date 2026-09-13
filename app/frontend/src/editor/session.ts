@@ -63,6 +63,9 @@ import {
   snapshotKeep,
   snapshotList,
   snapshotRestore,
+  compilePresets,
+  compilePreview,
+  compileWork,
   setNodeSummary,
   setWorkSummary,
   treeFillGap,
@@ -99,6 +102,7 @@ import { ExitGate, type ExitGateState } from "./exitguard";
 import { focusPlan } from "./focus";
 import { useGaps, type Gaps } from "./gaps";
 import { useShelf, type Shelf } from "./shelf";
+import { useCompile, type CompileState } from "./compile";
 import { useChapterNote, type ChapterNote } from "./note";
 import { useSnapshots, type Snapshots } from "./snapshots";
 import { DEFAULT_QUOTE_STYLE, useTypeset, type TypesetState } from "./typeset";
@@ -127,6 +131,8 @@ export interface EditorSession {
   typeset: TypesetState;
   /** 当前章的"一句话"（投稿包的大纲要用它）：单独存、单独显示 */
   note: ChapterNote;
+  /** 编译：一份原稿 → 一种成品（投稿版 docx / 分章 txt / 合并 txt） */
+  compile: CompileState;
   /** 删章路标：点「+」前先问一嘴"这一层少了一章，要补写吗" */
   gaps: Gaps;
   /** 点「+」之后的编排：先问路标，再照作者意图建章（视图只管"点了哪一行"） */
@@ -739,6 +745,14 @@ export function useEditorSession(): EditorSession {
       },
     });
 
+    // 编译：先说清会生成哪些文件，再动手（渲染在核心，落盘在壳）。
+    const compile = useCompile({
+      transport: { presets: compilePresets, preview: compilePreview, run: compileWork },
+      onError: (message) => {
+        failure.value = t("session.compile_failed", { detail: message });
+      },
+    });
+
     // 当前章的"一句话"：单独存、单独显示（状态机在 editor/note.ts）。
     // **不跟正文一起落盘**——它不参与防抖与指纹校验，存不下去也只报一句错。
     const note = useChapterNote({
@@ -762,12 +776,26 @@ export function useEditorSession(): EditorSession {
       snapshots,
       typeset,
       note,
+      compile,
     };
   }
 
   // 装配一次，之后各处只用解出来的这几个（顺序约定见 createParts）
-  const { directory, gaps, appearance, backup, restore, location, adding, trash, shelf, snapshots, typeset, note } =
-    createParts();
+  const {
+    directory,
+    gaps,
+    appearance,
+    backup,
+    restore,
+    location,
+    adding,
+    trash,
+    shelf,
+    snapshots,
+    typeset,
+    note,
+    compile,
+  } = createParts();
 
   onMounted(async () => {
     window.addEventListener("blur", persistNow);
@@ -870,6 +898,7 @@ export function useEditorSession(): EditorSession {
     snapshots,
     typeset,
     note,
+    compile,
     workId,
     switchWork,
     backup,

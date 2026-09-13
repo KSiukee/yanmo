@@ -76,6 +76,8 @@ display: block;
 }
 
 .shelf__actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
 display: flex;
   flex: none;
   align-items: center;

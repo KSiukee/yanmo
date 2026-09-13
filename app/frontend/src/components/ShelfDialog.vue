@@ -24,6 +24,7 @@ const {
 } = props.session.shelf;
 const { visible: trashVisible, toggle: toggleTrash } = props.session.trash;
 const { workId, caliber } = props.session;
+const { open: openCompile } = props.session.compile;
 
 /** 去回收站：先把书架收起来，免得两层弹层叠在一起 */
 function openTrash() {
@@ -221,6 +222,15 @@ function confirmRemove(work_id: number, title: string) {
               @click="exportWork(entry.id, 'both')"
             >
               {{ t("shelf.export") }}
+            </button>
+            <button
+              type="button"
+              class="shelf__button dialog__button"
+              :disabled="busy"
+              :title="t('compile.button_title')"
+              @click="void openCompile(entry.id)"
+            >
+              {{ t("compile.button") }}
             </button>
             <button
               type="button"

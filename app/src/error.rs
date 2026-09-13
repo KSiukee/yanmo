@@ -328,4 +328,19 @@ fn placeholders(text: &str) -> Vec<String> {
             assert!(!text.trim().is_empty(), "字典里的 {key} 是空的");
         }
     }
+
+    /// **编译预设对表**：核心给的每个预设代码，界面字典里都得有名字。
+    ///
+    /// 漏一条的后果与规则漏登记同款：界面上那个选项只剩一个 `compile.preset.xxx`。
+    #[test]
+    fn every_compile_preset_has_a_dictionary_entry() {
+        let dict = dictionary();
+        for preset in yanmo_core::compile::Preset::ALL {
+            let key = format!("compile.preset.{}", preset.as_str());
+            let text = dict
+                .get(&key)
+                .unwrap_or_else(|| panic!("编译预设 {} 在界面字典里查不到（缺 {key}）", preset.as_str()));
+            assert!(!text.trim().is_empty(), "字典里的 {key} 是空的");
+        }
+    }
 }

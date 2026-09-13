@@ -38,9 +38,42 @@ pub struct ExportOutcome {
 /// 清掉导出目录里这次不再需要的 txt / json，再收掉空目录。
 ///
 /// 只动我们自己的两种后缀，且只在导出目录内——**作者往里放的东西一概不碰**。
+/// 把一组文件写进 `dir`（按需建目录；**内容一样就不重写**，不白改 mtime）。
+///
+/// 导出与编译共用这一份：多一处写盘循环，就多一处"忘了改"的机会。
+fn write_files(dir: &Path, files: &[yanmo_core::store::RenderedFile]) -> Result<(), ApiError> {
+    for file in files {
+        let path = dir.join(&file.relative_path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                ApiError::with(
+                    "shell.export_dir_create_failed",
+                    [("path", parent.display().to_string())],
+                )
+                .caused_by(e)
+            })?;
+        }
+        // 比字节：docx 这类产物根本不是 UTF-8 文本，按字符串比会永远"不相等"而反复重写
+        let unchanged = std::fs::read(&path).map(|old| old == file.content).unwrap_or(false);
+        if unchanged {
+            continue;
+        }
+        yanmo_core::atomic::write_atomic(&path, &file.content).map_err(|e| {
+            ApiError::with("shell.export_write_failed", [("path", path.display().to_string())])
+                .caused_by(e)
+        })?;
+    }
+    Ok(())
+}
+
+/// 清残留：只删**我们自己写的那几种后缀**、且只在这个目录里。
+///
+/// `ours` 由调用方给：导出的产物是 txt/json，编译的产物还可能是 docx——
+/// 后缀写死在一处，换个场景就会误删作者自己放进来的文件。
 fn prune_export(
     dir: &Path,
     files: &[yanmo_core::store::RenderedFile],
+    ours: &[&str],
 ) -> Result<usize, ApiError> {
     if !dir.is_dir() {
         return Ok(0);
@@ -65,10 +98,10 @@ fn prune_export(
                 stack.push(path);
                 continue;
             }
-            let ours = path
+            let is_ours = path
                 .extension()
-                .is_some_and(|ext| ext == "txt" || ext == "json");
-            if !ours {
+                .is_some_and(|ext| ours.iter().any(|ours| ext == *ours));
+            if !is_ours {
                 continue;
             }
             let relative = path
@@ -372,32 +405,47 @@ impl AppData {
         let dir = self
             .export_dir
             .join(yanmo_core::atomic::safe_file_name(work_title));
-        for file in files {
-            let path = dir.join(&file.relative_path);
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| {
-                    ApiError::with(
-                        "shell.export_dir_create_failed",
-                        [("path", parent.display().to_string())],
-                    )
-                    .caused_by(e)
-                })?;
-            }
-            // 比字节：docx 这类产物根本不是 UTF-8 文本，按字符串比会永远"不相等"而反复重写
-            let unchanged =
-                std::fs::read(&path).map(|old| old == file.content).unwrap_or(false);
-            if unchanged {
-                continue;
-            }
-            yanmo_core::atomic::write_atomic(&path, &file.content).map_err(|e| {
-                ApiError::with("shell.export_write_failed", [("path", path.display().to_string())])
-                    .caused_by(e)
-            })?;
-        }
-        let removed = prune_export(&dir, files)?;
+        write_files(&dir, files)?;
+        let removed = prune_export(&dir, files, &["txt", "json"])?;
         Ok(ExportOutcome {
             dir,
             files: files.len(),
+            removed,
+        })
+    }
+
+    /// 把**编译产物**写进 `<导出目录>/<书名>/<预设子目录>`，并只清这个子目录里的旧产物。
+    ///
+    /// 为什么按子目录清：换一种预设编译时，不能把上一种的产物（作者刚拿去投稿的那份）删掉。
+    /// 产物路径里带着子目录前缀（`submission/长夜.docx`），这里把前缀摘掉再落到子目录里。
+    pub fn write_compile(
+        &self,
+        work_title: &str,
+        folder: &str,
+        extension: &str,
+        files: &[yanmo_core::store::RenderedFile],
+    ) -> Result<ExportOutcome, ApiError> {
+        let dir = self
+            .export_dir
+            .join(yanmo_core::atomic::safe_file_name(work_title))
+            .join(folder);
+        let prefix = format!("{folder}/");
+        let stripped: Vec<yanmo_core::store::RenderedFile> = files
+            .iter()
+            .map(|file| yanmo_core::store::RenderedFile {
+                relative_path: file
+                    .relative_path
+                    .strip_prefix(&prefix)
+                    .unwrap_or(&file.relative_path)
+                    .to_string(),
+                content: file.content.clone(),
+            })
+            .collect();
+        write_files(&dir, &stripped)?;
+        let removed = prune_export(&dir, &stripped, &[extension])?;
+        Ok(ExportOutcome {
+            dir,
+            files: stripped.len(),
             removed,
         })
     }
@@ -592,6 +640,51 @@ mod tests {
         assert!(!outcome.dir.join("001-第一卷/001-旧章.txt").exists(), "旧的该清掉");
         assert!(outcome.dir.join("001-第一卷/002-留着的.txt").exists());
         assert!(mine.exists(), "作者自己放的文件一个都不许碰");
+    }
+
+    /// 编译产物落进**自己的预设子目录**；换一种预设不许把上一种的产物删掉。
+    ///
+    /// 这一条盯的是真踩过的坑：导出那条清理是按整本书目录扫的，编译要是也这么干，
+    /// 作者刚拿去投稿的那份 docx 会被下一次"合并 txt"顺手删掉。
+    #[test]
+    fn compile_keeps_each_preset_in_its_own_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = AppData::open_at_for_test(dir.path()).unwrap();
+        let docx = vec![yanmo_core::store::RenderedFile {
+            relative_path: "submission/长夜.docx".to_string(),
+            content: vec![0x50, 0x4b, 0x03, 0x04, 0x00],
+        }];
+
+        let first = data.write_compile("长夜", "submission", "docx", &docx).unwrap();
+        assert_eq!(first.files, 1);
+        assert!(first.dir.ends_with("submission"), "{:?}", first.dir);
+        assert_eq!(
+            std::fs::read(first.dir.join("长夜.docx")).unwrap(),
+            vec![0x50, 0x4b, 0x03, 0x04, 0x00],
+            "二进制产物要原样落盘"
+        );
+
+        // 换一种预设：它的产物不许被动
+        let merged = vec![file("merged/长夜.txt", "全文\n")];
+        data.write_compile("长夜", "merged", "txt", &merged).unwrap();
+        assert!(first.dir.join("长夜.docx").exists(), "换预设不该动上一种的产物");
+
+        // 同一种预设再编译一次，上一次多出来的那个要清掉
+        let stale = vec![
+            yanmo_core::store::RenderedFile {
+                relative_path: "submission/长夜.docx".to_string(),
+                content: vec![1],
+            },
+            yanmo_core::store::RenderedFile {
+                relative_path: "submission/旧稿.docx".to_string(),
+                content: vec![2],
+            },
+        ];
+        data.write_compile("长夜", "submission", "docx", &stale).unwrap();
+        let outcome = data.write_compile("长夜", "submission", "docx", &docx).unwrap();
+        assert_eq!(outcome.removed, 1, "上一次多出来的产物要清掉");
+        assert!(!first.dir.join("旧稿.docx").exists());
+        assert!(first.dir.join("长夜.docx").exists());
     }
 
     #[test]

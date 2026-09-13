@@ -158,6 +158,31 @@ export interface TypesetNotice {
   context_after: string;
 }
 
+/** 一种编译预设（代码 + 核心给的默认参数；界面不自己编默认值）。 */
+export interface CompilePreset {
+  code: string;
+  /** 这一种要不要卡正文上限（界面据此决定显不显示"前 N 字"） */
+  caps_body: boolean;
+  /** 默认上限（界面拿它当输入框初值） */
+  default_body_limit: number;
+  default_outline: boolean;
+}
+
+/** 一个将要生成的文件（界面只展示名字与大小）。 */
+export interface CompileFile {
+  /** 相对导出目录的路径（含预设子目录） */
+  path: string;
+  bytes: number;
+}
+
+/** 一次编译的回执。 */
+export interface CompileAck {
+  path: string;
+  files: CompileFile[];
+  /** 顺手清掉了几个上次留下的旧产物 */
+  removed: number;
+}
+
 /** 一次扫描的结果：能改的与只能提醒的，分开放。 */
 export interface TypesetReport {
   changes: TypesetChange[];
@@ -563,6 +588,9 @@ const COMMANDS = {
   emptyTrash: "empty_trash",
   exportWork: "export_work",
   setWorkSummary: "set_work_summary",
+  compilePresets: "compile_presets",
+  compilePreview: "compile_preview",
+  compileWork: "compile_work",
 } as const;
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -801,6 +829,25 @@ export const typesetScan = (text: string, options: TypesetOptions) =>
 /** 应用勾中的那几处，返回改好的正文；序号对不上会整批拒绝（稿子又改过了）。 */
 export const typesetApply = (text: string, options: TypesetOptions, accepted: number[]) =>
   call<string>(COMMANDS.typesetApply, { text, options, accepted });
+
+/** 编译预设清单（代码 + 核心给的默认参数）。 */
+export const compilePresets = () => call<CompilePreset[]>(COMMANDS.compilePresets);
+
+/** 会生成哪些文件（**不落盘**）：按"编译"之前先看清。 */
+export const compilePreview = (
+  work_id: number,
+  preset: string,
+  body_limit: number | null,
+  with_outline: boolean,
+) => call<CompileFile[]>(COMMANDS.compilePreview, { work_id, preset, body_limit, with_outline });
+
+/** 真编译：渲染 + 落盘到导出目录里这一种预设自己的子目录。 */
+export const compileWork = (
+  work_id: number,
+  preset: string,
+  body_limit: number | null,
+  with_outline: boolean,
+) => call<CompileAck>(COMMANDS.compileWork, { work_id, preset, body_limit, with_outline });
 
 /** 写作品简介（投稿包的大纲要用它）。 */
 export const setWorkSummary = (work_id: number, summary: string) =>
