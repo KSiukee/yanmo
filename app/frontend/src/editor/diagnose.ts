@@ -41,9 +41,14 @@ export function watchFocusAndIme(dom: HTMLElement): () => void {
     void diagnoseNote(`输入法结束组字（${String(event.data ?? "").slice(0, 12)}）`).catch(() => {});
   };
   const onKeyDown = (event: KeyboardEvent) => {
-    // IME 组字期间浏览器给的是 keyCode 229：它到了，说明输入法确实在用这个元素
-    if (event.keyCode === 229 || event.isComposing) once("输入法按键（229/组字中）", "");
-    else if (event.key === "Enter") once("普通回车（说明当前不在组字）", "");
+    // IME 组字期间浏览器给的是 keyCode 229：它到了，说明输入法确实在用这个元素。
+    // 每一次都记（含普通按键）：这份日志的意义就是"当时到底发生了什么"。
+    const where = describe(document.activeElement);
+    if (event.keyCode === 229 || event.isComposing) {
+      void diagnoseNote(`输入法按键（229/组字中，焦点=${where}）`).catch(() => {});
+    } else if (event.key.length === 1 || event.key === "Enter" || event.key === " ") {
+      void diagnoseNote(`普通按键（${event.key}，焦点=${where}）`).catch(() => {});
+    }
   };
 
   dom.addEventListener("focus", onFocus, true);
@@ -63,9 +68,12 @@ export function watchFocusAndIme(dom: HTMLElement): () => void {
     if (ticks >= 6) window.clearInterval(timer);
   }, 1000);
 
-  // 点进页面也算一个事实（"点了也不行"是很关键的一条）
-  const onPointerDown = () => once("页面被点击", describe(document.activeElement));
+  // 点进页面也算一个事实（"点了也不行"是很关键的一条）。
+  // **每次都记**：上一版只记第一次，结果把"作者又点了一下/点了别处"这个关键事实吞掉了。
+  const onPointerDown = () =>
+    void diagnoseNote(`页面被点击（点前焦点=${describe(document.activeElement)}）`).catch(() => {});
   dom.addEventListener("pointerdown", onPointerDown, true);
+  document.addEventListener("pointerdown", onPointerDown, true);
 
   return () => {
     window.clearInterval(timer);
@@ -75,5 +83,6 @@ export function watchFocusAndIme(dom: HTMLElement): () => void {
     dom.removeEventListener("compositionend", onCompositionEnd, true);
     dom.removeEventListener("keydown", onKeyDown, true);
     dom.removeEventListener("pointerdown", onPointerDown, true);
+    document.removeEventListener("pointerdown", onPointerDown, true);
   };
 }

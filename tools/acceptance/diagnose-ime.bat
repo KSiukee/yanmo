@@ -1,22 +1,23 @@
 @echo off
 chcp 65001 >nul
-setlocal
-rem yanmo startup diagnose (Windows entry): find out why the Chinese IME does not attach.
+setlocal enabledelayedexpansion
+rem yanmo startup / IME diagnose (Windows entry).
 rem
 rem   diagnose-ime.bat
 rem
-rem It records a timeline of: program start -> window shown -> window activated ->
-rem UI ready -> what the page sees about focus and IME composition. That timeline is
-rem the only way to tell "the window never got activated" from "the IME never attached
-rem to the text area".
+rem It records: program start -> window shown -> window activated -> UI ready ->
+rem what the page sees about focus and IME composition. Plus the WebView2 runtime
+rem versions installed on this machine (the IME attachment differs between them).
 rem
-rem The result is a plain text log next to this script. It never touches your library.
+rem If more than one WebView2 runtime is installed, it ALSO runs yanmo once against
+rem the older one (WEBVIEW2_BROWSER_EXECUTABLE_FOLDER) so we can tell whether the
+rem problem is the runtime or our code. Nothing here touches your library.
 rem
-rem NOTE FOR EDITORS: keep this file ASCII-only and do NOT use caret-escaped parentheses
-rem (cmd reads .bat in the OEM code page; a caret escape inside an if-block desyncs parsing).
+rem NOTE FOR EDITORS: keep this file ASCII-only and do NOT use caret-escaped parentheses.
 
 set "HERE=%~dp0"
-set "LOG=%HERE%yanmo-diagnose.log"
+set "LOG1=%HERE%yanmo-diagnose.log"
+set "LOG2=%HERE%yanmo-diagnose-oldruntime.log"
 set "EXE="
 
 if exist "%HERE%yanmo.exe" set "EXE=%HERE%yanmo.exe"
@@ -38,37 +39,73 @@ if errorlevel 1 (
   exit /b 3
 )
 
-rem Fresh log, with the machine facts that decide most of these cases.
-> "%LOG%" echo === yanmo startup diagnose ===
->>"%LOG%" echo windows:
-ver >>"%LOG%" 2>&1
->>"%LOG%" echo webview2 runtime:
-reg query "HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" /v pv >>"%LOG%" 2>&1
-reg query "HKCU\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" /v pv >>"%LOG%" 2>&1
->>"%LOG%" echo --- timeline ---
+> "%LOG1%" echo === yanmo startup diagnose ===
+>>"%LOG1%" echo windows:
+ver >>"%LOG1%" 2>&1
+>>"%LOG1%" echo webview2 runtime ^(registry^):
+reg query "HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" /v pv >>"%LOG1%" 2>&1
+>>"%LOG1%" echo webview2 runtime folders ^(newest first^):
+dir /b /o-n "%LOCALAPPDATA%\Microsoft\EdgeWebView\Application" >>"%LOG1%" 2>&1
+>>"%LOG1%" echo --- timeline ---
 
 echo ================================================
-echo    yanmo startup diagnose
+echo    yanmo diagnose - step 1 of 2
 echo ================================================
 echo program : %EXE%
-echo log     : %LOG%
+echo log     : %LOG1%
 echo.
-echo A yanmo window will open. Please do ALL THREE, in this order:
-echo   1. just type pinyin / press the IME hotkey - do NOT click first
+echo A yanmo window opens. Please do ALL THREE, in this order:
+echo   1. just press the IME hotkey and type pinyin - do NOT click first
 echo   2. click inside the text once, then type again
 echo   3. switch to English, type a few letters, switch back to Chinese, type again
-echo Then close the window with its X button - the log is written as you go.
+echo Then close the window with its X button.
 echo.
 pause
+"%EXE%" --diagnose --out "%LOG1%"
 
-"%EXE%" --diagnose --out "%LOG%"
+rem Second run against the OLDEST other runtime, if there is one.
+set "OLD="
+for /f "skip=1 delims=" %%V in ('dir /b /o-n "%LOCALAPPDATA%\Microsoft\EdgeWebView\Application" 2^>nul') do set "OLD=%LOCALAPPDATA%\Microsoft\EdgeWebView\Application\%%V"
+
+if "%OLD%"=="" (
+  echo.
+  echo Only one WebView2 runtime is installed - skipping the second run.
+  goto :report
+)
+if not exist "%OLD%\msedgewebview2.exe" (
+  echo.
+  echo No usable older WebView2 runtime - skipping the second run.
+  goto :report
+)
+
+> "%LOG2%" echo === yanmo startup diagnose ^(older WebView2 runtime^) ===
+>>"%LOG2%" echo runtime folder: %OLD%
+>>"%LOG2%" echo --- timeline ---
 
 echo.
-echo done. This is what was recorded:
-echo ------------------------------------------------------------
-type "%LOG%"
-echo ------------------------------------------------------------
+echo ================================================
+echo    yanmo diagnose - step 2 of 2
+echo ================================================
+echo Now it runs again against a DIFFERENT WebView2 runtime:
+echo   %OLD%
+echo Same three steps again in the window that opens.
 echo.
-echo Send that text back (or the file itself).
+pause
+set "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER=%OLD%"
+"%EXE%" --diagnose --out "%LOG2%"
+set "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER="
+
+:report
+echo.
+echo ------------------------------------------------------------
+echo LOG 1 (current runtime):
+type "%LOG1%"
+if exist "%LOG2%" (
+  echo ------------------------------------------------------------
+  echo LOG 2 (older runtime):
+  type "%LOG2%"
+)
+echo ------------------------------------------------------------
+echo Send both logs back (or the files themselves).
 echo.
 pause

@@ -50,6 +50,7 @@ import {
   runBackupNow,
   saveCursor,
   setWorkLanguage,
+  diagnoseNote,
   readLocationInfo,
   pickDataDir,
   confirmLocation,
@@ -88,6 +89,7 @@ import {
 import { useDirectory, type Directory } from "./directory";
 import { docToText, textToHtml } from "./doc";
 import { watchFocusAndIme } from "./diagnose";
+import { primeImeThen } from "./ime-prime";
 import { ExitGate, type ExitGateState } from "./exitguard";
 import { focusPlan } from "./focus";
 import { useGaps, type Gaps } from "./gaps";
@@ -428,6 +430,9 @@ export function useEditorSession(): EditorSession {
       jump_to_end: appearance.values.value?.jump_to_end_on_latest ?? false,
     });
     if (plan === "focus-end") instance.commands.focus("end");
+    // 位置已经由 applyCursor 放好了，这里只把**焦点**交进正文——
+    // 输入法要的是"焦点落在可编辑元素上"，没有这个，按热键也没人接（见 focus.ts 的说明）
+    else if (plan === "restore") instance.commands.focus();
     else if (plan === "blur") instance.commands.blur();
   }
 
@@ -714,7 +719,16 @@ export function useEditorSession(): EditorSession {
       // 先等窗口被激活再定初始焦点：见 whenWindowFocused 的说明（Win10 输入法）。
       // 但**弹窗盖着的时候不定**——那会把焦点白送给弹窗，等它关掉又没人还回来（见 anyDialogOpen）。
       await whenWindowFocused();
-      if (!anyDialogOpen.value) settleFocus(false);
+      // 输入法预热：WebView2 在正文上第一次可能挂不上输入法（上游缺陷，真机日志钉死过）。
+      // 先用一个隐藏的真输入框把输入法引到页面上，再交焦点给正文。
+      if (!anyDialogOpen.value) {
+        primeImeThen(
+          () => settleFocus(false),
+          (text) => void diagnoseNote(text).catch(() => {}),
+        );
+      } else {
+        settleFocus(false);
+      }
       // 弹窗一关就把焦点还给正文（正文已经拿着焦点时不动，免得跟切章/新建的焦点计划打架）
       stopDialogFocusWatch = watch(anyDialogOpen, (open) => {
         if (open) return;

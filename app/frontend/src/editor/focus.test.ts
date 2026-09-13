@@ -33,7 +33,17 @@ test("开关关掉：最新章也只是打开，不聚焦", () => {
 });
 
 test("读过的最新章：回原位，绝不拽到段尾", () => {
-  assert.equal(focusPlan(input({ is_latest: true, had_cursor: true })), "leave");
+  // 读过的最新章：回到他上次停下的地方，**并且把光标交到他手上**（不聚焦＝打不出中文）
+  assert.equal(
+    focusPlan(input({ is_latest: true, had_cursor: true })),
+    "restore",
+    "接着写就该让光标进正文",
+  );
+  assert.equal(
+    focusPlan(input({ is_latest: true, had_cursor: true, jump_to_end: false })),
+    "leave",
+    "关掉「接着写」开关时连这个也不抢",
+  );
 });
 
 test("刚新建/补写的章：不管在第几章、有没有读过，都接着写", () => {
