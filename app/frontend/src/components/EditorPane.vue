@@ -149,12 +149,11 @@ function statusText(status: AutosaveState["status"]): string {
           >
             {{ languageText }}
           </button>
-          <!-- 今日进度：点一下开码字日历（进度条只在设过目标时画）。宽度钉死，
-               免得好字与数字变长时把整条栏推着晃（见 editor-pane.css 的说明） -->
+          <!-- 今日进度：点一下开码字日历（进度条只在设过目标时画）。宽度不钉死：
+               它只在进位数/设目标时才变宽，钉了反而会在格与格之间撑出空白 -->
           <button
             type="button"
             class="editor__today"
-            :class="{ 'editor__today--goal': todayProgress !== null }"
             :title="t('editor.today_title')"
             @click="void openWriting()"
           >

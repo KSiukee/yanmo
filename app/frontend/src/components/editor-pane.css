@@ -58,27 +58,24 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 状态栏右边这一组：**每一格都钉住宽度**。
+/* 状态栏右边这一组：**只钉住"爱变的那一格"**。
  *
- * 为什么：文案长度一变，整组宽度就变，前面那排按钮（版本/排版/一句话）跟着小幅左右晃。
- * 真机报过——保存状态在「待落盘…」（4 字位）与「已保存」（3 字位）之间来回切，正写着字
- * 的人被晃得没法专注。规矩：**宽度钉死 + 右对齐**（要变长只能往左长，右边界不动）+ 不换行。
+ * 要治的是这个：保存状态在「待落盘…」（4 字位）与「已保存」（3 字位）之间来回切，
+ * 整组宽度跟着变，前面那排按钮（版本/排版/一句话）就被推着小幅左右晃（真机报过）。
+ * 但**给每一格都钉宽度**又会撑出一排空白——多出来的宽度落在格与格之间，看着"隔开太多"
+ * （也是真机报的）。所以只钉那一格：
+ *
+ * - **保存状态**：固定宽度 + **内容左对齐**——多出的那点宽度落在最右边（状态栏右缘，看不见），
+ *   于是它怎么变，左右的邻居都纹丝不动；
+ * - **字数 / 语言 / 今日**：按内容自然排，格与格之间恒是那 10px；它们只在进位数
+ *   （9→10、99→100）或设/清目标时才变宽，**往左长**，右端不动。
  */
-/* 字数：「12,345 字」这类最长的一档也放得下 */
-.editor__count {
-  min-width: 5.5em;
-}
-
-/* 语言：中文 / English / 日本語 三档共用一格 */
-.editor__lang {
-  min-width: 4.3em;
-}
-
 /* 保存状态：尚未落盘 / 待落盘… / 保存中… / 已保存 / 保存异常 / 已抢救 共用一格。
-   span 默认是行内元素，**要先变成能拿宽度的盒子**，min-width 才生效。 */
+   宽度按最长的那档（4 字位）；span 默认是行内元素，**得先是能拿宽度的盒子**。 */
 .editor__status {
   display: inline-block;
-  min-width: 4.6em;
+  min-width: 4.4em;
+  text-align: left;
 }
 
 .editor__count,
@@ -86,7 +83,6 @@
 .editor__today,
 .editor__status {
   flex: none;
-  text-align: right;
   white-space: nowrap;
 }
 
@@ -121,10 +117,7 @@
 .editor__today {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 5px;
-  /* 没设目标时只有「今日 120」：给到五位数不出格 */
-  min-width: 6.5em;
   padding: 0 4px;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -133,12 +126,6 @@
   font: inherit;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
-}
-
-/* 设过目标就多出「 / 2,000」与那条进度条：**另给一格更宽的**（换宽度只在设/清目标那一刻，
-   不会跟着击键抖）。宽度按「今日 12,345 / 20,000」那一档量。 */
-.editor__today--goal {
-  min-width: 13em;
 }
 
 .editor__today:hover {

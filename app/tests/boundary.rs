@@ -147,6 +147,17 @@ fn rule_block(text: &str, selector: &str) -> String {
     text[start..end].to_string()
 }
 
+/// 取样式文件里的某条规则（`选择器 {` 到第一个 `}`）——**没有这条规则就是 `None`**。
+///
+/// 组合选择器（`.a,\n.b {`）不算命中：找的是带空格的 `.a {`，所以"这一格自己有没有一条规则"
+/// 不会被邻居的规则块混进来。
+fn rule_block_optional(text: &str, selector: &str) -> Option<String> {
+    let needle = format!("{selector} {{");
+    let start = text.find(&needle)?;
+    let end = text[start..].find('}').map(|at| start + at)?;
+    Some(text[start..end].to_string())
+}
+
 /// 三栏骨架的布局不变量：**正文再长，也只有正文区自己滚**。
 ///
 /// 真踩过：长章节把 CSS 网格的隐含行顶高（网格项默认 `min-height: auto`），整个页面跟着滚，
@@ -181,40 +192,43 @@ fn the_shell_keeps_the_page_still_when_the_prose_gets_long() {
     );
 }
 
-/// 状态栏右边那一组**每一格都钉住宽度**：文案长短变化不许把整条栏推着左右晃。
+/// 状态栏右边那一组：**只钉住"爱变的那一格"**，其余按内容自然排。
 ///
-/// 真报过：保存状态在「待落盘…」（4 字位）与「已保存」（3 字位）之间来回切，右端这一组的
-/// 宽度跟着变，前面那排按钮（版本/排版/一句话）就一直小幅左右跳——正写着字的人被晃得没法
-/// 专注。修法是每格 `min-width` 钉死 + 右对齐（要变长只能往左长，右边界不动）。
-/// 这类毛病只有**真机连续打字**才看得出，短稿与静态截图都测不出来，所以让机器盯着。
+/// 两件真报过的事，正好是一对矛盾，这条守卫把两边一起钉住：
+///
+/// 1. 起伏：保存状态在「待落盘…」（4 字位）与「已保存」（3 字位）之间来回切，整组宽度跟着变，
+///    前面那排按钮（版本/排版/一句话）就被推着小幅左右晃——正写字的人被晃得没法专注；
+/// 2. 空白：若给**每一格**都钉宽度，多出来的宽度会落在格与格之间，看着"隔开太多"、没以前顺眼。
+///
+/// 所以规矩是：只有保存状态那格 `min-width` 钉死，且内容**左对齐**（多出的宽度落在右缘，
+/// 看不见）；字数 / 语言 / 今日一律**不许钉宽**，格与格之间恒是那 10px。
+/// 这类毛病只有真机连续打字才看得出，短稿与静态截图都测不出来，所以让机器盯着。
 #[test]
-fn the_status_bar_slots_keep_their_width_when_the_words_change() {
+fn only_the_flipping_status_slot_is_width_pinned() {
     let css = read(&package_root().join("frontend/src/components/editor-pane.css"));
 
-    for (selector, min_width) in [
-        (".editor__count", "min-width: 5.5em"),
-        (".editor__lang", "min-width: 4.3em"),
-        (".editor__status", "min-width: 4.6em"),
-        (".editor__today", "min-width: 6.5em"),
-        (".editor__today--goal", "min-width: 13em"),
-    ] {
-        let block = rule_block(&css, selector);
+    // ① 保存状态那格：能拿宽度的盒子 + 固定宽度 + 左对齐（多出的宽度留在右缘）
+    let status = rule_block(&css, ".editor__status");
+    for needed in ["display: inline-block", "min-width:", "text-align: left"] {
         assert!(
-            block.contains(min_width),
-            "{selector} 必须钉住宽度（{min_width}），否则文案一变长就会推着整条栏晃：{block}"
+            status.contains(needed),
+            "保存状态那格必须固定宽度且内容左对齐（缺 `{needed}`）——它是唯一频繁变长变短的格子：{status}"
         );
     }
 
-    // 保存状态是个 span：min-width 对行内元素不生效，得先是能拿宽度的盒子
-    let status = rule_block(&css, ".editor__status");
-    assert!(
-        status.contains("display: inline-block"),
-        "状态那格要先成为能拿宽度的盒子，min-width 才管用：{status}"
-    );
+    // ② 其余三格**不许**钉宽度：钉了就会在格与格之间撑出一排空白（"隔开太多"就是这么来的）
+    for selector in [".editor__count", ".editor__lang", ".editor__today"] {
+        if let Some(block) = rule_block_optional(&css, selector) {
+            assert!(
+                !block.contains("min-width"),
+                "{selector} 不该钉宽度（会撑出空白，让状态栏看着稀疏）；只钉保存状态那一格：{block}"
+            );
+        }
+    }
 
-    // 共用的那几条：宽度不再参与收缩（flex: none）、变长只能往左长（右对齐）、不换行
+    // ③ 共用的那几条：不参与收缩（flex: none）、不换行
     let shared = rule_block(&css, ".editor__count,\n.editor__lang,\n.editor__today,\n.editor__status");
-    for needed in ["flex: none", "text-align: right", "white-space: nowrap"] {
+    for needed in ["flex: none", "white-space: nowrap"] {
         assert!(shared.contains(needed), "状态栏各格共用规则缺 `{needed}`：{shared}");
     }
 }
