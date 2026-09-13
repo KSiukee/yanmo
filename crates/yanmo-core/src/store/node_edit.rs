@@ -215,6 +215,21 @@ impl Store {
         self.record("nodes", id, "rename", json!({ "title": title.trim() }))
     }
 
+    /// 写一章的"一句话"（投稿包的大纲要用它）。
+    ///
+    /// 存的是作者的原话，**一个字的处理都不做**（不 trim、不分句）——作者写了什么就是什么；
+    /// 日志里只记字数，不把整段话抄进变更留痕。
+    pub fn set_node_summary(&mut self, id: i64, summary: &str) -> Result<()> {
+        let affected = self.conn.execute(
+            "UPDATE nodes SET summary = ?1, updated_at = ?2 WHERE id = ?3 AND deleted_at IS NULL",
+            params![summary, now_millis(), id],
+        )?;
+        if affected == 0 {
+            return Err(Error::invalid_with(codes::NODE_GONE, [("node_id", id.to_string())]));
+        }
+        self.record("nodes", id, "set_summary", json!({ "chars": summary.chars().count() }))
+    }
+
     /// 移动节点到新父级的第 `index` 位（越界会夹到末尾），并把两侧同级重排成密集序号。
     pub fn move_node(&mut self, id: i64, new_parent: Option<i64>, index: usize) -> Result<()> {
         let work_id = self.node_work(id)?;

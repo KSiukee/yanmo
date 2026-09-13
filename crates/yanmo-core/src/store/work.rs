@@ -9,7 +9,8 @@ use crate::model::{NodeKind, Work, WorkKind, WorkLanguage};
 use crate::time::now_millis;
 
 /// 作品字段列表（顺序与 [`WorkRow`] 对应）。
-const COLS: &str = "id, kind, title, language, target_words, created_at, updated_at, opened_at";
+const COLS: &str =
+    "id, kind, title, language, target_words, summary, created_at, updated_at, opened_at";
 
 /// 书架排序口径：**最近打开的在前**；没打开过的按最近编辑。
 ///
@@ -18,7 +19,7 @@ const ORDER_BY_OPENED: &str =
     "ORDER BY opened_at IS NULL, opened_at DESC, updated_at DESC, id DESC";
 
 /// 一行的原始取值——先取成朴素类型，再**在 Rust 侧校验**（不在 SQL 里猜着读）。
-type WorkRow = (i64, String, String, String, Option<i64>, i64, i64, Option<i64>);
+type WorkRow = (i64, String, String, String, Option<i64>, String, i64, i64, Option<i64>);
 
 /// 书架的一行：作品本身 + 它的规模。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,6 +45,7 @@ fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkRow> {
         row.get(5)?,
         row.get(6)?,
         row.get(7)?,
+        row.get(8)?,
     ))
 }
 
@@ -54,9 +56,10 @@ fn build(row: WorkRow) -> Result<Work> {
         title: row.2,
         language: WorkLanguage::parse(&row.3)?,
         target_words: row.4,
-        created_at: row.5,
-        updated_at: row.6,
-        opened_at: row.7,
+        summary: row.5,
+        created_at: row.6,
+        updated_at: row.7,
+        opened_at: row.8,
     })
 }
 
@@ -109,6 +112,8 @@ impl Store {
             // 新书默认中文：研墨的作者以中文写作为主；要写英文/日文，界面上一改就落库
             language: WorkLanguage::Zh,
             target_words: None,
+            // 新书还没写简介：空串就是"没写过"（v6 起）
+            summary: String::new(),
             created_at: now,
             updated_at: now,
             opened_at: Some(now),
@@ -157,11 +162,12 @@ impl Store {
                     row.get(5)?,
                     row.get(6)?,
                     row.get(7)?,
+                    row.get(8)?,
                 ),
-                row.get::<_, i64>(8)?,
                 row.get::<_, i64>(9)?,
                 row.get::<_, i64>(10)?,
                 row.get::<_, i64>(11)?,
+                row.get::<_, i64>(12)?,
             ))
         })?;
         let mut out = Vec::new();
@@ -212,6 +218,21 @@ impl Store {
             return Err(Error::invalid_with(codes::WORK_GONE, [("work_id", id.to_string())]));
         }
         self.record("works", id, "set_language", json!({ "language": language.as_str() }))
+    }
+
+    /// 写作品简介（投稿包的大纲要用它）。
+    ///
+    /// 同"每章一句话"一条规矩：**存作者的原话**，不 trim、不改标点；
+    /// 日志只记字数，不把整段话抄进变更留痕。
+    pub fn set_work_summary(&mut self, id: i64, summary: &str) -> Result<()> {
+        let affected = self.conn.execute(
+            "UPDATE works SET summary = ?1, updated_at = ?2 WHERE id = ?3 AND deleted_at IS NULL",
+            params![summary, now_millis(), id],
+        )?;
+        if affected == 0 {
+            return Err(Error::invalid_with(codes::WORK_GONE, [("work_id", id.to_string())]));
+        }
+        self.record("works", id, "set_summary", json!({ "chars": summary.chars().count() }))
     }
 
     /// 记一次"打开"——书架排序只看它，不碰编辑时间。

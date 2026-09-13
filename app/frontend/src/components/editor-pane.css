@@ -132,3 +132,61 @@
   margin: 0 0 0.6em;
   text-indent: 2em;
 }
+
+/* ── 这一章的"一句话"（投稿包的大纲要用它） ───────────────────────── */
+
+.editor__note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--ym-line);
+  background: var(--ym-paper-dim);
+}
+
+.editor__note-input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 8px;
+  border: 1px solid var(--ym-accent);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+
+.editor__note-button {
+  padding: 2px 10px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.editor__note-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 存下的那一句：一行小字，点它就接着改 */
+.editor__note-line {
+  overflow: hidden;
+  margin: 0;
+  padding: 4px 16px;
+  border-bottom: 1px solid var(--ym-line);
+  background: var(--ym-paper-dim);
+  font-size: 12px;
+  color: var(--ym-ink-soft);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.editor__note-label {
+  margin-right: 4px;
+  color: var(--ym-accent);
+}

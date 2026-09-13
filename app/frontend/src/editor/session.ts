@@ -63,6 +63,8 @@ import {
   snapshotKeep,
   snapshotList,
   snapshotRestore,
+  setNodeSummary,
+  setWorkSummary,
   treeFillGap,
   treeGapAnswer,
   treeGapCheck,
@@ -97,6 +99,7 @@ import { ExitGate, type ExitGateState } from "./exitguard";
 import { focusPlan } from "./focus";
 import { useGaps, type Gaps } from "./gaps";
 import { useShelf, type Shelf } from "./shelf";
+import { useChapterNote, type ChapterNote } from "./note";
 import { useSnapshots, type Snapshots } from "./snapshots";
 import { DEFAULT_QUOTE_STYLE, useTypeset, type TypesetState } from "./typeset";
 import { useLocation, type LocationState } from "./location";
@@ -122,6 +125,8 @@ export interface EditorSession {
   snapshots: Snapshots;
   /** 排版清理：先看后改（建议清单在核心扫出来，勾中的那几处才动） */
   typeset: TypesetState;
+  /** 当前章的"一句话"（投稿包的大纲要用它）：单独存、单独显示 */
+  note: ChapterNote;
   /** 删章路标：点「+」前先问一嘴"这一层少了一章，要补写吗" */
   gaps: Gaps;
   /** 点「+」之后的编排：先问路标，再照作者意图建章（视图只管"点了哪一行"） */
@@ -245,6 +250,8 @@ export function useEditorSession(): EditorSession {
     };
     language.value = asLanguage(snapshot.work_language);
     caliber.value = asCaliber(snapshot.word_caliber);
+    // "一句话"跟着章走：核心给什么就是什么（编辑器里没存的草稿随切章丢掉）
+    note.reset(snapshot.summary);
     // emitUpdate: false —— 载入内容不算"作者改动"，不触发落盘
     editor.value?.commands.setContent(textToHtml(snapshot.body), { emitUpdate: false });
     applyCursor(snapshot.cursor);
@@ -651,6 +658,7 @@ export function useEditorSession(): EditorSession {
         rename: renameWork,
         remove: deleteWork,
         export: exportWork,
+        writeSummary: setWorkSummary,
       },
       workId,
       openWork: (target) => switchWork(target),
@@ -731,11 +739,34 @@ export function useEditorSession(): EditorSession {
       },
     });
 
-    return { directory, gaps, appearance, backup, restore, location, adding, trash, shelf, snapshots, typeset };
+    // 当前章的"一句话"：单独存、单独显示（状态机在 editor/note.ts）。
+    // **不跟正文一起落盘**——它不参与防抖与指纹校验，存不下去也只报一句错。
+    const note = useChapterNote({
+      transport: { save: setNodeSummary },
+      nodeId: currentNodeId,
+      onError: (message) => {
+        failure.value = t("session.note_failed", { detail: message });
+      },
+    });
+
+    return {
+      directory,
+      gaps,
+      appearance,
+      backup,
+      restore,
+      location,
+      adding,
+      trash,
+      shelf,
+      snapshots,
+      typeset,
+      note,
+    };
   }
 
   // 装配一次，之后各处只用解出来的这几个（顺序约定见 createParts）
-  const { directory, gaps, appearance, backup, restore, location, adding, trash, shelf, snapshots, typeset } =
+  const { directory, gaps, appearance, backup, restore, location, adding, trash, shelf, snapshots, typeset, note } =
     createParts();
 
   onMounted(async () => {
@@ -838,6 +869,7 @@ export function useEditorSession(): EditorSession {
     trash,
     snapshots,
     typeset,
+    note,
     workId,
     switchWork,
     backup,

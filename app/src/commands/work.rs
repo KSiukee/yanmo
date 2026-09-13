@@ -21,6 +21,8 @@ pub struct ShelfEntryDto {
     /// 「长篇 / 短篇集 / 单篇」
     pub kind: String,
     pub title: String,
+    /// 作品简介（作者手填，空串＝没写过）：投稿包的大纲要用它
+    pub summary: String,
     /// 这本书里章的个数（**单篇文章是 0**，界面此时只报字数）
     pub chapters: i64,
     /// 字数合计（各章预聚合字数之和，不扫正文）——按词
@@ -40,6 +42,7 @@ fn to_dto(entry: ShelfEntry) -> ShelfEntryDto {
         id: entry.work.id,
         kind: entry.work.kind.as_str().to_string(),
         title: entry.work.title,
+        summary: entry.work.summary,
         chapters: entry.chapters,
         word_count: entry.word_count,
         char_count: entry.char_count,
@@ -124,6 +127,18 @@ pub struct ExportAckDto {
     pub files: usize,
     /// 顺手清掉了几个上次导出留下的旧文件（改名 / 删章之后的孤儿）
     pub removed: usize,
+}
+
+/// 写作品简介（投稿包的大纲要用它）。
+///
+/// 存的是作者原话：不 trim、不改标点——**它是要给编辑看的东西，不是文件名**。
+#[tauri::command(rename_all = "snake_case")]
+pub fn set_work_summary(
+    data: State<'_, AppData>,
+    work_id: i64,
+    summary: String,
+) -> Result<(), ApiError> {
+    data.with_store(|store: &mut Store| store.set_work_summary(work_id, &summary))
 }
 
 /// 把一本书导出成 `txt`（分章，结构用目录表达）或 `json`（单文件，结构与正文都在里面）。

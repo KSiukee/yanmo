@@ -97,6 +97,8 @@ pub struct Work {
     pub language: WorkLanguage,
     /// 目标字数（可空＝不设目标）。
     pub target_words: Option<i64>,
+    /// 作品简介（v6 起；作者手填，空串＝没写过）。投稿包的大纲要用它。
+    pub summary: String,
     /// 创建时间（unix 毫秒）。
     pub created_at: i64,
     /// 最近编辑时间。

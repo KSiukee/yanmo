@@ -36,6 +36,8 @@ pub struct EditorSnapshot {
     pub fingerprint: String,
     /// 上次读到哪了（**只有记的正是这一章时才有**）
     pub cursor: Option<CursorDto>,
+    /// 这一章的"一句话"（作者手填，空串＝没写过）：投稿包的大纲要按阅读顺序取它
+    pub summary: String,
 }
 
 /// 光标与滚动位置。
@@ -73,6 +75,7 @@ fn snapshot_of(store: &Store, target: EditorTarget) -> yanmo_core::Result<Editor
         work_id: target.work_id,
         node_id: target.node_id,
         title: target.title,
+        summary: store.node_summary(target.node_id)?,
         fingerprint: store.body_fingerprint(target.node_id)?,
         cursor: store.load_cursor(target.node_id)?.map(|c| CursorDto {
             anchor: c.anchor,
@@ -209,6 +212,18 @@ pub fn save_cursor(
     data.with_store(|store| {
         store.save_cursor(node_id, EditorCursor { anchor, head, scroll_top })
     })
+}
+
+/// 写当前章的"一句话"（投稿包的大纲要用它）。
+///
+/// **与正文分开存**：它不参与落盘防抖，也不进正文——作者写不写它，正文一个字都不变。
+#[tauri::command(rename_all = "snake_case")]
+pub fn set_node_summary(
+    data: State<'_, AppData>,
+    node_id: i64,
+    summary: String,
+) -> Result<(), ApiError> {
+    data.with_store(|store: &mut Store| store.set_node_summary(node_id, &summary))
 }
 
 /// 落盘正文（防抖后调用）。内容没变时核心直接返回，不写库、不记日志。

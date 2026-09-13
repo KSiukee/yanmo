@@ -10,8 +10,18 @@ import { t } from "../locales/index.ts";
 import { formatWhen } from "../editor/display";
 
 const props = defineProps<{ session: EditorSession }>();
-const { entries, busy, close, open, create, rename, remove, export: exportWork, note } =
-  props.session.shelf;
+const {
+  entries,
+  busy,
+  close,
+  open,
+  create,
+  rename,
+  remove,
+  export: exportWork,
+  saveSummary,
+  note,
+} = props.session.shelf;
 const { visible: trashVisible, toggle: toggleTrash } = props.session.trash;
 const { workId, caliber } = props.session;
 
@@ -24,6 +34,24 @@ function openTrash() {
 /** 正在改名的那一本（同时只可能有一本） */
 const renaming = ref<number | null>(null);
 const draft = ref("");
+
+/** 正在写简介的那一本（投稿包的大纲要用它）：多行，所以跟改名的单行输入分开 */
+const noting = ref<number | null>(null);
+const noteDraft = ref("");
+async function startNote(work_id: number, summary: string) {
+  noting.value = work_id;
+  noteDraft.value = summary;
+  await nextTick();
+  const box = listEl.value?.querySelector<HTMLTextAreaElement>(".shelf__summary");
+  box?.focus();
+}
+
+/** 存简介：**存下了才收起来**（存不下去就留在框里，别让作者白写） */
+async function commitNote(work_id: number) {
+  if (noting.value !== work_id) return;
+  noting.value = null;
+  await saveSummary(work_id, noteDraft.value);
+}
 const listEl = ref<HTMLElement | null>(null);
 
 /** 新建那本的表单 */
@@ -138,6 +166,40 @@ function confirmRemove(work_id: number, title: string) {
               {{ shelfKindLabel(entry.kind) }} · {{ shelfLabel(entry, caliber) }} ·
               {{ formatWhen(entry.opened_at) }}
             </span>
+            <!-- 简介：存着就显示一行（点「简介」改），没写就不占地方 -->
+            <span
+              v-if="entry.summary && noting !== entry.id"
+              class="shelf__summary-line"
+              :title="entry.summary"
+            >
+              {{ entry.summary }}
+            </span>
+            <textarea
+              v-if="noting === entry.id"
+              v-model="noteDraft"
+              class="shelf__summary"
+              rows="3"
+              :placeholder="t('shelf.summary_placeholder')"
+              @keydown.esc="noting = null"
+            ></textarea>
+            <span v-if="noting === entry.id" class="shelf__summary-actions">
+              <button
+                type="button"
+                class="shelf__button dialog__button"
+                :disabled="busy"
+                @click="commitNote(entry.id)"
+              >
+                {{ t("common.save") }}
+              </button>
+              <button
+                type="button"
+                class="shelf__button dialog__button"
+                :disabled="busy"
+                @click="noting = null"
+              >
+                {{ t("common.cancel") }}
+              </button>
+            </span>
           </div>
 
           <div class="shelf__actions">
@@ -159,6 +221,15 @@ function confirmRemove(work_id: number, title: string) {
               @click="exportWork(entry.id, 'both')"
             >
               {{ t("shelf.export") }}
+            </button>
+            <button
+              type="button"
+              class="shelf__button dialog__button"
+              :disabled="busy"
+              :title="t('shelf.summary_title')"
+              @click="startNote(entry.id, entry.summary)"
+            >
+              {{ t("shelf.summary_button") }}
             </button>
             <button
               type="button"

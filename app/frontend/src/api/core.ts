@@ -37,6 +37,8 @@ export interface EditorSnapshot {
   work_id: number;
   node_id: number;
   title: string;
+  /** 这一章的"一句话"（作者手填，空串＝没写过）：投稿包的大纲要用它 */
+  summary: string;
   /** 正文（纯文本，段落之间空行分隔） */
   body: string;
   /** 三个字数口径一起给：界面按作者选的那个显示（切换时不必再跑一趟核心） */
@@ -190,6 +192,8 @@ export interface ShelfEntry {
   /** 「novel / collection / article」——界面只用来显示，不假设行为差异 */
   kind: string;
   title: string;
+  /** 作品简介（作者手填，空串＝没写过）：投稿包的大纲要用它 */
+  summary: string;
   /** 这本书里章的个数（单篇文章是 0，此时只报字数） */
   chapters: number;
   /** 字数合计（按词口径） */
@@ -529,6 +533,7 @@ const COMMANDS = {
   snapshotRestore: "snapshot_restore",
   saveCursor: "save_cursor",
   saveBody: "save_body",
+  setNodeSummary: "set_node_summary",
   bodyFingerprint: "body_fingerprint",
   emergencySnapshot: "emergency_snapshot",
   sessionReport: "session_report",
@@ -557,6 +562,7 @@ const COMMANDS = {
   purgeWork: "purge_work",
   emptyTrash: "empty_trash",
   exportWork: "export_work",
+  setWorkSummary: "set_work_summary",
 } as const;
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -796,6 +802,10 @@ export const typesetScan = (text: string, options: TypesetOptions) =>
 export const typesetApply = (text: string, options: TypesetOptions, accepted: number[]) =>
   call<string>(COMMANDS.typesetApply, { text, options, accepted });
 
+/** 写作品简介（投稿包的大纲要用它）。 */
+export const setWorkSummary = (work_id: number, summary: string) =>
+  call<void>(COMMANDS.setWorkSummary, { work_id, summary });
+
 /** 记下"这一章读到哪了"（失焦 / 切章 / 关窗时调用）。 */
 export const saveCursor = (node_id: number, cursor: EditorCursor) =>
   call<void>(COMMANDS.saveCursor, { node_id, ...cursor });
@@ -803,6 +813,10 @@ export const saveCursor = (node_id: number, cursor: EditorCursor) =>
 /** 落盘正文（防抖后调用；内容没变时核心不写库）。 */
 export const saveBody = (node_id: number, body: string) =>
   call<SaveAck>(COMMANDS.saveBody, { node_id, body });
+
+/** 写当前章的"一句话"（投稿包的大纲要用它）；正文一个字都不动。 */
+export const setNodeSummary = (node_id: number, summary: string) =>
+  call<void>(COMMANDS.setNodeSummary, { node_id, summary });
 
 /** 库里正文的指纹——读回校验用，不搬运正文。 */
 export const bodyFingerprint = (node_id: number) =>

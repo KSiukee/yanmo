@@ -27,6 +27,11 @@ pub struct NodeSummary {
     pub chars_no_punct: i64,
     /// 是否已有正文——空章一眼可见；但**正文本身不在这里**
     pub has_body: bool,
+    /// 这一章的一句话（作者手填，空串＝没写过）：投稿包的大纲要按阅读顺序取它。
+    ///
+    /// 顺带查出来而不是单开一次查询——目录树本来就要把这棵树拉一遍，
+    /// 导出/大纲再为每章各跑一趟就成了 N+1。
+    pub summary: String,
     /// 下面还有没有节点（界面据此决定要不要画展开箭头）。
     ///
     /// 只问"有没有"，**不问有几个、更不问是什么**——展开箭头不该顺带把整棵子树拖出来。
@@ -37,13 +42,14 @@ pub struct NodeSummary {
 const SUMMARY_SQL: &str = "SELECT n.id, n.work_id, n.parent_id, n.node_kind, n.title,
         n.sort_order, n.word_count, n.char_count, n.chars_no_punct,
         (c.body IS NOT NULL AND c.body <> '') AS has_body,
-        EXISTS(SELECT 1 FROM nodes k WHERE k.parent_id = n.id AND k.deleted_at IS NULL) AS has_children
+        EXISTS(SELECT 1 FROM nodes k WHERE k.parent_id = n.id AND k.deleted_at IS NULL) AS has_children,
+        n.summary
      FROM nodes n
      JOIN works w ON w.id = n.work_id AND w.deleted_at IS NULL
      LEFT JOIN node_contents c ON c.node_id = n.id
      WHERE n.deleted_at IS NULL";
 
-type SummaryRow = (i64, i64, Option<i64>, String, String, i64, i64, i64, i64, i64, i64);
+type SummaryRow = (i64, i64, Option<i64>, String, String, i64, i64, i64, i64, i64, i64, String);
 
 fn read_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<SummaryRow> {
     Ok((
@@ -58,6 +64,7 @@ fn read_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<SummaryRow> {
         row.get(8)?,
         row.get(9)?,
         row.get(10)?,
+        row.get(11)?,
     ))
 }
 
@@ -74,6 +81,7 @@ fn build_summary(row: SummaryRow) -> Result<NodeSummary> {
         chars_no_punct: row.8,
         has_body: row.9 != 0,
         has_children: row.10 != 0,
+        summary: row.11,
     })
 }
 
@@ -112,6 +120,20 @@ impl Store {
         self.conn
             .query_row(
                 "SELECT title FROM nodes WHERE id = ?1 AND deleted_at IS NULL",
+                params![node_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| Error::invalid_with(codes::NODE_GONE, [("node_id", node_id.to_string())]))
+    }
+
+    /// 某一章的"一句话"（投稿大纲要用它；空串＝作者没写过）。
+    ///
+    /// 只取这一条：打开章节时用。整棵树走 [`Store::list_nodes`]——那边一次就把每章一句话带回来了。
+    pub fn node_summary(&self, node_id: i64) -> Result<String> {
+        self.conn
+            .query_row(
+                "SELECT summary FROM nodes WHERE id = ?1 AND deleted_at IS NULL",
                 params![node_id],
                 |r| r.get(0),
             )

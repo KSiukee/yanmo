@@ -419,5 +419,15 @@
   "typeset.stale": "稿子在你看的这会儿又改过，重新看一遍再决定。",
   "error.value.unknown_quote_style": "这个引号风格不认识：{value}",
   "error.typeset.change_unknown": "要改的第 {index} 处已经找不到了——稿子可能在预览之后又动过，请重新看一遍。",
-  "session.typeset_failed": "排版清理出错：{detail}"
+  "session.typeset_failed": "排版清理出错：{detail}",
+  "common.save": "存下",
+  "common.cancel": "取消",
+  "editor.note_button": "一句话",
+  "editor.note_title": "给这一章留一句话（投稿的大纲要用它）",
+  "editor.note_placeholder": "这一章发生了什么，一句话就够",
+  "editor.note_label": "一句话：",
+  "session.note_failed": "存这一章的一句话出错：{detail}",
+  "shelf.summary_button": "简介",
+  "shelf.summary_title": "这本书讲什么（投稿包的大纲要用它）",
+  "shelf.summary_placeholder": "给编辑看的一段介绍"
 }

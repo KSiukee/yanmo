@@ -46,6 +46,8 @@ export interface ShelfTransport {
   remove: (work_id: number) => Promise<void>;
   /** 导出成文件（txt 分章 / json 单文件），返回落点 */
   export: (work_id: number, format: string) => Promise<ExportAck>;
+  /** 写作品简介（投稿包的大纲要用它） */
+  writeSummary: (work_id: number, summary: string) => Promise<void>;
 }
 
 export interface ShelfOptions {
@@ -78,6 +80,8 @@ export interface Shelf {
   open: (work_id: number) => Promise<void>;
   /** 导出一本书（txt / json）；落点会写进 note */
   export: (work_id: number, format: string) => Promise<void>;
+  /** 存一本书的简介（投稿包的大纲要用它） */
+  saveSummary: (work_id: number, summary: string) => Promise<void>;
 }
 
 export function useShelf(options: ShelfOptions): Shelf {
@@ -144,6 +148,10 @@ export function useShelf(options: ShelfOptions): Shelf {
     rename: (work_id, title) =>
       act(async () => {
         await options.transport.rename(work_id, title);
+      }),
+    saveSummary: (work_id, summary) =>
+      act(async () => {
+        await options.transport.writeSummary(work_id, summary);
       }),
     remove: (work_id) =>
       act(async () => {
