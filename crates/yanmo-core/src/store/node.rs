@@ -17,7 +17,12 @@ pub struct NodeSummary {
     pub work_id: i64,
     pub parent_id: Option<i64>,
     pub kind: NodeKind,
+    /// **作者写的原文**（含自动编号宏时就是模板，如 `第{$N}章 灯`）——**改名时编辑的就是它**
     pub title: String,
+    /// **显示用的那一份**：宏已按同层位置渲染（`第3章 灯`）。
+    ///
+    /// 界面显示、导出、大纲一律用它；改名用 `title`（别让作者把号写死）。
+    pub title_rendered: String,
     pub sort_order: i64,
     /// 预聚合字数（来自 `nodes.word_count`，不扫正文）——**按词**口径
     pub word_count: i64,
@@ -74,7 +79,9 @@ fn build_summary(row: SummaryRow) -> Result<NodeSummary> {
         work_id: row.1,
         parent_id: row.2,
         kind: NodeKind::parse(&row.3)?,
-        title: row.4,
+        title: row.4.clone(),
+        // 先原样占位：编号要**按同层位置**算，等这一层都到齐了再渲染（见 render_titles）
+        title_rendered: row.4,
         sort_order: row.5,
         word_count: row.6,
         char_count: row.7,
@@ -83,6 +90,57 @@ fn build_summary(row: SummaryRow) -> Result<NodeSummary> {
         has_children: row.10 != 0,
         summary: row.11,
     })
+}
+
+/// 把一批节点按"层 + 同类"分批，逐批渲染 `title_rendered`。
+///
+/// 为什么分批到"层 + 同类"：`{$N}` 是同层序号，混进别的类型（比如一层里既有卷又有章）时
+/// 不该互相推号——取号、补写、默认名一直也是按"同层同类"算的。
+fn render_titles(nodes: &mut [NodeSummary]) {
+    let mut seen: Vec<(i64, Option<i64>, String)> = Vec::new();
+    for node in nodes.iter() {
+        let key = (node.work_id, node.parent_id, node.kind.as_str().to_string());
+        if !seen.contains(&key) {
+            seen.push(key);
+        }
+    }
+    for key in seen {
+        let members: Vec<usize> = nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| {
+                (node.work_id, node.parent_id, node.kind.as_str().to_string()) == key
+            })
+            .map(|(at, _)| at)
+            .collect();
+        // 空名字的容器 = "还没起名"（建书时留白的那一卷）：用模板渲染成 `第1卷`，
+        // 于是"第几卷"只在核心这一处算——界面不用再自己补一份占位（两处算迟早不一致）。
+        let blanks: Vec<String> = members
+            .iter()
+            .map(|at| {
+                let node = &nodes[*at];
+                let positional = node.kind == crate::model::NodeKind::Volume;
+                if positional && node.title.trim().is_empty() {
+                    super::node_edit::template_for(node.kind).to_string()
+                } else {
+                    node.title.clone()
+                }
+            })
+            .collect();
+        let items: Vec<crate::numbering::LayerItem<'_>> = members
+            .iter()
+            .enumerate()
+            .map(|(slot, at)| crate::numbering::LayerItem {
+                title: &blanks[slot],
+                // 容器（卷 / 部）按位置排；叶子章只有带计数宏才占号（见 numbering 的说明）
+                positional: nodes[*at].kind == crate::model::NodeKind::Volume,
+            })
+            .collect();
+        let rendered = crate::numbering::render_layer(&items);
+        for (slot, at) in members.iter().enumerate() {
+            nodes[*at].title_rendered = rendered[slot].clone();
+        }
+    }
 }
 
 impl Store {
@@ -98,6 +156,7 @@ impl Store {
         for row in rows {
             out.push(build_summary(row?)?);
         }
+        render_titles(&mut out);
         Ok(out)
     }
 
@@ -112,7 +171,62 @@ impl Store {
         for row in rows {
             out.push(build_summary(row?)?);
         }
+        render_titles(&mut out);
         Ok(out)
+    }
+
+    /// **单节点的显示标题**（打开章节、界面提示这类"只要一个标题"的地方用）。
+    ///
+    /// 与 [`render_titles`] 同一套规矩：按它所在层的顺序数到它。只查这一层，不拉整棵树。
+    pub fn rendered_title(&self, node_id: i64) -> Result<String> {
+        let (work_id, parent_id, kind, title): (i64, Option<i64>, String, String) = self
+            .conn
+            .query_row(
+                "SELECT work_id, parent_id, node_kind, title FROM nodes
+                  WHERE id = ?1 AND deleted_at IS NULL",
+                params![node_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()?
+            .ok_or_else(|| {
+                Error::invalid_with(codes::NODE_GONE, [("node_id", node_id.to_string())])
+            })?;
+        // ⚠️ 必须**按 id** 找自己那一行：模板可能一模一样（三章都叫 `第{$N}章`），
+        // 按标题文本找会永远命中第一行——那样每章都渲染成"第1章"（压测当场抓到的）。
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title FROM nodes
+              WHERE work_id = ?1 AND parent_id IS ?2 AND node_kind = ?3 AND deleted_at IS NULL
+              ORDER BY sort_order, id",
+        )?;
+        let rows = stmt.query_map(params![work_id, parent_id, kind], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+        })?;
+        let mut siblings = Vec::new();
+        for row in rows {
+            siblings.push(row?);
+        }
+        let positional = kind == crate::model::NodeKind::Volume.as_str();
+        let kind_parsed = crate::model::NodeKind::parse(&kind)?;
+        let blanks: Vec<String> = siblings
+            .iter()
+            .map(|(_, candidate)| {
+                if positional && candidate.trim().is_empty() {
+                    super::node_edit::template_for(kind_parsed).to_string()
+                } else {
+                    candidate.clone()
+                }
+            })
+            .collect();
+        let items: Vec<crate::numbering::LayerItem<'_>> = blanks
+            .iter()
+            .map(|candidate| crate::numbering::LayerItem { title: candidate, positional })
+            .collect();
+        let rendered = crate::numbering::render_layer(&items);
+        let mine = siblings
+            .iter()
+            .position(|(id, _)| *id == node_id)
+            .map(|position| rendered[position].clone());
+        Ok(mine.unwrap_or(title))
     }
 
     /// 节点标题（导出文件名、界面提示要用；顺带确认节点活着）。
@@ -295,7 +409,8 @@ impl Store {
             if node.kind.holds_body() {
                 order.push(ChapterSummary {
                     id: node.id,
-                    title: node.title.clone(),
+                    // 导航里显示的是**渲染后**的名字（`第{$N}章` → `第3章`）
+                    title: node.title_rendered.clone(),
                     word_count: node.word_count,
                 });
             }

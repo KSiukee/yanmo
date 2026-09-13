@@ -14,7 +14,6 @@ import type { EditorSession } from "../editor/session";
 import { addIntent, containerLabel, type TreeRow } from "../editor/tree";
 import { t } from "../locales/index.ts";
 import { formatCaliberNumber, formatCaliberWords } from "../editor/display.ts";
-import GapDialog from "./GapDialog.vue";
 
 const props = defineProps<{ session: EditorSession }>();
 // 从会话对象里取出的都是 ref，模板里照常自动解包
@@ -34,15 +33,7 @@ const {
 const { caliber } = props.session;
 const { neighbors, switching, switchChapter, deleteNode, adding, trash } = props.session;
 // 点「+」之后的编排在 editor/add-chapter.ts（这里只接线，不写流程）
-const {
-  visible: gapVisible,
-  gap: gapPending,
-  busy: gapBusy,
-  addHere,
-  fill: fillGap,
-  answer: answerGap,
-  dismiss: dismissGap,
-} = adding;
+const { addHere } = adding;
 
 /**
  * 同层序号（1 起）：**没起名的卷靠它显示「第 1 卷」**，而不是一个冷冰冰的"未命名"。
@@ -62,7 +53,8 @@ const serialById = computed(() => {
 
 /** 目录里显示的名字：没起名的容器按序号补"第 N 卷"，其它没起名的显示"（未命名）" */
 function rowLabel(row: TreeRow): string {
-  if (row.title) return row.title;
+  // 显示一律走**渲染后**的标题（`第{$N}章` → `第3章`）；改名时才编辑 `row.title` 原文
+  if (row.title_rendered) return row.title_rendered;
   if (row.accepts_children && !row.holds_body) {
     return t("tree.volume_placeholder", { n: serialById.value.get(row.id) ?? 1 });
   }
@@ -162,11 +154,6 @@ function askDelete(row: TreeRow) {
   }
 }
 
-/** 去回收站看看：先把这一问收起来（**不记答复**），再打开回收站 */
-function goTrash() {
-  dismissGap();
-  trash.toggle();
-}
 </script>
 
 <template>
@@ -304,16 +291,6 @@ function goTrash() {
       </button>
     </footer>
 
-    <GapDialog
-      v-if="gapVisible"
-      :gap="gapPending"
-      :busy="gapBusy"
-      @fill="fillGap"
-      @defer="answerGap('deferred')"
-      @ignore="answerGap('ignored')"
-      @trash="goTrash"
-      @close="dismissGap"
-    />
   </aside>
 </template>
 

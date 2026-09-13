@@ -10,7 +10,7 @@
 //!
 //! # 文件划分
 //!
-//! 一个领域一个文件（[`work`] / [`node`] + [`node_edit`] / [`content`] / [`search`] / [`export`] / [`trash`] / [`gap`] / [`appearance`]），
+//! 一个领域一个文件（[`work`] / [`node`] + [`node_edit`] / [`content`] / [`search`] / [`export`] / [`trash`] / [`appearance`]），
 //! 各自只管自己的 SQL；公共句柄与留痕在 [`mod`] 与 [`device`]。
 //! 节点的**读**与**编辑**特意分开：目录树查询和树结构变更的变化理由不一样。
 
@@ -19,7 +19,6 @@ mod backup;
 mod content;
 mod device;
 mod export;
-mod gap;
 mod node;
 mod node_edit;
 mod relocate;
@@ -42,7 +41,6 @@ pub use backup::{
 pub use content::ContentStats;
 pub use export::{ExportFormat, RenderedFile};
 pub(crate) use export::normalize;
-pub use gap::{ChapterGap, GapAnswer};
 pub use node::{ChapterNeighbors, ChapterSummary, NodeSummary, SubtreeRollup};
 pub use relocate::{copy_dir, verify_same_scale, Relocation};
 pub use restore::RestorePreview;

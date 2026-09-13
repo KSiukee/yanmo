@@ -211,7 +211,7 @@ impl Store {
             return Ok(EditorTarget {
                 work_id,
                 node_id: node.id,
-                title: node.title.clone(),
+                title: node.title_rendered.clone(),
             });
         }
 
@@ -219,7 +219,7 @@ impl Store {
         let parent = nodes.iter().find(|n| n.parent_id.is_none()).map(|n| n.id);
         // 标题留空 = 交给核心那一份取号实现（别再在这儿写死一个名字，两处迟早不一致）
         let node_id = self.create_node(work_id, parent, NodeKind::Chapter, "")?;
-        let title = self.node_title(node_id)?;
+        let title = self.rendered_title(node_id)?;
         Ok(EditorTarget { work_id, node_id, title })
     }
 
@@ -249,11 +249,14 @@ impl Store {
             )
             .optional()?;
         match row {
-            Some((work_id, title, kind)) if NodeKind::parse(&kind)?.holds_body() => Ok(Some(EditorTarget {
-                work_id,
-                node_id,
-                title,
-            })),
+            Some((work_id, _, kind)) if NodeKind::parse(&kind)?.holds_body() => {
+                Ok(Some(EditorTarget {
+                    work_id,
+                    node_id,
+                    // 章名显示渲染后的那一份（模板留在库里，改名时才编辑它）
+                    title: self.rendered_title(node_id)?,
+                }))
+            }
             _ => Ok(None),
         }
     }

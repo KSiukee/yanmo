@@ -167,7 +167,7 @@ fn unnamed_containers_export_with_structural_names() {
     let files = store.render_work(work.id, ExportFormat::Text).unwrap();
     assert_eq!(
         paths(&files),
-        vec!["001-volume/001-第1章.txt"],
-        "没起名的**容器**退到结构标识；章仍按同层取号自动命名（那是作者可改的名字）"
+        vec!["001-第1卷/001-第1章.txt"],
+        "导出的名字与界面看到的一致：没起名的卷按位置渲染成「第1卷」，章是「第1章」"
     );
 }

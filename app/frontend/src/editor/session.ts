@@ -69,9 +69,6 @@ import {
   compileWork,
   setNodeSummary,
   setWorkSummary,
-  treeFillGap,
-  treeGapAnswer,
-  treeGapCheck,
   typesetApply,
   typesetRules,
   typesetScan,
@@ -104,7 +101,6 @@ import { watchFocusAndIme } from "./diagnose";
 import { primeImeThen } from "./ime-prime";
 import { ExitGate, type ExitGateState } from "./exitguard";
 import { focusPlan } from "./focus";
-import { useGaps, type Gaps } from "./gaps";
 import { useShelf, type Shelf } from "./shelf";
 import { useCompile, type CompileState } from "./compile";
 import { useChapterNote, type ChapterNote } from "./note";
@@ -137,8 +133,6 @@ export interface EditorSession {
   note: ChapterNote;
   /** 编译：一份原稿 → 一种成品（投稿版 docx / 分章 txt / 合并 txt） */
   compile: CompileState;
-  /** 删章路标：点「+」前先问一嘴"这一层少了一章，要补写吗" */
-  gaps: Gaps;
   /** 点「+」之后的编排：先问路标，再照作者意图建章（视图只管"点了哪一行"） */
   adding: AddChapter;
   /** 外观 / 写作行为偏好（设置面板用；焦点策略也读它） */
@@ -355,8 +349,7 @@ export function useEditorSession(): EditorSession {
       writing.visible.value ||
       backup.visible.value ||
       restore.visible.value ||
-      location.visible.value ||
-      gaps.pending.value !== null,
+      location.visible.value,
   );
 
   function whenWindowFocused(): Promise<void> {
@@ -604,8 +597,8 @@ export function useEditorSession(): EditorSession {
    *
    * 为什么单列：依赖顺序是隐式的——编译器看不见、单测也碰不到；把新组合式插错位置，
    * 挂载时会直接抛错，真机上就是白屏（这条踩过一次）。约定：
-   * ① `directory` / `gaps` / `appearance` 先行（后面的要靠它们）；
-   * ② 再建 `adding`（它同时要 directory + gaps + 建章那条路）；
+   * ① `directory` / `appearance` 先行（后面的要靠它们）；
+   * ② 再建 `adding`（它要 directory + 建章那条路）；
    * ③ `trash` / `shelf` / `snapshots` / `restore` 最后（它们只在回调里互相引用，运行时才碰）。
    */
   function createParts() {
@@ -617,15 +610,6 @@ export function useEditorSession(): EditorSession {
       openChapter: (node_id) => switchChapter(node_id),
       onError: (message) => {
         failure.value = t("session.directory_failed", { detail: message });
-      },
-    });
-
-    // 删章路标：只在点「+」时问一嘴，答复与空缺都归核心（这里只转发）
-    const gaps = useGaps({
-      transport: { check: treeGapCheck, answer: treeGapAnswer, fill: treeFillGap },
-      workId,
-      onError: (message) => {
-        failure.value = t("session.gap_failed", { detail: message });
       },
     });
 
@@ -665,7 +649,7 @@ export function useEditorSession(): EditorSession {
     const openFreshChapter = (node_id: number) => switchChapter(node_id, true);
 
     // 点「+」之后的编排（先问路标 → 补写 / 接着建章）：**不放在视图里**，视图只管"点了哪一行"
-    const adding = useAddChapter({ gaps, directory, addChapterAfter, openFreshChapter });
+    const adding = useAddChapter({ directory, addChapterAfter, openFreshChapter });
 
     // 回收站：捞回来 / 彻底删掉；捞回来之后目录树与书架都得跟着刷新
     const trash = useTrash({
@@ -805,7 +789,6 @@ export function useEditorSession(): EditorSession {
 
     return {
       directory,
-      gaps,
       appearance,
       writing,
       backup,
@@ -824,7 +807,6 @@ export function useEditorSession(): EditorSession {
   // 装配一次，之后各处只用解出来的这几个（顺序约定见 createParts）
   const {
     directory,
-    gaps,
     appearance,
     writing,
     backup,
@@ -932,7 +914,6 @@ export function useEditorSession(): EditorSession {
     addChapterAfter,
     deleteNode,
     directory,
-    gaps,
     adding,
     appearance,
     writing,

@@ -17,6 +17,7 @@ pub mod error;
 pub mod error_codes;
 pub mod location;
 pub mod model;
+pub mod numbering;
 pub mod paths;
 pub mod store;
 pub mod text;

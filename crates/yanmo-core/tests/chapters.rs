@@ -170,10 +170,9 @@ fn cursor_survives_reopen_and_refuses_deleted_nodes() {
     assert_eq!(store.load_cursor(node).unwrap(), None);
 }
 
-/// ★ 没有编号传统的那一类（散文 / 文集：作者都用自起的名字）——**不许被"第N篇"接管**。
+/// 散文 / 文集（作者自己起名、不带编号宏）：新条目插在**点的那一行后面**。
 ///
-/// 这一层一个能认出的编号都没有时，新条目就该插在**点的那一行后面**。真机上会看见的毛病是：
-/// 文集里点「+」，新篇跑到整层最上面去（"没有兄弟的号比它小"算出来下标就是 0）。
+/// 宏模型里"位置"就是一切：不带 `{$N}` 的层没有号可算，落点纯按作者点的那一行。
 #[test]
 fn a_layer_without_numbers_still_inserts_where_you_click() {
     let (_dir, mut store) = fresh();
@@ -184,83 +183,49 @@ fn a_layer_without_numbers_still_inserts_where_you_click() {
         pieces.push(store.create_node(work.id, None, NodeKind::Piece, title).unwrap());
     }
 
-    // 点中间那一篇的「+」：新篇要插在它后面，而不是跑到最上面
     let created = store.add_chapter_after(pieces[1], NodeKind::Piece, "").unwrap();
     let after = store.chapter_neighbors(pieces[1]).unwrap();
     assert_eq!(
         after.next.as_ref().map(|piece| piece.id),
         Some(created),
-        "文集里没有编号可归位，就该按点的位置插"
+        "文集里没有编号，就该按点的位置插"
     );
     let top = store.chapter_neighbors(pieces[0]).unwrap();
-    assert_eq!(
-        top.next.as_ref().map(|piece| piece.id),
-        Some(pieces[1]),
-        "第一篇后面仍旧是第二篇，新篇不该插到最前面"
-    );
+    assert_eq!(top.next.as_ref().map(|piece| piece.id), Some(pieces[1]), "新篇不该插到最前面");
+    // 单篇 / 文集的新条目**不带编号**：库里就是空标题（界面按语言显示占位）
+    assert_eq!(store.node_title(created).unwrap(), "", "散文/文集不自动编号");
 }
 
-/// ★ 真机回归：**自动编号的新章必须按号归位**，不能"号说 22、位置说插在点的那一行后面"。
+
+/// ★ 真机回归：**点哪儿插哪儿**——宏模型里这就是唯一一条落点规矩。
 ///
-/// 现场是这么长出来的：同层已经有 18/19/20/21，作者在第20章上点「+」→ 号取到 22（同层最大 +1），
-/// 位置却插在 20 后面，屏幕上就成了 `20 / 22 / 23 / 21`——看着就是"排序又乱了"。
-/// 规矩：标题留空（号由核心取）时按号归位；作者自己写了标题才"点哪儿插哪儿"（见两条既有验收）。
+/// 旧模型（号写死在标题里）时这里出过 `20 / 22 / 23 / 21`：号取同层最大 +1，位置却插在
+/// 点的那一行后面，两条规矩各说各话。现在号 = 位置的函数（`第{$N}章` 渲染出来），
+/// 点第 20 章「+」就是插在第 20 章后面，显示出来自然是连续的第 1…n 章。
 #[test]
-fn an_auto_numbered_chapter_lands_by_its_number_not_by_the_clicked_row() {
+fn a_new_chapter_always_lands_right_after_the_clicked_row() {
     let (_dir, mut store) = fresh();
     let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
     let volume = store.list_nodes(work.id).unwrap()[0].id;
     let mut chapters = Vec::new();
-    for serial in 18..=21 {
-        let id = store
-            .create_node(work.id, Some(volume), NodeKind::Chapter, &format!("第{serial}章"))
-            .unwrap();
-        chapters.push(id);
+    for _ in 0..4 {
+        chapters.push(store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap());
     }
-    let (ch20, ch21) = (chapters[2], chapters[3]);
 
-    // 在第20章上点「+」（界面上标题是留空的）
-    let created = store.add_chapter_after(ch20, NodeKind::Chapter, "").unwrap();
-
-    assert_eq!(store.node_title(created).unwrap(), "第22章", "号还是「同层最大 +1」");
-    let after_21 = store.chapter_neighbors(ch21).unwrap();
+    // 点第 3 章的「+」（标题留空 = 用模板）
+    let created = store.add_chapter_after(chapters[2], NodeKind::Chapter, "").unwrap();
+    let after = store.chapter_neighbors(chapters[2]).unwrap();
     assert_eq!(
-        after_21.next.as_ref().map(|chapter| chapter.id),
+        after.next.as_ref().map(|chapter| chapter.id),
         Some(created),
-        "第22章必须落在第21章之后，而不是插回第20章后面"
+        "新章就插在点的那一行后面"
     );
-    let before_21 = store.chapter_neighbors(ch20).unwrap();
-    assert_eq!(
-        before_21.next.as_ref().map(|chapter| chapter.id),
-        Some(ch21),
-        "第20章后面仍旧紧接第21章（不能被新章挤开）"
-    );
+    // 作者自己写了标题，也一样：落点听他的
+    let named = store.add_chapter_after(chapters[0], NodeKind::Chapter, "番外·夜谈").unwrap();
+    let after_first = store.chapter_neighbors(chapters[0]).unwrap();
+    assert_eq!(after_first.next.as_ref().map(|chapter| chapter.id), Some(named));
 }
 
-/// 作者自己写了标题时：**点哪儿插哪儿**（这条规矩没被上一条改掉）。
-#[test]
-fn a_named_chapter_still_lands_right_after_the_clicked_row() {
-    let (_dir, mut store) = fresh();
-    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
-    let volume = store.list_nodes(work.id).unwrap()[0].id;
-    let mut chapters = Vec::new();
-    for serial in 18..=21 {
-        let id = store
-            .create_node(work.id, Some(volume), NodeKind::Chapter, &format!("第{serial}章"))
-            .unwrap();
-        chapters.push(id);
-    }
-
-    let inserted = store
-        .add_chapter_after(chapters[2], NodeKind::Chapter, "番外·夜谈")
-        .unwrap();
-    let after_20 = store.chapter_neighbors(chapters[2]).unwrap();
-    assert_eq!(
-        after_20.next.as_ref().map(|chapter| chapter.id),
-        Some(inserted),
-        "作者给了名字，落点就听他的：插在点的那一行后面"
-    );
-}
 
 #[test]
 fn new_chapter_lands_right_after_the_current_one() {
@@ -292,38 +257,29 @@ fn new_chapter_lands_right_after_the_current_one() {
     assert_eq!(parent_of(tail), parent_of(last_in_volume), "新章跟当前章同父（不跨卷乱跑）");
 }
 
+/// 默认名是**模板**，号由渲染层按位置给（同层、同类，各算各的）。
 #[test]
-fn default_chapter_name_counts_inside_its_own_volume() {
-    let mut book = two_volume_book();
-    let (one, volume_two) = (book.chapters[0], book.volumes[1]);
-    let work_id = book.work_id;
-    let title_of = |store: &Store, id: i64| {
-        store
-            .list_nodes(work_id)
-            .unwrap()
-            .iter()
-            .find(|n| n.id == id)
-            .map(|n| n.title.clone())
-            .unwrap()
-    };
+fn default_chapter_name_is_a_template_and_renders_by_position() {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let volume = store.list_nodes(work.id).unwrap()[0].id;
+    let mut ids = Vec::new();
+    for _ in 0..3 {
+        ids.push(store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap());
+    }
+    for (at, id) in ids.iter().enumerate() {
+        assert_eq!(store.node_title(*id).unwrap(), "第{$N}章", "库里存的是模板");
+        assert_eq!(store.rendered_title(*id).unwrap(), format!("第{}章", at + 1));
+    }
 
-    // 标题留空 = 按**同层**取号：第一卷里已有两章，所以新章是第三
-    // （按整本书数会变成第五——那就是"分卷之后跳号"的老毛病）
-    let created = book.store.add_chapter_after(one, NodeKind::Chapter, "").unwrap();
-    assert_eq!(title_of(&book.store, created), "第3章");
-
-    // 另一卷各数各的：第二卷里已有的号是 3、4，所以这一层下一个是 5
-    // （"各层各数"数的是**这一层用过的号**，不是"这一层有几章"）
-    let in_second = book
-        .store
-        .create_node(book.work_id, Some(volume_two), NodeKind::Chapter, "")
-        .unwrap();
-    assert_eq!(title_of(&book.store, in_second), "第5章", "只数自己这一层的号");
-
-    // 卷也一样按同层取号
-    let volume_three = book.store.create_node(book.work_id, None, NodeKind::Volume, "").unwrap();
-    assert_eq!(title_of(&book.store, volume_three), "第3卷", "根级已有两卷");
+    // 另一卷各数各的：第二卷第一张就是第1章
+    let second = store.create_node(work.id, None, NodeKind::Volume, "").unwrap();
+    let other = store.create_node(work.id, Some(second), NodeKind::Chapter, "").unwrap();
+    assert_eq!(store.rendered_title(other).unwrap(), "第1章", "分卷各数各的");
+    // 建书时留白的那一卷（还没起名）也按位置渲染成「第1卷」，所以新卷是第2卷
+    assert_eq!(store.rendered_title(second).unwrap(), "第2卷");
 }
+
 
 #[test]
 fn ancestors_run_from_root_down_to_the_parent() {
@@ -350,29 +306,22 @@ fn ancestors_run_from_root_down_to_the_parent() {
     assert!(book.store.node_ancestors(999_999).is_err());
 }
 
-/// 回归：**标题里带章名时，也要认得出编号**。
-///
-/// 真踩过（用户 2026-09-13 报）：第二卷里已有「第6章 灯 … 第10章 灯」这种最常见的写法，
-/// 点「+」新建时却从「第6章」重新数起——旧实现要求标题**以「章」结尾**才认编号，
-/// 认不出就退回"同层现有几章 + 1"；连点几次就成了 第6…第16 章排在一起（看着像章号倒着长）。
+/// 标题里带章名（`第{$N}章 灯`）也照样按位置排——号只看位置，不看字。
 #[test]
-fn new_chapters_continue_the_numbering_even_when_titles_carry_a_name() {
+fn numbering_follows_position_even_when_titles_carry_a_name() {
     let (_dir, mut store) = fresh();
     let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
     let volume = store.list_nodes(work.id).unwrap()[0].id;
 
-    let mut last = volume;
-    for serial in 6..=10 {
-        let title = format!("第{serial}章 {}", if serial % 2 == 0 { "灯" } else { "门" });
-        last = store.create_node(work.id, Some(volume), NodeKind::Chapter, &title).unwrap();
-        store.write_body(last, "正文。").unwrap();
+    let mut ids = Vec::new();
+    for at in 0..5 {
+        let suffix = if at % 2 == 0 { "灯" } else { "门" };
+        let title = format!("第{{$N}}章 {suffix}");
+        let id = store.create_node(work.id, Some(volume), NodeKind::Chapter, &title).unwrap();
+        store.write_body(id, "正文。").unwrap();
+        ids.push((id, suffix));
     }
-
-    // 在第10章后面点「+」（标题留空＝按同层取号）：要继续数到第11章，而不是回到第6章
-    let created = store.add_chapter_after(last, NodeKind::Chapter, "").unwrap();
-    assert_eq!(store.node_title(created).unwrap(), "第11章");
-
-    // 再点一次：继续往上数（而不是又算成第7章）
-    let again = store.add_chapter_after(created, NodeKind::Chapter, "").unwrap();
-    assert_eq!(store.node_title(again).unwrap(), "第12章");
+    for (at, (id, suffix)) in ids.iter().enumerate() {
+        assert_eq!(store.rendered_title(*id).unwrap(), format!("第{}章 {suffix}", at + 1));
+    }
 }

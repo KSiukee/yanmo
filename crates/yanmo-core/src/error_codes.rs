@@ -77,7 +77,6 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "未知的字数口径：{value}（只有 chars / chars_no_punct / words）" : ["value"],
     UNKNOWN_EXPORT_FORMAT => "value.unknown_export_format"
         : "不认识的导出格式：{value}（只支持 txt / json）" : ["value"],
-    UNKNOWN_GAP_ANSWER => "value.unknown_gap_answer" : "未知的答复：{value}" : ["value"],
     UNKNOWN_COMPILE_PRESET => "value.unknown_compile_preset"
         : "不认识的编译预设：{value}" : ["value"],
     UNKNOWN_QUOTE_STYLE => "value.unknown_quote_style"
@@ -97,7 +96,6 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "不能切到该节点（不存在 / 已删除 / 不承载正文）：{node_id}" : ["node_id"],
     NODE_FOREIGN_PARENT => "node.foreign_parent"
         : "节点 {node_id} 属于作品 {owner}，不能挂到作品 {work_id} 下" : ["node_id", "owner", "work_id"],
-    NODE_GAP_NO_SERIAL => "node.gap_no_serial" : "这一段没有编号可补：{title}" : ["title"],
     TREE_CYCLE_SUSPECTED => "tree.cycle_suspected" : "节点树深度异常（疑似成环），已拒绝继续" : [],
     TREE_MOVE_INTO_DESCENDANT => "tree.move_into_descendant"
         : "不能把节点移进自己的子孙里——那会形成环" : [],

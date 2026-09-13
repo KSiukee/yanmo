@@ -23,7 +23,10 @@ pub struct TreeNodeDto {
     pub parent_id: Option<i64>,
     /// 「卷 / 章 / 节 / 单篇 / 场景卡」——**界面不假设层级**，只按这个取值显示
     pub kind: String,
+    /// 作者写的原文（含 `{$N}` 这类宏时就是模板）——**改名编辑的是它**
     pub title: String,
+    /// 显示用的那一份：宏已按同层位置渲染（`第{$N}章` → `第3章`）
+    pub title_rendered: String,
     pub word_count: i64,
     /// 逐字（含标点）
     pub char_count: i64,
@@ -50,6 +53,7 @@ fn to_dto(node: NodeSummary, rollup: SubtreeRollup) -> TreeNodeDto {
         parent_id: node.parent_id,
         kind: node.kind.as_str().to_string(),
         title: node.title,
+        title_rendered: node.title_rendered,
         word_count: node.word_count,
         char_count: node.char_count,
         chars_no_punct: node.chars_no_punct,

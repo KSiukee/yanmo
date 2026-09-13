@@ -69,7 +69,7 @@ fn collect(
         let chapter = node.kind.holds_body();
         out.push(Item {
             kind: if chapter { ItemKind::Chapter } else { ItemKind::Container },
-            title: node.title.clone(),
+            title: node.title_rendered.clone(),
             summary: if chapter { node.summary.clone() } else { String::new() },
             paragraphs: if chapter { paragraphs(&store.read_body(node.id)?) } else { Vec::new() },
             depth,

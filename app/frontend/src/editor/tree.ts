@@ -17,7 +17,10 @@ export interface TreeRow {
   id: number;
   parent_id: number | null;
   kind: string;
+  /// 作者写的原文（含 `{$N}` 这类宏时就是模板）——**改名编辑的是它**
   title: string;
+  /// 显示用的那一份：宏已按同层位置渲染（`第3章`）
+  title_rendered: string;
   word_count: number;
   has_body: boolean;
   holds_body: boolean;

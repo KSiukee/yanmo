@@ -123,10 +123,10 @@ fn children_index(nodes: &[super::NodeSummary]) -> HashMap<Option<i64>, Vec<usiz
 /// 节点名：标题为空（新建后还没起名）就退到**结构标识**
 /// （`volume` / `chapter` …）——那是语言无关的取值，比一个"未命名"有用得多。
 fn node_name(node: &super::NodeSummary) -> String {
-    if node.title.trim().is_empty() {
+    if node.title_rendered.trim().is_empty() {
         node.kind.as_str().to_string()
     } else {
-        safe_file_name(&node.title)
+        safe_file_name(&node.title_rendered)
     }
 }
 
@@ -183,7 +183,7 @@ fn json_nodes(
         let node = &nodes[*index];
         let mut item = serde_json::Map::new();
         item.insert("kind".into(), node.kind.as_str().into());
-        item.insert("title".into(), node.title.clone().into());
+        item.insert("title".into(), node.title_rendered.clone().into());
         if node.kind.holds_body() {
             item.insert("body".into(), normalize(&store.read_body(node.id)?).into());
         }

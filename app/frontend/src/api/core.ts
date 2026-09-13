@@ -83,7 +83,10 @@ export interface TreeNode {
   parent_id: number | null;
   /** 「卷 / 章 / 节 / 单篇 / 场景卡」——**界面不假设层级**，只按取值显示 */
   kind: string;
+  /** 作者写的原文（含 `{$N}` 这类宏时就是模板）——**改名编辑的是它** */
   title: string;
+  /** 显示用的那一份：宏已按同层位置渲染（`第{$N}章` → `第3章`） */
+  title_rendered: string;
   word_count: number;
   /** 逐字（含标点） */
   char_count: number;
@@ -213,23 +216,6 @@ export interface TypesetReport {
 /** 扫描选项（现在是引号风格一种）。 */
 export interface TypesetOptions {
   quote_style: string;
-}
-
-/** 删章留下的一处空缺——点「+」时问那一句的依据。 */
-export interface ChapterGap {
-  /** 回收站里那一条（「去回收站看看」用它） */
-  node_id: number;
-  /** 缺在哪一层；null = 根级 */
-  parent_id: number | null;
-  parent_title: string | null;
-  /** 第几号 */
-  serial: number;
-  /** 原来叫什么 */
-  title: string;
-  /** 什么时候删的（unix 毫秒） */
-  deleted_at: number;
-  /** 旧稿多少字（让作者知道"字还在"） */
-  word_count: number;
 }
 
 /** 书架的一行：作品 + 它的规模。 */
@@ -563,9 +549,6 @@ const COMMANDS = {
   treeDeleteNode: "tree_delete_node",
   treeVolumeTarget: "tree_volume_target",
   treeSetVolumeTarget: "tree_set_volume_target",
-  treeGapCheck: "tree_gap_check",
-  treeGapAnswer: "tree_gap_answer",
-  treeFillGap: "tree_fill_gap",
   appearanceRead: "appearance_read",
   appearanceWrite: "appearance_write",
   appearanceReset: "appearance_reset",
@@ -818,18 +801,6 @@ export const treeVolumeTarget = (work_id: number) =>
 /** 设定 / 清除每卷目标章数（null = 清掉）。 */
 export const treeSetVolumeTarget = (work_id: number, chapters: number | null) =>
   call<void>(COMMANDS.treeSetVolumeTarget, { work_id, chapters });
-
-/** 删章路标：这一层现在该不该问一句（不该问就是 null）。 */
-export const treeGapCheck = (work_id: number, parent_id: number | null) =>
-  call<ChapterGap | null>(COMMANDS.treeGapCheck, { work_id, parent_id });
-
-/** 删章路标：记下对某处空缺的答复（deferred = 稍后再说 / ignored = 不用了）。 */
-export const treeGapAnswer = (node_id: number, answer: "deferred" | "ignored") =>
-  call<void>(COMMANDS.treeGapAnswer, { node_id, answer });
-
-/** 删章路标：补写——在原来的层、用原来的名字与位置新建空章，返回新章 id。 */
-export const treeFillGap = (node_id: number) =>
-  call<number>(COMMANDS.treeFillGap, { node_id });
 
 /** 读外观 / 写作行为偏好；`work_id` 给 null 就是只看全局那份。 */
 export const readAppearance = (work_id: number | null) =>
