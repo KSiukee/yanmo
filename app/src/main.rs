@@ -14,6 +14,7 @@
 
 use std::time::{Duration, Instant};
 
+use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::exitwatch::RequestOutcome;
@@ -26,6 +27,14 @@ mod storage;
 
 fn main() {
     tauri::Builder::default()
+        // **首帧白屏**：窗口先显示、网页还没画出第一帧时，看到的就是 WebView2 的白底。
+        // 正解两条一起上：窗口在配置里先隐藏（`visible: false`）+ 底色设成纸色（`backgroundColor`），
+        // 这里等页面**加载完成**再把窗口显示出来——用户看到的就是已经画好的界面。
+        .on_page_load(|webview, payload| {
+            if payload.event() == PageLoadEvent::Finished {
+                let _ = webview.window().show();
+            }
+        })
         .setup(|app| {
             // 打开失败就让启动失败：半个可用的数据层比不启动更危险。
             let data = match storage::AppData::open(app.handle()) {
@@ -41,6 +50,17 @@ fn main() {
                 }
             };
             app.manage(data);
+            // 兜底：万一页面加载完成那个事件没来（前端资源卡住、页面崩了），三秒后也把窗口显示出来
+            // ——**绝不因为一个观感优化，把软件变成"点开没反应"**。
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(3));
+                if let Some(window) = handle.get_webview_window("main") {
+                    if !window.is_visible().unwrap_or(true) {
+                        let _ = window.show();
+                    }
+                }
+            });
             Ok(())
         })
         // 关窗不直接放行：交给界面先落盘，存不下去就别想走。
