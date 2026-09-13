@@ -49,6 +49,7 @@ pub fn appearance_read(
     data: State<'_, AppData>,
     work_id: Option<i64>,
 ) -> Result<AppearanceDto, ApiError> {
+    crate::acceptance::note_command("appearance_read");
     data.with_store(|store: &mut Store| Ok(store.appearance(work_id)?.into()))
 }
 

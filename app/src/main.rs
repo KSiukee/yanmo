@@ -19,6 +19,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::exitwatch::RequestOutcome;
 
+mod acceptance;
 mod commands;
 mod error;
 mod exitwatch;
@@ -29,11 +30,40 @@ mod storage;
 mod volume;
 
 fn main() {
+    // **验收模式**（`--self-test-bench` / `--self-test-ui` / `--check`）：只由启动参数进入，
+    // 不带参数双击图标的行为一字不变。前两个在独立目录里干活，**绝不碰真实稿库**。
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(plan) = acceptance::parse(&argv) {
+        match plan.mode {
+            acceptance::Mode::Check => std::process::exit(acceptance::run_check(&plan)),
+            acceptance::Mode::Bench => {
+                let report = acceptance::run_bench(&plan);
+                match acceptance::write_report(&report, &plan.report) {
+                    // i18n-allow-next-line: 命令行的机器可读输出（给脚本看），不是界面文案
+                    Ok(files) => files.iter().for_each(|path| println!("报告：{}", path.display())),
+                    // i18n-allow-next-line: 同上
+                    Err(error) => eprintln!("报告没写成：{error}"),
+                }
+                std::process::exit(0);
+            }
+            acceptance::Mode::Ui => {
+                // 开窗之前记下这一刻：冷启动从这里算起（不含前面造数据的时间）
+                acceptance::install_ui(plan);
+                acceptance::note_ui_start();
+            }
+        }
+    }
+    acceptance::note_command("shell.window_building");
     tauri::Builder::default()
         // **首帧白屏**：窗口先显示、网页还没画出第一帧时，看到的就是 WebView2 的白底。
         // 正解两条一起上：窗口在配置里先隐藏（`visible: false`）+ 底色设成纸色（`backgroundColor`），
         // 这里等页面**加载完成**再把窗口显示出来——用户看到的就是已经画好的界面。
         .on_page_load(|webview, payload| {
+            // 验收模式：把"页面加载完成"也记进命令日志（这一步没有，说明卡在页面本身）
+            if payload.event() == PageLoadEvent::Finished {
+                acceptance::note_command("window.page_loaded");
+                acceptance::note_page_loaded();
+            }
             if payload.event() == PageLoadEvent::Finished {
                 let window = webview.window();
                 let _ = window.show();
@@ -45,7 +75,15 @@ fn main() {
         })
         .setup(|app| {
             // 打开失败就让启动失败：半个可用的数据层比不启动更危险。
-            let data = match storage::AppData::open(app.handle()) {
+            // 验收模式走"指定目录"那条路：不读也不写位置记录（验收不许碰真实稿库）。
+            let opened = match acceptance::ui_plan() {
+                Some(plan) => storage::AppData::open_for_acceptance(&plan.dir),
+                None => storage::AppData::open(app.handle()),
+            };
+            if acceptance::ui_plan().is_some() {
+                acceptance::note_command("shell.data_ready");
+            }
+            let data = match opened {
                 Ok(data) => data,
                 Err(error) => {
                     // 「这个数据目录已经开着一个研墨了」是唯一要在启动期单独辨出来的失败：
@@ -58,6 +96,15 @@ fn main() {
                 }
             };
             app.manage(data);
+            // 验收模式：界面要是到点还没就绪（页面没加载完、前端报错），
+            // 也要出报告并退出——**绝不挂在那儿等**。
+            if acceptance::ui_plan().is_some() {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(acceptance::ui_deadline());
+                    acceptance::ui_deadline_passed(&handle);
+                });
+            }
             // 兜底：万一页面加载完成那个事件没来（前端资源卡住、页面崩了），三秒后也把窗口显示出来
             // ——**绝不因为一个观感优化，把软件变成"点开没反应"**。
             let handle = app.handle().clone();

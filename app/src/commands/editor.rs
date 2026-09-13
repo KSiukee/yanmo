@@ -126,6 +126,7 @@ pub struct EscapeAck {
 /// 取当前该编辑的一章（若上次是被杀，优先回到崩溃前那一章）。
 #[tauri::command]
 pub fn open_editor_target(data: State<'_, AppData>) -> Result<EditorSnapshot, ApiError> {
+    crate::acceptance::note_command("open_editor_target");
     let preferred = data.session().last_node_id;
     data.with_store(|store| {
         let target = store.ensure_editor_target_preferring(preferred)?;
@@ -179,6 +180,7 @@ pub fn create_chapter(
 /// 上一章 / 下一章（按阅读顺序，跨卷）。
 #[tauri::command(rename_all = "snake_case")]
 pub fn chapter_neighbors(data: State<'_, AppData>, node_id: i64) -> Result<NeighborsDto, ApiError> {
+    crate::acceptance::note_command("chapter_neighbors");
     data.with_store(|store| {
         let neighbors = store.chapter_neighbors(node_id)?;
         let to_dto = |chapter: yanmo_core::store::ChapterSummary| ChapterSummaryDto {
@@ -263,8 +265,11 @@ pub fn session_report(data: State<'_, AppData>) -> SessionNotice {
 
 /// 界面已就绪——从现在起关窗会先过闸门。
 #[tauri::command]
-pub fn arm_exit_gate(data: State<'_, AppData>) {
+pub fn arm_exit_gate(app: tauri::AppHandle, data: State<'_, AppData>) {
+    crate::acceptance::note_command("ui.ready");
     data.arm_exit_gate();
+    // 验收模式：界面刚就绪——把"冷启动到可用"这一刻量下来，写完报告壳自己退出
+    crate::acceptance::ui_ready(&app);
 }
 
 /// 界面回话：收到关窗通知，开始处理（落盘，或弹"存不下去"的对话框）。

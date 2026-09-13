@@ -52,6 +52,7 @@ pub struct RelocationDto {
 /// 现在的情况。
 #[tauri::command(rename_all = "snake_case")]
 pub fn data_location_info(data: State<'_, AppData>) -> LocationInfo {
+    crate::acceptance::note_command("data_location_info");
     let suggestion = data.suggestion();
     LocationInfo {
         path: data.data_dir().to_string_lossy().to_string(),

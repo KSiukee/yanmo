@@ -187,6 +187,22 @@ impl AppData {
         Ok(data)
     }
 
+    /// **验收模式**：在指定目录上开数据层。
+    ///
+    /// 与正常启动的唯一区别：不读、也不写位置记录——验收模式造的是临时库，
+    /// 绝不能因为跑一次验收就把作者真实稿库的位置记录改掉。
+    pub fn open_for_acceptance(dir: &Path) -> Result<Self, ApiError> {
+        let plan = Plan {
+            location: DataLocation { dir: dir.to_path_buf(), source: DirSource::Recorded },
+            // 验收模式不写记录：给一个"不会有人去写"的名字（ASCII，免得被当成界面文案），
+            // 万一真被写了也只落在临时目录里
+            pointer: dir.join("self-test-pointer-never-written.txt"),
+            suggestion: None,
+            sources: Sources::from_env(dir.to_path_buf()),
+        };
+        Self::open_at(plan, dir.join(EXPORT_DIR))
+    }
+
     /// 目录由调用方给出——供测试直接驱动。
     #[cfg(test)]
     fn open_at_for_test(dir: &Path) -> Result<Self, ApiError> {

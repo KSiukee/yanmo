@@ -108,6 +108,7 @@ pub fn backup_status(
     data: State<'_, AppData>,
     tz_offset_minutes: i32,
 ) -> Result<BackupStatusDto, ApiError> {
+    crate::acceptance::note_command("backup_status");
     let config = data.with_store(|store: &mut Store| Ok(store.backup_config()?))?;
     let data_dir = data
         .db_path()

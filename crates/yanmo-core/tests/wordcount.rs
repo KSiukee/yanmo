@@ -124,3 +124,33 @@ fn a_v3_library_is_upgraded_and_gets_chinese_as_the_language() {
         .unwrap();
     assert_eq!(version, i64::from(yanmo_core::db::migrations::schema_version()));
 }
+
+/// **文档对照表**：`ACCEPTANCE.md` 里那张「什么算一个字」的表，数字由这里锁住。
+///
+/// 为什么要焊在测试里：口径解释一旦和代码不一致，作者拿着文档核对就会被误导——
+/// 那种错比数字算错更难发现。改了口径算法，这里会红，逼着人回去改文档。
+#[test]
+fn the_caliber_table_in_the_public_doc_is_still_true() {
+    let rows: [(&str, i64, i64, i64); 5] = [
+        ("你好，世界。", 6, 4, 4),
+        ("Hello, world!", 12, 10, 2),
+        ("第 1 章 开始", 5, 5, 5),
+        ("你好 world 世界", 9, 9, 5),
+        ("她说：「走吧。」", 8, 4, 4),
+    ];
+    let mut table = String::new();
+    let mut wrong = Vec::new();
+    for (text, chars, no_punct, words) in rows {
+        let actual = (
+            yanmo_core::text::count_chars(text),
+            yanmo_core::text::count_chars_no_punct(text),
+            yanmo_core::text::count_words(text),
+        );
+        table.push_str(&format!("{text}\t逐字 {}｜不含标点 {}｜按词 {}\n", actual.0, actual.1, actual.2));
+        if actual != (chars, no_punct, words) {
+            wrong.push(format!("{text} 期望 ({chars},{no_punct},{words}) 实际 {actual:?}"));
+        }
+    }
+    println!("{table}");
+    assert!(wrong.is_empty(), "口径变了，ACCEPTANCE.md 要一起改：{wrong:?}");
+}
