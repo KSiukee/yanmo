@@ -21,3 +21,7 @@ yanmo-proto.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
+
+# 盘符探测（卷序列号 / 卷标 / 可移动判定）：**只在 Windows 上编**，其余平台不引入
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }

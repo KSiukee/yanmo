@@ -42,8 +42,11 @@ import {
   restorePreview,
   restoreWork,
   saveBody,
+  readBackupStatus,
+  runBackupNow,
   saveCursor,
   setWorkLanguage,
+  writeBackupConfig,
   sessionReport,
   snapshotDiff,
   snapshotDrop,
@@ -62,6 +65,7 @@ import {
 import { Autosave, type AutosaveState } from "./autosave";
 import { useAddChapter, type AddChapter } from "./add-chapter";
 import { useAppearance, type AppearanceState } from "./appearance";
+import { localOffsetMinutes, useBackup, type BackupState } from "./backup";
 import { ChapterSwitch } from "./chapters";
 import { t } from "../locales/index.ts";
 import {
@@ -125,6 +129,8 @@ export interface EditorSession {
   cycleCaliber: () => Promise<void>;
   /** 语言按钮点一下：换下一个语言，并按核心给的落定口径刷新 */
   cycleLanguage: () => Promise<void>;
+  /** 备份：设置页、自动触发（每日首启 / 关窗）与那条插盘提示 */
+  backup: BackupState;
 }
 
 const IDLE: AutosaveState = {
@@ -487,6 +493,15 @@ export function useEditorSession(): EditorSession {
       },
     });
 
+    // 备份：把库的一致性快照写到作者指定的几处（快照/体检/保留/账本都在核心）
+    const backup = useBackup({
+      transport: { status: readBackupStatus, write: writeBackupConfig, run: runBackupNow },
+      tzOffsetMinutes: localOffsetMinutes,
+      onError: (message) => {
+        failure.value = t("session.backup_failed", { detail: message });
+      },
+    });
+
     /** 打开"刚新建/补写"的那一章——要接着写（走同一条切章纪律，只是焦点策略不同） */
     const openFreshChapter = (node_id: number) => switchChapter(node_id, true);
 
@@ -553,17 +568,19 @@ export function useEditorSession(): EditorSession {
       },
     });
 
-    return { directory, gaps, appearance, adding, trash, shelf, snapshots };
+    return { directory, gaps, appearance, backup, adding, trash, shelf, snapshots };
   }
 
   // 装配一次，之后各处只用解出来的这几个（顺序约定见 createParts）
-  const { directory, gaps, appearance, adding, trash, shelf, snapshots } = createParts();
+  const { directory, gaps, appearance, backup, adding, trash, shelf, snapshots } = createParts();
 
   onMounted(async () => {
     window.addEventListener("blur", persistNow);
     document.addEventListener("visibilitychange", onVisibilityChange);
     try {
       await appearance.load(); // 先读偏好：焦点策略要用（读失败按"不抢焦点"走）
+      // 备份：读现状 + 今天还没备份过就自动做一次（**不 await**：别拖慢开窗能写字的时间）
+      void backup.onStart();
       const snapshot = await openEditorTarget();
       applyChapter(snapshot);
       makeAutosave(snapshot);
@@ -573,8 +590,14 @@ export function useEditorSession(): EditorSession {
       // 关窗闸门：先落盘，存不下去就别想走
       gate = new ExitGate({
         autosave: () => autosave.value,
-        closeSession: (node_id) => closeSession(node_id),
-        abandonSession: () => abandonSession(),
+        closeSession: async (node_id) => {
+          await closeSession(node_id);
+          backup.onClose(); // 异步做一次备份，**不拖慢退出**
+        },
+        abandonSession: async () => {
+          await abandonSession();
+          backup.onClose();
+        },
         exitApp: () => requestExit(),
         escapeExport: (node_id, body) => escapeExport(node_id, body).then((ack) => ack.path),
         currentBody: () => (editor.value ? docToText(editor.value) : ""),
@@ -624,6 +647,7 @@ export function useEditorSession(): EditorSession {
     snapshots,
     workId,
     switchWork,
+    backup,
     language,
     caliber,
     cycleCaliber,

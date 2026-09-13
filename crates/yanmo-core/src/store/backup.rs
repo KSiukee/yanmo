@@ -49,7 +49,7 @@ pub const MANIFEST_KIND: &str = "yanmo-backup";
 /// 由壳探测后传进来：**不能只记盘符**——换个 USB 口 `E:` 就变成 `F:` 了。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackupTarget {
-    /// 目标目录（如 `D:\研墨备份`）
+    /// 目标目录（作者指定的那个文件夹）
     pub path: String,
     #[serde(default)]
     pub volume_id: String,
@@ -70,12 +70,21 @@ pub struct BackupConfig {
     pub auto_on_start: bool,
     /// 正常关窗时异步做一次（不拖慢退出）
     pub auto_on_close: bool,
+    /// 作者拒绝过那条"插个盘吧"的小条——**拒过就不再自动弹**（设置页仍常驻一行建议）
+    #[serde(default)]
+    pub tip_dismissed: bool,
 }
 
 impl Default for BackupConfig {
     fn default() -> Self {
         // 默认一份目标都不勾（只推荐、不预勾）；自动两条默认开——没配目标时它们什么都不做
-        Self { targets: Vec::new(), keep: 7, auto_on_start: true, auto_on_close: true }
+        Self {
+            targets: Vec::new(),
+            keep: 7,
+            auto_on_start: true,
+            auto_on_close: true,
+            tip_dismissed: false,
+        }
     }
 }
 

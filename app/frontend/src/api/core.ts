@@ -156,6 +156,84 @@ export interface ShelfEntry {
   updated_at: number;
 }
 
+/** 一个备份目标（作者勾的一处落点）。 */
+export interface BackupTarget {
+  path: string;
+  /** 卷序列号——**识别"哪块盘"用它，不用盘符**（换 USB 口盘符会变） */
+  volume_id: string;
+  volume_label: string;
+  removable: boolean;
+}
+
+/** 备份偏好。 */
+export interface BackupConfig {
+  targets: BackupTarget[];
+  /** 每个目标保留最近几份成功的备份 */
+  keep: number;
+  auto_on_start: boolean;
+  auto_on_close: boolean;
+  /** 作者拒绝过那条"插个盘吧"的小条 */
+  tip_dismissed: boolean;
+}
+
+/** 一块盘（界面给作者列勾选项）。 */
+export interface BackupVolume {
+  root: string;
+  label: string;
+  volume_id: string;
+  removable: boolean;
+  free_bytes: number;
+  total_bytes: number;
+  /** 数据目录在不在这块盘上 */
+  holds_data: boolean;
+}
+
+/** 一个目标的现状。 */
+export interface BackupTargetStatus {
+  path: string;
+  volume_label: string;
+  /** 最近一次成功的本地日期；从没成功过是 null */
+  last_success: string | null;
+  /** 最近一次没成的原话（成功过就不再提旧的） */
+  last_problem: string | null;
+  reachable: boolean;
+  /** 最近 7 天里缺了哪几天 */
+  gaps: string[];
+}
+
+/** 备份设置页 / 提示条要的一整份现状。 */
+export interface BackupStatus {
+  config: BackupConfig;
+  volumes: BackupVolume[];
+  data_volume_id: string;
+  has_other_volume: boolean;
+  should_nudge: boolean;
+  targets: BackupTargetStatus[];
+  today: string;
+}
+
+/** 一个目标的备份结果。 */
+export interface BackupTargetOutcome {
+  path: string;
+  volume_label: string;
+  /** written / skipped / failed */
+  status: string;
+  reason: string;
+  package: string;
+  bytes: number;
+  kept: number;
+  removed: number;
+  fingerprint: string;
+  at: number;
+}
+
+/** 一次备份的总账。 */
+export interface BackupReport {
+  at: number;
+  stamp: string;
+  outcomes: BackupTargetOutcome[];
+}
+
 /** 同级里与它重名的那一个（恢复前会摆给作者看）。 */
 export interface NameClash {
   id: number;
@@ -315,6 +393,9 @@ const COMMANDS = {
   createWork: "create_work",
   renameWork: "rename_work",
   setWorkLanguage: "set_work_language",
+  backupStatus: "backup_status",
+  backupConfigWrite: "backup_config_write",
+  backupNow: "backup_now",
   deleteWork: "delete_work",
   listTrash: "list_trash",
   restoreWork: "restore_work",
@@ -360,6 +441,18 @@ export const createWork = (kind: string, title: string) =>
 /** 给书改名。 */
 export const renameWork = (work_id: number, title: string) =>
   call<void>(COMMANDS.renameWork, { work_id, title });
+
+/** 备份现状：配置 + 能看到的盘 + 每个目标的账本摘要与缺口。 */
+export const readBackupStatus = (tz_offset_minutes: number) =>
+  call<BackupStatus>(COMMANDS.backupStatus, { tz_offset_minutes });
+
+/** 写备份偏好（写完回读）。 */
+export const writeBackupConfig = (config: BackupConfig) =>
+  call<BackupConfig>(COMMANDS.backupConfigWrite, { config });
+
+/** 立即备份到所有目标（逐目标成败，一个盘写不进去不影响别的盘）。 */
+export const runBackupNow = (tz_offset_minutes: number) =>
+  call<BackupReport>(COMMANDS.backupNow, { tz_offset_minutes });
 
 /** 改作品语言的回执：改完的语言 + **落定后的字数口径**（界面照着刷新那个数字）。 */
 export interface WorkLanguageAck {

@@ -7,6 +7,7 @@
 //! - 按域分文件（[`system`] / [`editor`] / [`tree`] / [`gap`] / [`appearance`] / [`snapshot`] / [`work`] / [`trash`]），域之间不互相调用——要复用的逻辑下沉进核心。
 
 pub mod appearance;
+pub mod backup;
 pub mod editor;
 pub mod gap;
 pub mod snapshot;

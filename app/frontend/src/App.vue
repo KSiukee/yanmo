@@ -14,6 +14,7 @@ import DirectoryPane from "./components/DirectoryPane.vue";
 import EditorPane from "./components/EditorPane.vue";
 import FlowPane from "./components/FlowPane.vue";
 import EngineBadge from "./components/EngineBadge.vue";
+import BackupDialog from "./components/BackupDialog.vue";
 import SettingsDialog from "./components/SettingsDialog.vue";
 import ShelfDialog from "./components/ShelfDialog.vue";
 import SnapshotDialog from "./components/SnapshotDialog.vue";
@@ -26,6 +27,8 @@ const { visible: shelfVisible, toggle: toggleShelf } = session.shelf;
 const { visible: trashVisible } = session.trash;
 const { visible: snapshotsVisible } = session.snapshots;
 const { visible: settingsVisible, values: settingsValues, open: openSettings } = session.appearance;
+// 备份：入口在顶栏；没有异盘目标时给一条**非阻塞**小条（拒过就不再自动弹）
+const { visible: backupVisible, status: backupStatus, open: openBackup } = session.backup;
 
 // 顶栏那行小字：有章名就显示章名；开着书但还没起名就显示占位；没有书才说立场那句话
 const hint = computed(() => {
@@ -55,9 +58,27 @@ const hint = computed(() => {
       >
         {{ t("app.settings") }}
       </button>
+      <button
+        type="button"
+        class="shell__settings"
+        :title="t('app.backup_title')"
+        @click="void openBackup()"
+      >
+        {{ t("app.backup") }}
+      </button>
       <span class="shell__hint">{{ hint }}</span>
       <EngineBadge />
     </header>
+
+    <p v-if="backupStatus?.should_nudge" class="shell__nudge">
+      <span>{{ t("backup.tip") }}</span>
+      <button type="button" class="shell__nudge-go" @click="void openBackup()">
+        {{ t("backup.tip_open") }}
+      </button>
+      <button type="button" class="shell__nudge-no" @click="void session.backup.dismissTip()">
+        {{ t("backup.tip_dismiss") }}
+      </button>
+    </p>
 
     <main class="shell__body">
       <DirectoryPane :session="session" />
@@ -69,6 +90,7 @@ const hint = computed(() => {
     <TrashDialog v-if="trashVisible" :session="session" />
     <SnapshotDialog v-if="snapshotsVisible" :session="session" />
     <SettingsDialog v-if="settingsVisible && settingsValues" :session="session" />
+    <BackupDialog v-if="backupVisible && backupStatus" :session="session" />
   </div>
 </template>
 
@@ -91,6 +113,36 @@ const hint = computed(() => {
 .shell__brand {
   font-weight: 600;
   letter-spacing: 0.08em;
+}
+
+/* 插盘提醒：**非阻塞**一行小条，点了才打开备份设置，不打断写作 */
+.shell__nudge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--ym-line);
+  background: var(--ym-paper-dim);
+  font-size: 12px;
+  color: var(--ym-ink-soft);
+}
+
+.shell__nudge-go,
+.shell__nudge-no {
+  border: none;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.shell__nudge-go {
+  color: var(--ym-accent);
+}
+
+.shell__nudge-no {
+  color: var(--ym-ink-soft);
 }
 
 .shell__hint {

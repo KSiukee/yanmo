@@ -246,7 +246,7 @@ fn config_round_trips_and_defaults_are_sane() {
 
     let wanted = BackupConfig {
         targets: vec![BackupTarget {
-            path: "D:\\研墨备份".to_string(),
+            path: "备份盘/研墨备份".to_string(),
             volume_id: "1234ABCD".to_string(),
             volume_label: "备份盘".to_string(),
             removable: false,
@@ -254,6 +254,7 @@ fn config_round_trips_and_defaults_are_sane() {
         keep: 3,
         auto_on_start: false,
         auto_on_close: true,
+        ..BackupConfig::default()
     };
     f.store.set_backup_config(&wanted).unwrap();
     assert_eq!(f.store.backup_config().unwrap(), wanted);

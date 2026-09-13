@@ -4535,20 +4535,21 @@ dependencies = [
 
 [[package]]
 name = "yanmo-app"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tempfile",
+ "windows-sys 0.59.0",
  "yanmo-core",
  "yanmo-proto",
 ]
 
 [[package]]
 name = "yanmo-cli"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
  "serde_json",
  "tempfile",
@@ -4557,7 +4558,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-core"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
  "rusqlite",
  "serde",
@@ -4567,7 +4568,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-proto"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
  "serde",
  "serde_json",
