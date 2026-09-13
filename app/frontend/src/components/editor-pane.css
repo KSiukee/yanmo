@@ -2,6 +2,9 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* ⚠️ 必写：网格项默认 min-height:auto＝"不许比内容矮"，长章节会把整个网格行顶高、
+     连顶栏与两侧栏一起被滚出视野（正文只能在 .editor__area 里滚）。见 layout.test.ts 的守卫。 */
+  min-height: 0;
   background: var(--ym-paper);
 }
 

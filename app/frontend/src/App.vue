@@ -190,6 +190,11 @@ const hint = computed(() => {
   flex: 1;
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr) 320px;
+  /* ⚠️ 行高必须钉死在这一行里：不给 minmax(0,1fr) 的话，隐含行会按内容高度长，
+     正文一长就把整页撑开、连顶栏与两侧栏一起滚走（见 layout.test.ts 的守卫）。
+     overflow:hidden 是第二道保险：万一还有子元素想撑，也只是被裁在这里，不会顶开整页。 */
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
   min-height: 0;
 }
 </style>
