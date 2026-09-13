@@ -134,6 +134,35 @@ fn a_synced_documents_folder_pushes_the_suggestion_to_the_home_folder() {
 }
 
 #[test]
+fn a_portable_copy_never_adopts_the_machines_system_folder() {
+    // 这一条是踩出来的：绿色版插到一台装过研墨的机器上，如果去"认领"那台机器的
+    // `%APPDATA%`，作者会以为自己的稿子被搬走了——而绿色版本该只动自己文件夹里的东西。
+    let root = tempfile::tempdir().unwrap();
+    let sources = machine(root.path());
+    std::fs::write(sources.exe_dir.join(paths::PORTABLE_MARKER), b"portable").unwrap();
+    // 这台机器上确实有一份安装版的库（系统数据目录里）
+    seed(&sources.system_dir.clone().unwrap());
+
+    let found = location::resolve(&sources).unwrap();
+    assert_eq!(
+        found.source,
+        DirSource::FirstRun,
+        "便携版没有记录时该走首启推荐，绝不能去认领本机的系统数据目录"
+    );
+    assert_eq!(found.dir, sources.exe_dir.join(paths::PORTABLE_DATA_FOLDER));
+    assert!(
+        !found.dir.starts_with(sources.system_dir.as_ref().unwrap()),
+        "定下来的位置不该落在系统数据目录里：{}",
+        found.dir.display()
+    );
+
+    // 反过来：便携版自己程序旁的 data/ 里有库时，认领它是应该的
+    seed(&sources.exe_dir.join(paths::PORTABLE_DATA_FOLDER));
+    let adopted = location::resolve(&sources).unwrap();
+    assert_eq!(adopted.source, DirSource::LegacyPortable);
+}
+
+#[test]
 fn the_risk_list_flags_the_places_that_bite() {
     let root = tempfile::tempdir().unwrap();
     let sources = machine(root.path());

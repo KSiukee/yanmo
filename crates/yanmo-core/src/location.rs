@@ -11,7 +11,8 @@
 //! 1. **位置记录最优先**：作者自己选过的地方，写在小文件里，**永远第一个人说话**；
 //!    记录指向的目录哪怕现在不在（U 盘没插），也**绝不静默换地方**——只报错。
 //! 2. **老位置认领**：没有记录、但老位置已经躺着库（从老版本升上来的作者）→ 就地认领，
-//!    顺手把记录补上。老作者不该看见"首次使用"。
+//!    顺手把记录补上。老作者不该看见"首次使用"。**便携形态只认领自己程序旁的 `data/`，
+//!    绝不认领这台机器的系统数据目录**——绿色版插到谁机器上都只该动自己的文件夹。
 //! 3. **首启推荐**：什么都没有才是第一次用——给一个推荐值和理由，让作者确认或另选。
 //!
 //! # 副作用边界
@@ -216,9 +217,17 @@ pub fn resolve(sources: &Sources) -> Option<DataLocation> {
             return Some(DataLocation { dir, source: DirSource::LegacyPortable });
         }
     }
-    if let Some(system) = sources.system_dir.as_ref() {
-        if has_database(system) {
-            return Some(DataLocation { dir: system.clone(), source: DirSource::LegacySystem });
+    // ★ 系统数据目录**只在非便携形态下认领**。
+    //
+    // 绿色/便携版的立场是"数据跟着程序走"：插到谁机器上就去认领那台机器的
+    // `%APPDATA%`，等于把别人的稿子当成自己的打开——那不是认领，是乱认亲。
+    // 便携版没有记录、程序旁也没有 `data/` 时，老实走首启推荐（推荐程序旁），
+    // 这样"插到任何机器上都只动自己文件夹"这件事才是真的。
+    if !paths::is_portable(&sources.exe_dir) {
+        if let Some(system) = sources.system_dir.as_ref() {
+            if has_database(system) {
+                return Some(DataLocation { dir: system.clone(), source: DirSource::LegacySystem });
+            }
         }
     }
     suggest(sources).map(|suggestion| DataLocation {
