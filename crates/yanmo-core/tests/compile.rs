@@ -110,8 +110,11 @@ fn submission_docx_is_a_real_zip_with_the_parts_word_expects() {
     for name in [
         "[Content_Types].xml",
         "_rels/.rels",
+        "docProps/core.xml",
+        "docProps/app.xml",
         "word/_rels/document.xml.rels",
         "word/styles.xml",
+        "word/settings.xml",
         "word/document.xml",
     ] {
         assert!(!part(&mut zip, name).is_empty(), "{name} 不该是空的");
@@ -127,10 +130,20 @@ fn submission_docx_is_a_real_zip_with_the_parts_word_expects() {
     let outline_at = document.find("大纲").unwrap();
     assert!(document[..outline_at].contains("茶还温着"), "正文在大纲之前");
 
-    // 缩进在样式层：两字符，而不是绝对 twips
+    // 缩进在样式层：**字符单位为主、twips 兜底**（只给字符单位的话，不解析 *Chars 的
+    // 阅读器会干脆不缩进；只给 twips 的话，改字号缩进就不跟着变了）
     let styles = part(&mut zip, "word/styles.xml");
     assert!(styles.contains("w:firstLineChars=\"200\""), "首行缩进两字符要写在样式里");
+    assert!(styles.contains("w:firstLine=\"420\""), "twips 兜底也要给（420 = 五号下两字符）");
     assert!(styles.contains("宋体"), "字体名写在样式里（不内置字体文件）");
+
+    // 标准包该有的东西：兼容模式设成 15、核心属性里有书名
+    let settings = part(&mut zip, "word/settings.xml");
+    assert!(settings.contains("compatibilityMode"), "要写兼容模式，否则 Word 按老版式打开");
+    assert!(settings.contains("w:val=\"15\""), "兼容模式要设成 Word 2013+（15）");
+    let core = part(&mut zip, "docProps/core.xml");
+    assert!(core.contains("<dc:title>长夜</dc:title>"), "核心属性里要有书名：{core}");
+    assert!(!core.contains("dcterms:created"), "不许写时间戳（会破坏编译幂等）");
     // 正文段落里不许塞缩进空格：段首就是文字
     assert!(document.contains("<w:t xml:space=\"preserve\">他推开门，屋里没有人。</w:t>"));
 }

@@ -2,9 +2,17 @@
 //!
 //! # 样式层统一下发，正文里不塞空格
 //!
-//! 「首行缩进两字符」写在 `styles.xml` 的 `Normal` 里，用的是 **`w:firstLineChars="200"`**
-//! （两字符），不是 `w:firstLine`（绝对 twips）——后者在编辑把字号改大之后会"缩进变短"，
-//! 这是投稿稿在 Word 里最常见的跑版原因。正文段落里**一个缩进空格都不写**。
+//! 「首行缩进两字符」写在 `styles.xml` 的 `Normal` 里，正文段落里**一个缩进空格都不写**。
+//! 属性**两个都给**：
+//! - `w:firstLineChars=\"200\"`（一字符的百分之一为单位，两百＝两字符）是主：按 ECMA-376，
+//!   两者同时出现时 **`firstLineChars` 优先**，所以字号一改，缩进跟着变两格，不会跑版；
+//! - `w:firstLine=\"420\"`（五号 10.5pt 下两字符＝420 twips）是兜底：有些阅读器
+//!   **不解析 `*Chars` 变体**（LibreOffice 一直如此，WPS 同类），只给字符单位它们干脆不缩进，
+//!   投稿稿到了编辑手里就是一篇没有段首缩进的稿子。
+//!
+//! 包里另外给齐 `settings.xml`（写死 `compatibilityMode=15`）与 `docProps`：缺了这几件，
+//! Word / WPS 会把这稿子当**兼容模式**打开（版式默认值不一样）。
+//! ⚠️ `docProps/core.xml` **不写时间戳**——那会让「编译两遍逐字节一样」失效（导出幂等铁律）。
 //!
 //! 字体只写**字体名**（宋体 / Times New Roman），不内置字体文件：字由作者的 Word 提供，
 //! 这样既不违反字体纪律（不内置商业字体），也不用把几 MB 字体塞进安装包。
@@ -62,6 +70,9 @@ pub(crate) const CONTENT_TYPES: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"
 <Default Extension=\"xml\" ContentType=\"application/xml\"/>\
 <Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>\
 <Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/>\
+<Override PartName=\"/word/settings.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml\"/>\
+<Override PartName=\"/docProps/core.xml\" ContentType=\"application/vnd.openxmlformats-package.core-properties+xml\"/>\
+<Override PartName=\"/docProps/app.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.extended-properties+xml\"/>\
 </Types>\n";
 
 /// 包的根关系：谁是主文档。
@@ -70,6 +81,12 @@ pub(crate) const ROOT_RELS: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\" sta
 <Relationship Id=\"rId1\" \
 Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" \
 Target=\"word/document.xml\"/>\
+<Relationship Id=\"rId2\" \
+Type=\"http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties\" \
+Target=\"docProps/core.xml\"/>\
+<Relationship Id=\"rId3\" \
+Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties\" \
+Target=\"docProps/app.xml\"/>\
 </Relationships>\n";
 
 /// 主文档的关系：样式表在哪。
@@ -78,14 +95,50 @@ pub(crate) const DOC_RELS: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\" stan
 <Relationship Id=\"rId1\" \
 Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" \
 Target=\"styles.xml\"/>\
+<Relationship Id=\"rId2\" \
+Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings\" \
+Target=\"settings.xml\"/>\
 </Relationships>\n";
+
+/// 文档设置：写死 `compatibilityMode=15`（Word 2013+ 的版式默认值）。
+///
+/// 缺这一件，Word / WPS 会把这稿子按**兼容模式**打开——版式默认值与编辑那边不一样，
+/// 投稿稿最怕的就是「我这边看着好好的」。
+pub(crate) const SETTINGS: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n\
+<w:settings xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\
+<w:zoom w:percent=\"100\"/>\
+<w:defaultTabStop w:val=\"420\"/>\
+<w:characterSpacingControl w:val=\"compressPunctuation\"/>\
+<w:compat>\
+<w:compatSetting w:name=\"compatibilityMode\" \
+w:uri=\"http://schemas.microsoft.com/office/word\" w:val=\"15\"/>\
+</w:compat>\
+</w:settings>\n";
+
+/// 核心属性：**只写书名，不写时间戳**（时间戳会让「编译两遍字节一样」失效）。
+pub(crate) fn core_properties(title: &str) -> String {
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n\
+         <cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" \
+         xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\
+         <dc:title>{}</dc:title>\
+         </cp:coreProperties>\n",
+        escape(title)
+    )
+}
+
+/// 扩展属性：谁生成的（除程序名外不写任何机器信息）。
+pub(crate) const APP_PROPERTIES: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n\
+<Properties xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/extended-properties\">\
+<Application>Yanmo</Application>\
+</Properties>\n";
 
 /// 样式表：`Normal`（正文，首行缩进两字符、五号、1.5 倍行距）与几个标题样式。
 pub(crate) const STYLES: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n\
 <w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\
 <w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\">\
 <w:name w:val=\"Normal\"/><w:qFormat/>\
-<w:pPr><w:ind w:firstLineChars=\"200\"/><w:spacing w:line=\"360\" w:lineRule=\"auto\"/>\
+<w:pPr><w:ind w:firstLine=\"420\" w:firstLineChars=\"200\"/><w:spacing w:line=\"360\" w:lineRule=\"auto\"/>\
 <w:jc w:val=\"both\"/></w:pPr>\
 <w:rPr><w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\" w:eastAsia=\"宋体\"/>\
 <w:sz w:val=\"21\"/><w:szCs w:val=\"21\"/></w:rPr></w:style>\

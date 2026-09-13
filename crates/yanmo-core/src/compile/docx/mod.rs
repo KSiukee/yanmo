@@ -56,11 +56,15 @@ pub(crate) fn render(work: &Work, items: &[Item], options: &CompileOptions) -> R
     }
 
     let document = x::document(&body);
+    let core = x::core_properties(&work.title);
     let files = [
         Entry { name: "[Content_Types].xml", data: x::CONTENT_TYPES.as_bytes() },
         Entry { name: "_rels/.rels", data: x::ROOT_RELS.as_bytes() },
+        Entry { name: "docProps/core.xml", data: core.as_bytes() },
+        Entry { name: "docProps/app.xml", data: x::APP_PROPERTIES.as_bytes() },
         Entry { name: "word/_rels/document.xml.rels", data: x::DOC_RELS.as_bytes() },
         Entry { name: "word/styles.xml", data: x::STYLES.as_bytes() },
+        Entry { name: "word/settings.xml", data: x::SETTINGS.as_bytes() },
         Entry { name: "word/document.xml", data: document.as_bytes() },
     ];
     let package = write_stored(&files);
