@@ -86,6 +86,7 @@ function build(options: { found?: ChapterGap | null; fillFails?: boolean; answer
     },
   } as Pick<Directory, "create" | "refresh">;
 
+  let next = 7; // 假传输层发号：第一次建成 7，第二次 8……
   const adding = useAddChapter({
     gaps,
     directory,
@@ -94,6 +95,7 @@ function build(options: { found?: ChapterGap | null; fillFails?: boolean; answer
     },
     addChapterAfter: async (node_id) => {
       calls.push(`after:${node_id}`);
+      return next++;
     },
   });
   return { adding, calls, pending };
@@ -159,4 +161,22 @@ test("去回收站看看 / 点遮罩：只收起来，不记答复", async () =>
   assert.deepEqual(calls, ["check:5", "dismiss"], "没有 answer —— 下次点 + 还会问");
   assert.equal(adding.visible.value, false);
   assert.equal(adding.gap.value, null);
+});
+
+test("连点同一行的 +：新章接着上一次那一章往下排（不是插在同一位置倒着长）", async () => {
+  const { adding, calls } = build();
+  await adding.addHere(row()); // 第5章那一行
+  await adding.addHere(row()); // 还是那一行
+  assert.deepEqual(
+    calls,
+    ["check:1", "after:5", "check:1", "after:7"],
+    "第二次锚在刚建出来的 7 上——于是 11、12 这样往下排",
+  );
+});
+
+test("换一行点 +：位置仍旧是「点哪儿插哪儿」", async () => {
+  const { adding, calls } = build();
+  await adding.addHere(row()); // 第5章 → 建出 7
+  await adding.addHere(row({ id: 6 })); // 换一行（第6章）
+  assert.deepEqual(calls, ["check:1", "after:5", "check:1", "after:6"], "另一行就锚它自己");
 });

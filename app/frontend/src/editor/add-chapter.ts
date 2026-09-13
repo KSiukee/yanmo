@@ -22,8 +22,8 @@ export interface AddChapterDeps {
   directory: Pick<Directory, "create" | "refresh">;
   /** 打开"刚新建/补写"的那一章：**要接着写**（焦点策略见 editor/focus.ts） */
   openFreshChapter: (node_id: number) => Promise<void>;
-  /** 会话：在某一章后面插一章（走核心既有的"插在这一章之后"） */
-  addChapterAfter: (node_id: number) => Promise<void>;
+  /** 会话：在某一章后面插一章（走核心既有的"插在这一章之后"）；返回新章 id，没建成是 null */
+  addChapterAfter: (node_id: number) => Promise<number | null>;
 }
 
 export interface AddChapter {
@@ -46,20 +46,41 @@ export function useAddChapter(deps: AddChapterDeps): AddChapter {
   /** 弹出那一问的那一行：答完照他点「+」的意图接着走 */
   const pending = ref<TreeRow | null>(null);
 
+  /**
+   * 「+」连点的**续接点**：上一次是从哪一行建出来的、建成了谁。
+   *
+   * 为什么要它：连点同一行的「+」是最常见的动作（一口气排十章）。若每次都锚在原来那一章上，
+   * 新章会一遍遍插在同一位置——屏幕上看着是**倒着长**的（第10章 → 第12章 → 第11章）。
+   * 所以记住"上一次从这一行建出来的那一章"，下一次接着它往下排。
+   *
+   * 换一行点「+」就当没有这回事：位置仍然只管"**点哪儿插哪儿**"（那是既有规矩，有测试盯着）。
+   */
+  const lastAdd = ref<{ from: number; created: number } | null>(null);
+  /** 答完路标那一问之后该锚在谁后面（点「+」那一刻就定下来） */
+  const pendingAnchor = ref<number | null>(null);
+
+  /** 这一行这次该锚在谁后面。 */
+  function anchorFor(row: TreeRow): number {
+    return lastAdd.value?.from === row.id ? lastAdd.value.created : row.id;
+  }
+
   /** 新章落在哪一层：容器往里加，章就是它自己那一层（与下面 addByIntent 的分支一一对应）。 */
   function layerOf(row: TreeRow): number | null {
     return addIntent(row) === "inside" ? row.id : row.parent_id;
   }
 
-  /** 作者原来点「+」的意图：容器往里加一章，章就接着它往后插一章。 */
-  async function addByIntent(row: TreeRow): Promise<void> {
+  /** 作者原来点「+」的意图：容器往里加一章，章就锚在 `anchor` 后面插一章。 */
+  async function addByIntent(row: TreeRow, anchor: number): Promise<void> {
     if (addIntent(row) === "inside") {
       // 标题留空＝由核心按同层序号取名
       const created = await deps.directory.create(row.id, "chapter", "");
+      lastAdd.value = null; // 往里加：不算"接着往下排"的那条线
       if (created !== null) await deps.openFreshChapter(created);
       return;
     }
-    await deps.addChapterAfter(row.id); // 走核心既有的"插在这一章之后"
+    // 走核心既有的"插在这一章之后"；记住建成了谁，供下一次连点接续
+    const created = await deps.addChapterAfter(anchor);
+    lastAdd.value = created === null ? null : { from: row.id, created };
   }
 
   return {
@@ -67,11 +88,13 @@ export function useAddChapter(deps: AddChapterDeps): AddChapter {
     gap: deps.gaps.pending,
     busy: deps.gaps.busy,
     addHere: async (row) => {
+      const anchor = anchorFor(row);
       if (await deps.gaps.check(layerOf(row))) {
         pending.value = row; // 有该问的空缺：先摆弹窗，别再顺手建新章
+        pendingAnchor.value = anchor; // 点「+」那一刻的意图定下来，答完照它走
         return;
       }
-      await addByIntent(row);
+      await addByIntent(row, anchor);
     },
     fill: async () => {
       const created = await deps.gaps.fill();
@@ -84,7 +107,8 @@ export function useAddChapter(deps: AddChapterDeps): AddChapter {
       const row = pending.value;
       if (!(await deps.gaps.answer(next))) return; // 答复记不下来就别偷偷往下走
       pending.value = null;
-      if (row) await addByIntent(row);
+      if (row) await addByIntent(row, pendingAnchor.value ?? anchorFor(row));
+      pendingAnchor.value = null;
     },
     dismiss: () => {
       pending.value = null;

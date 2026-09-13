@@ -144,8 +144,8 @@ export interface EditorSession {
   workId: Ref<number | null>;
   persistNow: () => void;
   switchChapter: (node_id: number | null | undefined, fresh?: boolean) => Promise<void>;
-  /** 在某一章后面新建一章并切过去（目录树的「+」走这条） */
-  addChapterAfter: (node_id: number) => Promise<void>;
+  /// 在某一章后面新建一章并切过去（目录树的「+」走这条）；返回新章 id，没建成是 null
+  addChapterAfter: (node_id: number) => Promise<number | null>;
   /** 删掉目录里的一段（软删，进回收站；删到正在写的那一支会自动换落点） */
   deleteNode: (node_id: number) => Promise<void>;
   /** 换一本书（`null` = 回到默认落点）；返回是否真的切过去了 */
@@ -499,9 +499,11 @@ export function useEditorSession(): EditorSession {
     }
   }
 
-  /** 在某一章后面新建一章并直接切过去（目录树的「+」与"接着写下一章"走同一条路）。 */
-  async function addChapterAfter(node_id: number) {
-    if (switcher.switching) return;
+  /// 在某一章后面新建一章并直接切过去（目录树的「+」与"接着写下一章"走同一条路）。
+  ///
+  /// **返回新章 id**：目录树连点同一个「+」时要靠它接着往下排（见 `editor/add-chapter.ts`）。
+  async function addChapterAfter(node_id: number): Promise<number | null> {
+    if (switcher.switching) return null;
     switching.value = true;
     failure.value = null;
     try {
@@ -513,10 +515,12 @@ export function useEditorSession(): EditorSession {
         settleFocus(true); // 刚新建：接着写（不管它是第几章）
       }
       await directory.refresh(); // 新章得看得见（目录不为别的动作整树重建）
+      return created.node_id; // 新章 id：目录树连点「+」时要靠它接着往下排
     } catch (error) {
       failure.value = t("session.create_chapter_failed", {
         detail: error instanceof Error ? error.message : String(error),
       });
+      return null;
     } finally {
       switching.value = false;
     }
