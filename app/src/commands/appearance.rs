@@ -16,6 +16,8 @@ pub struct AppearanceDto {
     pub jump_to_end_on_latest: bool,
     /// 作者选过的字数口径（`chars` / `chars_no_punct` / `words`）；null = 没选过
     pub word_count_caliber: Option<String>,
+    /// 引号用哪一套（`curly` / `corner`）：排版清理按它统一引号
+    pub quote_style: String,
 }
 
 impl From<ResolvedAppearance> for AppearanceDto {
@@ -23,6 +25,7 @@ impl From<ResolvedAppearance> for AppearanceDto {
         Self {
             jump_to_end_on_latest: value.jump_to_end_on_latest,
             word_count_caliber: value.word_count_caliber.map(|c| c.as_str().to_string()),
+            quote_style: value.quote_style.as_str().to_string(),
         }
     }
 }
@@ -32,6 +35,7 @@ impl From<ResolvedAppearance> for AppearanceDto {
 pub struct AppearancePatch {
     pub jump_to_end_on_latest: Option<bool>,
     pub word_count_caliber: Option<String>,
+    pub quote_style: Option<String>,
 }
 
 impl From<AppearancePatch> for Appearance {
@@ -39,6 +43,7 @@ impl From<AppearancePatch> for Appearance {
         Self {
             jump_to_end_on_latest: patch.jump_to_end_on_latest,
             word_count_caliber: patch.word_count_caliber,
+            quote_style: patch.quote_style,
         }
     }
 }

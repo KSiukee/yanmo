@@ -78,6 +78,11 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     UNKNOWN_EXPORT_FORMAT => "value.unknown_export_format"
         : "不认识的导出格式：{value}（只支持 txt / json）" : ["value"],
     UNKNOWN_GAP_ANSWER => "value.unknown_gap_answer" : "未知的答复：{value}" : ["value"],
+    UNKNOWN_QUOTE_STYLE => "value.unknown_quote_style"
+        : "不认识的引号风格：{value}（只有 curly / corner）" : ["value"],
+    TYPESET_CHANGE_UNKNOWN => "typeset.change_unknown"
+        : "要应用的排版改动（第 {index} 处）不在这份稿子里——稿子可能已经改过了，请重新预览"
+        : ["index"],
     WORK_TITLE_EMPTY => "work.title_empty" : "作品标题不能为空" : [],
     WORK_NOT_FOUND => "work.not_found" : "作品不存在：{work_id}" : ["work_id"],
     WORK_GONE => "work.gone" : "作品不存在或已删除：{work_id}" : ["work_id"],

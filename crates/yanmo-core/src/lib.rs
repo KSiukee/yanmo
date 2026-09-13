@@ -20,6 +20,7 @@ pub mod paths;
 pub mod store;
 pub mod text;
 pub mod time;
+pub mod typeset;
 pub mod version;
 
 pub use error::{Error, Result};

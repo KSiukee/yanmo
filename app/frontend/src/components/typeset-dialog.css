@@ -1,0 +1,191 @@
+/* 排版清理面板自己的样式：左边规则、右边逐条改动，底下一行动作。
+ *
+ * 与别的弹窗一样只补这里——公共壳在 dialog.css（别把这些抄回去）。
+ */
+
+.typeset__box {
+  width: min(880px, 100%);
+  min-height: 0;
+}
+
+.typeset__scope {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--ym-ink-soft);
+}
+
+.typeset__body {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* 「提醒」区：只报告、不给改法（缺一半的引号），所以它没有勾选框 */
+.typeset__notices {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--ym-line);
+  border-radius: 6px;
+  background: #fff7e6;
+}
+
+.typeset__notices-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8a5a00;
+}
+
+.typeset__notice-list {
+  max-height: 7em;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.typeset__notice {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+/* 问题所在的位置：一个问号坑，作者一眼看出"这里缺了个东西" */
+.typeset__hole {
+  padding: 0 2px;
+  border-radius: 2px;
+  background: #fdecea;
+}
+
+.typeset__groups,
+.typeset__list {
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.typeset__group {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--ym-line);
+}
+
+.typeset__head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.typeset__name {
+  flex: 1;
+  min-width: 0;
+}
+
+.typeset__count {
+  flex: none;
+  font-size: 11px;
+  color: var(--ym-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.typeset__tier {
+  margin: 4px 0 0 20px;
+  font-size: 11px;
+  color: var(--ym-ink-soft);
+}
+
+.typeset__items {
+  padding: 0;
+}
+
+.typeset__item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 6px;
+  border-bottom: 1px solid var(--ym-line);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.typeset__where {
+  flex: none;
+  width: 5.5em;
+  font-size: 11px;
+  color: var(--ym-ink-soft);
+}
+
+.typeset__line {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 前后各留一点原文：作者认得出在哪儿，又不至于把整段搬上来 */
+.typeset__faint {
+  color: var(--ym-ink-soft);
+}
+
+.typeset__old {
+  padding: 0 2px;
+  background: #fdecea;
+}
+
+.typeset__new {
+  padding: 0 2px;
+  background: #eaf6ec;
+}
+
+.typeset__arrow {
+  padding: 0 4px;
+  color: var(--ym-ink-soft);
+}
+
+.typeset__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 12px;
+}
+
+.typeset__quote {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ym-ink-soft);
+}
+
+.typeset__quote label {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+}
+
+.typeset__note {
+  flex: 1;
+  min-width: 0;
+  color: var(--ym-accent);
+}
+
+.typeset__selected {
+  flex: none;
+  color: var(--ym-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.typeset__apply {
+  flex: none;
+  border-color: var(--ym-accent);
+  color: var(--ym-accent);
+}

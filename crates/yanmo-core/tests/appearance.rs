@@ -9,6 +9,7 @@
 use yanmo_core::model::WorkKind;
 use yanmo_core::store::{Appearance, Store};
 use yanmo_core::text::WordCaliber;
+use yanmo_core::typeset::QuoteStyle;
 
 fn fresh() -> (tempfile::TempDir, Store) {
     let dir = tempfile::tempdir().unwrap();
@@ -131,6 +132,37 @@ fn word_count_caliber_is_stored_per_book_and_defaults_to_none() {
         store.appearance(Some(other.id)).unwrap().word_count_caliber,
         Some(WordCaliber::CharsNoPunct)
     );
+}
+
+#[test]
+fn the_quote_style_is_remembered_and_a_bad_code_is_refused() {
+    let (_dir, mut store) = fresh();
+    // 没设过 → 默认弯引号
+    assert_eq!(store.appearance(None).unwrap().quote_style, QuoteStyle::Curly);
+
+    // 作者选了角引号：记住，下次排版清理直接用它
+    store
+        .set_appearance(None, &Appearance { quote_style: Some("corner".into()), ..Default::default() })
+        .unwrap();
+    assert_eq!(store.appearance(None).unwrap().quote_style, QuoteStyle::Corner);
+
+    // 不认识的要当场报错，也不许落库
+    let bad = store.set_appearance(
+        None,
+        &Appearance { quote_style: Some("angled".into()), ..Default::default() },
+    );
+    assert!(bad.is_err(), "不认识的引号风格要当场报错");
+
+    // 库里已有的坏代码当没设过（跟坏 JSON 一条规矩）
+    store
+        .conn()
+        .execute(
+            "INSERT OR REPLACE INTO settings(key, value, updated_at)
+             VALUES('appearance', '{\"quote_style\":\"angled\"}', 0)",
+            [],
+        )
+        .unwrap();
+    assert_eq!(store.appearance(None).unwrap().quote_style, QuoteStyle::Curly);
 }
 
 #[test]

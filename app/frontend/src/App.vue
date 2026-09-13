@@ -21,6 +21,7 @@ import SettingsDialog from "./components/SettingsDialog.vue";
 import ShelfDialog from "./components/ShelfDialog.vue";
 import SnapshotDialog from "./components/SnapshotDialog.vue";
 import TrashDialog from "./components/TrashDialog.vue";
+import TypesetDialog from "./components/TypesetDialog.vue";
 
 // 会话在布局层建**一次**：目录树、书架与正文编辑器说的必须是同一本书、同一章
 const session = useEditorSession();
@@ -28,6 +29,7 @@ const { chapterTitle, workId } = session;
 const { visible: shelfVisible, toggle: toggleShelf } = session.shelf;
 const { visible: trashVisible } = session.trash;
 const { visible: snapshotsVisible } = session.snapshots;
+const { visible: typesetVisible } = session.typeset;
 const { visible: settingsVisible, values: settingsValues, open: openSettings } = session.appearance;
 // 备份：入口在顶栏；没有异盘目标时给一条**非阻塞**小条（拒过就不再自动弹）
 const { visible: backupVisible, status: backupStatus, open: openBackup } = session.backup;
@@ -95,6 +97,7 @@ const hint = computed(() => {
     <ShelfDialog v-if="shelfVisible" :session="session" />
     <TrashDialog v-if="trashVisible" :session="session" />
     <SnapshotDialog v-if="snapshotsVisible" :session="session" />
+    <TypesetDialog v-if="typesetVisible" :session="session" />
     <SettingsDialog v-if="settingsVisible && settingsValues" :session="session" />
     <BackupDialog v-if="backupVisible && backupStatus" :session="session" />
     <RestoreDialog v-if="restoreVisible" :session="session" />

@@ -21,6 +21,7 @@ use super::Store;
 use crate::error::Result;
 use crate::text::WordCaliber;
 use crate::time::now_millis;
+use crate::typeset::QuoteStyle;
 
 /// 作者改过的项（`None` = 没改过，用默认）。
 ///
@@ -37,19 +38,30 @@ pub struct Appearance {
     /// 由调用方用 `WorkLanguage::default_caliber()` 落定——核心这里不替它猜。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub word_count_caliber: Option<String>,
+    /// 引号用哪一套（`typeset::QuoteStyle` 的稳定代码：`curly` / `corner`）。
+    ///
+    /// `None` = 没改过 → 默认弯引号；排版清理时用它，作者选一次就记住。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quote_style: Option<String>,
 }
 
 impl Appearance {
     /// 一项都没改过——那就没必要在库里留这个键。
     fn is_empty(&self) -> bool {
-        self.jump_to_end_on_latest.is_none() && self.word_count_caliber.is_none()
+        self.jump_to_end_on_latest.is_none()
+            && self.word_count_caliber.is_none()
+            && self.quote_style.is_none()
     }
 
     /// 把 `over`（书的覆盖）盖在 `self`（全局）上：**只覆盖它真设过的项**。
     fn overridden_by(&self, over: &Appearance) -> Appearance {
         Appearance {
             jump_to_end_on_latest: over.jump_to_end_on_latest.or(self.jump_to_end_on_latest),
-            word_count_caliber: over.word_count_caliber.clone().or_else(|| self.word_count_caliber.clone()),
+            word_count_caliber: over
+                .word_count_caliber
+                .clone()
+                .or_else(|| self.word_count_caliber.clone()),
+            quote_style: over.quote_style.clone().or_else(|| self.quote_style.clone()),
         }
     }
 }
@@ -60,12 +72,18 @@ pub struct ResolvedAppearance {
     pub jump_to_end_on_latest: bool,
     /// 作者选过的口径；`None` = 没选过（界面用作品语言的默认口径顶上）。
     pub word_count_caliber: Option<WordCaliber>,
+    /// 引号用哪一套（没选过就是弯引号）。
+    pub quote_style: QuoteStyle,
 }
 
 impl Default for ResolvedAppearance {
     /// 默认值只有这一处——界面与核心都不许各写一份。
     fn default() -> Self {
-        Self { jump_to_end_on_latest: true, word_count_caliber: None }
+        Self {
+            jump_to_end_on_latest: true,
+            word_count_caliber: None,
+            quote_style: QuoteStyle::default(),
+        }
     }
 }
 
@@ -89,6 +107,12 @@ impl Store {
                 .word_count_caliber
                 .as_deref()
                 .and_then(WordCaliber::parse),
+            // 同上：认不出来的引号风格当没设过，回默认那一套
+            quote_style: merged
+                .quote_style
+                .as_deref()
+                .and_then(QuoteStyle::parse)
+                .unwrap_or_default(),
         })
     }
 
@@ -121,6 +145,16 @@ impl Store {
             })?;
             stored.word_count_caliber = Some(parsed.as_str().to_string());
         }
+        if let Some(value) = patch.quote_style.as_deref() {
+            // 同一条纪律：只认两个稳定代码，写进来不认识的等于给界面埋"未知风格"
+            let parsed = QuoteStyle::parse(value).ok_or_else(|| {
+                crate::error::Error::invalid_with(
+                    crate::error::codes::UNKNOWN_QUOTE_STYLE,
+                    [("value", value.to_string())],
+                )
+            })?;
+            stored.quote_style = Some(parsed.as_str().to_string());
+        }
         self.write_appearance(work_id, &stored)?;
         self.record(
             "settings",
@@ -129,6 +163,7 @@ impl Store {
             serde_json::json!({
                 "jump_to_end_on_latest": patch.jump_to_end_on_latest,
                 "word_count_caliber": patch.word_count_caliber,
+                "quote_style": patch.quote_style,
             }),
         )
     }

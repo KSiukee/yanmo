@@ -49,6 +49,8 @@ const languageTitle = computed(() =>
 );
 // 版本历史：跟当前章绑在一起，入口就在章名这一行（状态机在 editor/snapshots.ts）
 const { toggle: toggleSnapshots } = props.session.snapshots;
+// 排版清理：同一条思路——一次动作、只作用于当前章（状态机在 editor/typeset.ts）
+const { open: openTypeset } = props.session.typeset;
 
 // 状态 → 字典键：文案在 locales 里，这里只留"哪个状态对应哪句话"
 const STATUS_KEYS: Record<AutosaveState["status"], string> = {
@@ -76,6 +78,14 @@ function statusText(status: AutosaveState["status"]): string {
         @click="toggleSnapshots()"
       >
         {{ t("snapshots.button") }}
+      </button>
+      <button
+        type="button"
+        class="editor__versions"
+        :title="t('typeset.button_title')"
+        @click="void openTypeset()"
+      >
+        {{ t("typeset.button") }}
       </button>
       <span class="editor__meta">
         <span v-if="failure" class="editor__bad" :title="failure">{{ failure }}</span>

@@ -66,6 +66,9 @@ import {
   treeFillGap,
   treeGapAnswer,
   treeGapCheck,
+  typesetApply,
+  typesetRules,
+  typesetScan,
   writeAppearance,
   type ChapterNeighbors,
   type EditorCursor,
@@ -95,6 +98,7 @@ import { focusPlan } from "./focus";
 import { useGaps, type Gaps } from "./gaps";
 import { useShelf, type Shelf } from "./shelf";
 import { useSnapshots, type Snapshots } from "./snapshots";
+import { DEFAULT_QUOTE_STYLE, useTypeset, type TypesetState } from "./typeset";
 import { useLocation, type LocationState } from "./location";
 import { useRestore, type RestoreState } from "./restore";
 import { useTrash, type Trash } from "./trash";
@@ -116,6 +120,8 @@ export interface EditorSession {
   trash: Trash;
   /** 版本历史：这一章留过哪些版本，看看差异、回滚（滚动保留与"回滚先留底"全在核心） */
   snapshots: Snapshots;
+  /** 排版清理：先看后改（建议清单在核心扫出来，勾中的那几处才动） */
+  typeset: TypesetState;
   /** 删章路标：点「+」前先问一嘴"这一层少了一章，要补写吗" */
   gaps: Gaps;
   /** 点「+」之后的编排：先问路标，再照作者意图建章（视图只管"点了哪一行"） */
@@ -317,6 +323,7 @@ export function useEditorSession(): EditorSession {
       shelf.visible.value ||
       trash.visible.value ||
       snapshots.visible.value ||
+      typeset.visible.value ||
       appearance.visible.value ||
       backup.visible.value ||
       restore.visible.value ||
@@ -408,6 +415,18 @@ export function useEditorSession(): EditorSession {
       word_count: ack.word_count,
       fingerprint: ack.fingerprint,
     });
+    void directory.refresh(); // 字数变了：目录里那行小字要跟上
+    void refreshNeighbors();
+  }
+
+  /**
+   * 排版清理改完了正文：**换内容不换实例**（与切章、回滚同一条纪律），
+   * 并立刻落盘——清理是一步低频动作，等得起，也让"改完就是存好的"。
+   */
+  async function applyTypeset(text: string) {
+    editor.value?.commands.setContent(textToHtml(text), { emitUpdate: false });
+    autosave.value?.changed(text);
+    await flushCurrent();
     void directory.refresh(); // 字数变了：目录里那行小字要跟上
     void refreshNeighbors();
   }
@@ -660,6 +679,26 @@ export function useEditorSession(): EditorSession {
       },
     });
 
+    // 排版清理：先扫一遍给作者看，勾了才改（规则与"该改哪一处"全在核心）。
+    // **动手前先留一版**：与"回滚先留底"同一条纪律——留不下就绝不改正文。
+    const typeset = useTypeset({
+      transport: { rules: typesetRules, scan: typesetScan, apply: typesetApply },
+      currentText: () => (editor.value ? docToText(editor.value) : ""),
+      savedQuoteStyle: () => appearance.values.value?.quote_style ?? DEFAULT_QUOTE_STYLE,
+      onQuoteStyle: (style) => {
+        void appearance.setQuoteStyle(style);
+      },
+      beforeApply: async () => {
+        await flushCurrent();
+        const node_id = currentNodeId.value;
+        if (node_id !== null) await snapshotKeep(node_id);
+      },
+      onApplied: (text) => applyTypeset(text),
+      onError: (message) => {
+        failure.value = t("session.typeset_failed", { detail: message });
+      },
+    });
+
     // 从备份恢复：列来源 / 体检预览 / 换库。**换库前先落盘**——万一没换成、原库回滚，
     // 作者这一章不至于留个缺口；真正动文件的是壳与核心，这里只管叫它。
     const restore = useRestore({
@@ -692,11 +731,11 @@ export function useEditorSession(): EditorSession {
       },
     });
 
-    return { directory, gaps, appearance, backup, restore, location, adding, trash, shelf, snapshots };
+    return { directory, gaps, appearance, backup, restore, location, adding, trash, shelf, snapshots, typeset };
   }
 
   // 装配一次，之后各处只用解出来的这几个（顺序约定见 createParts）
-  const { directory, gaps, appearance, backup, restore, location, adding, trash, shelf, snapshots } =
+  const { directory, gaps, appearance, backup, restore, location, adding, trash, shelf, snapshots, typeset } =
     createParts();
 
   onMounted(async () => {
@@ -798,6 +837,7 @@ export function useEditorSession(): EditorSession {
     shelf,
     trash,
     snapshots,
+    typeset,
     workId,
     switchWork,
     backup,

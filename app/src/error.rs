@@ -291,4 +291,41 @@ fn placeholders(text: &str) -> Vec<String> {
             }
         }
     }
+
+    /// **排版规则对表**：核心给的每条规则代码，界面字典里都得有名字与说明。
+    ///
+    /// 漏一条的后果与错误码漏登记同款：界面上那一行只剩一个 `typeset.rule.xxx`，
+    /// 作者看不懂那条建议到底要改什么。规则清单以核心的 `typeset::RULES` 为准，
+    /// 界面不另抄一份"有哪些规则"。
+    #[test]
+    fn every_typeset_rule_has_a_dictionary_entry() {
+        let dict = dictionary();
+        let mut known: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for rule in yanmo_core::typeset::RULES {
+            assert!(
+                ["safe", "careful", "style"].contains(&rule.tier),
+                "规则 {} 的风险档 {} 不认识——界面不知道该不该默认勾上",
+                rule.code,
+                rule.tier
+            );
+            let key = format!("typeset.rule.{}", rule.code);
+            let text = dict
+                .get(&key)
+                .unwrap_or_else(|| panic!("排版规则 {} 在界面字典里查不到（缺 {key}）", rule.code));
+            assert!(!text.trim().is_empty(), "字典里的 {key} 是空的");
+            known.insert(key);
+        }
+        assert!(known.len() >= 5, "规则少得可疑，检查扫描基准");
+        for key in dict.keys().filter(|key| key.starts_with("typeset.rule.")) {
+            assert!(known.contains(key), "字典里的 {key} 没有对应规则——两边各说各话");
+        }
+        // 「只报告不给改法」的检查同样要对得上表（漏一条＝界面上只剩一个码）
+        for code in yanmo_core::typeset::NOTICE_RULES {
+            let key = format!("typeset.notice.{code}");
+            let text = dict
+                .get(&key)
+                .unwrap_or_else(|| panic!("提醒检查 {code} 在界面字典里查不到（缺 {key}）"));
+            assert!(!text.trim().is_empty(), "字典里的 {key} 是空的");
+        }
+    }
 }

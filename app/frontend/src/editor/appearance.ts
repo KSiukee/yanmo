@@ -38,6 +38,8 @@ export interface AppearanceState {
   close: () => void;
   /** 改一项：写完回读，界面显示的永远是库里那份 */
   setJumpToEnd: (value: boolean) => Promise<void>;
+  /** 引号用哪一套（排版清理里选的，选一次就记住） */
+  setQuoteStyle: (value: string) => Promise<void>;
   /** 回到默认（核心的默认值） */
   resetToDefault: () => Promise<void>;
 }
@@ -83,6 +85,7 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
     },
     setJumpToEnd: (value) =>
       act(() => options.transport.write(null, { jump_to_end_on_latest: value })),
+    setQuoteStyle: (value) => act(() => options.transport.write(null, { quote_style: value })),
     resetToDefault: () => act(() => options.transport.reset(null)),
   };
 }
