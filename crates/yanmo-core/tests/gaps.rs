@@ -209,3 +209,37 @@ fn unknown_answers_are_rejected_instead_of_guessed() {
     assert!(GapAnswer::parse("ignored").is_ok());
     assert!(GapAnswer::parse("maybe").is_err(), "没听过的答复要明确报错");
 }
+
+/// 连续补写：每补一章都要**按号往下排**，而不是一遍遍塞回"当初删除前那个位置"。
+///
+/// 真踩过（用户 2026-09-13 报）：同一处位置删过好几章（它们都记着同一个旧位置），
+/// 连着点几次「补写这一章」，屏幕上就从 第17章 倒着排到 第11章。
+#[test]
+fn filling_several_gaps_puts_them_back_in_number_order() {
+    let (_dir, mut store) = fresh();
+    let (work, volume, _chapters) = volume_book(&mut store);
+    // 这一层现在有 第1~第3章（都有正文）；再建两章空章，并把它们都挪到"同一处"
+    let eleven = store.create_node(work, Some(volume), NodeKind::Chapter, "第11章").unwrap();
+    let twelve = store.create_node(work, Some(volume), NodeKind::Chapter, "第12章").unwrap();
+    store.move_node(eleven, Some(volume), 1).unwrap();
+    store.move_node(twelve, Some(volume), 1).unwrap(); // 两个都停在同一个槽上（模拟"同一处删过好几章"）
+    store.soft_delete_node(eleven).unwrap();
+    store.soft_delete_node(twelve).unwrap();
+
+    let a = store.fill_gap_chapter(eleven).unwrap();
+    let b = store.fill_gap_chapter(twelve).unwrap();
+
+    let titles: Vec<String> = store
+        .list_nodes(work)
+        .unwrap()
+        .into_iter()
+        .filter(|node| node.parent_id == Some(volume))
+        .map(|node| node.title)
+        .collect();
+    assert_eq!(
+        titles,
+        vec!["第1章", "第2章", "第3章", "第11章", "第12章"],
+        "补回来的章要按号往下排（11 在 12 前面）"
+    );
+    assert_eq!((store.node_title(a).unwrap(), store.node_title(b).unwrap()), ("第11章".into(), "第12章".into()));
+}

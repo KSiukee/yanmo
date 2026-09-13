@@ -111,10 +111,50 @@ impl Store {
             })?;
 
         let created = self.create_node(work_id, parent, NodeKind::Chapter, &title)?;
-        // 落回它原来那一带（复用"按原位锚回"那套：序号越界就夹到末尾）
-        self.move_node(created, parent, order.max(0) as usize)?;
+        // 落回它那一带：**按号归位**——插在"最后一个编号比它小的同层兄弟"之后。
+        //
+        // 为什么不照抄删除前那个 `sort_order`：同一处位置可能删过好几章（它们都记着**同一个**
+        // 旧位置），照抄就会让连续补写的新章一遍遍塞进同一个槽，屏幕上看着是**倒着长**的
+        // （真踩过：连点几次「补写这一章」，结果 第17章…第11章 从上往下排）。
+        // 编号认不出来的（序章 / 楔子）才退回旧位置。
+        let index = self
+            .index_by_serial(&title, work_id, parent)?
+            .unwrap_or(order.max(0) as usize);
+        self.move_node(created, parent, index)?;
         self.remove_gap_answer(parent, serial)?;
         Ok(created)
+    }
+
+    /// 按编号算插入位置：插在"最后一个编号比它小的同层兄弟"之后（最小的号放最前）。
+    ///
+    /// 返回 `None` = 这个标题里没有编号，调用方自己决定落哪儿。
+    fn index_by_serial(
+        &self,
+        title: &str,
+        work_id: i64,
+        parent: Option<i64>,
+    ) -> Result<Option<usize>> {
+        let Some(serial) = parse_serial(title, NodeKind::Chapter) else {
+            return Ok(None);
+        };
+        // 此刻刚建出来的那一章**也在表里**（排在末尾）：它的号不小于自己，不会影响结果
+        let mut stmt = self.conn.prepare(
+            "SELECT title FROM nodes
+              WHERE work_id = ?1 AND parent_id IS ?2 AND node_kind = ?3 AND deleted_at IS NULL
+              ORDER BY sort_order, id",
+        )?;
+        let rows = stmt.query_map(
+            params![work_id, parent, NodeKind::Chapter.as_str()],
+            |row| row.get::<_, String>(0),
+        )?;
+        let mut index = 0;
+        for (position, row) in rows.enumerate() {
+            let sibling = row?;
+            if parse_serial(&sibling, NodeKind::Chapter).is_some_and(|other| other < serial) {
+                index = position + 1;
+            }
+        }
+        Ok(Some(index))
     }
 
     /// 交付前的汇总检查用：**按编号算出全书所有空缺**（不只"有据可查"的那些）。
