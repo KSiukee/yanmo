@@ -131,7 +131,7 @@ async function chooseFromDisk(): Promise<void> {
               }}
             </li>
             <li>{{ t("restore.fact_last_write", { when: when(preview.source_last_write_at) }) }}</li>
-            <li>
+            <li v-if="preview.live_readable">
               {{
                 t("restore.fact_now", {
                   works: preview.live_works,
@@ -143,7 +143,8 @@ async function chooseFromDisk(): Promise<void> {
           </ul>
 
           <template v-if="preview.can_restore">
-            <p v-if="preview.lost_days || preview.lost_words" class="restore__warn">
+            <p v-if="!preview.live_readable" class="restore__warn">{{ t("restore.live_unreadable") }}</p>
+            <p v-else-if="preview.lost_days || preview.lost_words" class="restore__warn">
               {{
                 t("restore.will_lose", {
                   days: preview.lost_days,

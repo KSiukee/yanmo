@@ -276,6 +276,8 @@ export interface RestorePreview {
   live_last_write_at: number;
   live_works: number;
   live_words: number;
+  /** 现在的库读得出来吗；读不出来时上面三个数没有意义，也就算不出"会丢多少" */
+  live_readable: boolean;
   lost_days: number;
   lost_words: number;
   /** 选中的正是现在用的那个库（不能拿它恢复它自己） */

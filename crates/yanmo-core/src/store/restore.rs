@@ -52,7 +52,10 @@ pub struct RestorePreview {
     pub live_last_write_at: i64,
     pub live_works: i64,
     pub live_words: i64,
-    /// 会退回几天 / 大约少多少字（都取不出来的部分是 0）
+    /// **现在的库读得出来吗**。读不出来（库已经坏了）时上面三个数没有意义，
+    /// "会丢多少"也算不出来——但**恢复照样得让走**：那正是最需要它的时刻。
+    pub live_readable: bool,
+    /// 会退回几天 / 大约少多少字（读不出来时是 0，界面按 `live_readable` 决定显不显示）
     pub lost_days: i64,
     pub lost_words: i64,
     /// 选中的就是现在正在用的那个库（不能拿它恢复它自己）
@@ -173,11 +176,16 @@ impl Store {
     ///
     /// **不动任何文件**：体检跑在临时副本上（见 [`Probe`]），活库只做只读查询。
     pub fn preview_restore(&self, source: &Path) -> Result<RestorePreview> {
-        let live_rows = work_stamps(&self.conn)?;
-        let live_works = live_rows.len() as i64;
-        let live_chapters: i64 = live_rows.iter().map(|row| row.2).sum();
-        let live_words: i64 = live_rows.iter().map(|row| row.3).sum();
-        let live_last_write_at = last_write_at(&self.conn)?;
+        // 活库**读不出来也算数**：库坏了的时候正是最需要恢复的时候，
+        // 不能让"算不出会丢多少"把整条救援路堵死（读不出来就如实说读不出来）。
+        let live_rows = work_stamps(&self.conn).ok();
+        let live_readable = live_rows.is_some();
+        let live_works = live_rows.as_ref().map(|rows| rows.len() as i64).unwrap_or(0);
+        let live_chapters: i64 =
+            live_rows.as_ref().map(|rows| rows.iter().map(|row| row.2).sum()).unwrap_or(0);
+        let live_words: i64 =
+            live_rows.as_ref().map(|rows| rows.iter().map(|row| row.3).sum()).unwrap_or(0);
+        let live_last_write_at = last_write_at(&self.conn).unwrap_or(0);
 
         let db_path = self.conn.path().map(PathBuf::from);
         let is_live_database = db_path
@@ -211,9 +219,11 @@ impl Store {
         };
 
         // 会退回几天：活库最后写入 - 这份备份的最后写入（正数才算数，向上取整到天）
+        // 活库读不出来时这两个数没有意义 → 都是 0，界面按 `live_readable` 不提它们
         let delta = live_last_write_at - inspected.last_write_at;
-        let lost_days = if delta > 0 { (delta + 86_399_999) / 86_400_000 } else { 0 };
-        let lost_words = (live_words - inspected.words).max(0);
+        let lost_days =
+            if live_readable && delta > 0 { (delta + 86_399_999) / 86_400_000 } else { 0 };
+        let lost_words = if live_readable { (live_words - inspected.words).max(0) } else { 0 };
 
         Ok(RestorePreview {
             source: source.to_string_lossy().to_string(),
@@ -232,6 +242,7 @@ impl Store {
             live_last_write_at,
             live_works,
             live_words,
+            live_readable,
             lost_days,
             lost_words,
             is_live_database,

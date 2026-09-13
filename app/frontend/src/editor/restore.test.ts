@@ -48,6 +48,7 @@ function preview(over: Partial<RestorePreview> = {}): RestorePreview {
     live_last_write_at: 1_700_300_000_000,
     live_works: 1,
     live_words: 1500,
+    live_readable: true,
     lost_days: 1,
     lost_words: 300,
     is_live_database: false,
@@ -120,6 +121,18 @@ test("体检不过就不动手——连落盘都不该发生", async () => {
   assert.deepEqual(calls.applied, []);
   assert.equal(calls.flushes, 0, "不能恢复时就别惊动落盘");
   assert.equal(restore.done.value, null);
+});
+
+test("现在的库读不出来（坏库）也要能恢复——不能因为算不出会丢多少就堵死", async () => {
+  const wrecked = preview({ live_readable: false, lost_days: 0, lost_words: 0, live_works: 0, live_words: 0 });
+  const { restore, calls } = harness({ preview: wrecked });
+  await restore.open();
+  await restore.select("备份盘/研墨备份/研墨备份-20260913-0100");
+  assert.equal(restore.preview.value?.live_readable, false);
+  assert.equal(restore.preview.value?.can_restore, true, "算不出会丢多少，不等于不能恢复");
+  await restore.apply();
+  assert.deepEqual(calls.applied, ["备份盘/研墨备份/研墨备份-20260913-0100"]);
+  assert.equal(calls.flushes, 1, "照样先落盘（落不下就不换）");
 });
 
 test("没选来源时按不动", async () => {

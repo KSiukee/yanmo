@@ -317,6 +317,7 @@
   "restore.fact_has": "里面有：{works} 本 · {chapters} 章 · {words} 字",
   "restore.fact_last_write": "它记到的最后写作时间：{when}",
   "restore.fact_now": "现在的库：{works} 本 · {words} 字，最后写作 {when}",
+  "restore.live_unreadable": "现在的库已经读不出来了，算不出会丢多少——恢复之后就回到这份备份的样子。",
   "restore.will_lose": "恢复后会退回到这份备份：约退回 {days} 天、少 {words} 字。",
   "restore.will_lose_none": "现在的库和这份备份差不多，基本不会丢东西。",
   "restore.keep": "换下来的原库会留底在这儿（改名保存，不删）：{dir}",

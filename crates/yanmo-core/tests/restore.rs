@@ -268,6 +268,101 @@ fn the_database_you_are_using_is_not_a_restore_source() {
     assert!(live.is_file(), "活库还在原地");
 }
 
+// ── 现场模拟：拔盘 / 半截包 / 坏库（**全在临时目录里造，不碰任何真盘真库**） ──────
+//
+// 这三条是"真出事了"的样子。它们不能靠人在真机上试——真拔盘、真把库改坏是有代价的；
+// 这里把"盘"和"库"都做成临时目录里的普通文件，怎么折腾都不会碰到作者的东西。
+
+#[test]
+fn a_drive_that_is_gone_lists_nothing_and_works_again_after_replugging() {
+    let mut f = fixture();
+    let package = make_backup(&mut f);
+    assert_eq!(list_packages(&f.target).len(), 1);
+
+    // 拔盘：把"那块盘"整个挪走（真机上就是盘符消失）
+    let parked = f._dir.path().join("拔下来的盘");
+    std::fs::rename(&f.target, &parked).unwrap();
+    assert!(list_packages(&f.target).is_empty(), "盘不在就列不出来，不该凭空显示一份点不开的备份");
+
+    // 插回来：原样还在，照样能恢复
+    std::fs::rename(&parked, &f.target).unwrap();
+    let again = list_packages(&f.target);
+    assert_eq!(again.len(), 1, "插回来就该重新看得见");
+    assert_eq!(again[0].path, package.to_string_lossy());
+    assert!(f.store.preview_restore(&package).unwrap().can_restore, "插回来之后照样体检通过");
+}
+
+#[test]
+fn a_source_that_disappears_before_the_swap_leaves_everything_alone() {
+    let mut f = fixture();
+    let package = make_backup(&mut f);
+    assert!(f.store.preview_restore(&package).unwrap().can_restore);
+    // 预览时盘还在，点"恢复"之前被拔了（作者手快 / 盘接触不良）
+    std::fs::remove_dir_all(&f.target).unwrap();
+    f.store.write_body(f.chapter, "备份之后写的这一版。").unwrap();
+    drop(f.store);
+    let before = std::fs::read(f.data_dir.join("yanmo.db")).unwrap();
+
+    let error = swap_in(&package, &f.data_dir, "20260913-1700").unwrap_err();
+    assert!(format!("{error}").contains("不是一个备份包或库文件"), "原因要说清是来源没了：{error}");
+    assert_eq!(std::fs::read(f.data_dir.join("yanmo.db")).unwrap(), before, "原库不动");
+    assert!(!f.data_dir.join("yanmo.db.restoring").exists(), "临时文件要收掉");
+}
+
+#[test]
+fn a_half_written_snapshot_is_caught_before_it_can_be_restored() {
+    let mut f = fixture();
+    let package = make_backup(&mut f);
+    // U 盘写了一半就拔了：快照只落了一半
+    let snapshot = package.join("yanmo.db");
+    let bytes = std::fs::read(&snapshot).unwrap();
+    std::fs::write(&snapshot, &bytes[..bytes.len() / 2]).unwrap();
+
+    let preview = f.store.preview_restore(&package).unwrap();
+    assert!(!preview.can_restore, "半截快照绝不能拿来恢复");
+    assert!(!preview.verify.problems.is_empty(), "要说清哪里不对：{:?}", preview.verify.problems);
+    assert_eq!(f.store.read_body(f.chapter).unwrap(), "雨下了整夜。", "体检不该动活库");
+}
+
+#[test]
+fn a_live_database_that_cannot_be_read_still_lets_you_restore() {
+    let mut f = fixture();
+    let package = make_backup(&mut f);
+    // 库坏到"书目都读不出来"（能打开、一查就报错）——这正是最想要恢复的时刻
+    f.store.conn_mut().execute("DROP TABLE nodes", []).unwrap();
+
+    let preview = f.store.preview_restore(&package).unwrap();
+    assert!(!preview.live_readable, "读不出来就要如实说读不出来");
+    assert!(
+        preview.can_restore,
+        "不能因为算不出「会丢多少」就把救援路堵死：{:?}",
+        preview.verify.problems
+    );
+    assert_eq!((preview.lost_days, preview.lost_words), (0, 0), "算不出来就不该瞎报数");
+}
+
+#[test]
+fn a_corrupt_live_database_is_brought_back_and_the_bad_one_kept_as_evidence() {
+    let mut f = fixture();
+    let package = make_backup(&mut f);
+    drop(f.store);
+
+    // 坏库现场：库被人改坏 / 写坏，软件这时候**根本起不来**
+    let live = f.data_dir.join("yanmo.db");
+    let wreck = "这不是一个 SQLite 库".as_bytes().to_vec();
+    std::fs::write(&live, &wreck).unwrap();
+    assert!(Store::open(&live).is_err(), "坏到这份上，界面上压根没有恢复入口——这正是要救的现场");
+
+    let outcome = swap_in(&package, &f.data_dir, "20260913-1800").unwrap();
+    let restored = Store::open(&live).unwrap();
+    assert_eq!(restored.read_body(f.chapter).unwrap(), "雨下了整夜。", "备份把稿子拿回来了");
+    drop(restored);
+
+    // 坏库也留证：原样躺在留底目录里，一个字节没改（将来还能交给人看）
+    let kept = Path::new(&outcome.quarantine).join("yanmo.db");
+    assert_eq!(std::fs::read(&kept).unwrap(), wreck, "坏库要原样留证");
+}
+
 /// 递归列出目录下的文件（成稿是按卷分目录的，不能只看一层）。
 fn walk(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();

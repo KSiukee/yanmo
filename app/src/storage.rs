@@ -472,4 +472,89 @@ mod tests {
         let second = AppData::open_at_for_test(dir.path()).unwrap();
         assert!(second.session().unclean, "第二次启动必须报出上次是异常退出");
     }
+
+    // ── 换库这条路的**壳侧**验收：关库 → 换库 → （失败）重挂 ────────────────────
+    //
+    // 核心那边验的是文件动作；这里验的是壳有没有把"库句柄"这件事管对：
+    // 换库必须先把连接收干净，失败之后软件还得能用。全程只碰临时目录。
+
+    /// 造一本书 + 一章，并把它备份到一个"备份盘"目录。
+    ///
+    /// 返回 `(那份包的路径, 这一章的 node_id)`——节点 id 不能猜（作品会自带一个默认卷）。
+    fn seed_and_backup(data: &AppData, dir: &Path, target: &Path) -> (std::path::PathBuf, i64) {
+        let chapter = data
+            .with_store(|store| {
+                let work = store.create_work(yanmo_core::model::WorkKind::Novel, "长夜")?;
+                let volume = store.list_nodes(work.id)?[0].id;
+                let chapter = store.create_node(
+                    work.id,
+                    Some(volume),
+                    yanmo_core::model::NodeKind::Chapter,
+                    "第一章",
+                )?;
+                store.write_body(chapter, "雨下了整夜。")?;
+                Ok(chapter)
+            })
+            .unwrap();
+        assert!(chapter > 0);
+
+        let request = yanmo_core::store::BackupRequest {
+            data_dir: dir.to_path_buf(),
+            targets: vec![yanmo_core::store::BackupTarget {
+                path: target.to_string_lossy().to_string(),
+                volume_id: "vol-other".to_string(),
+                volume_label: "备份盘".to_string(),
+                removable: true,
+            }],
+            keep: 7,
+            tz_offset_minutes: 480,
+            device: "测试机".to_string(),
+        };
+        let report = data.with_store(|store| Ok(store.backup_now(&request)?)).unwrap();
+        assert_eq!(report.succeeded(), 1, "备份该成功：{:?}", report.outcomes);
+        (std::path::PathBuf::from(&report.outcomes[0].package), chapter)
+    }
+
+    #[test]
+    fn a_restore_that_fails_puts_the_database_back_and_the_app_still_works() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("备份盘");
+        let data = AppData::open_at_for_test(dir.path()).unwrap();
+        let (_package, chapter) = seed_and_backup(&data, dir.path(), &target);
+
+        // 一份打不开的"库"：换库会在体检那一步失败
+        let junk = dir.path().join("手选来的.db");
+        std::fs::write(&junk, "这不是一个 SQLite 库").unwrap();
+        let error = data.restore_apply(&junk, 480).unwrap_err();
+        assert_eq!(error.code, "backup.restore_swap_failed", "{error:?}");
+
+        // ★ 失败之后**库要重新挂上**：换了库却打不开软件，比不换还糟
+        let alive = data.with_store(|store| store.read_body(chapter)).unwrap();
+        assert_eq!(alive, "雨下了整夜。", "原库重新挂上，作者能接着写");
+    }
+
+    #[test]
+    fn a_restore_that_succeeds_leaves_a_closed_store_and_a_kept_old_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("备份盘");
+        let data = AppData::open_at_for_test(dir.path()).unwrap();
+        let (package, chapter) = seed_and_backup(&data, dir.path(), &target);
+
+        // 备份之后改掉正文：恢复会把这一版"退回去"
+        data.with_store(|store| Ok(store.write_body(chapter, "备份之后写的这一版。")?)).unwrap();
+        let outcome = data.restore_apply(&package, 480).unwrap();
+
+        // 换库成功时库句柄是**关着**的（壳马上要重启）——这里对应用户看到"正在重新打开"
+        let closed = data.with_store(|store| store.read_body(chapter)).unwrap_err();
+        assert_eq!(closed.code, "shell.store_closed");
+
+        // 重启那一下就是"重挂"：挂上之后读到的是备份里那一版
+        data.reopen_store().unwrap();
+        let body = data.with_store(|store| store.read_body(chapter)).unwrap();
+        assert_eq!(body, "雨下了整夜。");
+
+        // 原库留底留得住（含"备份之后写的那一版"）
+        let kept = Path::new(&outcome.quarantine).join(yanmo_core::paths::DB_FILE);
+        assert!(kept.is_file(), "原库要留底：{}", kept.display());
+    }
 }
