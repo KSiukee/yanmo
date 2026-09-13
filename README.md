@@ -48,10 +48,23 @@ cd app/frontend && npm install
 
 # 开发运行（在 app/ 目录下）
 cargo tauri dev
-
-# 构建
-cargo tauri build
 ```
+
+### 出一条能发给别人的安装包
+
+```bat
+tools\build-release.bat
+```
+
+一条命令走完：工具链自检 → 版本一致 → 前端构建 → **跑测试（失败就不出包）** → 打包 →
+产物归集到 `dist\`（文件名带版本号，附 SHA256）。产物是 NSIS 安装器，双击即可安装。
+
+> ⚠️ **别用 `cargo build --release` 当发布产物**：单独这么构建出来的是**开发模式**的可执行文件——
+> 它启动后会去连 `http://localhost:1420`（开发服务器），双击就是一片白屏。要出能直接双击的产物，
+> 必须走 Tauri 自己的构建路径（`cargo tauri build`，也就是上面那条命令做的事）。
+
+其它参数：`--no-bundle`（只出可执行文件）、`--skip-tests`（本地反复出包时用；正式出包别用）、
+`--out <目录>`（换归集位置）。
 
 ## 支持研墨
 

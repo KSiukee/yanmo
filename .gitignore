@@ -28,3 +28,6 @@ Thumbs.db
 
 # 图标源图（临时）
 .icon-src.png
+
+# 出包产物（安装包不进版本库）
+/dist
