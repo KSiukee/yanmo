@@ -14,9 +14,11 @@
 //! - **没有编号的一个都不动**：`序章` / `楔子` / `番外` / 散文集里自起的名字；
 //! - 目标是「不编号」时返回空清单：那是"以后新建的"，抹掉已有章的名字不是这个动作该干的事。
 //!
-//! 每次改名都走 [`Store::rename_node`]——**留 op-log、同步检索索引**，与手动改名同一条路。
+//! 每次改名都走 `node_edit::rename_node_in`（或 [`Store::rename_node`]）——**留 op-log、同步检索索引**，
+//! 与手动改名同一条路；整批改写在**一个事务**里完成（失败一条都不留，见 `apply_naming_rewrite`）。
 
 use rusqlite::params;
+use serde_json::json;
 
 use super::node_edit;
 use super::Store;
@@ -57,11 +59,15 @@ impl Store {
     /// 返回改了几条。逐条走 `rename_node`：留痕、同步索引、失败立刻报错（不半途吞掉）。
     pub fn apply_naming_rewrite(&mut self, work_id: i64, rewrites: &[NamingRewrite]) -> Result<usize> {
         super::work::ensure_alive(&self.conn, work_id)?;
+        // **一个事务改完**：这个动作可能改掉一整本书的标题。逐条各自提交的话，中途任何一步失败
+        // （节点刚被删、深度上限、磁盘错误、进程被杀）都会留下"半本中文数字、半本阿拉伯数字"，
+        // 而作者拿不到撤销（2026-09-15 代码质量评审：严重 4）。
+        // 同一份代码里 `create_work` / `write_body_counted` 就是这么写的：要么全成，要么全不成。
+        let tx = self.conn.transaction()?;
         let mut changed = 0;
         for rewrite in rewrites {
             // 改之前确认它还在、还归这本书（作者可能刚删了或换了书）
-            let owner: Option<i64> = self
-                .conn
+            let owner: Option<i64> = tx
                 .query_row(
                     "SELECT work_id FROM nodes WHERE id = ?1 AND deleted_at IS NULL",
                     params![rewrite.node_id],
@@ -71,14 +77,25 @@ impl Store {
             match owner {
                 Some(id) if id == work_id => {}
                 _ => {
+                    // 直接 return：事务没提交，前面改过的那些**一条都不会留下**
                     return Err(Error::invalid_with(
                         codes::NODE_GONE,
                         [("node_id", rewrite.node_id.to_string())],
                     ))
                 }
             }
-            self.rename_node(rewrite.node_id, &rewrite.after)?;
+            node_edit::rename_node_in(&tx, rewrite.node_id, &rewrite.after)?;
             changed += 1;
+        }
+        tx.commit()?;
+        // 留痕放在提交之后（与 `create_work` 同一口径）：留痕失败不该把"已经成功"的操作报成失败
+        for rewrite in rewrites {
+            self.record(
+                "nodes",
+                rewrite.node_id,
+                "rename",
+                json!({ "title": rewrite.after.trim() }),
+            )?;
         }
         Ok(changed)
     }

@@ -3,6 +3,7 @@
 //! 场景就是作者真会遇到的：先把书写成 `第1章` 的样子，写了三十章之后觉得 `第一章` 更有味道——
 //! 改设置只影响以后新建的（那是铁律），要把已有的换过去，就得走这个**先预览、再执行**的动作。
 
+use yanmo_core::error_codes::codes;
 use yanmo_core::model::{NodeKind, NamingStyle, WorkKind};
 use yanmo_core::store::{Appearance, Store};
 
@@ -134,4 +135,43 @@ fn nothing_to_do_when_the_style_is_already_right_or_means_no_numbering() {
         .unwrap();
     assert!(store.preview_naming_rewrite(work_id).unwrap().is_empty());
     assert_eq!(store.naming_style(work_id).unwrap(), NamingStyle::NoNumber);
+}
+
+#[test]
+fn a_rewrite_that_fails_halfway_leaves_the_book_untouched() {
+    // 2026-09-15 代码质量评审：严重 4。整批换写法必须"**要么全成、要么全不成**"：
+    // 这里让清单里**第二条**指向一个已经不在了的节点（作者刚把它删了），第一条完全合法——
+    // 第一条也一个字都不许改。老写法是逐条各自提交，会留下"第一张中文数字、其余还是阿拉伯数字"。
+    let (_dir, mut store) = fresh();
+    let (work_id, _) = thirty_chapter_book(&mut store);
+    store
+        .set_appearance(
+            Some(work_id),
+            &Appearance { naming: Some("chinese".into()), ..Default::default() },
+        )
+        .unwrap();
+
+    let preview = store.preview_naming_rewrite(work_id).unwrap();
+    assert!(preview.len() >= 2);
+    store.soft_delete_node(preview[1].node_id).unwrap(); // 作者刚删了第二章
+
+    let error = store
+        .apply_naming_rewrite(work_id, &preview)
+        .expect_err("清单里有一个已经不在了的节点，整批必须拒绝");
+    assert_eq!(error.code(), codes::NODE_GONE, "{error}");
+
+    // 排在坏的那条**前面**的那一条必须原封不动——这就是这条修复的全部意义
+    let stored: Vec<(i64, String)> = store
+        .list_nodes(work_id)
+        .unwrap()
+        .into_iter()
+        .map(|node| (node.id, node.title))
+        .collect();
+    let first = stored
+        .iter()
+        .find(|(id, _)| *id == preview[0].node_id)
+        .expect("第一章还在")
+        .1
+        .clone();
+    assert_eq!(first, preview[0].before, "半途失败不许留下半本");
 }

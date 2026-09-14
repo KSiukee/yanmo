@@ -60,10 +60,46 @@ fn the_record_wins_even_when_the_folder_is_not_there_right_now() {
     location::write_record(&pointer, &chosen).unwrap();
 
     let found = location::resolve(&sources).unwrap();
-    assert_eq!(found.source, DirSource::Recorded);
+    // 目录不在（没插盘）也算"记录指向的位置现在没有库"：位置照旧听记录的，
+    // 但**不能当成正常记录**——否则壳会在原地开一个新库（评审：严重 3）
+    assert_eq!(found.source, DirSource::RecordedMissing);
     assert_eq!(found.dir, chosen, "记录说了算——拔盘时也不能自己换地方");
     assert!(!found.source.is_first_run(), "作者选过就不算首启");
     assert_eq!(location::read_record(&pointer), Some(chosen));
+}
+
+#[test]
+fn a_recorded_folder_that_still_holds_the_library_is_a_plain_record() {
+    let root = tempfile::tempdir().unwrap();
+    let sources = machine(root.path());
+    let pointer = root.path().join("appdata/app.yanmo.desktop").join(paths::LOCATION_FILE);
+    let chosen = root.path().join("我的稿子");
+    seed(&chosen); // 库里真有东西
+    location::write_record(&pointer, &chosen).unwrap();
+
+    let found = location::resolve(&sources).unwrap();
+    assert_eq!(found.source, DirSource::Recorded, "库在，就是一份正常记录");
+    assert_eq!(found.dir, chosen);
+}
+
+#[test]
+fn a_recorded_folder_whose_library_is_gone_is_reported_as_missing() {
+    // 目录还在、库没了：作者把文件夹改名/挪走、或者清理工具删了库文件。
+    // **绝不能当成正常记录**——壳会在原地开一个新库，作者打开看到的是空书架，
+    // 以为稿子没了（2026-09-15 代码质量评审：严重 3）。
+    let root = tempfile::tempdir().unwrap();
+    let sources = machine(root.path());
+    let pointer = root.path().join("appdata/app.yanmo.desktop").join(paths::LOCATION_FILE);
+    let chosen = root.path().join("我的稿子");
+    std::fs::create_dir_all(&chosen).unwrap();
+    // 作者自己放在里头的备份包：证明这确实是"他的稿子文件夹"，只是库文件没了
+    std::fs::write(chosen.join("我的备份包.zip"), b"zip").unwrap();
+    location::write_record(&pointer, &chosen).unwrap();
+
+    let found = location::resolve(&sources).unwrap();
+    assert_eq!(found.source, DirSource::RecordedMissing, "库不在就要说出来，别装没事");
+    assert_eq!(found.dir, chosen, "位置还是那个位置——绝不自己换地方");
+    assert!(!found.source.is_first_run(), "更不许当成首启（那会顺手建一本空书）");
 }
 
 #[test]

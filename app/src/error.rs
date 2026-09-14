@@ -20,6 +20,7 @@ use serde::Serialize;
 pub const SHELL_CODES: &[(&str, &[&str])] = &[
     ("shell.data_dir_unavailable", &[]),
     ("shell.data_dir_readonly", &["path"]),
+    ("shell.recorded_dir_missing_db", &["path", "pointer"]),
     ("shell.relocate_pending_missing", &[]),
     ("shell.data_dir_create_failed", &["path"]),
     ("shell.db_open_failed", &["path"]),

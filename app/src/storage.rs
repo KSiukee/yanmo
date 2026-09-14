@@ -258,6 +258,18 @@ impl AppData {
     fn open_at(plan: Plan, export_dir: PathBuf) -> Result<Self, ApiError> {
         let Plan { location, pointer, suggestion, sources } = plan;
         let dir = location.dir.clone();
+        // **位置记录指向的目录里没有库**：绝不在原地开一个新库——那会让作者看到一个空书架，
+        // 以为稿子没了（2026-09-15 代码质量评审：严重 3；location.rs 的注释里早就点过这个场景，
+        // 只是没堵住"作者亲手选过目录"这一半）。明确拒绝，把路径与位置记录文件都交给界面说清楚。
+        if location.source == DirSource::RecordedMissing {
+            return Err(ApiError::with(
+                "shell.recorded_dir_missing_db",
+                [
+                    ("path", dir.display().to_string()),
+                    ("pointer", pointer.display().to_string()),
+                ],
+            ));
+        }
         std::fs::create_dir_all(&dir).map_err(|e| {
             ApiError::with("shell.data_dir_create_failed", [("path", dir.display().to_string())])
                 .caused_by(e)

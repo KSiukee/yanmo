@@ -70,6 +70,7 @@
   "error.shell.export_file_remove_failed": "清旧导出文件 {path} 失败：{detail}",
   "error.shell.export_write_failed": "写导出文件 {path} 失败：{detail}",
   "error.shell.data_dir_readonly": "稿子所在的文件夹写不进去：{path}。可能是盘没插上、盘写保护，或者你没有这个位置的写权限。稿子还在原处，没有被动过。",
+  "error.shell.recorded_dir_missing_db": "位置记录指向 {path}，但那个文件夹里已经没有稿库了。稿子多半还在别处（文件夹被改名或挪走、库文件被清理工具删了），研墨**不会**在这里新建一本空书——先把那个文件夹找回来，或者用备份恢复。如果你确实想从头开始：把位置记录文件删掉再启动，下次就会走首启引导（它在这里：{pointer}）。",
   "error.shell.session_begin_failed": "无法登记本次会话：{detail}",
   "error.shell.already_running": "这个数据目录已经开着一个研墨了：{path}。请用已经打开的那个窗口，或先把它关掉。",
   "error.shell.store_closed": "库已经关掉了（正在换库）",

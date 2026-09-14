@@ -224,16 +224,9 @@ impl Store {
 
     /// 改名（标题经触发器同步进检索索引）。
     pub fn rename_node(&mut self, id: i64, title: &str) -> Result<()> {
-        let affected = self.conn.execute(
-            "UPDATE nodes SET title = ?1, updated_at = ?2 WHERE id = ?3 AND deleted_at IS NULL",
-            params![title.trim(), now_millis(), id],
-        )?;
-        if affected == 0 {
-            return Err(Error::invalid_with(codes::NODE_GONE, [("node_id", id.to_string())]));
-        }
+        rename_node_in(&self.conn, id, title)?;
         self.record("nodes", id, "rename", json!({ "title": title.trim() }))
     }
-
     /// 写一章的"一句话"（投稿包的大纲要用它）。
     ///
     /// 存的是作者的原话，**一个字的处理都不做**（不 trim、不分句）——作者写了什么就是什么；
@@ -380,4 +373,20 @@ mod tests {
         assert_eq!(crate::numbering::render(&default_title(NodeKind::Chapter, Chinese), 3), "第三章");
         assert_eq!(crate::numbering::render(&default_title(NodeKind::Chapter, Padded), 3), "第003章");
     }
+}
+
+/// 事务内改名：**给"整本换写法"这类多步操作用**（要么全改，要么一条都不改）。
+///
+/// 为什么单列出来：`Store::rename_node` 自己带一次留痕、每条各是一次独立的写；多步操作
+/// 逐条调它，中途任何一步失败就会留下"半本中文数字、半本阿拉伯数字"（2026-09-15 代码质量评审：
+/// 严重 4）。SQL 只此一份——`Store::rename_node` 也走这里，别在两处各写一遍。
+pub(super) fn rename_node_in(conn: &Connection, id: i64, title: &str) -> Result<()> {
+    let affected = conn.execute(
+        "UPDATE nodes SET title = ?1, updated_at = ?2 WHERE id = ?3 AND deleted_at IS NULL",
+        params![title.trim(), now_millis(), id],
+    )?;
+    if affected == 0 {
+        return Err(Error::invalid_with(codes::NODE_GONE, [("node_id", id.to_string())]));
+    }
+    Ok(())
 }

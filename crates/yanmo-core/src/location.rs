@@ -31,6 +31,10 @@ use crate::paths;
 pub enum DirSource {
     /// 位置记录说的（作者自己选过）——**最高优先**。
     Recorded,
+    /// 位置记录说的那个目录还在，但**里面没有库**（文件夹被改名/挪走、库文件被清理工具删了、
+    /// 换库回滚失败……）。这时**绝不能在原地开一个新库**：作者会看到一个空书架，
+    /// 以为稿子没了（2026-09-15 代码质量评审：严重 3）。壳层据此拒绝开库并明说。
+    RecordedMissing,
     /// 没有记录，但程序旁躺着库（绿色包/便携形态的老用户）。
     LegacyPortable,
     /// 没有记录，但系统数据目录里躺着库（安装版的老用户）。
@@ -226,7 +230,15 @@ pub fn resolve(sources: &Sources) -> Option<DataLocation> {
     if let Some(dir) = read_record(&pointer) {
         // 记录就是记录：**目录现在不在也不换地方**（U 盘没插、盘符变了都是作者能处理的事），
         // 静默换地方才是真灾难——作者会以为稿子没了。
-        return Some(DataLocation { dir, source: DirSource::Recorded });
+        //
+        // 但"目录在、库不在"要单独报：那是"看着像空书架"的那一档，**绝不能在原地建个新库**。
+        // 同一份文件上面几行已经点过这个场景（文件夹改名），只是以前只堵了便携默认位置那一半。
+        let source = if has_database(&dir) {
+            DirSource::Recorded
+        } else {
+            DirSource::RecordedMissing
+        };
+        return Some(DataLocation { dir, source });
     }
     if paths::is_portable(&sources.exe_dir) {
         let dir = sources.exe_dir.join(paths::PORTABLE_DATA_FOLDER);
