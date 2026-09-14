@@ -12,6 +12,7 @@ import { openDataDir, readAppVersion, readDataHome, readEngineInfo } from "../ap
 import type { EditorSession } from "../editor/session";
 import { SETTINGS_SECTIONS, firstSection } from "../editor/settings-nav.ts";
 import LocationDialog from "./LocationDialog.vue";
+import SettingsResetConfirm from "./SettingsResetConfirm.vue";
 
 const props = defineProps<{ session: EditorSession }>();
 const {
@@ -30,6 +31,13 @@ const {
 
 // 左边一列分类，右边只显示当前这一类：设置项一多，摊成一长列就没法看了（分区表见 editor/settings-nav.ts）
 const activeSection = ref(firstSection());
+
+/** 「恢复默认」先问一句再动：它是不可逆的**全局**动作（偏好回到初始值，稿子一个字不动） */
+const resetVisible = ref(false);
+async function confirmReset(): Promise<void> {
+  await resetToDefault();
+  resetVisible.value = false;
+}
 
 /** 勾选框的当前值（读不出来就显示未勾选，并禁用） */
 const jumpToEnd = computed(() => values.value?.jump_to_end_on_latest ?? false);
@@ -160,15 +168,6 @@ async function runRewrite() {
     <section class="settings__box dialog__box">
       <header class="settings__head dialog__head">
         <h2 class="settings__title dialog__title">{{ t("settings.title") }}</h2>
-        <button
-          type="button"
-          class="settings__button dialog__button"
-          :disabled="busy"
-          :title="t('settings.reset_title')"
-          @click="resetToDefault"
-        >
-          {{ t("settings.reset") }}
-        </button>
         <button type="button" class="settings__button dialog__button" @click="close">{{ t("common.close") }}</button>
       </header>
 
@@ -187,6 +186,7 @@ async function runRewrite() {
           </button>
         </nav>
 
+        <div class="settings__right">
         <div class="settings__pane">
       <section v-if="activeSection === 'writing'" class="settings__section">
       <p class="settings__group">{{ t("settings.group_writing") }}</p>
@@ -296,7 +296,31 @@ async function runRewrite() {
       <p v-if="aboutError" class="settings__hint settings__hint--bad">{{ aboutError }}</p>
       </section>
         </div>
+
+        <!-- 恢复默认放在**右列底部**、离「关闭」远一点：它是个不可逆的全局动作，
+             挨着关闭按钮迟早有人手滑（真报过）。点它还会再问一次（见下面的确认层）。 -->
+        <div class="settings__footer">
+          <button
+            type="button"
+            class="settings__button dialog__button settings__button--danger"
+            :disabled="busy"
+            :title="t('settings.reset_title')"
+            @click="resetVisible = true"
+          >
+            {{ t("settings.reset") }}…
+          </button>
+          <span class="settings__hint settings__hint--inline">{{ t("settings.reset_hint") }}</span>
+        </div>
+        </div>
       </div>
+
+      <!-- 恢复默认的确认层（单独一个组件：面板别长胖，见那个文件头） -->
+      <SettingsResetConfirm
+        v-if="resetVisible"
+        :busy="busy"
+        @cancel="resetVisible = false"
+        @confirm="confirmReset"
+      />
 
       <!-- 预览：会改哪几章、改成什么（确认才动手） -->
       <div v-if="rewriteVisible" class="settings dialog dialog--above" @click.self="rewriteVisible = false">

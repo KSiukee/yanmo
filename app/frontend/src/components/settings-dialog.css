@@ -122,3 +122,35 @@
 .settings__plan-after {
   color: var(--ym-accent);
 }
+
+/* 右列：内容区自己滚，底部那条"恢复默认"永远在（它离头部的关闭按钮远一点） */
+.settings__right {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings__footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ym-line);
+}
+
+.settings__hint--inline {
+  margin: 0;
+}
+
+/* 危险动作（恢复默认）：红一点，但不到"警告色块"那么吵 */
+.settings__button--danger {
+  color: #b3261e;
+}
+
+.settings__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
