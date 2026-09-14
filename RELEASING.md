@@ -53,6 +53,30 @@ CI 在 Windows runner 上做的事和人一样：装工具链 → 跑同一条�
 **「上手三步」**（下载哪个 / 怎么装 / 第一次打开——多数人是直接落在 Release 页上的，
 不能让页面上只写"这一版做了什么"）与「拿到文件后怎么核对」（见 `tools/release_notes.py`）。
 
+### CI 为什么第二次就快了（缓存的"作用域"必须知道）
+
+工作流缓存三样东西：**Rust 编译产物与依赖源码**（`Swatinem/rust-cache`）、前端 `node_modules`、
+tauri 下载的 NSIS 工具链。key 跟着 `Cargo.lock` / `app/frontend/package-lock.json` /
+`app/tauri.conf.json` 走。
+
+- **冷跑**（没有缓存）约 20 分钟——大头是**从零编译两遍依赖**（跑测试一遍 debug、打包一遍
+  release），依赖树（tauri / wry / rusqlite 自带的 SQLite 源码）比我们自己的代码大得多；
+- **命中缓存**通常个位数分钟：只重编改过的 crate。**检查一步都没少**，省的是编译。
+
+⚠️ 一个容易误会的点：**GitHub 的缓存按 ref 分作用域**——tag 上跑出来的缓存只归那个 tag，
+但任何运行都能读**默认分支（main）**的缓存。所以：
+
+- 同一个 tag 重跑 → 快（读自己那份）；
+- 换一个新 tag → 快不快取决于 main 上有没有缓存；
+- **想让每个新 tag 都快**：先在 main 上手动跑一次（Actions → release → **Run workflow**，
+  tag 填要发的那个，例如 `v0.49.0`）——它既把这一版发出去，也把 main 上的缓存养起来；
+  之后打 tag 的自动出包、以及再手动跑，都命中同一份；
+- 缓存 **7 天没人用**会被清掉（清了就是一次冷跑）；怀疑缓存脏了，去 Actions → Caches
+  删掉对应条目即可强制冷跑。
+
+> 手动 Run workflow 留空 tag 就是"只构建 + 上传产物、不动 Release 页面"，
+> 本地出不了包时可以用它拿一份云端产物。
+
 ## 发布前的检查单
 
 - [ ] **测试全绿**：`cargo test --workspace` 与 `cd app/frontend && npm test`

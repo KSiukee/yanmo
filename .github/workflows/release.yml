@@ -49,8 +49,35 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+          # 前端依赖的下载缓存（npm 的 cache 目录），省掉每次重下
+          cache: npm
+          cache-dependency-path: app/frontend/package-lock.json
 
       - uses: dtolnay/rust-toolchain@stable
+
+      # ★ 出包慢的大头在这里：冷跑要**从零编译两遍依赖**（跑测试一遍 debug、打包一遍 release），
+      #   而依赖树（tauri / wry / rusqlite 自带的 SQLite 源码）比我们自己的代码大得多。
+      #   缓存 ~/.cargo 与 target/：命中后只重编我们改过的 crate，整条流水线从约 20 分钟
+      #   降到个位数分钟。key 跟着 Cargo.lock 与 rustc 版本自动算（改依赖才失效）。
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # 失败也存：那次没过的运行里，依赖编译成果下次照样能省下来（省的是编译，不是跳过检查）
+          cache-on-failure: true
+
+      - name: 缓存前端 node_modules
+        uses: actions/cache@v4
+        with:
+          path: app/frontend/node_modules
+          # 跟着 package-lock 走；装完就不用再跑 npm install 了
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('app/frontend/package-lock.json') }}
+
+      # tauri 打包第一个安装包时会去下 NSIS 工具链，缓存下来省一次网络往返
+      - name: 缓存 tauri 打包工具（NSIS）
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/tauri
+          key: ${{ runner.os }}-tauri-bundler-${{ hashFiles('app/tauri.conf.json') }}
+          restore-keys: ${{ runner.os }}-tauri-bundler-
 
       - name: 装 tauri CLI
         run: npm install --global @tauri-apps/cli@^2
