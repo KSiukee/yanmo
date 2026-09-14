@@ -15,6 +15,15 @@ on:
 permissions:
   contents: write
 
+# 同一个 tag 只留一轮：把某一版重指到新提交（删 tag 再重推）时，上一轮**立刻取消**。
+# 为什么必须钉死：不取消的话两轮会抢着写同一个 Release——晚结束的那一份用旧提交的
+# 说明/产物把页面顶回去，看着像"改了没生效"（0.49.0 重指 tag 那次就是这样：
+# 旧那轮在打包中途被删 tag 取消，日志里是一串 KeyboardInterrupt，容易误读成构建炸了）。
+# 不同 tag 的 group 不同（group 里带 ref），所以发新版不会取消上一版的运行。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows:
     runs-on: windows-latest
