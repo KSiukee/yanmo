@@ -90,9 +90,32 @@ app/                 官方桌面壳（Tauri 2 + Vue 3 + TipTap 3）
 
 **构建**（Windows）：需要 Rust 1.97+、Node 24+、Visual Studio Build Tools、WebView2。
 
+**前置条件（逐项）**：
+
+| 需要 | 版本 / 说明 |
+| --- | --- |
+| Rust | 1.97 或更新（`rustup` 装 stable 即可） |
+| Node.js | 24 或更新（含 npm） |
+| **Visual Studio Build Tools** | 勾选「**使用 C++ 的桌面开发**」工作负载；其中必须有 **MSVC v143 生成工具**与 **Windows 10/11 SDK**（缺了会在编译 C 依赖时报 `link.exe not found`） |
+| WebView2 Runtime | Windows 10/11 一般自带；没有就装 Microsoft 的 Evergreen Runtime |
+| `tauri-cli` | `cargo install tauri-cli --version '^2'`（或 `npm i -g @tauri-apps/cli`） |
+
+**跑起来**：
+
 ```bash
 cd app/frontend && npm install
 cd ..            && cargo tauri dev
 ```
+
+**跑测试**（提交前请都跑一遍）：
+
+```bash
+cargo test --workspace        # 核心与桌面壳；含边界机械检查（界面不碰文件系统、权限集最小化、零出网等）
+cd app/frontend && npm test   # 前端（纯 node 测试，不需要浏览器）
+```
+
+**出安装包**：仓库根目录 `tools\build-release.bat`——工具链自检 → 版本一致 → 前端构建 →
+**跑测试（失败就不出包）** → 打包 → 产物与校验和归集到 `dist\`。
+本地反复出包可用 `--no-bundle`（只出可执行文件）与 `--skip-tests`（**正式出包别用**）。
 
 **提交前**：确认 `git status` 中没有构建产物与本地临时文件（详见 `.gitignore`）。
