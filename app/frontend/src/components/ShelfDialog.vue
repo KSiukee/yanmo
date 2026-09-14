@@ -2,28 +2,17 @@
 // 书架：**多作品是默认形态**——这一屏就是"我手上有哪几本书、各写到什么程度"。
 //
 // 只在打开时拉一次列表（书架不是常驻画面），切书交给会话层（先落盘再切）。
-import { nextTick, ref } from "vue";
-
-import NewWorkDialog from "./NewWorkDialog.vue";
+import { ref } from "vue";
 
 import type { EditorSession } from "../editor/session";
 import { shelfKindLabel, shelfLabel } from "../editor/shelf";
+import type { ShelfEntry } from "../api/core";
 import { t } from "../locales/index.ts";
 import { formatWhen } from "../editor/display";
 
 const props = defineProps<{ session: EditorSession }>();
-const {
-  entries,
-  busy,
-  close,
-  open,
-  create,
-  rename,
-  remove,
-  export: exportWork,
-  saveSummary,
-  note,
-} = props.session.shelf;
+const { entries, busy, close, open, remove, export: exportWork, note, openCreate, openEdit } =
+  props.session.shelf;
 const { visible: trashVisible, toggle: toggleTrash } = props.session.trash;
 const { workId, caliber } = props.session;
 const { open: openCompile } = props.session.compile;
@@ -34,10 +23,6 @@ function openTrash() {
   toggleTrash();
 }
 
-/** 正在改名的那一本（同时只可能有一本） */
-const renaming = ref<number | null>(null);
-const draft = ref("");
-
 /** 展开了"更多"动作的那一本（同时只可能有一本）：日常只用「打开 / 编译」，
  *  导出、简介、改名、删除这些低频动作收进去，免得一行挤六个按钮。 */
 const expanded = ref<number | null>(null);
@@ -46,56 +31,19 @@ function toggleMore(work_id: number) {
   expanded.value = expanded.value === work_id ? null : work_id;
 }
 
-/** 正在写简介的那一本（投稿包的大纲要用它）：多行，所以跟改名的单行输入分开 */
-const noting = ref<number | null>(null);
-const noteDraft = ref("");
-async function startNote(work_id: number, summary: string) {
-  noting.value = work_id;
-  noteDraft.value = summary;
-  await nextTick();
-  const box = listEl.value?.querySelector<HTMLTextAreaElement>(".shelf__summary");
-  box?.focus();
-}
-
-/** 存简介：**存下了才收起来**（存不下去就留在框里，别让作者白写） */
-async function commitNote(work_id: number) {
-  if (noting.value !== work_id) return;
-  noting.value = null;
-  await saveSummary(work_id, noteDraft.value);
-}
-const listEl = ref<HTMLElement | null>(null);
-
-/** 建书页开着没有（书名、类型、简介、命名规则都在那一页里问） */
-const creating = ref(false);
-
 /** 书架上的书名：没起名的显示占位（默认名不落库，名字由作者起） */
 function workLabel(title: string): string {
   return title || t("shelf.untitled_work");
 }
 
-/** 打开建书页（那一页自己负责问全、建完直接开写） */
+/** 打开作品表单：新建 / 编辑都由**同一张表单**问（会话层持有开合状态，
+ *  因为首启那条提示上的「建一本书」也要能打开它）。 */
 function startCreate() {
-  creating.value = true;
+  openCreate();
 }
 
-/** 建书页关掉：它自己是弹层，关的时候把状态收回来 */
-function closeCreate() {
-  creating.value = false;
-}
-
-async function startRename(work_id: number, title: string) {
-  renaming.value = work_id;
-  draft.value = title;
-  await nextTick();
-  const input = listEl.value?.querySelector<HTMLInputElement>(".shelf__rename");
-  input?.focus();
-  input?.select();
-}
-
-async function commitRename(work_id: number) {
-  if (renaming.value !== work_id) return;
-  renaming.value = null;
-  await rename(work_id, draft.value);
+function startEdit(entry: ShelfEntry) {
+  openEdit(entry);
 }
 
 /** 删书是不可逆的入口（虽然库里是软删），问一句再动手 */
@@ -120,62 +68,22 @@ function confirmRemove(work_id: number, title: string) {
         <button type="button" class="shelf__button dialog__button" :title="t('shelf.close_title')" @click="close">{{ t("common.close") }}</button>
       </header>
 
-      <ul ref="listEl" class="shelf__list">
+      <ul class="shelf__list">
         <li
           v-for="entry in entries"
           :key="entry.id"
           class="shelf__card"
           :class="{ 'shelf__card--current': entry.id === workId }"
         >
-          <div class="shelf__main" @dblclick="startRename(entry.id, entry.title)">
-            <input
-              v-if="renaming === entry.id"
-              v-model="draft"
-              class="shelf__rename"
-              type="text"
-              @click.stop
-              @keydown.enter="commitRename(entry.id)"
-              @keydown.esc="renaming = null"
-              @blur="commitRename(entry.id)"
-            />
-            <span v-else class="shelf__name" :title="workLabel(entry.title)">{{ workLabel(entry.title) }}</span>
+          <div class="shelf__main">
+            <span class="shelf__name" :title="workLabel(entry.title)">{{ workLabel(entry.title) }}</span>
             <span class="shelf__meta">
               {{ shelfKindLabel(entry.kind) }} · {{ shelfLabel(entry, caliber) }} ·
               {{ formatWhen(entry.opened_at) }}
             </span>
-            <!-- 简介：存着就显示一行（点「简介」改），没写就不占地方 -->
-            <span
-              v-if="entry.summary && noting !== entry.id"
-              class="shelf__summary-line"
-              :title="entry.summary"
-            >
+            <!-- 简介：写了就显示一行（改它去「编辑」那张表单），没写就不占地方 -->
+            <span v-if="entry.summary" class="shelf__summary-line" :title="entry.summary">
               {{ entry.summary }}
-            </span>
-            <textarea
-              v-if="noting === entry.id"
-              v-model="noteDraft"
-              class="shelf__summary"
-              rows="3"
-              :placeholder="t('shelf.summary_placeholder')"
-              @keydown.esc="noting = null"
-            ></textarea>
-            <span v-if="noting === entry.id" class="shelf__summary-actions">
-              <button
-                type="button"
-                class="shelf__button dialog__button"
-                :disabled="busy"
-                @click="commitNote(entry.id)"
-              >
-                {{ t("common.save") }}
-              </button>
-              <button
-                type="button"
-                class="shelf__button dialog__button"
-                :disabled="busy"
-                @click="noting = null"
-              >
-                {{ t("common.cancel") }}
-              </button>
             </span>
           </div>
 
@@ -215,15 +123,6 @@ function confirmRemove(work_id: number, title: string) {
                 type="button"
                 class="shelf__button dialog__button"
                 :disabled="busy"
-                :title="t('shelf.summary_title')"
-                @click="startNote(entry.id, entry.summary)"
-              >
-                {{ t("shelf.summary_button") }}
-              </button>
-              <button
-                type="button"
-                class="shelf__button dialog__button"
-                :disabled="busy"
                 :title="t('shelf.export_title')"
                 @click="exportWork(entry.id, 'both')"
               >
@@ -233,9 +132,10 @@ function confirmRemove(work_id: number, title: string) {
                 type="button"
                 class="shelf__button dialog__button"
                 :disabled="busy"
-                @click="startRename(entry.id, entry.title)"
+                :title="t('shelf.edit_title')"
+                @click="startEdit(entry)"
               >
-                {{ t("shelf.rename") }}
+                {{ t("shelf.edit") }}
               </button>
               <button
                 type="button"
@@ -251,7 +151,6 @@ function confirmRemove(work_id: number, title: string) {
       </ul>
     </section>
 
-    <NewWorkDialog v-if="creating" :session="session" @close="closeCreate" />
   </div>
 </template>
 

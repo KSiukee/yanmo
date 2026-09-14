@@ -20,6 +20,7 @@ import LocationDialog from "./components/LocationDialog.vue";
 import RestoreDialog from "./components/RestoreDialog.vue";
 import SettingsDialog from "./components/SettingsDialog.vue";
 import ShelfDialog from "./components/ShelfDialog.vue";
+import WorkFormDialog from "./components/WorkFormDialog.vue";
 import SnapshotDialog from "./components/SnapshotDialog.vue";
 import TrashDialog from "./components/TrashDialog.vue";
 import CompileDialog from "./components/CompileDialog.vue";
@@ -29,7 +30,7 @@ import WritingDialog from "./components/WritingDialog.vue";
 // 会话在布局层建**一次**：目录树、书架与正文编辑器说的必须是同一本书、同一章
 const session = useEditorSession();
 const { chapterTitle, workId } = session;
-const { visible: shelfVisible, toggle: toggleShelf } = session.shelf;
+const { visible: shelfVisible, toggle: toggleShelf, form: workForm, closeForm } = session.shelf;
 const { visible: trashVisible } = session.trash;
 const { visible: snapshotsVisible } = session.snapshots;
 const { visible: typesetVisible } = session.typeset;
@@ -144,6 +145,7 @@ const hint = computed(() => {
     </main>
 
     <ShelfDialog v-if="shelfVisible" :session="session" />
+    <WorkFormDialog v-if="workForm" :session="session" :form="workForm" @close="closeForm" />
     <TrashDialog v-if="trashVisible" :session="session" />
     <SnapshotDialog v-if="snapshotsVisible" :session="session" />
     <TypesetDialog v-if="typesetVisible" :session="session" />

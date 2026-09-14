@@ -18,6 +18,7 @@ import { shortcutKeys } from "../editor/shortcuts.ts";
 import type { EditorSession } from "../editor/session";
 import type { AutosaveState } from "../editor/autosave";
 import ExitDialog from "./ExitDialog.vue";
+import { looksLikeFirstRun } from "../editor/shelf";
 
 const props = defineProps<{ session: EditorSession }>();
 // 摊开之后每一项都是顶层绑定，模板里照常自动解包
@@ -75,6 +76,16 @@ const languageTitle = computed(() =>
 );
 // 版本历史：跟当前章绑在一起，入口就在章名这一行（状态机在 editor/snapshots.ts）
 const { toggle: toggleSnapshots } = props.session.snapshots;
+
+// 首启那条提示：核心在首启会先建一本**无名空壳**，所以作者看到的是"一片空白 + 未命名作品"。
+// 判据（只有一本、没名字、一个字没写）放在 `shelf.looksLikeFirstRun` 里——机械、可单测，
+// 而且作者只要写了一个字、或者建了第二本，它自己就消失，不需要另记"看过引导没有"。
+const firstRun = computed(
+  () =>
+    looksLikeFirstRun(props.session.shelf.entries.value) &&
+    !props.session.shelf.visible.value &&
+    !props.session.shelf.form.value,
+);
 // 排版清理：同一条思路——一次动作、只作用于当前章（状态机在 editor/typeset.ts）
 const { open: openTypeset } = props.session.typeset;
 // 这一章的"一句话"（投稿包的大纲要用它）：**单独存、单独显示**，不跟正文搅在一起
@@ -205,6 +216,16 @@ function statusText(status: AutosaveState["status"]): string {
       </span>
     </header>
 
+    <p v-if="firstRun" class="editor__notice editor__notice--first">
+      {{ t("shelf.first_run_notice") }}
+      <button
+        type="button"
+        class="editor__notice-action"
+        @click="props.session.shelf.openCreate()"
+      >
+        {{ t("shelf.first_run_action") }}
+      </button>
+    </p>
     <p v-if="crashNotice" class="editor__notice">⚠ {{ crashNotice }}</p>
     <p v-if="saveState.incident" class="editor__notice">
       {{ t("editor.incident", { kind: saveState.incident }) }}

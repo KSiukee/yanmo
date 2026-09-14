@@ -58,3 +58,8 @@
 .newwork__button {
   align-self: flex-end;
 }
+
+/* 编辑作品时类型只读显示（建好之后不能改：它决定了目录长什么样） */
+.newwork__readonly {
+  color: var(--ym-text-weak, #6b6b6b);
+}

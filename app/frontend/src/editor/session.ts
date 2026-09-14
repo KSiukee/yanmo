@@ -952,6 +952,10 @@ export function useEditorSession(): EditorSession {
       const snapshot = await openEditorTarget();
       applyChapter(snapshot);
       makeAutosave(snapshot);
+      // 书架列表：**打开当前章之后再拉**（顺序要紧）。正文区那条"第一次使用？"的提示
+      // 要拿它判断，而首启那本无名空壳正是上一步（openEditorTarget）才建出来的——
+      // 早拉一步只会拿到空列表，提示就永远不出现（真机上就是这么翻的车）。
+      void shelf.refresh();
       stopCompositionWatch = watchComposition();
       // 启动诊断：盯着"焦点在不在正文里""输入法有没有组字"（壳没开诊断时这些上报是空转）
       const dom = editor.value?.view.dom;
