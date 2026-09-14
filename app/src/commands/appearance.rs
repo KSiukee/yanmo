@@ -24,6 +24,10 @@ pub struct AppearanceDto {
     pub naming: Option<String>,
     /// 章的号跨不跨卷数（continue / per_volume）；默认跨卷延续（continue）
     pub chapter_numbering: String,
+    /// 正文排版三项（**只影响观感，不进导出**）；null = 没改过，界面用自己那档默认
+    pub editor_font_size: Option<i64>,
+    pub editor_line_height: Option<i64>,
+    pub editor_letter_spacing: Option<i64>,
 }
 
 impl From<ResolvedAppearance> for AppearanceDto {
@@ -35,6 +39,9 @@ impl From<ResolvedAppearance> for AppearanceDto {
             daily_goal: value.daily_goal,
             naming: value.naming.map(|style| style.as_str().to_string()),
             chapter_numbering: value.chapter_numbering.as_str().to_string(),
+            editor_font_size: value.editor_font_size,
+            editor_line_height: value.editor_line_height,
+            editor_letter_spacing: value.editor_letter_spacing,
         }
     }
 }
@@ -52,6 +59,10 @@ pub struct AppearancePatch {
     pub naming: Option<String>,
     /// 传 `continue` / `per_volume`；传 `"auto"` = 清掉这一层（回到默认：跨卷延续）
     pub chapter_numbering: Option<String>,
+    /// 正文排版：字号 px / 行距百分比 / 字距百分比；**≤0 = 清掉回默认**，超出可读范围由核心夹住
+    pub editor_font_size: Option<i64>,
+    pub editor_line_height: Option<i64>,
+    pub editor_letter_spacing: Option<i64>,
 }
 
 impl From<AppearancePatch> for Appearance {
@@ -63,6 +74,9 @@ impl From<AppearancePatch> for Appearance {
             daily_goal: patch.daily_goal,
             naming: patch.naming,
             chapter_numbering: patch.chapter_numbering,
+            editor_font_size: patch.editor_font_size,
+            editor_line_height: patch.editor_line_height,
+            editor_letter_spacing: patch.editor_letter_spacing,
         }
     }
 }

@@ -571,5 +571,13 @@
   "shelf.volume_target_hint": "填个大概数就行：目录里会显示「本卷 12/30 章」，写到差不多时会问你要不要在这里收卷——它只提议，绝不改你的结构，随时能改。",
   "shelf.naming_follow": "跟随设置（{name}）",
   "shelf.naming_not_needed": "单篇与短篇集不编号，名字由你自己起（想改去「设置 → 新建条目」）。",
-  "shelf.new_work_hint": "简介可以以后再补；命名规则只影响以后新建的条目，已有名字不会被改。"
+  "shelf.new_work_hint": "简介可以以后再补；命名规则只影响以后新建的条目，已有名字不会被改。",
+  "settings.nav_typography": "排版",
+  "settings.group_typography": "正文排版",
+  "settings.typography_size": "字号",
+  "settings.typography_line": "行距",
+  "settings.typography_spacing": "字距",
+  "settings.typography_sample": "示例：研墨让写长篇的人安安静静地写下去。",
+  "settings.typography_hint": "只改你看正文的观感：不进导出、不动正文一个字，改完立刻生效、重启还在。字距按字号的比例算（5% = 每个字之间加 0.05 个字宽）。",
+  "settings.typography_reset": "恢复默认排版"
 }

@@ -14,6 +14,7 @@ import {
   pickCount,
 } from "../editor/wordcount.ts";
 import { goalProgress, goalReached, pickDayCount } from "../editor/writing-days.ts";
+import { typographyStyle } from "../editor/typography.ts";
 import { shortcutKeys } from "../editor/shortcuts.ts";
 import type { EditorSession } from "../editor/session";
 import type { AutosaveState } from "../editor/autosave";
@@ -45,6 +46,13 @@ const { on: zenOn, exit: exitZen } = props.session.zen;
 // 也不是无限拉——上限 64em（中文长文再宽，眼睛回行容易串行）。
 const fullscreenOn = props.session.fullscreenOn;
 const wideMeasure = computed(() => zenOn.value || fullscreenOn.value);
+
+// 正文排版（字号 / 行距 / 字距）：**显示层**，绑成 CSS 变量交给样式表用。
+// 取"这本书生效的那一份"（每书覆盖优先），没打开书就退回全局；档位与换算全在
+// editor/typography.ts 那一处——组件里不写死 px 与倍数。
+const bodyStyle = computed(() =>
+  typographyStyle(props.session.appearance.workValues.value ?? props.session.appearance.values.value),
+);
 
 // 今日进度：账本在核心（`writing_days`），会话在每次落盘成功后刷一次。
 // 没设目标就只显示"今天写了多少"——不拿一个假目标糊弄作者。

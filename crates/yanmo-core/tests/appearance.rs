@@ -273,3 +273,108 @@ fn the_chosen_naming_style_shows_up_in_new_chapters() {
         assert_eq!(store.rendered_title(chapter).unwrap(), rendered, "{code}：显示出来的样子");
     }
 }
+
+/// 正文排版（字号 / 行距 / 字距）是**纯显示层**：能记住、能每书覆盖、能夹范围，
+/// **但正文与导出一个字节都不许变**（这一条是这项功能的验收底线）。
+#[test]
+fn typography_is_remembered_per_item_and_never_touches_the_text() {
+    use yanmo_core::store::ExportFormat;
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let volume = store.list_nodes(work.id).unwrap()[0].id;
+    let chapter = store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap();
+    store.write_body(chapter, "第一段。\n第二段。").unwrap();
+
+    let body_before = store.read_body(chapter).unwrap();
+    let export_before: Vec<u8> = store
+        .render_work(work.id, ExportFormat::Text)
+        .unwrap()
+        .iter()
+        .flat_map(|file| file.content.clone())
+        .collect();
+
+    // 设三项：只写传进来的那些（没传的保持原样）
+    store
+        .set_appearance(
+            Some(work.id),
+            &Appearance {
+                editor_font_size: Some(20),
+                editor_line_height: Some(200),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let resolved = store.appearance(Some(work.id)).unwrap();
+    assert_eq!(resolved.editor_font_size, Some(20));
+    assert_eq!(resolved.editor_line_height, Some(200));
+    assert_eq!(resolved.editor_letter_spacing, None, "没传的那项不该被顺手写进去");
+
+    store
+        .set_appearance(
+            Some(work.id),
+            &Appearance { editor_letter_spacing: Some(5), ..Default::default() },
+        )
+        .unwrap();
+    let resolved = store.appearance(Some(work.id)).unwrap();
+    assert_eq!(resolved.editor_letter_spacing, Some(5));
+    assert_eq!(resolved.editor_font_size, Some(20), "上一次那两项还在");
+
+    // ★ 正文与导出：一个字节都不许变
+    assert_eq!(store.read_body(chapter).unwrap(), body_before, "排版设置不许碰正文");
+    let export_after: Vec<u8> = store
+        .render_work(work.id, ExportFormat::Text)
+        .unwrap()
+        .iter()
+        .flat_map(|file| file.content.clone())
+        .collect();
+    assert_eq!(export_after, export_before, "排版设置不许进导出");
+
+    // 极端值夹进可读范围（不报错、不破版）
+    store
+        .set_appearance(
+            Some(work.id),
+            &Appearance {
+                editor_font_size: Some(1000),
+                editor_line_height: Some(3),
+                editor_letter_spacing: Some(999),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let resolved = store.appearance(Some(work.id)).unwrap();
+    assert_eq!(resolved.editor_font_size, Some(30), "太大的字号夹到上限");
+    assert_eq!(resolved.editor_line_height, Some(110), "太小的行距夹到下限");
+    assert_eq!(resolved.editor_letter_spacing, Some(20));
+
+    // ≤0 = 清掉（回默认那档），与"没设过"同义
+    store
+        .set_appearance(Some(work.id), &Appearance { editor_font_size: Some(0), ..Default::default() })
+        .unwrap();
+    assert_eq!(store.appearance(Some(work.id)).unwrap().editor_font_size, None);
+
+    // 每书覆盖：书的覆盖盖在全局上，全局那份不动
+    store
+        .set_appearance(None, &Appearance { editor_font_size: Some(24), ..Default::default() })
+        .unwrap();
+    store
+        .set_appearance(Some(work.id), &Appearance { editor_font_size: Some(15), ..Default::default() })
+        .unwrap();
+    let other = store.create_work(WorkKind::Novel, "另一本").unwrap();
+    assert_eq!(store.appearance(Some(work.id)).unwrap().editor_font_size, Some(15), "这一本覆盖了");
+    assert_eq!(store.appearance(Some(other.id)).unwrap().editor_font_size, Some(24), "别的书跟全局");
+
+    // 坏记录当没设过（旧版本写进去的荒谬值）
+    store
+        .conn()
+        .execute(
+            "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES(?1, ?2, 0)",
+            rusqlite::params![
+                format!("work.{}.appearance", other.id),
+                r#"{"editor_font_size":-5,"editor_line_height":"tall"}"#
+            ],
+        )
+        .unwrap();
+    let resolved = store.appearance(Some(other.id)).unwrap();
+    assert_eq!(resolved.editor_font_size, Some(24), "坏值当没设过 → 回全局那份");
+    assert_eq!(resolved.editor_line_height, None);
+}

@@ -9,9 +9,10 @@
 //
 // 只认接口不认具体命令（真命令在会话层注入）：可以脱离界面与核心单测。
 
-import { ref, type Ref } from "vue";
+import { ref, watch, type Ref } from "vue";
 
 import type { Appearance, AppearancePatch, NamingRewrite } from "../api/core";
+import type { TypographyField } from "./typography";
 
 /** 偏好要用的几个动作（会话层注入真命令，测试注入替身）。 */
 export interface AppearanceTransport {
@@ -64,6 +65,13 @@ export interface AppearanceState {
    * 标题与正文一个字不动（跟命名写法那一条不一样，这里不必先预览）。
    */
   setChapterNumbering: (value: string, target: NamingTarget) => Promise<void>;
+  /**
+   * 设正文排版的一项（字号 / 行距 / 字距）：**只写全局那一层**（第一版先只暴露全局，
+   * 每书覆盖的机制已经在了，将来给面板加个"只设这本书"就能用）。
+   *
+   * 传 `0` = 清掉这一项（回默认档）。它只影响观感：写完编辑区立刻变，正文一个字不动。
+   */
+  setTypography: (field: TypographyField, value: number) => Promise<void>;
   /** 整本书换编号写法的清单（还没问回来是 null；空数组 = 不用换） */
   namingPlan: Ref<NamingRewrite[] | null>;
   /** 问一次"这本书哪些章会换" */
@@ -99,8 +107,7 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
     values,
     workValues,
     visible,
-    busy,
-    load: async () => {
+    busy,    load: async () => {
       try {
         values.value = await options.transport.read(null);
       } catch {
@@ -188,7 +195,20 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
         return written;
       });
     },
+    setTypography: async (field, value) => {
+      // 写全局那一层（稀疏合并：只传这一项，别的项不受影响）
+      await act(() => options.transport.write(null, { [field]: value }));
+      // 全局换了 → "这本书生效的那一份"也跟着换：顺手重读，编辑区与面板立刻一致
+      await state.loadWork();
+    },
     resetToDefault: () => act(() => options.transport.reset(null)),
   };
+
+  // 换书：这一本有没有单独覆盖外观里的某项（比如正文排版），得重读一次才知道——
+  // 编辑区绑的就是这份"这本书生效的"，不重读就会沿用上一本的观感。
+  watch(options.workId, () => {
+    void state.loadWork();
+  });
+
   return state;
 }

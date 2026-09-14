@@ -229,8 +229,11 @@
   margin: 0 auto;
   padding: 32px 24px;
   font-family: var(--ym-font-body);
-  font-size: 17px;
-  line-height: 1.9;
+  /* 字号 / 行距 / 字距由设置里「排版」那一栏决定：变量绑在 .editor__area 上
+     （见 EditorPane 的 bodyStyle 与 editor/typography.ts）；这里只是没绑上时的兜底 */
+  font-size: var(--ym-body-size, 17px);
+  line-height: var(--ym-body-line, 190%);
+  letter-spacing: var(--ym-body-spacing, 0em);
   outline: none;
 }
 

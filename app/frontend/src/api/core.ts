@@ -126,6 +126,10 @@ export interface Appearance {
   naming: string | null;
   /** 章的号跨不跨卷数（continue / per_volume）；默认跨卷延续（continue） */
   chapter_numbering: string;
+  /** 正文排版三项（**只影响观感，不进导出**）；null = 没改过，界面用自己那档默认 */
+  editor_font_size: number | null;
+  editor_line_height: number | null;
+  editor_letter_spacing: number | null;
 }
 
 /** 要改的偏好项：**只写传进来的**，没传的保持原样。 */
@@ -139,6 +143,10 @@ export interface AppearancePatch {
   naming?: string;
   /** continue / per_volume；传 "auto" 就是**清掉这一层**（回到默认：跨卷延续） */
   chapter_numbering?: string;
+  /** 正文排版：字号 px / 行距百分比 / 字距百分比；**0 = 清掉这一项**（回默认档） */
+  editor_font_size?: number;
+  editor_line_height?: number;
+  editor_letter_spacing?: number;
 }
 
 /** 某一天的字数（三个口径都给，界面按当前口径显示）。 */

@@ -154,3 +154,37 @@
   gap: 8px;
   margin-top: 14px;
 }
+
+/* ── 正文排版那三个旋钮（显示层：只改观感，不进导出） ────────────────── */
+
+.settings__range {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--ym-accent);
+}
+
+/* 旋钮右边那个数：定宽 + 等宽数字，拖动时不会左右跳 */
+.settings__value {
+  flex: none;
+  width: 4.5em;
+  text-align: right;
+  font-size: 12px;
+  color: var(--ym-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 示例段：绑的是与编辑区同一份 CSS 变量，调旋钮它就跟着变 */
+.settings__sample {
+  margin: 6px 0 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  font-family: var(--ym-font-body);
+  font-size: var(--ym-body-size, 17px);
+  line-height: var(--ym-body-line, 190%);
+  letter-spacing: var(--ym-body-spacing, 0em);
+  text-indent: 2em;
+  color: inherit;
+  overflow: hidden;
+}

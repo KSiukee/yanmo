@@ -113,3 +113,20 @@ test("设章节编号方式：同样由 target 决定写哪一层，且不必预
   await state.setChapterNumbering("per_volume", "work");
   assert.equal(core.writes.length, 2);
 });
+
+test("设正文排版：只写这一项（别的项不受影响），传 0 就是清掉回默认", async () => {
+  const core = fakeCore();
+  const state = useAppearance({
+    transport: core.transport,
+    workId: ref<number | null>(null),
+    onError: () => {},
+  });
+
+  await state.setTypography("editor_font_size", 20);
+  assert.deepEqual(core.writes[0], { work_id: null, patch: { editor_font_size: 20 } },
+    "写全局那一层，且只带这一项（稀疏合并）");
+
+  await state.setTypography("editor_line_height", 0);
+  assert.deepEqual(core.writes[1], { work_id: null, patch: { editor_line_height: 0 } },
+    "0 = 清掉这一项（核心当没设过）");
+});

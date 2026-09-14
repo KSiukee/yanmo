@@ -65,6 +65,27 @@ pub struct Appearance {
     /// 标题里存的还是模板，所以改一下立刻全见效、正文一个字不动。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chapter_numbering: Option<String>,
+    /// 正文字号（px；`None` = 没改过，用界面默认那档）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor_font_size: Option<i64>,
+    /// 正文行距（百分比：190 = 1.9 倍；`None` = 没改过）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor_line_height: Option<i64>,
+    /// 正文字距（em 的百分之几：5 = 0.05em；`None` = 没改过）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor_letter_spacing: Option<i64>,
+}
+
+/// 正文排版的**可读范围**：超出就夹住（手滑打 1000 号字不该把版面炸了，也不该报错挡人）。
+const FONT_SIZE_RANGE: (i64, i64) = (12, 30);
+const LINE_HEIGHT_RANGE: (i64, i64) = (110, 260);
+const LETTER_SPACING_RANGE: (i64, i64) = (0, 20);
+
+/// 夹进范围；`≤0` 当"没设过"（界面用 0 表达"回默认"）。
+///
+/// 只服务正文排版这三项：它们**纯观感**——不进导出、不动正文一个字节（有验收钉着）。
+fn typography_value(value: i64, (low, high): (i64, i64)) -> Option<i64> {
+    (value > 0).then(|| value.clamp(low, high))
 }
 
 impl Appearance {
@@ -76,6 +97,9 @@ impl Appearance {
             && self.daily_goal.is_none()
             && self.naming.is_none()
             && self.chapter_numbering.is_none()
+            && self.editor_font_size.is_none()
+            && self.editor_line_height.is_none()
+            && self.editor_letter_spacing.is_none()
     }
 
     /// 把 `over`（书的覆盖）盖在 `self`（全局）上：**只覆盖它真设过的项**。
@@ -93,6 +117,10 @@ impl Appearance {
                 .chapter_numbering
                 .clone()
                 .or_else(|| self.chapter_numbering.clone()),
+            // 排版三项：每书覆盖也走同一条路（第一版界面只暴露全局，机制先留着）
+            editor_font_size: over.editor_font_size.or(self.editor_font_size),
+            editor_line_height: over.editor_line_height.or(self.editor_line_height),
+            editor_letter_spacing: over.editor_letter_spacing.or(self.editor_letter_spacing),
         }
     }
 }
@@ -111,6 +139,12 @@ pub struct ResolvedAppearance {
     pub naming: Option<NamingStyle>,
     /// 章的号跨不跨卷数（没选过就是默认：跨卷延续）。
     pub chapter_numbering: ChapterNumbering,
+    /// 正文字号 px / 行距百分比 / 字距百分比；`None` = 没改过（界面用自己那档默认）。
+    ///
+    /// 三项都是**显示层**：只改阅读观感，不进导出、不动正文（由调用方绑到 CSS 变量上）。
+    pub editor_font_size: Option<i64>,
+    pub editor_line_height: Option<i64>,
+    pub editor_letter_spacing: Option<i64>,
 }
 
 impl Default for ResolvedAppearance {
@@ -123,6 +157,10 @@ impl Default for ResolvedAppearance {
             daily_goal: None,
             naming: None,
             chapter_numbering: ChapterNumbering::default(),
+            // 排版三项默认"没设过"：具体用多少 px / 多少倍是**界面**的事（核心不碰观感数值）
+            editor_font_size: None,
+            editor_line_height: None,
+            editor_letter_spacing: None,
         }
     }
 }
@@ -163,6 +201,16 @@ impl Store {
                 .as_deref()
                 .and_then(ChapterNumbering::parse)
                 .unwrap_or_default(),
+            // 排版三项：坏数据 / 极端值都夹进可读范围（只影响观感，不值得为它报错）
+            editor_font_size: merged
+                .editor_font_size
+                .and_then(|value| typography_value(value, FONT_SIZE_RANGE)),
+            editor_line_height: merged
+                .editor_line_height
+                .and_then(|value| typography_value(value, LINE_HEIGHT_RANGE)),
+            editor_letter_spacing: merged
+                .editor_letter_spacing
+                .and_then(|value| typography_value(value, LETTER_SPACING_RANGE)),
         })
     }
 
@@ -245,6 +293,17 @@ impl Store {
             // 超大的值夹到上限，免得手滑多打几个零后进度条永远不动
             stored.daily_goal = (value > 0).then(|| value.min(MAX_DAILY_GOAL));
         }
+        // 正文排版三项：**只写传进来的**（`None` = 这项不改）；传 ≤0 = 清掉回默认；
+        // 超出可读范围的夹住——它们是纯观感，写坏一个数不该把版面炸了，更不该报错挡人
+        if let Some(value) = patch.editor_font_size {
+            stored.editor_font_size = typography_value(value, FONT_SIZE_RANGE);
+        }
+        if let Some(value) = patch.editor_line_height {
+            stored.editor_line_height = typography_value(value, LINE_HEIGHT_RANGE);
+        }
+        if let Some(value) = patch.editor_letter_spacing {
+            stored.editor_letter_spacing = typography_value(value, LETTER_SPACING_RANGE);
+        }
         if let Some(value) = patch.chapter_numbering.as_deref() {
             // `"auto"` = 清掉这一层（回到默认：跨卷延续）——与命名规则同一条路
             if value == "auto" {
@@ -271,6 +330,9 @@ impl Store {
                 "daily_goal": patch.daily_goal,
                 "naming": patch.naming,
                 "chapter_numbering": patch.chapter_numbering,
+                "editor_font_size": patch.editor_font_size,
+                "editor_line_height": patch.editor_line_height,
+                "editor_letter_spacing": patch.editor_letter_spacing,
             }),
         )
     }

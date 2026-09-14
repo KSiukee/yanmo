@@ -5,14 +5,15 @@
 // 「稿子放在哪」只显示壳报告出来的路径，另外把"换位置"那个面板请出来（它自己那套分寸见组件里）。
 // 「关于」是只读报告：版本 / 库结构 + 一键打开稿子文件夹 + 安全承诺与限制的摘要（完整清单在仓库的 SECURITY.md）。
 // 路径**只显示一处**（在「稿子放在哪」那一组）：两块各摊一遍绝对路径看着像出了错。
-import { computed, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 
 import { t } from "../locales/index.ts";
-import { openDataDir, readAppVersion, readDataHome, readEngineInfo } from "../api/core";
 import type { EditorSession } from "../editor/session";
 import { SETTINGS_SECTIONS, firstSection } from "../editor/settings-nav.ts";
 import LocationDialog from "./LocationDialog.vue";
 import SettingsResetConfirm from "./SettingsResetConfirm.vue";
+import TypographySettings from "./TypographySettings.vue";
+import AboutSettings from "./AboutSettings.vue";
 
 const props = defineProps<{ session: EditorSession }>();
 const {
@@ -29,6 +30,7 @@ const {
   previewNaming,
   applyNaming,
 } = props.session.appearance;
+
 
 // 左边一列分类，右边只显示当前这一类：设置项一多，摊成一长列就没法看了（分区表见 editor/settings-nav.ts）
 const activeSection = ref(firstSection());
@@ -55,43 +57,6 @@ function startRelocate(): void {
 }
 
 // ── 关于（只读报告；经 api 网关取数，组件不直接碰 Tauri）────────────
-const appVersion = ref("");
-const engineVersion = ref("");
-const schemaVersion = ref<number | null>(null);
-const aboutError = ref<string | null>(null);
-/** 打开稿子文件夹失败的原因（点了没反应最难查，所以要把原因说出来） */
-const openError = ref<string | null>(null);
-
-/** 一行报全：安装包版本 / 引擎版本 / 库结构版本 */
-const aboutVersion = computed(() =>
-  t("settings.about_version_value", {
-    version: appVersion.value || "—",
-    engine: engineVersion.value || "—",
-    schema: schemaVersion.value ?? "—",
-  }),
-);
-
-async function openDataFolder(): Promise<void> {
-  try {
-    await openDataDir();
-    openError.value = null;
-  } catch (error) {
-    openError.value = error instanceof Error ? error.message : String(error);
-  }
-}
-
-onMounted(async () => {
-  // 版本号单独兜底：读不到不该把整块"关于"打成错误
-  appVersion.value = await readAppVersion().catch(() => "");
-  try {
-    const [engine, home] = await Promise.all([readEngineInfo(), readDataHome()]);
-    engineVersion.value = engine.version;
-    schemaVersion.value = home.schema_version;
-  } catch (error) {
-    aboutError.value = error instanceof Error ? error.message : String(error);
-  }
-});
-
 /** 勾选框：改完写回核心，界面显示的永远是库里那份 */
 function onToggle(event: Event) {
   const box = event.target as HTMLInputElement;
@@ -224,8 +189,13 @@ async function runRewrite() {
       </p>
       <p class="settings__hint">{{ t("settings.local_only_hint") }}</p>
 
-      <!-- 新建条目：命名规则（写哪一层由"作用范围"决定） -->
+      <!-- 正文排版：**显示层**（只改观感，不进导出、不动正文一个字节）。
+           档位、范围、换算全在 editor/typography.ts，这一栏自己一个组件（见 TypographySettings.vue）。 -->
       </section>
+      <section v-if="activeSection === 'typography'" class="settings__section">
+        <TypographySettings :session="session" />
+      </section>
+      <!-- 新建条目：命名规则（写哪一层由"作用范围"决定） -->
       <section v-if="activeSection === 'naming'" class="settings__section">
       <p class="settings__group settings__group--naming">{{ t("settings.group_naming") }}</p>
       <p class="settings__row">
@@ -307,27 +277,10 @@ async function runRewrite() {
       </p>
 
       </section>
-      <!-- 关于：只读报告。承诺与限制都写在明面上——信任靠坦白边界建立 -->
+      <!-- 关于：只读报告（版本 / 打开稿子文件夹 / 承诺与限制摘要）——单独一个组件，
+           见 AboutSettings.vue：面板别长胖，上帝棘轮盯着 400 行 -->
       <section v-if="activeSection === 'about'" class="settings__section">
-      <p class="settings__group">{{ t("settings.group_about") }}</p>
-      <p class="settings__row">
-        <span class="settings__label">{{ t("settings.about_version") }}</span>
-        <code class="settings__path">{{ aboutVersion }}</code>
-      </p>
-      <!-- 路径**只在「稿子放在哪」那一组显示一次**：这里留着按钮就够了（它的标签已经说清是打开哪个文件夹）。
-           两处都摊一遍绝对路径，看着像出了错，也让人不知道该信哪一处。 -->
-      <button
-        type="button"
-        class="settings__button dialog__button"
-        :disabled="!dataPath"
-        @click="void openDataFolder()"
-      >
-        {{ t("settings.about_open_data") }}
-      </button>
-      <span v-if="openError" class="settings__hint settings__hint--bad">{{ openError }}</span>
-      <p class="settings__hint">{{ t("settings.about_promise") }}</p>
-      <p class="settings__hint">{{ t("settings.about_limits") }}</p>
-      <p v-if="aboutError" class="settings__hint settings__hint--bad">{{ aboutError }}</p>
+        <AboutSettings :session="session" />
       </section>
         </div>
 
