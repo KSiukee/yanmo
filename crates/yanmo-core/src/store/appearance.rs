@@ -217,7 +217,7 @@ impl Store {
             // 超大的值夹到上限，免得手滑多打几个零后进度条永远不动
             stored.daily_goal = (value > 0).then(|| value.min(MAX_DAILY_GOAL));
         }
-        self.write_appearance(work_id, &stored)?;
+        write_appearance(&self.conn, work_id, &stored)?;
         self.record(
             "settings",
             work_id.unwrap_or(0),
@@ -236,7 +236,7 @@ impl Store {
     ///
     /// 与"传一个空 patch"不同：空 patch 是"这项不改"，这里是真的把记录抹掉。
     pub fn reset_appearance(&mut self, work_id: Option<i64>) -> Result<()> {
-        self.write_appearance(work_id, &Appearance::default())?;
+        write_appearance(&self.conn, work_id, &Appearance::default())?;
         self.record(
             "settings",
             work_id.unwrap_or(0),
@@ -259,21 +259,28 @@ impl Store {
             .and_then(|json| serde_json::from_str(&json).ok())
             .unwrap_or_default())
     }
+}
 
-    /// 写一份；一项都没改过就把键删掉（不留空记录）。
-    fn write_appearance(&self, work_id: Option<i64>, value: &Appearance) -> Result<()> {
-        let key = appearance_key(work_id);
-        if value.is_empty() {
-            self.conn.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
-            return Ok(());
-        }
-        let json = serde_json::to_string(value).unwrap_or_default();
-        self.conn.execute(
-            "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES(?1, ?2, ?3)",
-            params![key, json, now_millis()],
-        )?;
-        Ok(())
+/// 写一份偏好；一项都没改过就把键删掉（不留空记录）。
+///
+/// 与 [`Store`] 分开是为了让"从成稿导入"能在**它自己的那个事务里**把编号档一起落库
+/// （新书还没有偏好记录，所以"稀疏合并"的那一半用不上）。
+pub(super) fn write_appearance(
+    conn: &rusqlite::Connection,
+    work_id: Option<i64>,
+    value: &Appearance,
+) -> Result<()> {
+    let key = appearance_key(work_id);
+    if value.is_empty() {
+        conn.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
+        return Ok(());
     }
+    let json = serde_json::to_string(value).unwrap_or_default();
+    conn.execute(
+        "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES(?1, ?2, ?3)",
+        params![key, json, now_millis()],
+    )?;
+    Ok(())
 }
 
 /// 偏好在 `settings` 里的键：全局一份，每本书可另存一份覆盖。

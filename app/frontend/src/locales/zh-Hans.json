@@ -94,6 +94,7 @@
   "error.backup.restore_source_invalid": "这个位置不是一个备份包或库文件：{path}",
   "error.backup.restore_blocked": "这份备份不能用来恢复：{reason}",
   "error.backup.restore_swap_failed": "换库没成功（原库已放回原处）：{detail}",
+  "error.import.draft_invalid": "这份成稿读不进来（{field}）：{detail}",
   "error.value.unknown_word_caliber": "未知的字数口径：{value}",
   "error.work.gone": "作品不存在或已删除：{work_id}",
   "error.work.not_found": "作品不存在：{work_id}",

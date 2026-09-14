@@ -129,6 +129,8 @@ fn json_export_carries_structure_and_bodies() {
         serde_json::from_str(std::str::from_utf8(&files[0].content).unwrap()).unwrap();
     assert_eq!(parsed["title"], "长夜");
     assert_eq!(parsed["kind"], "novel");
+    assert_eq!(parsed["language"], "zh");
+    assert_eq!(parsed["naming"], "arabic");
 
     let volumes = parsed["nodes"].as_array().unwrap();
     assert_eq!(volumes.len(), 2, "两卷");
@@ -137,10 +139,35 @@ fn json_export_carries_structure_and_bodies() {
     assert_eq!(first_chapter["kind"], "chapter");
     assert_eq!(first_chapter["title"], "第一章");
     assert_eq!(first_chapter["body"], "第一章的正文。\n");
+    assert!(
+        first_chapter.get("title_template").is_none(),
+        "作者自己起的名字（原文 == 显示名）不该多出一格"
+    );
     assert_eq!(
         volumes[1]["children"][0]["body"], "",
         "没写过的章给空串，字段仍在"
     );
+}
+
+/// 成稿 JSON 要带全"读回来需要的东西"：没起名的卷靠 `naming` 才算得出名字，
+/// 作者写的模板靠 `title_template` 才留得住（不然读回来号就成了钉死的文字）。
+#[test]
+fn json_export_carries_what_reading_it_back_needs() {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let volume = store.list_nodes(work.id).unwrap()[0].id; // 建书时留白的那一卷：**没起名**
+    let chapter = store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap();
+    store.write_body(chapter, "正文。").unwrap();
+
+    let files = store.render_work(work.id, ExportFormat::Json).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&files[0].content).unwrap()).unwrap();
+    let volume_json = &parsed["nodes"][0];
+    assert_eq!(volume_json["title"], "第1卷", "显示名是按档算出来的");
+    assert_eq!(volume_json["title_template"], "", "空模板也是信息：这一卷没起过名");
+    let chapter_json = &volume_json["children"][0];
+    assert_eq!(chapter_json["title"], "第1章");
+    assert_eq!(chapter_json["title_template"], "第{$N}章", "原文（模板）跟着成稿一起走");
 }
 
 #[test]

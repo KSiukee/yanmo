@@ -2,9 +2,11 @@
 //!
 //! # 两档命令面（编译期分档，不是运行期开关）
 //!
-//! - **救援档（任何构建都有）**：`verify` / `works` / `nodes` / `read` / `search` / `export`——
+//! - **只读档（任何构建都有）**：`verify` / `works` / `nodes` / `read` / `search` / `export`——
 //!   全部是**只读或只写文件**的，**一条都不能改稿库**。界面起不来、库有问题的时候，
 //!   靠这几条判断"字还在不在"并把它取出来。
+//! - **写库档（任何构建都有，只此一条）**：`import`——从成稿 JSON 把整本书**新建**回来。
+//!   它不碰既有数据，且**不给 `--yes` 就只看不写**（见 [`crate::rescue_import`]）。
 //! - **开发档（仅开发构建）**：`begin` / `report` / `note-open` / `write` / `fingerprint` /
 //!   `end` / `abandon` / `new-work` / `new-node` / `hold`——给自动化与场景复现用的。
 //!   发布构建里**整个模块都不编译**（见 `dev.rs`），不是"藏起来"，是根本不存在。
@@ -38,6 +40,7 @@ fn rescue_options(command: &str) -> Option<&'static [&'static str]> {
         "read" => Some(&["node"]),
         "search" => Some(&["query", "work", "limit"]),
         "export" => Some(&["work", "format", "out"]),
+        "import" => Some(&["from", "work", "language", "yes"]),
         _ => None,
     }
 }
@@ -214,6 +217,8 @@ fn rescue(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError> {
             let written = write_rendered(store, work, format, &out)?;
             json!({ "ok": true, "command": "export", "files": written, "dir": out.display().to_string() })
         }
+        // 唯一会写库的一条：它自己讲清楚了"默认只看不写"，所以单独一处（见 rescue_import）
+        "import" => return crate::rescue_import::run(args, store).map(Some),
         _ => return Ok(None),
     };
     Ok(Some(value))

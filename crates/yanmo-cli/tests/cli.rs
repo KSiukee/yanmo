@@ -216,3 +216,62 @@ fn wrong_command_or_option_is_a_usage_error() {
         "命令与选项对不上要报出来"
     );
 }
+
+#[test]
+fn import_only_writes_when_asked_and_then_the_book_is_there() {
+    let dir = tempfile::tempdir().unwrap();
+    // 先造一份成稿（用开发档命令建书 → 导出 json），再从它导入
+    let (work_id, node_id) = seed(dir.path(), "novel");
+    ok(dir.path(), "write", &[("node", &node_id.to_string()), ("body", "雨下了整夜。")]);
+    let source = dir.path().join("成稿.json");
+    let exported = ok(
+        dir.path(),
+        "export",
+        &[("work", &work_id.to_string()), ("format", "json"), ("out", dir.path().to_str().unwrap())],
+    );
+    assert_eq!(exported["ok"], true);
+    std::fs::copy(dir.path().join("work.json"), &source).unwrap();
+    std::fs::remove_file(dir.path().join("work.json")).unwrap();
+
+    // 另一本"新库"（模拟库没了）：里面先放一本作者自己的书
+    let target = tempfile::tempdir().unwrap();
+    let (mine, my_chapter) = seed(target.path(), "novel");
+    ok(target.path(), "write", &[("node", &my_chapter.to_string()), ("body", "我自己写的。")]);
+    let before = ok(target.path(), "works", &[]);
+
+    // 干跑：只算不写
+    let dry = ok(target.path(), "import", &[("from", source.to_str().unwrap())]);
+    assert_eq!(dry["wrote"], false);
+    assert_eq!(dry["count"], 1);
+    assert_eq!(dry["drafts"][0]["title"], "长夜");
+    assert_eq!(dry["drafts"][0]["scale"]["word_count"], 5, "雨下了整夜 → 五个字");
+    assert_eq!(dry["drafts"][0]["same_title_in_library"], 1, "新库里已经有一本同名的");
+    assert_eq!(ok(target.path(), "works", &[])["works"].as_array().unwrap().len(), 1, "干跑不许动库");
+
+    // 真写：只新建，不动既有那本
+    let written = ok(
+        target.path(),
+        "import",
+        &[("from", source.to_str().unwrap()), ("work", "长夜"), ("yes", "")],
+    );
+    assert_eq!(written["wrote"], true);
+    let new_id = written["drafts"][0]["imported"]["work_id"].as_i64().unwrap();
+    assert_ne!(new_id, mine, "导入的是新的一本，不是覆盖既有那本");
+    let after = ok(target.path(), "works", &[]);
+    assert_eq!(after["works"].as_array().unwrap().len(), 2);
+    assert_eq!(after["works"][0]["chapters"], before["works"][0]["chapters"], "既有那本一字未动");
+
+    // 坏成稿：当场报错，且说得出是哪一格
+    let broken = target.path().join("坏成稿.json");
+    std::fs::write(&broken, "{\"title\":\"x\",\"kind\":\"novel\",\"nodes\":[{\"kind\":\"章\"}]}").unwrap();
+    match run(target.path(), "import", &[("from", broken.to_str().unwrap())]) {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "value.unknown_node_kind"),
+        other => panic!("坏成稿该被拒绝：{other:?}"),
+    }
+    // 找不到成稿：用法错误（不是"悄悄成功导了 0 本"）
+    assert!(matches!(
+        run(target.path(), "import", &[("from", target.path().to_str().unwrap())]),
+        Err(CliError::Usage(_))
+    ));
+    assert!(matches!(run(target.path(), "import", &[]), Err(CliError::Usage(_))), "--from 是必填");
+}

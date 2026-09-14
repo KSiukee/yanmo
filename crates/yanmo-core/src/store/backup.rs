@@ -42,6 +42,9 @@ pub const SNAPSHOT_FILE: &str = "yanmo.db";
 pub const LEDGER_FILE: &str = "backup-ledger.json";
 /// 清单的 kind 取值（防止把别家的 manifest.json 当成我们的）。
 pub const MANIFEST_KIND: &str = "yanmo-backup";
+/// 包里成稿所在的目录名（一本书一个子目录；从成稿导入也认它找文件）。
+// i18n-allow-next-line: 这是**磁盘上的既有目录名**（老版本就在写这个目录），改了旧备份包会认不出来
+pub(super) const DRAFT_DIR: &str = "成稿";
 
 /// 一个备份目标（作者勾的一处落点）。
 ///
@@ -379,27 +382,35 @@ impl Store {
         let snapshot_bytes = std::fs::metadata(&snapshot).map(|m| m.len()).unwrap_or(0);
 
         // 成稿导出（不装研墨也能读的第二层保险）+ 逐书指纹
+        //
+        // 落点：**一本书一个目录**——`成稿/<书名>/` 里放分章 txt 与一份 `work.json`。
+        // 书名在同名/超长截断后会撞车（重名作品是允许的），撞了就补 `-<id>`：
+        // 不补的话两本书指着同一个文件，后写的把先写的顶掉，而**体检发现不了**
+        // （清单里列的那个文件确实在，只是内容是别人的书）——这正是"静默丢一本书"。
         let mut works = Vec::new();
+        let mut used_names: std::collections::HashSet<String> = std::collections::HashSet::new();
         for (id, title, chapters, word_count, chars_no_punct) in work_stamps(&self.conn)? {
             let mut files = Vec::new();
-            let mut combined = String::new();
             let dir_name = crate::atomic::safe_file_name(&title);
-            for (format, sub) in [(ExportFormat::Text, ""), (ExportFormat::Json, "")] {
-                for file in self.render_work(id, format)? {
-                    let relative = if format == ExportFormat::Json {
-                        format!("成稿/{sub}{}", file.relative_path)
-                    } else {
-                        format!("成稿/{dir_name}/{}", file.relative_path)
-                    };
+            let base = if used_names.insert(dir_name.clone()) {
+                dir_name
+            } else {
+                used_names.insert(format!("{dir_name}-{id}"));
+                format!("{dir_name}-{id}")
+            };
+            // 两种格式各渲染一次：txt 那一份的指纹要用来对账（口径只在一处，见 export）
+            let text_files = self.render_work(id, ExportFormat::Text)?;
+            let json_files = self.render_work(id, ExportFormat::Json)?;
+            let fingerprint = super::export::fingerprint_of_text(&text_files);
+            for rendered in [&text_files, &json_files] {
+                for file in rendered {
+                    // 两种格式都落在**这本书自己的目录**里：txt 按卷分目录、json 就叫 work.json
+                    let relative = format!("{DRAFT_DIR}/{base}/{}", file.relative_path);
                     let path = staging.join(&relative);
                     if let Some(parent) = path.parent() {
                         std::fs::create_dir_all(parent)?;
                     }
                     std::fs::write(&path, &file.content)?;
-                    // 指纹只算文本成稿（人读的那一份）：够判断"内容是不是这一版"
-                    if format == ExportFormat::Text {
-                        combined.push_str(&String::from_utf8_lossy(&file.content));
-                    }
                     files.push(relative.replace('\\', "/"));
                 }
             }
@@ -410,7 +421,7 @@ impl Store {
                 word_count,
                 chars_no_punct,
                 files,
-                fingerprint: text::content_hash(&combined),
+                fingerprint,
             });
         }
 
@@ -574,18 +585,21 @@ impl Store {
 
         // 成稿文件：在、指纹对得上（文件被改坏/少了一个，这里就会说话）
         for work in &manifest.works {
-            let mut combined = String::new();
+            let mut drafts = Vec::new();
             for relative in &work.files {
-                match std::fs::read_to_string(package.join(relative)) {
+                match std::fs::read(package.join(relative)) {
                     Err(error) => problems.push(format!("《{}》的成稿读不到（{relative}）：{error}", work.title)),
-                    Ok(content) => {
-                        if relative.ends_with(".txt") {
-                            combined.push_str(&content);
-                        }
-                    }
+                    // 指纹只算分章文本（人读的那一份）：口径与备份时同一处（见 export）
+                    Ok(content) if relative.ends_with(".txt") => drafts.push(super::export::RenderedFile {
+                        relative_path: relative.clone(),
+                        content,
+                    }),
+                    Ok(_) => {}
                 }
             }
-            if !combined.is_empty() && text::content_hash(&combined) != work.fingerprint {
+            if !drafts.is_empty()
+                && super::export::fingerprint_of_text(&drafts) != work.fingerprint
+            {
                 problems.push(format!("《{}》的成稿内容与清单不符", work.title));
             }
         }

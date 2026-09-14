@@ -22,6 +22,8 @@ pub mod commands;
 mod dev;
 /// 交互菜单：**不带参数运行就是它**，给作者用的备用导出工具（任何构建都有）。
 pub mod menu;
+/// 从成稿导入（救援档里唯一会写库的那一条：默认干跑，`--yes` 才写）。
+mod rescue_import;
 
 pub use commands::execute;
 

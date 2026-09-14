@@ -271,3 +271,33 @@ fn config_round_trips_and_defaults_are_sane() {
         "目标就是数据所在的卷时，仍算「没有异盘目标」"
     );
 }
+
+#[test]
+fn every_book_gets_its_own_draft_file() {
+    // 两本书的成稿**不能互相覆盖**：备份包是"不装研墨也能读"的那份保险，
+    // 一份包里出现两个 work.json 时，后写的会把先写的顶掉——静默丢一本书。
+    let mut f = fixture();
+    seed_book(&mut f.store);
+    let second = f.store.create_work(WorkKind::Novel, "短歌").unwrap();
+    let volume = f.store.list_nodes(second.id).unwrap()[0].id;
+    let chapter = f
+        .store
+        .create_node(second.id, Some(volume), NodeKind::Chapter, "第一章")
+        .unwrap();
+    f.store.write_body(chapter, "短歌的正文。").unwrap();
+
+    let report = f.store.backup_now(&request(&f, 7)).unwrap();
+    assert_eq!(report.succeeded(), 1, "报告：{:?}", report.outcomes);
+    let package = PathBuf::from(&report.outcomes[0].package);
+    let manifest = read_manifest(&package).expect("清单要能读出来");
+    assert_eq!(manifest.works.len(), 2, "两本书");
+
+    // 逐书：清单里列的每个文件都必须真的在包里，且 JSON 成稿里的书名要对得上
+    for work in &manifest.works {
+        let json = work.files.iter().find(|f| f.ends_with(".json")).expect("每本书都该有 JSON 成稿");
+        let text = std::fs::read_to_string(package.join(json)).expect("清单里列的文件必须在包里");
+        let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(parsed["title"], work.title, "《{}》的成稿文件（{json}）里是别人的书", work.title);
+    }
+    assert!(f.store.verify_backup(&package).ok, "体检仍应通过");
+}

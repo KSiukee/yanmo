@@ -73,6 +73,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "这份备份不能用来恢复：{reason}" : ["reason"],
     BACKUP_RESTORE_SWAP_FAILED => "backup.restore_swap_failed"
         : "换库没成功（原库已放回原处）：{detail}" : ["detail"],
+    IMPORT_DRAFT_INVALID => "import.draft_invalid"
+        : "这份成稿 JSON 不合格（{field}）：{detail}" : ["field", "detail"],
     UNKNOWN_WORD_CALIBER => "value.unknown_word_caliber"
         : "未知的字数口径：{value}（只有 chars / chars_no_punct / words）" : ["value"],
     UNKNOWN_EXPORT_FORMAT => "value.unknown_export_format"

@@ -77,6 +77,25 @@ fn root_template(kind: WorkKind, work_title: &str) -> (NodeKind, String) {
     }
 }
 
+/// 往 `works` 里插一行，返回新 id（**不带根节点**：根节点由调用方决定有没有、长什么样）。
+///
+/// 与 [`Store::create_work`] 分开，是因为"从成稿导入"要建的书**结构与模板无关**——
+/// 成稿里那一棵树是什么样，导进去就是什么样（连"建书时留白的那一卷"都从成稿来）。
+pub(super) fn insert_work(
+    tx: &rusqlite::Connection,
+    kind: WorkKind,
+    title: &str,
+    language: WorkLanguage,
+) -> Result<i64> {
+    let now = now_millis();
+    tx.execute(
+        "INSERT INTO works(kind, title, language, created_at, updated_at, opened_at)
+         VALUES(?1, ?2, ?3, ?4, ?4, ?4)",
+        params![kind.as_str(), title, language.as_str(), now],
+    )?;
+    Ok(tx.last_insert_rowid())
+}
+
 impl Store {
     /// 新建作品：**同一个事务里连根节点一起建**——失败不留半个作品。
     ///
@@ -88,18 +107,9 @@ impl Store {
         let (root_kind, root_title) = root_template(kind, title);
 
         let tx = self.conn.transaction()?;
-        tx.execute(
-            "INSERT INTO works(kind, title, created_at, updated_at, opened_at)
-             VALUES(?1, ?2, ?3, ?3, ?3)",
-            params![kind.as_str(), title, now],
-        )?;
-        let work_id = tx.last_insert_rowid();
-        tx.execute(
-            "INSERT INTO nodes(work_id, parent_id, node_kind, title, sort_order, created_at, updated_at)
-             VALUES(?1, NULL, ?2, ?3, 0, ?4, ?4)",
-            params![work_id, root_kind.as_str(), root_title, now],
-        )?;
-        let root_id = tx.last_insert_rowid();
+        // 新书默认中文：研墨的作者以中文写作为主；要写英文/日文，界面上一改就落库
+        let work_id = insert_work(&tx, kind, title, WorkLanguage::Zh)?;
+        let root_id = super::node_edit::insert_node(&tx, work_id, None, root_kind, &root_title, 0)?;
         tx.commit()?;
 
         self.record("works", work_id, "create", json!({ "kind": kind.as_str(), "title": title }))?;
@@ -109,7 +119,6 @@ impl Store {
             id: work_id,
             kind,
             title: title.to_string(),
-            // 新书默认中文：研墨的作者以中文写作为主；要写英文/日文，界面上一改就落库
             language: WorkLanguage::Zh,
             target_words: None,
             // 新书还没写简介：空串就是"没写过"（v6 起）

@@ -86,9 +86,21 @@ impl Store {
                 Ok(out)
             }
             ExportFormat::Json => {
+                // 这份 JSON 是**"最容易再读回来"**的那一份（读它的是 [`super::import`]），
+                // 所以它要把"读回来需要的东西"带全，宁可多一格：
+                //
+                // - `naming` / `language`：标题里的号是**按位置算**的，而"还没起名的卷"要用
+                //   `naming` 那一档才算得出名字（中文档给「第一卷」、补零档给「第001卷」）。
+                //   少了它，读回来只能按新库的默认档渲染，成稿就跟原件对不上了；
+                // - 每个节点上的 `title_template`：**只在它跟显示名不一样时才写**——
+                //   作者写的是模板（`第{$N}章 灯`），显示名是渲染结果（`第3章 灯`）；
+                //   只带显示名的话，读回来就成了钉死的文字（插入一章号不会重排）。
+                //   空串也是有效取值（＝"没起名的卷"），所以**这一格在不在本身就是信息**。
                 let payload = serde_json::json!({
                     "title": work.title,
                     "kind": work.kind.as_str(),
+                    "language": work.language.as_str(),
+                    "naming": self.naming_style(work_id)?.as_str(),
                     "nodes": json_nodes(self, &nodes, &kids, None)?,
                 });
                 Ok(vec![RenderedFile::text(
@@ -99,6 +111,24 @@ impl Store {
             }
         }
     }
+
+    /// 一本书分章文本成稿的**内容指纹**。
+    ///
+    /// 备份清单里记它、从成稿导入时对账也用它——**口径只有这一处**：
+    /// 按渲染顺序把分章 txt 拼起来做摘要。两处各写一遍的话，"清单里那个指纹"和
+    /// "导入时算出来的指纹"迟早不是同一个东西，对账就永远是假绿。
+    pub fn draft_fingerprint(&self, work_id: i64) -> Result<String> {
+        Ok(fingerprint_of_text(&self.render_work(work_id, ExportFormat::Text)?))
+    }
+}
+
+/// 一组分章文本成稿的内容指纹（口径见 [`Store::draft_fingerprint`]）。
+pub(crate) fn fingerprint_of_text(files: &[RenderedFile]) -> String {
+    let mut combined = String::new();
+    for file in files {
+        combined.push_str(&String::from_utf8_lossy(&file.content));
+    }
+    crate::text::content_hash(&combined)
 }
 
 /// 一份内容写成文件时的统一口径：换行归一、末尾留一个换行；空内容就是空文件。
@@ -184,6 +214,10 @@ fn json_nodes(
         let mut item = serde_json::Map::new();
         item.insert("kind".into(), node.kind.as_str().into());
         item.insert("title".into(), node.title_rendered.clone().into());
+        // 原文与显示名不一样才写这一格（**空串也算不一样**：那是"还没起名的卷"）
+        if node.title != node.title_rendered {
+            item.insert("title_template".into(), node.title.clone().into());
+        }
         if node.kind.holds_body() {
             item.insert("body".into(), normalize(&store.read_body(node.id)?).into());
         }

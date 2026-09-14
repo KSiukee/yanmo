@@ -18,7 +18,9 @@ mod appearance;
 mod backup;
 mod content;
 mod device;
+mod draft;
 mod export;
+mod import;
 mod node;
 mod naming;
 mod node_edit;
@@ -41,6 +43,8 @@ pub use backup::{
 };
 pub use content::ContentStats;
 pub use export::{ExportFormat, RenderedFile};
+pub use draft::{parse_work_json, DraftScale, NodeDraft, StampMismatch, WorkDraft};
+pub use import::{find_drafts, manifest_near, ImportReport};
 pub(crate) use export::normalize;
 pub use naming::NamingRewrite;
 pub use node::{ChapterNeighbors, ChapterSummary, NodeSummary, SubtreeRollup};

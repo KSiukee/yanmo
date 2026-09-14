@@ -37,6 +37,37 @@ pub(super) fn stats_of(body: &str) -> ContentStats {
     }
 }
 
+/// 把一版正文落进库：正文行 + 三个口径回写到 `nodes`。
+///
+/// **只管这两条语句**——指纹比对、记账、留痕都在调用方。拆出这么一小块是因为
+/// "从成稿导入"要在**同一个事务**里连写几百章（每章各起一个事务就是几百次提交），
+/// 而写入的口径必须与编辑器落盘那条路**逐字一致**，所以只留这一份实现。
+pub(super) fn put_body(
+    tx: &rusqlite::Connection,
+    node_id: i64,
+    body: &str,
+    stats: ContentStats,
+) -> Result<()> {
+    let now = now_millis();
+    tx.execute(
+        "INSERT INTO node_contents(node_id, body, content_hash, char_count, updated_at)
+         VALUES(?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(node_id) DO UPDATE SET
+             body = excluded.body,
+             content_hash = excluded.content_hash,
+             char_count = excluded.char_count,
+             updated_at = excluded.updated_at",
+        params![node_id, body, text::content_hash(body), stats.char_count, now],
+    )?;
+    tx.execute(
+        // 三个口径**各存一列**：目录树 / 卷合计 / 书架要"一眼看字数"，不能每次去扫正文
+        "UPDATE nodes SET word_count = ?1, char_count = ?2, chars_no_punct = ?3, updated_at = ?4
+         WHERE id = ?5",
+        params![stats.word_count, stats.char_count, stats.chars_no_punct, now, node_id],
+    )?;
+    Ok(())
+}
+
 impl Store {
     /// 读正文——**懒加载入口**。没有正文的节点返回空串。
     pub fn read_body(&self, node_id: i64) -> Result<String> {
@@ -122,22 +153,7 @@ impl Store {
             Some(_) => Some(super::writing::node_counts(&tx, node_id)?),
             None => None,
         };
-        tx.execute(
-            "INSERT INTO node_contents(node_id, body, content_hash, char_count, updated_at)
-             VALUES(?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(node_id) DO UPDATE SET
-                 body = excluded.body,
-                 content_hash = excluded.content_hash,
-                 char_count = excluded.char_count,
-                 updated_at = excluded.updated_at",
-            params![node_id, body, hash, stats.char_count, now],
-        )?;
-        tx.execute(
-            // 三个口径**各存一列**：目录树 / 卷合计 / 书架要"一眼看字数"，不能每次去扫正文
-            "UPDATE nodes SET word_count = ?1, char_count = ?2, chars_no_punct = ?3, updated_at = ?4
-             WHERE id = ?5",
-            params![stats.word_count, stats.char_count, stats.chars_no_punct, now, node_id],
-        )?;
+        put_body(&tx, node_id, body, stats)?;
         if let (Some(tz), Some(previous)) = (count_tz, previous) {
             let delta = ContentStats {
                 char_count: stats.char_count - previous.char_count,

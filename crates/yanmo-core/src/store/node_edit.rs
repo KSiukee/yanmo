@@ -107,6 +107,27 @@ fn default_title(kind: NodeKind, style: NamingStyle) -> String {
     template_for(kind, style)
 }
 
+/// 往 `nodes` 里插一行，返回新 id——**插的就是给它的标题**（模板替换、排序都在调用方）。
+///
+/// 拆出来是为了让"从成稿导入"走同一条插入语句：那边要在一个事务里连插几百个节点，
+/// 而且标题是成稿里写的什么就是什么（**一个字都不许改写**，见 [`super::import`]）。
+pub(super) fn insert_node(
+    tx: &rusqlite::Connection,
+    work_id: i64,
+    parent_id: Option<i64>,
+    kind: NodeKind,
+    title: &str,
+    sort_order: i64,
+) -> Result<i64> {
+    let now = now_millis();
+    tx.execute(
+        "INSERT INTO nodes(work_id, parent_id, node_kind, title, sort_order, created_at, updated_at)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+        params![work_id, parent_id, kind.as_str(), title, sort_order, now],
+    )?;
+    Ok(tx.last_insert_rowid())
+}
+
 impl Store {
     /// 在指定位置新建节点。`parent_id = None` 表示根级。
     ///
@@ -130,7 +151,6 @@ impl Store {
         } else {
             title.to_string()
         };
-        let now = now_millis();
         let tx = self.conn.transaction()?;
         let next: i64 = tx.query_row(
             "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM nodes
@@ -138,12 +158,7 @@ impl Store {
             params![work_id, parent_id],
             |r| r.get(0),
         )?;
-        tx.execute(
-            "INSERT INTO nodes(work_id, parent_id, node_kind, title, sort_order, created_at, updated_at)
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?6)",
-            params![work_id, parent_id, kind.as_str(), title, next, now],
-        )?;
-        let id = tx.last_insert_rowid();
+        let id = insert_node(&tx, work_id, parent_id, kind, &title, next)?;
         tx.commit()?;
 
         self.record(
@@ -154,6 +169,7 @@ impl Store {
         )?;
         Ok(id)
     }
+
 
     /// 改名（标题经触发器同步进检索索引）。
     pub fn rename_node(&mut self, id: i64, title: &str) -> Result<()> {
