@@ -50,11 +50,18 @@ fn main() {
             acceptance::Mode::Check => std::process::exit(acceptance::run_check(&plan)),
             acceptance::Mode::Bench => {
                 let report = acceptance::run_bench(&plan);
+                let refused = report.refused.clone();
                 match acceptance::write_report(&report, &plan.report) {
                     // i18n-allow-next-line: 命令行的机器可读输出（给脚本看），不是界面文案
                     Ok(files) => files.iter().for_each(|path| println!("报告：{}", path.display())),
                     // i18n-allow-next-line: 同上
                     Err(error) => eprintln!("报告没写成：{error}"),
+                }
+                if let Some(reason) = refused {
+                    // 沙箱自检没过：明确用非零退出码说话，别让脚本以为"跑完了、只是数字难看"
+                    // i18n-allow-next-line: 命令行的机器可读输出（给脚本看），不是界面文案
+                    eprintln!("验收模式拒绝执行：{reason}");
+                    std::process::exit(4);
                 }
                 std::process::exit(0);
             }

@@ -59,7 +59,21 @@ echo.
 
 echo [1/2] core benchmark: seed + read/search/write/reopen/backup ...
 rem headless: this step does not open a window
-"%EXE%" --self-test-bench --dir "%WORK%" --report "%REPORT%" %*
+rem --dir is NOT allowed here: this run must only ever touch its own scratch folder.
+rem (the program refuses on its own too - see the sandbox guard in app/src/acceptance.rs)
+echo %* | findstr /C:"--dir" >nul
+if not errorlevel 1 (
+  echo.
+  echo Refusing: --dir is not allowed with this script.
+  echo The acceptance run uses its own scratch folder: %WORK%
+  echo If you want to measure a different folder, run the program directly - but it
+  echo will refuse to wipe anything that does not look like an acceptance sandbox.
+  echo.
+  pause
+  exit /b 4
+)
+rem User args go FIRST on purpose: the program parses last-wins, so our --dir wins.
+"%EXE%" --self-test-bench %* --dir "%WORK%" --report "%REPORT%"
 if errorlevel 1 (
   echo core benchmark FAILED.
   pause

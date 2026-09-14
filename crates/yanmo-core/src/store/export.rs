@@ -16,10 +16,18 @@
 //!
 //! 只输出**文件**：卷 / 节这些容器体现在路径里（`001-第一卷/002-第一章.txt`），
 //! 由落盘那一层按需建目录。文件名带三位序号，所以文件管理器里的顺序就是阅读顺序。
+//!
+//! # 深度上限（为什么读路径也要拦）
+//!
+//! 递归渲染按 `MAX_TREE_DEPTH` 设了上限：比它更深的树**返回 `TREE_TOO_DEEP`，绝不递归到爆栈**。
+//! 写入口早就拦着（新建/移动超深会报错），但**读路径以前没拦**：深度限制是后加的，
+//! 在它之前建出来的深树会被现在的版本原样打开，而备份会对每本书都调一次这里的渲染——
+//! 一次爆栈就把整个进程带走，连关窗快照都来不及做（"不丢稿"最不该崩的就是这条路）。
+//! 宁可明确报错让人看见，也不让进程无声地死掉。
 
 use std::collections::HashMap;
 
-use super::Store;
+use super::{too_deep, Store, MAX_TREE_DEPTH};
 use crate::atomic::safe_file_name;
 use crate::error::{codes, Error, Result};
 
@@ -79,7 +87,7 @@ impl Store {
         match format {
             ExportFormat::Text => {
                 let mut out = Vec::new();
-                collect_text(self, &nodes, &kids, None, "", &mut out)?;
+                collect_text(self, &nodes, &kids, None, "", 0, &mut out)?;
                 if out.is_empty() {
                     // 一个字都没有的书：留一个文件，免得导出一个空文件夹让人以为失败了。
                     // 文件名**语言无关**（它会留在作者磁盘上，不该随界面语言变）
@@ -103,7 +111,7 @@ impl Store {
                     "kind": work.kind.as_str(),
                     "language": work.language.as_str(),
                     "naming": self.naming_style(work_id)?.as_str(),
-                    "nodes": json_nodes(self, &nodes, &kids, None)?,
+                    "nodes": json_nodes(self, &nodes, &kids, None, 0)?,
                 });
                 Ok(vec![RenderedFile::text(
                     "work.json",
@@ -182,10 +190,20 @@ fn collect_text(
     kids: &HashMap<Option<i64>, Vec<usize>>,
     parent: Option<i64>,
     path: &str,
+    ancestors: usize,
     out: &mut Vec<RenderedFile>,
 ) -> Result<()> {
     for index in kids.get(&parent).into_iter().flatten() {
         let node = &nodes[*index];
+        // 尺子与读路径**同一把**：祖先数 ≥ MAX_TREE_DEPTH 就是越限（见 `Store::node_ancestors`）。
+        // 两处口径必须一致，否则会出现"读得出来、导不出来"这种反向故障。
+        //
+        // 这道门放在**真要处理这个节点**的时候，不能放在函数开头：容器类型（章节也算）
+        // 即使没有下级也会走进来一轮空迭代——放在开头的话，写入口允许的最深那棵树
+        // 会因为"空着的第 65 层"被判成坏数据（这个坑我在写这条修复时当场踩了一次）。
+        if ancestors >= MAX_TREE_DEPTH {
+            return Err(too_deep());
+        }
         // **有没有下级按数据判，不按"这种类型能不能放下级"判**：后者是界面上的可放性
         // （点「+」往哪儿加），而导出是"把作者的字带走"——一个标志位不该让它偷偷少几章。
         // 真踩过：单篇挂了一节（数据层允许），分章导出只出了单篇那一个文件，节里的字没影了。
@@ -199,7 +217,7 @@ fn collect_text(
             ));
         }
         if container {
-            collect_text(store, nodes, kids, Some(node.id), &here, out)?;
+            collect_text(store, nodes, kids, Some(node.id), &here, ancestors + 1, out)?;
         }
     }
     Ok(())
@@ -210,10 +228,15 @@ fn json_nodes(
     nodes: &[super::NodeSummary],
     kids: &HashMap<Option<i64>, Vec<usize>>,
     parent: Option<i64>,
+    ancestors: usize,
 ) -> Result<Vec<serde_json::Value>> {
     let mut out = Vec::new();
     for index in kids.get(&parent).into_iter().flatten() {
         let node = &nodes[*index];
+        // 同 `collect_text`：与读路径同一把尺子，而且只在真要处理这个节点时才拦
+        if ancestors >= MAX_TREE_DEPTH {
+            return Err(too_deep());
+        }
         let mut item = serde_json::Map::new();
         item.insert("kind".into(), node.kind.as_str().into());
         item.insert("title".into(), node.title_rendered.clone().into());
@@ -224,7 +247,7 @@ fn json_nodes(
         if node.kind.holds_body() {
             item.insert("body".into(), normalize(&store.read_body(node.id)?).into());
         }
-        let children = json_nodes(store, nodes, kids, Some(node.id))?;
+        let children = json_nodes(store, nodes, kids, Some(node.id), ancestors + 1)?;
         if !children.is_empty() {
             item.insert("children".into(), children.into());
         }

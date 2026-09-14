@@ -61,7 +61,9 @@ const ALLOWED: &[Allowance] = &[
         file: "app/src/acceptance.rs",
         rule: "remove-dir-all",
         count: 2,
-        why: "验收/启动体检用的临时目录清理（壳自己在系统临时目录里造的沙箱目录）",
+        why: "验收模式清自己的沙箱：删之前先过 wipe_guard —— 目录要么落在系统临时目录之下、\
+              要么带沙箱记号文件；**目录里有稿库又没有记号时一律拒绝**（`--dir` 参数打错也删不掉真稿库）。\
+              另一处删的是沙箱内部刚建的备份落点",
     },
 ];
 

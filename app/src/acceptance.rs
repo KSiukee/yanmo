@@ -149,6 +149,8 @@ pub struct Report {
     pub chapters: usize,
     pub chars: usize,
     pub db_bytes: u64,
+    /// 沙箱自检没过时写明原因——这一轮**什么都没做**（那些目录一个字节都没删）。
+    pub refused: Option<String>,
 }
 
 impl Report {
@@ -175,11 +177,66 @@ fn body_of(chars: usize) -> String {
     text
 }
 
+/// 沙箱记号：验收模式在自己造的数据目录里留一个文件。
+/// **清空一个目录之前必须先看到它**——没有这个记号、又不在系统临时目录里的目录，不该由我们删。
+const SCRATCH_MARKER: &str = ".yanmo-acceptance-scratch";
+
+/// 清空数据目录之前，必须先证明「这是我们自己的沙箱」。
+///
+/// 为什么这道门必须有：`run_bench` 第一件事就是把数据目录清空重来（上一次的数字不该混进这一次），
+/// 而数据目录由 `--dir` 参数给。参数打错一个字、或者从批处理里透传进来一个路径，
+/// 就会把作者的真稿库连同里面的备份包一起 `remove_dir_all` 掉——**不可恢复**。
+/// 所以放行的只有两种目录：
+///
+/// ① 系统临时目录之下的（默认的 `%TEMP%\yanmo-acceptance` 就是这一种：第一次跑时它还不存在）；
+/// ② 带沙箱记号文件的（验收模式自己造过、并留了记号的目录）。
+///
+/// 另外，**只要里面有稿库又没记号，一律拒绝**——哪怕它落在临时目录里。
+/// 拒绝时一个字节都不动，并且把原因写成报告里的第一步。
+fn wipe_guard(dir: &Path) -> Result<(), String> {
+    if !dir.exists() {
+        return Ok(()); // 还没有这个目录：下面会建，没有东西可删
+    }
+    let real = dir
+        .canonicalize()
+        .map_err(|error| format!("路径读不出来（{}）：{error}", dir.display()))?;
+    if real.parent().is_none() {
+        return Err(format!("拒绝清理 {}：那是盘根目录。", real.display()));
+    }
+    let marked = real.join(SCRATCH_MARKER).is_file();
+    let in_temp = std::env::temp_dir()
+        .canonicalize()
+        .map(|temp| real.starts_with(&temp))
+        .unwrap_or(false);
+    if !marked && !in_temp {
+        return Err(format!(
+            "拒绝清理 {}：它既不在系统临时目录下，也没有验收沙箱的记号（{SCRATCH_MARKER}）。\
+             验收模式只清自己造的目录——换一个空目录，或者直接用默认的临时目录。",
+            real.display()
+        ));
+    }
+    if !marked && real.join(yanmo_core::paths::DB_FILE).is_file() {
+        return Err(format!(
+            "拒绝清理 {}：里面有一份稿库（{}），却不像验收沙箱。\
+             验收模式绝不碰真稿库——请换一个空目录。",
+            real.display(),
+            yanmo_core::paths::DB_FILE
+        ));
+    }
+    Ok(())
+}
+
 /// 造数据 + 量核心操作（**不开窗口**）。返回报告。
 pub fn run_bench(plan: &Plan) -> Report {
     let mut report = Report { machine: machine(), ..Report::default() };
     let started = Instant::now();
-    // 每次都从干净目录开始：上一次的结果不该混进这一次的数字
+    // 每次都从干净目录开始：上一次的结果不该混进这一次的数字。
+    // 但**先得证明这目录是我们的**——`--dir` 一路过来没有任何信任可言（见 `wipe_guard`）。
+    if let Err(reason) = wipe_guard(&plan.dir) {
+        report.refused = Some(reason.clone());
+        report.steps.push(Step { name: "造数据".to_string(), ms: 0.0, note: reason });
+        return report;
+    }
     let _ = std::fs::remove_dir_all(&plan.dir);
     if let Err(error) = std::fs::create_dir_all(&plan.dir) {
         report.steps.push(Step {
@@ -189,6 +246,8 @@ pub fn run_bench(plan: &Plan) -> Report {
         });
         return report;
     }
+    // 留下记号：下一次跑同一个目录时，它就是"这是我们造的"的凭据
+    let _ = std::fs::write(plan.dir.join(SCRATCH_MARKER), b"yanmo acceptance scratch\n");
 
     let db_path = plan.dir.join(yanmo_core::paths::DB_FILE);
     let mut store = match Store::open(&db_path) {
@@ -266,7 +325,9 @@ pub fn run_bench(plan: &Plan) -> Report {
     });
 
     // ⑦ 一致性快照（备份一次：大库备份要多久，也是"不丢稿"的关键数字）
-    let backup_to = plan.dir.join("..").join("yanmo-acceptance-backup");
+    // 备份落点放在沙箱**里面**：它一会儿要被删掉（这一轮量完就清），
+    // 放在 `--dir` 的兄弟位置等于又造出一处"没证明过是我们的"目录。
+    let backup_to = plan.dir.join("backup-out");
     report.time("一致性快照·备份一次", || {
         let request = BackupRequest {
             data_dir: plan.dir.clone(),
@@ -431,8 +492,14 @@ fn to_json(report: &Report) -> String {
         .iter()
         .map(|(key, value)| format!("{}:{}", json_string(key), json_string(value)))
         .collect();
+    let refused = report
+        .refused
+        .as_ref()
+        .map(|reason| json_string(reason))
+        .unwrap_or_else(|| "null".to_string());
     format!(
-        "{{\"kind\":\"yanmo-acceptance\",\"engine\":\"{}\",\"chapters\":{},\"chars\":{},\"db_bytes\":{},\"machine\":{{{}}},\"steps\":[{}]}}",
+        "{{\"kind\":\"yanmo-acceptance\",\"refused\":{},\"engine\":\"{}\",\"chapters\":{},\"chars\":{},\"db_bytes\":{},\"machine\":{{{}}},\"steps\":[{}]}}",
+        refused,
         yanmo_core::engine_version(),
         report.chapters,
         report.chars,
@@ -445,6 +512,11 @@ fn to_json(report: &Report) -> String {
 fn to_markdown(report: &Report) -> String {
     let mut out = String::new();
     out.push_str(&format!("# 研墨验收报告（{}）\n\n", yanmo_core::engine_version()));
+    if let Some(reason) = &report.refused {
+        out.push_str(&format!(
+            "> **这一轮没有跑。** {reason}\n>\n> 沙箱自检没过，验收模式**什么都没做**：那个目录、以及里面的东西，一个字节都没动。\n\n"
+        ));
+    }
     out.push_str("> 这份报告是 `--self-test` 跑出来的实测数字。**同一份脚本在任何机器上都能跑**，数字随机器变。\n\n");
     out.push_str("## 这台机器\n\n| 项 | 值 |\n| --- | --- |\n");
     for (key, value) in &report.machine {
@@ -660,4 +732,84 @@ fn merge_ui_note(prefix: &Path, ms: Option<f64>, note: &str) -> std::io::Result<
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 一个"像真稿库"的目录：里面有库文件，还有一个作者自己放的备份包。
+    /// 用 `TempDir` 自动清理——测试里不去碰 `remove_dir_all`（那正是本文件要盯住的动作）。
+    fn library_dir() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(yanmo_core::paths::DB_FILE), b"REAL LIBRARY - must survive")
+            .unwrap();
+        std::fs::write(dir.path().join("我的备份包.zip"), b"author's own backup").unwrap();
+        dir
+    }
+
+    /// **这条就是那个不可恢复删库漏洞的守卫**：一个带稿库、却没有沙箱记号的目录，
+    /// 哪怕它落在系统临时目录里，也一律拒绝——而且拒绝之后库必须原封不动。
+    #[test]
+    fn refuses_a_directory_that_holds_a_library() {
+        let dir = library_dir();
+        let refused = wipe_guard(dir.path()).unwrap_err();
+        assert!(refused.contains("稿库"), "拒绝理由要让人看懂是稿库：{refused}");
+        assert_eq!(
+            std::fs::read(dir.path().join(yanmo_core::paths::DB_FILE)).unwrap(),
+            b"REAL LIBRARY - must survive",
+            "拒绝之后库文件必须一个字节都没动"
+        );
+    }
+
+    /// 不在系统临时目录下、又没有记号：同样拒绝（`--dir` 指向别处时的那一路）。
+    #[test]
+    fn refuses_an_unmarked_directory_outside_temp() {
+        let app_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let refused = wipe_guard(&app_dir).unwrap_err();
+        assert!(
+            refused.contains("临时目录"),
+            "拒绝理由要说清「既不在临时目录、也没有记号」：{refused}"
+        );
+    }
+
+    /// 第一次跑：目录还不存在 → 放行（没有东西可删，下面会建）。
+    #[test]
+    fn allows_a_directory_that_does_not_exist_yet() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("还没有这个目录");
+        assert!(wipe_guard(&missing).is_ok(), "不存在的目录没有东西可删，该放行");
+    }
+
+    /// 自己造的沙箱（有记号）：里面有上一次验收留下的库也该能清掉。
+    #[test]
+    fn allows_a_marked_sandbox_even_with_a_library_inside() {
+        let dir = library_dir();
+        std::fs::write(dir.path().join(SCRATCH_MARKER), b"yanmo acceptance scratch\n").unwrap();
+        assert!(wipe_guard(dir.path()).is_ok(), "上一次验收自己造的库，这次该能清");
+    }
+
+    /// 端到端：整轮跑在"看起来像真稿库"的目录上时，必须**拒绝执行**且什么都没动。
+    #[test]
+    fn a_refused_run_does_not_touch_the_directory() {
+        let dir = library_dir();
+        let plan = Plan { dir: dir.path().to_path_buf(), ..Plan::default() };
+
+        let report = run_bench(&plan);
+
+        assert!(report.refused.is_some(), "指向真稿库时必须拒绝执行");
+        assert_eq!(
+            std::fs::read(dir.path().join(yanmo_core::paths::DB_FILE)).unwrap(),
+            b"REAL LIBRARY - must survive"
+        );
+        assert_eq!(
+            std::fs::read(dir.path().join("我的备份包.zip")).unwrap(),
+            b"author's own backup",
+            "作者放在数据目录里的备份包也不许动"
+        );
+        assert!(
+            report.steps.iter().any(|step| step.name == "造数据" && !step.note.is_empty()),
+            "拒绝原因要写进报告"
+        );
+    }
 }

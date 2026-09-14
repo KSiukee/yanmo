@@ -25,7 +25,7 @@
 use yanmo_core::db;
 use yanmo_core::error_codes::codes;
 use yanmo_core::model::{NodeKind, WorkKind};
-use yanmo_core::store::Store;
+use yanmo_core::store::{ExportFormat, Store};
 
 /// 试探上限时最多往下建多少层：**上限本身不写死**（那是核心的事），
 /// 但要比它高出一截，否则"没拦住"会伪装成"到头了"。
@@ -150,4 +150,61 @@ fn a_tree_past_the_limit_is_reported_never_silently_undercounted() {
     assert_eq!(over.code(), codes::TREE_TOO_DEEP, "{over}");
     let fine = store.subtree_rollup(ids[1]).expect("浅一层那棵子树是完整的，应当算得出来");
     assert_eq!(fine.chapters, (ids.len() - 2) as i64 + 1, "越限那一层也算进了它这一棵");
+}
+
+/// **导出/备份这条读路径也必须拦深树**（2026-09-15 代码质量评审：严重 5）。
+///
+/// 为什么这条比上面几条更要紧：备份对**每一本书**都调一次导出渲染，而关窗自动备份也在其中。
+/// 极深的树在这里一路递归下去就是 `has overflowed its stack`——**整个进程被杀**，
+/// 连"干净退出"标记与关窗快照都来不及做。所以这里要的不是"少算一截"，
+/// 而是明确报错：宁可让作者看见一条错误，也不能让进程无声地死。
+///
+/// 修之前：这条会直接把测试进程打崩（评审里实测 1200 层即崩）；修之后：拿到 `TREE_TOO_DEEP`。
+#[test]
+fn exporting_a_too_deep_tree_reports_instead_of_crashing() {
+    // 绕过写入口，直接塞一条很长的链——真机上这一档来自"深度守门加进来之前建的树"
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("yanmo.db");
+    let mut store = Store::open(&path).unwrap();
+    let work = store.create_work(WorkKind::Novel, "深得离谱").unwrap();
+
+    let conn = db::open(&path).unwrap();
+    let mut parent: Option<i64> = None;
+    for level in 0..1000 {
+        let parent_sql = parent.map(|id| id.to_string()).unwrap_or_else(|| "NULL".to_string());
+        conn.execute(
+            &format!(
+                "INSERT INTO nodes(work_id, parent_id, node_kind, title, sort_order, created_at, updated_at) \
+                 VALUES({}, {}, 'chapter', '第 {} 层', 0, 0, 0)",
+                work.id, parent_sql, level
+            ),
+            [],
+        )
+        .unwrap();
+        parent = Some(conn.last_insert_rowid());
+    }
+    drop(conn);
+
+    for format in [ExportFormat::Text, ExportFormat::Json] {
+        let error = store
+            .render_work(work.id, format)
+            .expect_err("比上限深得多的树必须明确报错，绝不许递归到爆栈");
+        assert_eq!(error.code(), codes::TREE_TOO_DEEP, "{format:?}: {error}");
+    }
+
+    // 反向钉子：**写入口允许的最深那棵树，导出必须照常成功**。
+    // 上限对齐了才对——不能出现"合法数据导不出来"这种反向故障。
+    let (_dir2, mut store2) = fresh();
+    let work2 = store2.create_work(WorkKind::Novel, "合法深树").unwrap();
+    let (ids, _) = build_until_refused(&mut store2, work2.id);
+    let files = store2
+        .render_work(work2.id, ExportFormat::Text)
+        .unwrap_or_else(|error| {
+            panic!("写入口允许的深度（{} 层）必须导得出来，却报 {error}", ids.len())
+        });
+    assert_eq!(
+        files.len(),
+        ids.len(),
+        "写入口允许的每一层都该导出一个文件（只有空卷不出文件）——不许少一章"
+    );
 }

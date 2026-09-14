@@ -85,7 +85,18 @@ fn parse_macro(body: &str) -> Option<Macro> {
         None => (false, rest),
     };
     let (pad, rest) = match rest.strip_prefix(':') {
-        Some(number) => (number.parse().ok()?, ""),
+        Some(number) => {
+            // 补零位数后面**还可以接偏移**：`{$N:3+49}` = 先补到 3 位、再整体加 49。
+            // 以前这里把冒号后整段当数字解析（`"3+49".parse()` 必失败），于是"补零 + 偏移"
+            // 这种组合被当成认不出的宏、在界面与导出里**原样显示**——而"整本换写法"切到补零档
+            // 恰好会生成它，等于把一本书的标题写成乱码（2026-09-15 代码质量评审：严重 2）。
+            // 让它合法，还顺手**治好**已经被写坏的标题。
+            let digits: String = number.chars().take_while(char::is_ascii_digit).collect();
+            if digits.is_empty() {
+                return None;
+            }
+            (digits.parse().ok()?, &number[digits.len()..])
+        }
         None => (0usize, rest),
     };
     let offset = if rest.is_empty() {
@@ -249,14 +260,17 @@ pub fn rewrite_counter(title: &str, style: NamingStyle) -> Option<String> {
         match found {
             Macro::Reset(_) => out.push_str(&title[start..end]), // 重置指令原样留着
             Macro::Counter { base0, offset, pad, .. } => {
+                // 补零位数：原来那一份有就沿用它，没有（＝刚从别的档切到补零档）才取档位表里的。
+                // **档位表是唯一那份**（`NamingStyle::counter()` 给的 `{$N:3}`）：
+                // 这里绝不再手写一个 "3"——以前写死过，于是它跟档位表悄悄漂移了没人发现。
+                let pad = if pad > 0 { pad } else { pad_of(NamingStyle::Padded) };
                 let body = match style {
                     NamingStyle::Arabic => format!("N{}", sign(offset)),
                     NamingStyle::Chinese => format!("N_ZH{}", sign(offset)),
-                    NamingStyle::Padded => format!("N:3{}", sign(offset)),
+                    NamingStyle::Padded => format!("N:{pad}{}", sign(offset)),
                     NamingStyle::NoNumber => String::new(),
                 };
                 let body = if base0 { body.replacen('N', "N0", 1) } else { body };
-                let _ = pad;
                 out.push_str(&format!("{{${body}}}"));
             }
         }
@@ -264,6 +278,19 @@ pub fn rewrite_counter(title: &str, style: NamingStyle) -> Option<String> {
     }
     out.push_str(&title[at..]);
     (out != title).then_some(out)
+}
+
+/// 档位表里"补零位数"是多少：**解析档位模板本身**得到（`{$N:3}` → 3），不另写一份数字。
+fn pad_of(style: NamingStyle) -> usize {
+    let template = style.counter();
+    let body = template
+        .strip_prefix("{$")
+        .and_then(|rest| rest.strip_suffix('}'))
+        .unwrap_or("");
+    match parse_macro(body) {
+        Some(Macro::Counter { pad, .. }) => pad,
+        _ => 0,
+    }
 }
 
 /// `+49` / `-1` / 空。
@@ -407,6 +434,31 @@ mod tests {
         assert_eq!(rewrite_counter("序章", NamingStyle::Chinese), None);
         // "不编号"不动已有章的名字
         assert_eq!(rewrite_counter("第{$N}章", NamingStyle::NoNumber), None);
+    }
+
+    /// **补零 + 偏移**（2026-09-15 代码质量评审：严重 2）。
+    ///
+    /// 以前这两个是水火不容的：换档生成的是 `{$N:3+49}`，而解析要求冒号后**整段**是数字，
+    /// 于是"用了偏移的书 + 切到补零档 + 整本换写法"会把整本书的标题变成原样显示的 `第{$N:3+49}章`，
+    /// 而且**不可逆**（它已经认不出那是个计数宏了）。
+    ///
+    /// 现在两头都通：生成的能渲染，**已经被写坏的书也能自动治好**。
+    #[test]
+    fn padding_and_offset_can_live_together() {
+        // ① 换档生成的东西必须**渲染得出来**，而不是原样显示
+        let rewritten = rewrite_counter("第{$N+49}章", NamingStyle::Padded).unwrap();
+        assert_eq!(rewritten, "第{$N:3+49}章");
+        assert_eq!(layer(&[rewritten.as_str()]), ["第050章"], "补到 3 位再加 49：1+49=50 → 050");
+
+        // ② 已经被写坏的书：这个串以前认不出来（原样显示），现在认得出、编得对
+        assert_eq!(layer(&["第{$N:3+49}章", "第{$N:3+49}章"]), ["第050章", "第051章"]);
+
+        // ③ 补零与"从 0 起"照样能共存
+        assert_eq!(layer(&["第{$N0:3}章"]), ["第000章"]);
+
+        // ④ 补零位数取自档位表，不写死：档位表改成别的位数，这里跟着走
+        assert_eq!(pad_of(NamingStyle::Padded), 3, "档位表里补零档现在是 3 位");
+        assert_eq!(pad_of(NamingStyle::Arabic), 0, "阿拉伯档没有补零");
     }
 
     #[test]
