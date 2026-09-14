@@ -297,9 +297,10 @@ async function runRewrite() {
       </section>
         </div>
 
-        <!-- 恢复默认放在**右列底部**、离「关闭」远一点：它是个不可逆的全局动作，
-             挨着关闭按钮迟早有人手滑（真报过）。点它还会再问一次（见下面的确认层）。 -->
-        <div class="settings__footer">
+        <!-- 恢复默认：**只在「关于」这一栏**（用户 2026-09-14 真机反馈：每一栏都长一个太多）。
+             位置放在右列底部、离「关闭」远一点：它是个不可逆的全局动作，挨着关闭按钮
+             迟早有人手滑（真报过）。点它还会再问一次（见下面的确认层）。 -->
+        <div v-if="activeSection === 'about'" class="settings__footer">
           <button
             type="button"
             class="settings__button dialog__button settings__button--danger"
