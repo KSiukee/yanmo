@@ -10,6 +10,24 @@ import { ref } from "vue";
 import type { ExportAck, ShelfEntry } from "../api/core";
 import { looksLikeFirstRun, useShelf } from "./shelf.ts";
 
+/** 核心首启自动建的那本**无名空壳**（只有一本、没名字、一个字没写）。 */
+function shellEntry(over: Partial<ShelfEntry> = {}): ShelfEntry {
+  return {
+    id: 1,
+    kind: "article",
+    title: "",
+    summary: "",
+    word_count: 0,
+    char_count: 0,
+    chars_no_punct: 0,
+    chapters: 0,
+    opened_at: 0,
+    created_at: 0,
+    updated_at: 0,
+    ...over,
+  } as ShelfEntry;
+}
+
 function harness(onError?: (message: string) => void, listed: ShelfEntry[] = []) {
   const calls: string[] = [];
   const shelf = useShelf({
@@ -69,21 +87,7 @@ test("简介两头的空白不算内容", async () => {
 // ── 作品表单统一与首启引导的判据 ────────────────────────────────────────────
 
 test("首启判据：只有一本、没名字、一个字没写——才给那条引导", () => {
-  const entry = (over: Partial<ShelfEntry>): ShelfEntry =>
-    ({
-      id: 1,
-      kind: "article",
-      title: "",
-      summary: "",
-      word_count: 0,
-      char_count: 0,
-      chars_no_punct: 0,
-      chapters: 0,
-      opened_at: 0,
-      created_at: 0,
-      updated_at: 0,
-      ...over,
-    }) as ShelfEntry;
+  const entry = shellEntry;
 
   // 核心首启建的那本无名空壳：是首启态
   assert.equal(looksLikeFirstRun([entry({})]), true);
@@ -128,19 +132,7 @@ test("作品表单的开合：书架与首启提示都能打开它（新建 / �
 });
 
 test("建了自己的书：第一次打开自动建的那本空壳顺手收进回收站，并且**说一声**", async () => {
-  const shell = {
-    id: 1,
-    kind: "article",
-    title: "",
-    summary: "",
-    word_count: 0,
-    char_count: 0,
-    chars_no_punct: 0,
-    chapters: 0,
-    opened_at: 0,
-    created_at: 0,
-    updated_at: 0,
-  } as ShelfEntry;
+  const shell = shellEntry();
   const { shelf, calls } = harness(undefined, [shell]);
   await shelf.create({ kind: "novel", title: "长夜", summary: "", naming: null });
   assert.deepEqual(
@@ -163,4 +155,54 @@ test("写过一个字的书：建新书时也不许动它", async () => {
   const { shelf, calls } = harness(undefined, [written]);
   await shelf.create({ kind: "novel", title: "长夜", summary: "", naming: null });
   assert.deepEqual(calls, ["create:novel:长夜", "open:9"], "写过字的更不许动");
+});
+
+// ── 首启提示的第二个入口：接手那本空壳（**不另建一本**）────────────────────────
+
+test("接手空壳（类型没改）：名字落在**原来那本**上，一本都不新建", async () => {
+  const shell = shellEntry();
+  const { shelf, calls } = harness(undefined, [shell]);
+  await shelf.refresh(); // 提示条上的入口用的是**已经拉回来的书架**（启动时就会拉一次）
+  shelf.openAdoptShell();
+  assert.deepEqual(shelf.form.value, { mode: "adopt", entry: shell });
+  await shelf.adopt(shell.id, { kind: "article", title: "  长夜  ", summary: "  一句话  ", naming: null });
+  assert.deepEqual(
+    calls,
+    ["rename:1:长夜", "summary:1:一句话"],
+    "同类型就该就地改名：没有 create，也没有 remove（作者要的正是「别另建一本」）",
+  );
+});
+
+test("接手空壳（换成长篇）：按新类型另建一本，空壳照旧收进回收站并说一声", async () => {
+  const { shelf, calls } = harness(undefined, [shellEntry()]);
+  await shelf.adopt(1, { kind: "novel", title: "长夜", summary: "", naming: "chinese" });
+  assert.deepEqual(calls, ["create:novel:长夜", "naming:9:chinese", "open:9", "remove:1"]);
+  assert.match(shelf.note.value, /回收站/, "收走了要说一声（可捞回）");
+});
+
+test("接手空壳：空名字当场拦住，一个字都不写库", async () => {
+  let reported = "";
+  const { shelf, calls } = harness((message) => {
+    reported = message;
+  }, [shellEntry()]);
+  await shelf.adopt(1, { kind: "article", title: "   ", summary: "随便", naming: null });
+  assert.deepEqual(calls, [], "空书名不该落到核心");
+  assert.equal(reported, "书名不能为空");
+});
+
+test("已经不是首启那本（起过名 / 写过字 / 建了第二本）：没有「接手」这条入口", async () => {
+  const named = harness(undefined, [shellEntry({ title: "旧书" })]);
+  await named.shelf.refresh();
+  named.shelf.openAdoptShell();
+  assert.equal(named.shelf.form.value, null, "有名字的书不是空壳");
+
+  const written = harness(undefined, [shellEntry({ word_count: 5 })]);
+  await written.shelf.refresh();
+  written.shelf.openAdoptShell();
+  assert.equal(written.shelf.form.value, null, "写过字的更不是");
+
+  const two = harness(undefined, [shellEntry(), shellEntry({ id: 2 })]);
+  await two.shelf.refresh();
+  two.shelf.openAdoptShell();
+  assert.equal(two.shelf.form.value, null, "已经有两本了，谈不上「第一次使用」");
 });

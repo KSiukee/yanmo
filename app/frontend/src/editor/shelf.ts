@@ -125,19 +125,32 @@ export interface Shelf {
   /** 编辑作品（改名 + 简介，一次落好）；书名空着就**不提交**，当场说清 */
   edit: (work_id: number, draft: EditWorkDraft) => Promise<void>;
   /**
-   * 作品表单（新建 / 编辑）现在开着哪一种。
+   * 接手首启那本空壳：**不另建一本，把名字落在它身上**。
+   *
+   * 空壳既没名字、又还没写一个字，所以这会儿"类型"改了也没有旧目录要保护——
+   * 同类型就地改名；换了类型（想写长篇）才按新类型另建一本，
+   * 那本空壳照旧由 `create` 那条路收进回收站（可捞回）。
+   */
+  adopt: (work_id: number, draft: NewWorkDraft) => Promise<void>;
+  /**
+   * 作品表单（新建 / 编辑 / 接手空壳）现在开着哪一种。
    *
    * 放在这一层而不是某个弹窗里：**书架与正文区都要能打开它**
-   * （书架卡片上的「编辑」、首启引导那条提示上的「建一本书」）。
+   * （书架卡片上的「编辑」、首启引导那条提示上的两个入口）。
    */
   form: Ref<WorkForm | null>;
   openCreate: () => void;
   openEdit: (entry: ShelfEntry) => void;
+  /** 首启那条提示的第二个入口：给自动建的那本空壳起名（表单里类型可挑） */
+  openAdoptShell: () => void;
   closeForm: () => void;
 }
 
-/** 作品表单的两种用法。 */
-export type WorkForm = { mode: "create" } | { mode: "edit"; entry: ShelfEntry };
+/** 作品表单的三种用法：新建 / 编辑 / **接手首启那本空壳**。 */
+export type WorkForm =
+  | { mode: "create" }
+  | { mode: "edit"; entry: ShelfEntry }
+  | { mode: "adopt"; entry: ShelfEntry };
 
 export function useShelf(options: ShelfOptions): Shelf {
   const entries = ref<ShelfEntry[]>([]);
@@ -182,6 +195,37 @@ export function useShelf(options: ShelfOptions): Shelf {
     });
   }
 
+  /**
+   * 真去建一本新书：**先建、再补简介与命名规则**，最后切过去开写；顺手把首启那本空壳收走。
+   *
+   * 抽出来是因为 `adopt` 那条路（作者在接手表单里换了类型）要复用它。
+   * 注意：它**不包 `act`**——`act` 有忙标记，套两层时里面那层会直接返回、动作悄悄不做；
+   * 忙标记与刷新由调用它的那一个 `act` 统一管。
+   */
+  async function createInPlace(draft: NewWorkDraft): Promise<void> {
+    // 首启那本**自动建的空壳**：作者建了自己的书之后顺手收进回收站（可捞回）。
+    // 判据取在动手之前——`entries` 这会儿还是动作前那一份列表。
+    // 列表还没拉过（比如启动那次读失败）就先补一次：这条判断不该取决于
+    // "列表恰好已经加载好了没有"（那是时序运气，不是逻辑）。
+    if (entries.value.length === 0) await refresh();
+    const shell = looksLikeFirstRun(entries.value) ? entries.value[0].id : null;
+    const work_id = await options.transport.create(draft.kind, draft.title);
+    // 建书页上填的简介与命名规则**一次落好**：作者填完就不用再去别处补
+    if (draft.summary.trim()) {
+      await options.transport.writeSummary(work_id, draft.summary.trim());
+    }
+    if (draft.naming !== null) {
+      await options.transport.writeNaming(work_id, draft.naming);
+    }
+    if (await options.openWork(work_id)) visible.value = false;
+    // 收空壳放在**切过去之后**：万一收不动，作者也已经在新书里了，不至于卡住
+    if (shell !== null && shell !== work_id) {
+      await options.transport.remove(shell);
+      // 收掉了要说一声（收进回收站、可捞回）——悄悄动作者的书架是要不得的
+      note.value = t("shelf.first_run_shell_tidied");
+    }
+  }
+
   return {
     entries,
     visible,
@@ -196,30 +240,7 @@ export function useShelf(options: ShelfOptions): Shelf {
     },
     refresh,
     open,
-    create: (draft) =>
-      act(async () => {
-        // 首启那本**自动建的空壳**：作者建了自己的书之后顺手收进回收站（可捞回）。
-        // 判据取在动手之前——`entries` 这会儿还是动作前那一份列表。
-        // 列表还没拉过（比如启动那次读失败）就先补一次：这条判断不该取决于
-        // "列表恰好已经加载好了没有"（那是时序运气，不是逻辑）。
-        if (entries.value.length === 0) await refresh();
-        const shell = looksLikeFirstRun(entries.value) ? entries.value[0].id : null;
-        const work_id = await options.transport.create(draft.kind, draft.title);
-        // 建书页上填的简介与命名规则**一次落好**：作者填完就不用再去别处补
-        if (draft.summary.trim()) {
-          await options.transport.writeSummary(work_id, draft.summary.trim());
-        }
-        if (draft.naming !== null) {
-          await options.transport.writeNaming(work_id, draft.naming);
-        }
-        if (await options.openWork(work_id)) visible.value = false;
-        // 收空壳放在**切过去之后**：万一收不动，作者也已经在新书里了，不至于卡住
-        if (shell !== null && shell !== work_id) {
-          await options.transport.remove(shell);
-          // 收掉了要说一声（收进回收站、可捞回）——悄悄动作者的书架是要不得的
-          note.value = t("shelf.first_run_shell_tidied");
-        }
-      }),
+    create: (draft) => act(() => createInPlace(draft)),
     rename: (work_id, title) =>
       act(async () => {
         await options.transport.rename(work_id, title);
@@ -239,12 +260,35 @@ export function useShelf(options: ShelfOptions): Shelf {
         await options.transport.rename(work_id, title);
         await options.transport.writeSummary(work_id, draft.summary.trim());
       }),
+    adopt: (work_id, draft) =>
+      act(async () => {
+        const title = draft.title.trim();
+        if (!title) {
+          throw new Error(t("shelf.title_required"));
+        }
+        const shell = entries.value.find((entry) => entry.id === work_id) ?? null;
+        if (shell !== null && shell.kind === draft.kind) {
+          // 同类型：名字与简介就落在这本上——**一本都不新建**（这个入口的用意正是"别另建一本"）
+          await options.transport.rename(work_id, title);
+          await options.transport.writeSummary(work_id, draft.summary.trim());
+          if (draft.naming !== null) await options.transport.writeNaming(work_id, draft.naming);
+          return;
+        }
+        // 换了类型：空壳的根节点是"篇"，跟长篇 / 短篇集不是一回事，就地改类型得重建整棵树——
+        // 按新类型另建一本才是那条已经验过的路（空壳由 `createInPlace` 照旧收进回收站）。
+        await createInPlace(draft);
+      }),
     form,
     openCreate: () => {
       form.value = { mode: "create" };
     },
     openEdit: (entry) => {
       form.value = { mode: "edit", entry };
+    },
+    openAdoptShell: () => {
+      // 判据现取：只有"首启那本空壳"谈得上接手——起过名或写过一个字之后就没有这条入口了
+      if (!looksLikeFirstRun(entries.value)) return;
+      form.value = { mode: "adopt", entry: entries.value[0] };
     },
     closeForm: () => {
       form.value = null;

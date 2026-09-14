@@ -80,6 +80,7 @@ const { toggle: toggleSnapshots } = props.session.snapshots;
 // 首启那条提示：核心在首启会先建一本**无名空壳**，所以作者看到的是"一片空白 + 未命名作品"。
 // 判据（只有一本、没名字、一个字没写）放在 `shelf.looksLikeFirstRun` 里——机械、可单测，
 // 而且作者只要写了一个字、或者建了第二本，它自己就消失，不需要另记"看过引导没有"。
+// 这条提示上挂**两个**入口：另建一本，或者**直接给这本空壳起个名**（不另建）。
 const firstRun = computed(
   () =>
     looksLikeFirstRun(props.session.shelf.entries.value) &&
@@ -224,6 +225,13 @@ function statusText(status: AutosaveState["status"]): string {
         @click="props.session.shelf.openCreate()"
       >
         {{ t("shelf.first_run_action") }}
+      </button>
+      <button
+        type="button"
+        class="editor__notice-action"
+        @click="props.session.shelf.openAdoptShell()"
+      >
+        {{ t("shelf.first_run_action_here") }}
       </button>
     </p>
     <p v-if="crashNotice" class="editor__notice">⚠ {{ crashNotice }}</p>

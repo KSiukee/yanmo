@@ -8,6 +8,9 @@
 //   命名规则默认「跟随设置」（不写这本书的覆盖）——想这本单独一套才选别的。
 // - **编辑**：只给书名与简介。**类型不给改**（它决定已有目录长什么样）——只读显示一行并
 //   说明；**命名规则也不在这里改**（那有「整本换写法」的预览确认流程，两套改法迟早打架）。
+// - **接手空壳**（首启那条提示的第二个入口）：与新建同一张表，只是名字落在**已经有的那本
+//   空壳**上。空壳还没名字、也还没写一个字，所以这会儿**类型可挑**——同类型就地改名，
+//   换了类型由书架层按新类型另建一本（见 `shelf.adopt`）。
 // - 简介与服务端无关，纯作者的话，落库后投稿包的大纲要用它。
 import { computed, nextTick, ref, watch } from "vue";
 
@@ -20,9 +23,12 @@ const props = defineProps<{ session: EditorSession; form: WorkForm }>();
 const emit = defineEmits<{ close: [] }>();
 
 const editing = computed(() => props.form.mode === "edit");
-const entry = computed(() => (props.form.mode === "edit" ? props.form.entry : null));
+const adopt = computed(() => props.form.mode === "adopt");
+const entry = computed(() => (props.form.mode === "create" ? null : props.form.entry));
+/** 类型只在**新建**与**接手空壳**时给挑（编辑时它决定着已有目录，只读） */
+const pickKind = computed(() => !editing.value);
 
-const { create, edit, busy } = props.session.shelf;
+const { create, edit, adopt: adoptShell, busy } = props.session.shelf;
 const { values: appearanceValues } = props.session.appearance;
 
 const title = ref(entry.value?.title ?? "");
@@ -53,15 +59,18 @@ void nextTick(() => titleEl.value?.focus());
 function submit() {
   const name = title.value.trim();
   if (!name || busy.value) return;
+  const draft = {
+    kind: kind.value,
+    title: name,
+    summary: summary.value,
+    naming: numbered.value && naming.value !== "" ? naming.value : null,
+  };
   if (props.form.mode === "edit") {
     void edit(props.form.entry.id, { title: name, summary: summary.value });
+  } else if (props.form.mode === "adopt") {
+    void adoptShell(props.form.entry.id, draft);
   } else {
-    void create({
-      kind: kind.value,
-      title: name,
-      summary: summary.value,
-      naming: numbered.value && naming.value !== "" ? naming.value : null,
-    });
+    void create(draft);
   }
   emit("close");
 }
@@ -72,7 +81,7 @@ function submit() {
     <section class="newwork__box dialog__box">
       <header class="newwork__head dialog__head">
         <h2 class="newwork__title dialog__title">
-          {{ editing ? t("shelf.edit_work_title") : t("shelf.new_work_title") }}
+          {{ editing ? t("shelf.edit_work_title") : adopt ? t("shelf.adopt_title") : t("shelf.new_work_title") }}
         </h2>
         <button type="button" class="newwork__button dialog__button" @click="emit('close')">
           {{ t("common.cancel") }}
@@ -92,8 +101,8 @@ function submit() {
           />
         </label>
 
-        <!-- 新建：类型可选（它决定这本书长什么样）；编辑：只读展示 + 一句为什么不能改 -->
-        <label v-if="!editing" class="newwork__row">
+        <!-- 新建与接手空壳：类型可选（它决定这本书长什么样）；编辑：只读展示 + 一句为什么不能改 -->
+        <label v-if="pickKind" class="newwork__row">
           <span class="newwork__label">{{ t("shelf.field_kind") }}</span>
           <select v-model="kind" class="newwork__select">
             <option value="novel">{{ t("shelf.kind_novel") }}</option>
@@ -106,6 +115,7 @@ function submit() {
           <span class="newwork__readonly">{{ shelfKindLabel(kind) }}</span>
         </div>
         <p v-if="editing" class="newwork__hint">{{ t("shelf.kind_locked") }}</p>
+        <p v-if="adopt" class="newwork__hint">{{ t("shelf.adopt_hint") }}</p>
 
         <label class="newwork__row newwork__row--block">
           <span class="newwork__label">{{ t("shelf.field_summary") }}</span>
@@ -118,7 +128,7 @@ function submit() {
         </label>
 
         <!-- 卷 / 章命名：只有**新建长篇**时给（单篇与短篇集不编号；编辑时不碰它，见文件头） -->
-        <template v-if="!editing">
+        <template v-if="pickKind">
           <label v-if="numbered" class="newwork__row">
             <span class="newwork__label">{{ t("shelf.field_naming") }}</span>
             <select v-model="naming" class="newwork__select">
@@ -133,7 +143,7 @@ function submit() {
         </template>
 
         <button type="submit" class="newwork__button dialog__button" :disabled="busy || !title.trim()">
-          {{ editing ? t("common.save") : t("shelf.create_and_write") }}
+          {{ editing ? t("common.save") : adopt ? t("shelf.adopt_and_write") : t("shelf.create_and_write") }}
         </button>
       </form>
     </section>
