@@ -44,6 +44,13 @@ import sys
 import time
 from pathlib import Path
 
+# 控制台编码**不由我们决定**：GitHub 的 Windows 跑手默认代码页是 cp1252，直接打印中文会
+# UnicodeEncodeError（真踩过：出包六步全绿，卡在下一步的发布说明上，Release 一步都没走到）。
+# 统一切到 UTF-8，编不出的字符退成 `?`——**打印失败绝不该让整条流水线挂掉**。
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "app"
 FRONTEND = APP / "frontend"

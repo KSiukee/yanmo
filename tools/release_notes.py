@@ -16,6 +16,15 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+
+# 控制台编码**不由我们决定**：GitHub 的 Windows 跑手默认代码页是 cp1252，
+# 直接打印中文会 UnicodeEncodeError（真踩过：出包六步全绿，卡在最后那句「已写入…」，
+# 于是 Release 一步都没走到）。这里把标准输出/错误统一切到 UTF-8，
+# 编不出的字符退成 `?`——**打印失败绝不该让整条流水线挂掉**。
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT = Path(__file__).resolve().parents[1]
 CHANGELOG = ROOT / "CHANGELOG.md"
 

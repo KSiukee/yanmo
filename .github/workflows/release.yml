@@ -18,6 +18,14 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    # 卡死就明确失败，别无声烧额度（冷机器全量编译 + 打包，20 分钟上下是正常的）
+    timeout-minutes: 60
+    # 跑手的默认代码页是 cp1252（西文），Python 打印中文会 UnicodeEncodeError——
+    # 真踩过：出包六步全绿，卡在下一步「生成发布说明」上，Release 一步都没走到。
+    # 这两个环境变量让所有 Python 步骤一律走 UTF-8，不必依赖控制台代码页。
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
     steps:
       - uses: actions/checkout@v4
 
@@ -32,6 +40,8 @@ jobs:
 
       # 和人一样跑同一条命令：工具链自检 → 版本一致 → 前端构建 → 跑测试（失败就不出包）
       # → 打包 → 归集产物 + SHA256 + 构建指纹
+      # 出包前建议先在本地预演这两步：tools\rehearse-release.bat（它会把控制台代码页调成
+      # 跑手那样的 1252，专门抓"本地绿、CI 红"的环境差异）
       - name: 一条命令构建
         run: tools\build-release.bat
         shell: cmd
@@ -45,10 +55,11 @@ jobs:
         with:
           name: yanmo-installer
           if-no-files-found: error
+          # 名字里带中文的文件用 ASCII 通配匹配（别在 CI 里赌非 ASCII 的 glob）
           path: |
             dist/*.exe
             dist/*.sha256
-            dist/构建指纹-*.txt
+            dist/*.txt
 
       - name: 建 Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -58,4 +69,4 @@ jobs:
           files: |
             dist/*.exe
             dist/*.sha256
-            dist/构建指纹-*.txt
+            dist/*.txt
