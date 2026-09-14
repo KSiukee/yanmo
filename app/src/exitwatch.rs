@@ -12,10 +12,14 @@
 //! | `Handling` | 界面已回话，正在落盘/弹对话框 | 不再计时——**拦住是它故意的** |
 //! | `Exiting` | 退出流程已开始 | 什么都不做 |
 //!
-//! 两个细节是刻意的：
-//! - **用户再点一次关窗**：界面没回话时＝"我就是要关"（立刻收场）；界面正在处理时＝忽略
-//!   （此时屏幕上多半就是"还有内容没存下去"的对话框，该由对话框里的按钮决定）；
-//! - **反复点击不重置期限**：否则一直点就一直关不掉。
+//! 两个细节是刻意的（第一条 2026-09-15 改过——它原来是"立刻收场"，会静默丢字）：
+//! - **用户再点一次关窗**：界面还没回话时＝**再喊它一声**，绝不替它做"直接退"的主。
+//!   双击标题栏的 X 本来就会产生两次请求，而第一次之后界面还要落一次盘——按老写法，
+//!   双击就等于"不落盘、不提示地退出"，从上次防抖落盘到那一刻的击键全部无声消失
+//!   （2026-09-15 代码质量评审：严重 8）。界面正在处理时仍然忽略（屏幕上多半就是
+//!   "还有内容没存下去"的对话框，该由对话框里的按钮决定）。
+//! - **反复点击不重置期限**：再喊也只喊一声，期限照旧——所以一直点既不会一直关不掉，
+//!   也不会把"界面已经死了"那条兜底堵住。
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -36,8 +40,8 @@ enum Phase {
 pub enum RequestOutcome {
     /// 第一次请求：已通知界面，等它回话
     Notified,
-    /// 界面没回话，用户又点了一次——用户坚持要关
-    Insisted,
+    /// 界面还没回话，用户又点了一次：**再通知它一遍**（不重置期限、也不直接退）
+    Renotified,
     /// 界面正在处理（多半正弹着"存不下去"的对话框）：忽略这次点击
     AlreadyHandling,
     /// 已经在退出流程里了
@@ -67,7 +71,12 @@ impl ExitWatch {
                 *phase = Phase::Requested { at: Instant::now() };
                 RequestOutcome::Notified
             }
-            Phase::Requested { .. } => RequestOutcome::Insisted,
+            Phase::Requested { at } => {
+                // 再喊一声：把同一个请求重新发给界面。**`at` 不重置**——期限还是第一次那个，
+                // 所以"一直点"既不会一直关不掉，也不会挡住"界面已死"的兜底退出。
+                *phase = Phase::Requested { at };
+                RequestOutcome::Renotified
+            }
             Phase::Handling => RequestOutcome::AlreadyHandling,
             Phase::Exiting => RequestOutcome::AlreadyExiting,
         }
@@ -143,11 +152,30 @@ mod tests {
         );
     }
 
+    /// **双击关窗不许直接退**（2026-09-15 代码质量评审：严重 8）。
+    ///
+    /// 双击标题栏的 X 会产生两次关窗请求，而第一次之后界面才拿到事件、才开始落盘。
+    /// 老写法把第二次当成"用户坚持"，直接 `exit(0)`——从上次防抖落盘到那一刻的击键
+    /// 全部无声消失，作者连"要丢字吗"都没被问过。现在第二次只是**再喊界面一声**。
     #[test]
-    fn clicking_close_again_while_silent_means_the_user_insists() {
+    fn clicking_close_again_while_silent_only_nags_the_frontend_again() {
         let watch = ExitWatch::default();
         assert_eq!(watch.request(), RequestOutcome::Notified);
-        assert_eq!(watch.request(), RequestOutcome::Insisted);
+
+        let at = Instant::now();
+        assert_eq!(
+            watch.request(),
+            RequestOutcome::Renotified,
+            "界面还没回话时的第二次点击：再通知一遍，不是「用户坚持要退」"
+        );
+        assert!(watch.waiting(), "再喊一声之后仍在等界面回话");
+
+        // 期限**不重置**：一直点既不会一直关不掉，也不挡住"界面已死"的兜底
+        assert!(!watch.should_force_exit(at + Duration::from_secs(1)));
+        assert!(
+            watch.should_force_exit(at + ANSWER_DEADLINE + margin()),
+            "再喊之后期限照旧到期——界面真死了，窗口还是得关得掉"
+        );
     }
 
     #[test]

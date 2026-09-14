@@ -178,8 +178,13 @@ fn main() {
                     let _ = window.emit("close-requested", ());
                     watch_answer_deadline(window.app_handle().clone());
                 }
-                // 界面没回话、用户又点了一次＝"我就是要关"
-                RequestOutcome::Insisted => window.app_handle().exit(0),
+                // 界面还没回话、用户又点了一次：**再通知它一遍**，不在这里退出。
+                // 为什么不能"用户坚持就退"：双击标题栏的 X 天生产生两次请求，而第一次之后
+                // 界面还要落一次盘——直接退就等于把那一段击键无声抹掉（评审：严重 8）。
+                // "界面真的死了"另有兜底：应答期限一到，watch_answer_deadline 会收场。
+                RequestOutcome::Renotified => {
+                    let _ = window.emit("close-requested", ());
+                }
                 // 界面正在处理（多半弹着"存不下去"的对话框）：这次点击不作数
                 RequestOutcome::AlreadyHandling | RequestOutcome::AlreadyExiting => {}
             }

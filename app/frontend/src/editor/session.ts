@@ -335,6 +335,16 @@ export function useEditorSession(): EditorSession {
   }
 
   /**
+   * 落盘，但**不把失败抛给调用方**——只用于"顺手存一下"的场合（失焦、切后台、Ctrl+S）：
+   * 那些地方失败已经反映在状态栏（autosave 的 error 态与 detail）里。
+   *
+   * 反之，"先落盘再动手"的六道守卫一律 `await flushCurrent()`：它们**必须**拿到失败并拦住动作。
+   */
+  function flushQuietly(): void {
+    void flushCurrent().catch(() => {});
+  }
+
+  /**
    * 组字收尾时补算一次。
    *
    * 为什么需要"补"：WebView2 在 `contentEditable` 上的输入法集成并不总是按预期发 update
@@ -399,7 +409,8 @@ export function useEditorSession(): EditorSession {
   function persistNow() {
     const engine = autosave.value;
     if (!engine) return;
-    void engine.flush();
+    // 顺手存一下：失败会亮在状态栏；拦住动作是那六道守卫的事（它们 await flushCurrent）
+    flushQuietly();
     const cursor = currentCursor();
     if (cursor) void saveCursor(engine.node_id, cursor).catch(() => {});
   }
@@ -661,11 +672,14 @@ export function useEditorSession(): EditorSession {
     }
     if ((await directory.remove(node_id)) === null) return;
     if (!hitsCurrent) return;
-    // 这一支已经不在了：**把落盘控制器摘掉**，否则切换流程还会去给一个已删除的节点记光标，
-    // 那一步会报错并把切换整个拦下来（真机上撞出来的第二层）
-    autosave.value?.dispose();
-    autosave.value = null;
-    await switchWork(work); // 回到这本书还活着的那一章
+    // 这一支已经不在了：**把落盘控制器摘掉**（`detach`，不是 `dispose` + 置空）——
+    // 摘掉是为了让切换流程不去给一个已删除的节点记光标（那一步会报错并把切换整个拦下来，
+    // 真机上撞出来的第二层）；**但对象必须留着**：置空会被当成"编辑器还没挂上、没什么可丢的"，
+    // 于是"能打字、却永远不会落盘"变成一个静默状态，退出闸门还会放行
+    //（2026-09-15 代码质量评审：严重 6）。留着一个已摘下的控制器：状态栏亮红字、
+    // flush 必然失败、闸门因此拦得住人。
+    autosave.value?.detach();
+    await switchWork(work); // 回到这本书还活着的那一章（成功时会建一个新的落盘控制器）
   }
 
   /**
@@ -929,7 +943,7 @@ export function useEditorSession(): EditorSession {
         exitFocus,
         prevChapter: () => void switchChapter(neighbors.value?.previous?.id),
         nextChapter: () => void switchChapter(neighbors.value?.next?.id),
-        saveNow: () => void flushCurrent(),
+        saveNow: () => flushQuietly(),
         // 与目录树的「+」**同一条路**：在当前章后面建一章并直接开写（不另开确认流程）
         newChapter: () => {
           const node_id = currentNodeId.value;
@@ -1033,8 +1047,13 @@ export function useEditorSession(): EditorSession {
     stopCompositionWatch?.();
     stopDiagnoseWatch?.();
     stopDialogFocusWatch?.();
-    void autosave.value?.flush(); // 先发起落盘（已在飞的不受 dispose 影响）
-    autosave.value?.dispose();
+    // 卸挂之前把手上这一版落下去，**落完再 dispose**。
+    // 为什么顺序要紧：`dispose()` 会让 `saveNow` 直接返回，先 dispose 就等于把
+    // "再排一笔"的机会掐掉——在飞的那一笔写的是更早的文本，最后几次击键就没了。
+    const engine = autosave.value;
+    if (engine) {
+      void engine.flush().catch(() => {}).finally(() => engine.dispose());
+    }
   });
 
   return {

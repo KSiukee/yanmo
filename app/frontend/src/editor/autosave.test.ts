@@ -181,6 +181,46 @@ test("失焦立刻落盘，不等防抖", async () => {
   assert.equal(autosave.state().status, "saved");
 });
 
+test("flush 要等到**最新一版**落盘：有写在飞时不是等那笔旧的就算完", async () => {
+  // 失效模式 A（2026-09-15 代码质量评审：严重 1）：触发条件是"防抖窗口内落两次笔"——
+  // 打字本来就是那个节奏；随后作者一点另一章（或 Ctrl+Alt+← / 删章），
+  // flush 只把第一笔等回来就返回，第二笔仍是 pending，最后那一段输入永远没入库。
+  const clock = new FakeClock();
+  const core = fakeCore({ manual: true });
+  const autosave = build(core, clock);
+  autosave.attach("", { char_count: 0, chars_no_punct: 0, word_count: 0, fingerprint: "" });
+
+  autosave.changed("第一句");
+  await clock.advance(250); // 第一笔进入在飞态（还没回来）
+  assert.equal(autosave.state().status, "saving");
+
+  autosave.changed("第一句，又补了一句");
+  const flushing = autosave.flush(); // ← 在飞还没落地时要求"立刻落盘"
+
+  core.gates.shift()!(); // 放行第一笔
+  await settle();
+  core.gates.shift()!(); // flush 必须继续排第二笔（写的是最新那版）
+  await flushing;
+
+  assert.equal(core.stored(), "第一句，又补了一句", "flush 返回时库里的必须是最新一版");
+  assert.equal(autosave.state().status, "saved");
+});
+
+test("存不下去时 flush 必须报失败（六道「先落盘再动手」的守卫靠它拦住动作）", async () => {  // 失效模式 B（评审：严重 1）：以前 saveNow 失败只置 error 就 return，flush 照常 resolve，
+  // 于是切章/删章/删书/回滚/换库/搬家那六处 `try { await flush() } catch` 永不触发——
+  // 动作照旧执行，没存上的内容被顶掉。
+  const clock = new FakeClock();
+  const core = fakeCore();
+  const autosave = build(core, clock);
+  autosave.attach("", { char_count: 0, chars_no_punct: 0, word_count: 0, fingerprint: "" });
+  core.alwaysFail(true);
+
+  autosave.changed("写不进去的一版");
+  await assert.rejects(() => autosave.flush(), /保存失败/, "落不下去必须抛，不能悄悄返回");
+  assert.equal(autosave.state().status, "error");
+  assert.notEqual(core.stored(), "写不进去的一版", "库里确实没写进去（这是测试的前提）");
+});
+
 test("一直存不进去：先报错，超时后强制抢救", async () => {
   const clock = new FakeClock();
   const core = fakeCore();
@@ -268,4 +308,30 @@ test("防抖与校验间隔被夹在任务口径内", () => {
   assert.equal(tooSlow.debounceMs, DEBOUNCE_RANGE.max);
   assert.equal(tooSlow.verifyMs, VERIFY_RANGE.max);
   tooSlow.dispose();
+});
+
+test("节点被删后「摘下来」：状态亮红字、flush 一律失败、退出闸门因此拦得住人", async () => {
+  // 失效模式（2026-09-15 代码质量评审：严重 6）：删掉正在写的那一支之后，
+  // 老写法是 `dispose()` + `autosave.value = null`。若随后的换落点失败，控制器永久为 null——
+  // 编辑器照常能打字、状态栏还停在上一章的 saved、退出闸门见 null 直接放行。
+  // 现在：对象留着（摘下来），它自己把话说清楚。
+  const clock = new FakeClock();
+  const core = fakeCore();
+  const autosave = build(core, clock);
+  autosave.attach("", { char_count: 0, chars_no_punct: 0, word_count: 0, fingerprint: "" });
+
+  autosave.detach();
+
+  assert.equal(autosave.state().status, "error", "状态栏必须亮出来，不能停在 saved");
+  assert.match(autosave.state().detail, /已被删除|存不进去/);
+
+  // 摘下来之后写下的字不会往那个已删节点写（写了也是白写），但**退出时会被拦住**
+  autosave.changed("摘下来之后写的字");
+  await clock.advance(500);
+  assert.deepEqual(core.saves(), [], "不该再往一个已经删掉的节点落盘");
+  await assert.rejects(
+    () => autosave.flush(),
+    /已被删除|存不进去/,
+    "摘下来之后 flush 必须失败——闸门靠它拦住退出，否则新写的字无声消失"
+  );
 });

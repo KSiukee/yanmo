@@ -45,6 +45,8 @@ export const VERIFY_RANGE = { min: 2000, max: 5000 } as const;
 const DEFAULT_DEBOUNCE_MS = 250;
 const DEFAULT_VERIFY_MS = 3000;
 const DEFAULT_STUCK_MS = 1500;
+/** `flush()` 最多排几笔：第一笔可能在飞、这期间作者又改了，得再排一笔；排满还脏就报失败，不空转。 */
+const FLUSH_ROUNDS = 3;
 
 type TimerHandle = ReturnType<typeof setTimeout>;
 
@@ -100,6 +102,8 @@ export class Autosave {
   private verifyTimer: TimerHandle | null = null;
   private lastChangeAt = 0;
   private stopped = false;
+  /** 被摘下来了（节点被删/换落点）：对象还在，但它一律报"存不下去"——见 `detach()` */
+  private detached = false;
 
   constructor(deps: AutosaveDeps) {
     this.node_id = deps.node_id;
@@ -136,11 +140,34 @@ export class Autosave {
     this.armSave();
   }
 
-  /** 立刻落盘（失焦 / 关窗前用，不等防抖）。 */
+  /**
+   * 立刻落盘（失焦 / 关窗前用，不等防抖）。
+   *
+   * **契约：返回时手上这一版必须已经落进库里；落不下去就抛。**
+   * 这两件事原来都是假的（2026-09-15 代码质量评审：严重 1）：
+   *
+   * - 有写在飞时，这里只把那一笔**旧的**写等回来就返回，期间的击键仍是 pending（随后
+   *   切章会把防抖定时器取消）——于是"先落盘再切章 / 删章 / 删书 / 回滚 / 换库 / 搬家"
+   *   这六道守卫，全都拦不住最后那一段输入；
+   * - 写失败时 `saveNow` 只把状态置成 error 就 `return`，这里照样正常 resolve——
+   *   于是六道守卫的 `try/catch` 永远不触发，动作照旧执行，没存上的内容被顶掉。
+   *
+   * 现在：排到干净为止（最多 `FLUSH_ROUNDS` 笔，避免写不进去时空转），还脏就抛错。
+   * 抛错是刻意的——**"存不下去就不许走"是这条承诺的实现方式**，调用方必须接住并拦住动作。
+   */
   async flush(): Promise<void> {
     this.cancelSaveTimer();
-    if (this.rev === this.savedRev && !this.inFlight) return;
-    await this.saveNow();
+    if (this.detached) {
+      // 已经摘下来了：没有任何东西能把手上这一版写进去——明确失败，闸门据此拦人
+      throw new Error(this.detail || t("autosave.detached"));
+    }
+    for (let round = 0; round < FLUSH_ROUNDS && this.rev > this.savedRev; round += 1) {
+      await this.saveNow();
+    }
+    if (this.rev > this.savedRev) {
+      // 还在脏着：把失败说清楚（原因多半已经在 detail 里了）
+      throw new Error(this.detail || t("autosave.save_failed", { detail: "" }));
+    }
   }
 
   /** 立刻做一次读回校验（测试与"我现在就想确认一下"用）。 */
@@ -178,6 +205,21 @@ export class Autosave {
       this.cancel(this.verifyTimer);
       this.verifyTimer = null;
     }
+  }
+
+  /**
+   * **摘下来**：停掉它，但留着这个对象——它从此一律报"存不下去"。
+   *
+   * 为什么与 `dispose()` 分开：`dispose()` 之后通常会把对象丢掉（`autosave.value = null`），
+   * 而"编辑器还挂着、落盘控制器却没了"是个**静默危险态**：打字没人接、状态栏还停在上一章的
+   * saved、退出闸门见 null 直接放行（2026-09-15 代码质量评审：严重 6）。
+   * 删掉当前章之后就该用这个：红字亮在状态栏、退出闸门拦得住人，
+   * 作者不会在"看起来一切正常"里丢掉刚写的字。
+   */
+  detach(): void {
+    this.detached = true;
+    this.setStatus("error", t("autosave.detached"));
+    this.dispose();
   }
 
   state(): AutosaveState {

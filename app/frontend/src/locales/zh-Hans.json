@@ -7,6 +7,7 @@
   "app.tagline": "AI 只问，不写",
   "app.zen": "专注",
   "app.zen_title": "专注模式：只留正文（{key}）",
+  "autosave.detached": "这一章已被删除，新的字暂时存不进去——先复制一份备份，再切到别章",
   "autosave.reason_desync": "库里的正文与手上这份不一致",
   "autosave.reason_stuck": "落盘长时间没有完成",
   "autosave.recovered": "{label}——已恢复",
