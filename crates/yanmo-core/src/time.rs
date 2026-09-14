@@ -11,7 +11,7 @@
 //! **注入能力只在测试构建里存在（`--features testing`），发布二进制里这段代码
 //! 根本不存在。** 审计者可以直接证明"没有这个能力"，而不是靠读代码理解。
 //!
-//! 测试 [`tests::production_build_ignores_override`] 就是这条铁律的证据。
+//! 测试 `tests::production_build_ignores_override` 就是这条铁律的证据。
 
 /// 读取系统时钟（unix 毫秒）。读不到时返回 0（调用方各自判断）。
 fn system_now_millis() -> i64 {
@@ -95,7 +95,7 @@ pub fn local_date(millis: i64, offset_minutes: i32) -> String {
     format!("{y:04}-{mo:02}-{d:02}")
 }
 
-/// 天数（1970-01-01 起）← `(年, 月, 日)`：上面 [`civil_from_days`] 的反函数。
+/// 天数（1970-01-01 起）← `(年, 月, 日)`：上面 `civil_from_days` 的反函数。
 ///
 /// 用途是**算日期差**（"昨天 / 前天 / 连续了几天"）：把两个日期都变成天数再相减，
 /// 中间不必知道那个月有几天。同样是 Howard Hinnant 的公有领域算法。

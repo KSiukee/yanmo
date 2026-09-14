@@ -22,6 +22,7 @@ pub struct EngineInfo {
 }
 
 #[tauri::command]
+/// 版本与引擎信息（界面底栏那条「v… · 库结构 …」用它）。
 pub fn engine_info() -> EngineInfo {
     EngineInfo {
         // i18n-allow-next-line: 产品名（品牌），不翻译
@@ -45,6 +46,7 @@ pub struct DataHome {
 }
 
 #[tauri::command]
+/// 数据目录与它所在的卷（设置面板「稿子放在哪」与「关于」都读它）。
 pub fn data_home(data: State<'_, AppData>) -> Result<DataHome, ApiError> {
     Ok(DataHome {
         path: data.db_path().display().to_string(),

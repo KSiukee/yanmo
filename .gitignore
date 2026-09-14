@@ -36,3 +36,6 @@ Thumbs.db
 
 # 出包产物（安装包不进版本库）
 /dist
+
+# 发布说明由 tools/release_notes.py 生成（CI 与本地预演都会写它）
+release-notes.md

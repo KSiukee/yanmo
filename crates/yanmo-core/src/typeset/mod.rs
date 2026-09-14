@@ -16,6 +16,7 @@
 //! 档位只写在这里一处——界面不抄一份，免得两边走偏。
 
 pub mod report;
+/// 排版规则本体（纯函数：给文本，给建议）。
 pub mod rules;
 
 use serde::{Deserialize, Serialize};
@@ -78,6 +79,7 @@ impl QuoteStyle {
         }
     }
 
+    /// 稳定代码（存进偏好；也写进排版产物）。
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Curly => "curly",

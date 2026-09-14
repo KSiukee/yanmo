@@ -8,7 +8,7 @@
 //! | 逐字（不含标点） | `chars_no_punct` | 只算"字"：汉字 / 假名 / 谚文 / 字母 / 数字 |
 //! | 按词 | `words` | CJK（表意·假名·谚文）逐字计 1；其它连续字母数字串计 1（英文按词） |
 //!
-//! 三个口径都在这一个文件里，[`WordCaliber`] 是它们的唯一入口——**别在别处再写一份**
+//! 三个口径都在这一个文件里，[`WordCaliber`](crate::text::WordCaliber) 是它们的唯一入口——**别在别处再写一份**
 //! （重复副本＝拆分硬信号，不是收藏品）。口径**跟作品语言走、不跟界面语言走**：
 //! 中文界面用户写英文小说，字数就该按词算。
 //!
@@ -57,7 +57,7 @@ pub fn count_chars(text: &str) -> i64 {
     text.chars().filter(|c| !c.is_whitespace() && !is_zero_width(*c)).count() as i64
 }
 
-/// 逐字（不含标点）口径：只算 [`is_word_char`]。
+/// 逐字（不含标点）口径：只算 `is_word_char`。
 pub fn count_chars_no_punct(text: &str) -> i64 {
     text.chars().filter(|c| is_word_char(*c)).count() as i64
 }

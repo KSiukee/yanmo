@@ -3,7 +3,8 @@
 //
 // 视图只负责"显示与改"：偏好的真相在核心（单一真相源）；读不出来就如实说，不猜一个默认值糊上去。
 // 「稿子放在哪」只显示壳报告出来的路径，另外把"换位置"那个面板请出来（它自己那套分寸见组件里）。
-// 「关于」是只读报告：版本 / 库结构 / 稿子在哪 + 安全承诺与限制的摘要（完整清单在仓库的 SECURITY.md）。
+// 「关于」是只读报告：版本 / 库结构 + 一键打开稿子文件夹 + 安全承诺与限制的摘要（完整清单在仓库的 SECURITY.md）。
+// 路径**只显示一处**（在「稿子放在哪」那一组）：两块各摊一遍绝对路径看着像出了错。
 import { computed, onMounted, ref } from "vue";
 
 import { t } from "../locales/index.ts";
@@ -252,10 +253,8 @@ async function runRewrite() {
         <span class="settings__label">{{ t("settings.about_version") }}</span>
         <code class="settings__path">{{ aboutVersion }}</code>
       </p>
-      <p class="settings__row settings__row--path">
-        <span class="settings__label">{{ t("location.current") }}</span>
-        <code class="settings__path">{{ dataPath }}</code>
-      </p>
+      <!-- 路径**只在「稿子放在哪」那一组显示一次**：这里留着按钮就够了（它的标签已经说清是打开哪个文件夹）。
+           两处都摊一遍绝对路径，看着像出了错，也让人不知道该信哪一处。 -->
       <button
         type="button"
         class="settings__button dialog__button"

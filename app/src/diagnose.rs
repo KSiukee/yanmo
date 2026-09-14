@@ -50,6 +50,7 @@ pub fn parse(argv: &[String]) -> bool {
     true
 }
 
+/// 诊断模式开着没有（由命令行参数打开）。
 pub fn active() -> bool {
     ACTIVE.load(Ordering::SeqCst)
 }
@@ -81,14 +82,17 @@ pub fn focus_event(gained: bool) {
     note(if gained { "窗口事件：拿到焦点" } else { "窗口事件：失去焦点" });
 }
 
+/// 窗口尺寸变了（诊断模式下把尺寸写进日志）。
 pub fn resized() {
     note("窗口事件：尺寸变化");
 }
 
+/// 窗口被销毁了。
 pub fn destroyed() {
     note("窗口事件：已销毁");
 }
 
+/// 数据句柄就绪了。
 pub fn data_ready() {
     note("数据层已打开");
 }

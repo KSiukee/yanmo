@@ -26,6 +26,7 @@ pub fn volume_id_for(path: &Path) -> String {
 }
 
 #[cfg(not(windows))]
+/// 非 Windows 的占位实现：没有「卷标识」这回事。
 pub fn volume_id_for(_path: &Path) -> String {
     String::new()
 }
@@ -44,6 +45,7 @@ pub fn is_removable(path: &Path) -> bool {
 }
 
 #[cfg(not(windows))]
+/// 非 Windows 的占位实现：一律当不可移动盘。
 pub fn is_removable(_path: &Path) -> bool {
     false
 }
@@ -119,6 +121,7 @@ pub fn free_space(root: &str) -> (u64, u64) {
 }
 
 #[cfg(not(windows))]
+/// 非 Windows 的占位实现：剩余空间未知（0, 0）。
 pub fn free_space(_root: &str) -> (u64, u64) {
     (0, 0)
 }

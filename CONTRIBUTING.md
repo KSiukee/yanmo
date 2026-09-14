@@ -54,6 +54,54 @@
 - 能力清单会**按版本**演进：模块声明"需要能力 vN"，核心版本不够时会明确告诉你"请更新研墨"，
   而不是含糊地不工作。
 
+## 五分钟读懂这个仓库
+
+第一次打开这个仓库的人（和 AI）最需要的是**地图**，不是通读代码。按这个顺序看，五分钟够：
+
+### 一、先记住三条铁律（它们决定了代码长什么样）
+
+1. **单一真相源**：所有读写都发生在 `crates/yanmo-core`。壳（`app/`）只调用，不碰文件系统——
+   界面侧连 `@tauri-apps/api` 都只许在 `app/frontend/src/api/core.ts` 这一个文件里 import。
+2. **核心零 UI 依赖、零网络**：核心要能被单测、被命令行、被压测直接驱动；
+   它不产界面文案（只给「码 + 参数」，句子在 `app/frontend/src/locales/`），也不出网。
+3. **只报告、不自动改稿**：涉及作者原稿的动作（排版清理、整本换编号写法、恢复、导入）
+   一律"先说清 → 作者确认 → 才动手"，且能撤。
+
+这三条都有**机械守卫**盯着（`cargo test` 里会红）：`crates/yanmo-core/tests/safety_guard.rs`、
+`app/tests/boundary.rs`、`app/tests/release_boundary.rs`。
+
+### 二、再看目录地图
+
+| 想去哪儿 | 去哪儿 |
+| --- | --- |
+| 数据怎么存、怎么迁移 | `crates/yanmo-core/src/db/`（迁移 v1…v7 只往前加） |
+| 目录树 / 正文 / 作品 / 检索 / 导出 / 备份 / 导入 | `crates/yanmo-core/src/store/`（**一个领域一个文件**） |
+| 标题里的自动编号（号 = 位置的函数） | `crates/yanmo-core/src/numbering.rs` |
+| 字数三口径 / 内容指纹 | `crates/yanmo-core/src/text.rs` |
+| 排版清理规则 | `crates/yanmo-core/src/typeset/` |
+| 投稿版 docx / 分章 txt / 合并 txt | `crates/yanmo-core/src/compile/` |
+| 界面（Vue 3 + TipTap） | `app/frontend/src/`（纯逻辑在 `editor/*.ts`，组件尽量薄） |
+| 桌面壳 / Tauri 命令 / 数据目录与单实例 | `app/src/`（`commands/` 一个域一个文件） |
+| 命令行入口（救援档 + 开发档） | `crates/yanmo-cli/src/` |
+
+### 三、然后按"一个功能一条链"去读
+
+比如"写一章正文"：`app/frontend/src/editor/session.ts`（编辑器）→
+`app/frontend/src/api/core.ts`（唯一出口）→ `app/src/commands/editor.rs`（命令）→
+`crates/yanmo-core/src/store/content.rs`（写库 + 回算字数 + 留痕）。
+
+### 四、最后：怎么改才不会被守卫拦
+
+```bash
+cargo test --workspace            # 核心 + 壳 + 命令行
+cd app/frontend && node --test src/**/*.test.ts   # 前端纯逻辑
+```
+
+- 改**行为**就补一条**会失败的测试**（先看着它红，再修）；
+- 界面文案**只许**住在 `app/frontend/src/locales/zh-Hans.json`（硬编码会被守卫抓）；
+- 公开文档/注释里不写内部路径、内部工具名（有脱敏守卫）；
+- 核心文件软上限 200 行：**超过要能回答三问**（变化理由 / 连锁改动 / 重复副本），只按行数拆不算理由。
+
 ## 贡献
 
 欢迎 PR。为了让项目保留将来双许可与商业化的自由，代码贡献需要签署 [CLA](./CLA.md)。

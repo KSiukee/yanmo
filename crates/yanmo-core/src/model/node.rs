@@ -25,6 +25,7 @@ impl NamingStyle {
     pub const ALL: [NamingStyle; 4] =
         [NamingStyle::Arabic, NamingStyle::Chinese, NamingStyle::Padded, NamingStyle::NoNumber];
 
+    /// 稳定代码（存进偏好；别改）。
     pub const fn as_str(self) -> &'static str {
         match self {
             NamingStyle::Arabic => "arabic",
@@ -34,6 +35,7 @@ impl NamingStyle {
         }
     }
 
+    /// 从稳定代码解析；认不出来当没设过（回作品类型的默认）。
     pub fn parse(s: &str) -> Option<Self> {
         NamingStyle::ALL.into_iter().find(|style| style.as_str() == s)
     }
@@ -66,6 +68,7 @@ pub enum NodeKind {
 }
 
 impl NodeKind {
+    /// 稳定代码（写进库与成稿 JSON；别改）。
     pub const fn as_str(self) -> &'static str {
         match self {
             NodeKind::Volume => "volume",
@@ -76,6 +79,7 @@ impl NodeKind {
         }
     }
 
+    /// 从稳定代码解析；认不出报 `value.unknown_node_kind`。
     pub fn parse(s: &str) -> Result<Self> {
         match s {
             "volume" => Ok(NodeKind::Volume),

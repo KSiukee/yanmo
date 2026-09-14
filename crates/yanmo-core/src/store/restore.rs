@@ -174,7 +174,7 @@ fn inspect_database(db: &Path) -> Inspected {
 impl Store {
     /// 恢复前先看清楚：这份来源体不体检通过、换上去会退回多少天 / 少多少字。
     ///
-    /// **不动任何文件**：体检跑在临时副本上（见 [`Probe`]），活库只做只读查询。
+    /// **不动任何文件**：体检跑在临时副本上（见 `Probe`），活库只做只读查询。
     pub fn preview_restore(&self, source: &Path) -> Result<RestorePreview> {
         // 活库**读不出来也算数**：库坏了的时候正是最需要恢复的时候，
         // 不能让"算不出会丢多少"把整条救援路堵死（读不出来就如实说读不出来）。

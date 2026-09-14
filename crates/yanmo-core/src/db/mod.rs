@@ -1,6 +1,6 @@
 //! 数据库层：打开、配置、环境校验。
 //!
-//! 表结构与迁移见 [`migrations`]。铁律：**核心持有数据权威，壳不碰文件系统**。
+//! 表结构与迁移见 [`migrations`](crate::db::migrations)。铁律：**核心持有数据权威，壳不碰文件系统**。
 
 use std::path::Path;
 
@@ -11,6 +11,7 @@ pub use rusqlite::Connection;
 use crate::error::{codes, Error, Result};
 use crate::time::now_millis;
 
+/// 结构迁移：v1…v7，每条只往前、不改历史。
 pub mod migrations;
 mod migrations_v1;
 mod migrations_v2;

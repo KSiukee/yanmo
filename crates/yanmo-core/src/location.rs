@@ -18,7 +18,7 @@
 //! # 副作用边界
 //!
 //! 本模块**只读写那一个小记录文件**（`yanmo-location.txt`），不建数据目录、不动库。
-//! 目录能不能写由 [`crate::paths::is_writable`] 去真探，搬迁在 [`crate::store::relocate`]。
+//! 目录能不能写由 [`crate::paths::is_writable`] 去真探，搬迁在 `store::relocate`。
 
 use std::path::{Path, PathBuf};
 
@@ -259,6 +259,7 @@ pub enum Risk {
 }
 
 impl Risk {
+    /// 稳定代码（界面按它查字典说人话）。
     pub const fn code(self) -> &'static str {
         match self {
             Risk::Synced => "synced",

@@ -141,7 +141,7 @@ impl DraftScale {
     /// 与备份清单里那一本的账对一遍：**章节数 / 三口径字数 / 分章文本指纹**。
     ///
     /// `fingerprint` 是这一份的分章文本指纹（干跑时按成稿算，写库后按库里重渲染算——
-    /// 同一口径，见 [`Store::draft_fingerprint`]）。
+    /// 同一口径，见 [`crate::store::Store::draft_fingerprint`]）。
     pub fn compare(&self, stamp: &WorkStamp, fingerprint: &str) -> Vec<StampMismatch> {
         let mut out = Vec::new();
         for (field, expected, actual) in [

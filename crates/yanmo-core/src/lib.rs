@@ -10,19 +10,33 @@
 //! 4. **不提供网络接口**：核心只做本机数据处理，对外通道另行设计且默认关闭。
 
 pub mod atomic;
+/// 编译管线：一份原稿 → 投稿版 docx / 分章 txt / 合并 txt。
 pub mod compile;
+/// 数据库打开、迁移与环境校验（结构版本与磁盘格式的唯一权威）。
 pub mod db;
+/// 文本差异：行级 LCS + 相似度（版本对照用）。
 pub mod diff;
+/// 错误类型与错误码表（核心只给「码 + 参数」，句子在界面字典里）。
 pub mod error;
+/// 错误码清单（由宏一次生成常量、参数名清单与日志模板）。
 pub mod error_codes;
+/// 数据目录的定位与风险判断（首启推荐、老位置认领、可移动盘告警）。
 pub mod location;
+/// 领域模型：作品 / 节点 / 命名规则 / 语言（不碰数据库）。
 pub mod model;
+/// 标题里的自动编号宏：号 = 位置的函数。
 pub mod numbering;
+/// 系统约定的路径（「文档」在哪、数据文件夹叫什么）。
 pub mod paths;
+/// 存储层：作品 / 节点树 / 正文 / 检索的唯一读写入口。
 pub mod store;
+/// 文本口径：字数三口径、内容指纹、换行归一。
 pub mod text;
+/// 时间源（可注入的时钟，只在测试构建里）。
 pub mod time;
+/// 排版清理：规则、引号风格与差异报告。
 pub mod typeset;
+/// 引擎版本与数据格式版本。
 pub mod version;
 
 pub use error::{Error, Result};

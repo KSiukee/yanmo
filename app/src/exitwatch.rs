@@ -45,6 +45,7 @@ pub enum RequestOutcome {
 }
 
 #[derive(Debug)]
+/// 退出的两道闸：先请界面收尾，**过期就放行**——界面死了也不该锁住窗口。
 pub struct ExitWatch {
     phase: Mutex<Phase>,
 }

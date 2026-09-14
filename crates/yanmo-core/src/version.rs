@@ -20,6 +20,7 @@ pub enum Channel {
 }
 
 impl Channel {
+    /// 稳定代码（写进日志与设置的「关于」）。
     pub const fn as_str(self) -> &'static str {
         match self {
             Channel::Stable => "stable",

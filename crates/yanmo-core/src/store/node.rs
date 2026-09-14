@@ -177,7 +177,7 @@ impl Store {
 
     /// **单节点的显示标题**（打开章节、界面提示这类"只要一个标题"的地方用）。
     ///
-    /// 与 [`render_titles`] 同一套规矩：按它所在层的顺序数到它。只查这一层，不拉整棵树。
+    /// 与 `render_titles` 同一套规矩：按它所在层的顺序数到它。只查这一层，不拉整棵树。
     pub fn rendered_title(&self, node_id: i64) -> Result<String> {
         let (work_id, parent_id, kind, title): (i64, Option<i64>, String, String) = self
             .conn

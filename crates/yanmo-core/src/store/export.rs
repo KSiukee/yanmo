@@ -33,6 +33,7 @@ pub enum ExportFormat {
 }
 
 impl ExportFormat {
+    /// 稳定代码（命令行 `--format` 用它）。
     pub const fn as_str(self) -> &'static str {
         match self {
             ExportFormat::Text => "txt",
@@ -40,6 +41,7 @@ impl ExportFormat {
         }
     }
 
+    /// 从稳定代码解析；认不出报 `value.unknown_export_format`。
     pub fn parse(text: &str) -> Result<Self> {
         match text {
             "txt" | "text" => Ok(ExportFormat::Text),

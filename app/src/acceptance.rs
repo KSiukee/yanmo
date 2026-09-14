@@ -516,6 +516,7 @@ static UI_START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
 /// 报告里占位的那一行：第二步量完会把它换掉。
 const UI_ROW: &str = "| 界面冷启动到可输入 | 待测 | 由第二步填入 |";
 
+/// 记下界面自测的计划（第二步量完会往报告里填结果）。
 pub fn install_ui(plan: Plan) {
     let _ = UI_PLAN.set(plan);
 }
@@ -542,6 +543,7 @@ pub fn ui_deadline() -> std::time::Duration {
     UI_DEADLINE
 }
 
+/// 还没量完时报告里用的占位计划。
 pub fn ui_plan() -> Option<&'static Plan> {
     UI_PLAN.get()
 }

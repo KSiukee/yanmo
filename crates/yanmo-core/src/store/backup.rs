@@ -154,12 +154,15 @@ pub struct BackupReport {
 }
 
 impl BackupReport {
+    /// 写成功的目标数。
     pub fn succeeded(&self) -> usize {
         self.outcomes.iter().filter(|o| o.status == "written").count()
     }
+    /// 跳过的目标数（不可达；已经记进账本）。
     pub fn skipped(&self) -> usize {
         self.outcomes.iter().filter(|o| o.status == "skipped").count()
     }
+    /// 失败的目标数。
     pub fn failed(&self) -> usize {
         self.outcomes.iter().filter(|o| o.status == "failed").count()
     }
@@ -184,7 +187,7 @@ pub struct LedgerEntry {
 pub struct BackupLedger {
     pub version: u32,
     pub updated_at: i64,
-    /// 按时间从旧到新追加；只保留最近 [`LEDGER_MAX_ENTRIES`] 条
+    /// 按时间从旧到新追加；只保留最近 `LEDGER_MAX_ENTRIES` 条
     pub entries: Vec<LedgerEntry>,
 }
 

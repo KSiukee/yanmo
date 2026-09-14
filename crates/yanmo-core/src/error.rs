@@ -9,7 +9,7 @@
 //! 换语言要改核心、模块报错也要核心替它说话。
 //!
 //! 所以：
-//! - [`Error::code`] 给**码**（点分小写英文，见 [`codes`]），[`Error::params`] 给**参数**；
+//! - [`Error::code`] 给**码**（点分小写英文，见 `codes`），[`Error::params`] 给**参数**；
 //! - 界面拿码查自己的字典渲染成句子；
 //! - `Display` 仍然有中文——那是**给日志与开发者**看的（模板在 [`crate::error_codes`]），
 //!   与界面文案是两件事，谁也别冒充谁。
@@ -19,9 +19,11 @@ use std::fmt;
 pub use crate::error_codes::codes;
 pub use crate::error_codes::ERROR_CODES;
 
+/// 核心统一的结果类型（失败一律是 [`Error`]）。
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
+/// 核心的错误类型：**带码与参数**，句子由界面查字典渲染。
 pub enum Error {
     /// 数据库层错误（含 SQLite 自身）
     Db(rusqlite::Error),
@@ -91,7 +93,7 @@ impl Error {
     }
 }
 
-/// 登记前的把门动作：码必须出自 [`codes`]，参数名必须与码表声明的**正好一致**，
+/// 登记前的把门动作：码必须出自 `codes`，参数名必须与码表声明的**正好一致**，
 /// 且日志模板里的占位符都有对应参数。
 ///
 /// 放在构造函数里而不是测试里，是因为**错在这里就要当场炸**——

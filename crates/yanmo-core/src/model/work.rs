@@ -17,6 +17,7 @@ pub enum WorkKind {
 }
 
 impl WorkKind {
+    /// 稳定代码（写进库与成稿 JSON；别改）。
     pub const fn as_str(self) -> &'static str {
         match self {
             WorkKind::Novel => "novel",
@@ -25,6 +26,7 @@ impl WorkKind {
         }
     }
 
+    /// 从稳定代码解析；认不出报 `value.unknown_work_kind`。
     pub fn parse(s: &str) -> Result<Self> {
         match s {
             "novel" => Ok(WorkKind::Novel),
@@ -68,6 +70,7 @@ pub enum WorkLanguage {
 }
 
 impl WorkLanguage {
+    /// 稳定代码（写进库；别改）。
     pub const fn as_str(self) -> &'static str {
         match self {
             WorkLanguage::Zh => "zh",
@@ -76,6 +79,7 @@ impl WorkLanguage {
         }
     }
 
+    /// 从稳定代码解析；认不出报 `value.unknown_work_language`。
     pub fn parse(s: &str) -> Result<Self> {
         match s {
             "zh" => Ok(WorkLanguage::Zh),

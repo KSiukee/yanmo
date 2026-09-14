@@ -25,6 +25,7 @@ impl Preset {
     pub const ALL: &'static [Preset] =
         &[Preset::SubmissionDocx, Preset::ChaptersTxt, Preset::MergedTxt];
 
+    /// 稳定代码（也用作产物子目录名）。
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::SubmissionDocx => "submission_docx",
@@ -33,6 +34,7 @@ impl Preset {
         }
     }
 
+    /// 从稳定代码解析；认不出报 `value.unknown_compile_preset`。
     pub fn parse(text: &str) -> Result<Self> {
         Self::ALL
             .iter()

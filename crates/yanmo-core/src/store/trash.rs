@@ -23,6 +23,7 @@ pub enum TrashKind {
 }
 
 impl TrashKind {
+    /// 稳定代码（界面按它查字典）。
     pub const fn as_str(self) -> &'static str {
         match self {
             TrashKind::Work => "work",

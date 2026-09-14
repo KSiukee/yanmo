@@ -10,15 +10,27 @@
 //! - 按域分文件（[`system`] / [`editor`] / [`tree`] / [`appearance`] / [`typeset`] / [`compile`] / [`snapshot`] / [`work`] / [`trash`] / [`backup`] / [`restore`] / [`location`] / [`writing`]），域之间不互相调用——要复用的逻辑下沉进核心。
 
 pub mod appearance;
+/// 多处备份：备份、体检、备份列表与设置。
 pub mod backup;
+/// 编译：投稿版 docx / 分章 txt / 合并 txt。
 pub mod compile;
+/// 编辑器：打开章节、落盘、光标与检索。
 pub mod editor;
+/// 稿子放哪：位置查询、换位置、打开文件夹。
 pub mod location;
+/// 从备份恢复：预览、体检、换库。
 pub mod restore;
+/// 每章版本快照：列表、对照、回滚。
 pub mod snapshot;
+/// 系统信息：版本、数据目录、验收与诊断。
 pub mod system;
+/// 回收站：列出、预览、恢复。
 pub mod trash;
+/// 目录树：读取，以及建 / 改名 / 移动 / 删除。
 pub mod tree;
+/// 排版清理：预览与执行。
 pub mod typeset;
+/// 书架：列表、新建、改名、删除、导出与编译入口。
 pub mod work;
+/// 码字账本：今日进度、日历、每日目标。
 pub mod writing;
