@@ -12,6 +12,7 @@ import { computed, nextTick, ref } from "vue";
 
 import type { EditorSession } from "../editor/session";
 import { addIntent, containerLabel, type TreeRow } from "../editor/tree";
+import { composeTitle, renderedPrefix, splitTitle, type TitleParts } from "../editor/title-edit";
 import { t } from "../locales/index.ts";
 import { formatCaliberNumber, formatCaliberWords } from "../editor/display.ts";
 
@@ -74,6 +75,9 @@ function saveVolumeTarget(event: Event) {
 /** 正在改名的那一行（同时只可能有一行） */
 const editing = ref<number | null>(null);
 const draft = ref("");
+/** 改名时那一行的**宏骨架**（`第{$N}章 `）与它渲染后的样子（`第1章`）——都不给作者编辑 */
+const editingParts = ref<TitleParts>({ prefix: "", name: "" });
+const editingPrefix = ref("");
 const listEl = ref<HTMLElement | null>(null);
 
 /** 拖拽：谁在拖、落在谁身上、落在哪一段 */
@@ -89,7 +93,11 @@ function openRow(row: TreeRow) {
 
 async function startRename(row: TreeRow) {
   editing.value = row.id;
-  draft.value = row.title;
+  // 输入框里**只放名字**：宏骨架（`第{$N}章`）留在前面当灰字提示，渲染后的号由核心算
+  const parts = splitTitle(row.title);
+  editingParts.value = parts;
+  editingPrefix.value = renderedPrefix(rowLabel(row), parts);
+  draft.value = parts.name;
   await nextTick();
   const input = listEl.value?.querySelector<HTMLInputElement>(".tree__rename");
   input?.focus();
@@ -99,7 +107,8 @@ async function startRename(row: TreeRow) {
 async function commitRename(row: TreeRow) {
   if (editing.value !== row.id) return;
   editing.value = null;
-  await rename(row.id, draft.value);
+  // 骨架原样写回 + 作者改的名字（宏一个字符都不动，编号不会因为改名丢）
+  await rename(row.id, composeTitle(editingParts.value, draft.value));
 }
 
 function onDragStart(row: TreeRow, event: DragEvent) {
@@ -215,16 +224,18 @@ function askDelete(row: TreeRow) {
           {{ row.expanded ? "▾" : "▸" }}
         </button>
 
-        <input
-          v-if="editing === row.id"
-          v-model="draft"
-          class="tree__rename"
-          type="text"
-          @click.stop
-          @keydown.enter="commitRename(row)"
-          @keydown.esc="editing = null"
-          @blur="commitRename(row)"
-        />
+        <span v-if="editing === row.id" class="tree__rename-box">
+          <span v-if="editingPrefix" class="tree__rename-prefix">{{ editingPrefix }}</span>
+          <input
+            v-model="draft"
+            class="tree__rename"
+            type="text"
+            @click.stop
+            @keydown.enter="commitRename(row)"
+            @keydown.esc="editing = null"
+            @blur="commitRename(row)"
+          />
+        </span>
         <span v-else class="tree__title" :title="rowLabel(row)">{{ rowLabel(row) }}</span>
 
         <span v-if="row.holds_body" class="tree__words">{{ row.has_body ? formatCaliberNumber(row, caliber) : t("tree.empty_chapter") }}</span>

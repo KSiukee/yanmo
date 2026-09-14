@@ -33,6 +33,7 @@ function fakeWorld(initial: Spec[]) {
       parent_id: spec.parent,
       kind: spec.kind,
       title: spec.title,
+      title_rendered: renderTitle(spec),
       word_count: spec.words ?? 0,
       char_count: spec.words ?? 0,
       chars_no_punct: spec.words ?? 0,
@@ -64,6 +65,16 @@ function fakeWorld(initial: Spec[]) {
       words += (kid.words ?? 0) + inner.words;
     }
     return { chapters, words };
+  };
+
+  /**
+   * 替身版的"渲染标题"：把 `{$N}` 换成本层同类里的序号（核心那份更讲究，这里只求"会变"，
+   * 好让测试能分辨"拉回来的是核心渲染的那份"还是"界面自己就地拼的"）。
+   */
+  const renderTitle = (spec: Spec): string => {
+    const siblings = specs.filter((item) => item.parent === spec.parent && item.kind === spec.kind);
+    const ordinal = siblings.findIndex((item) => item.id === spec.id) + 1;
+    return spec.title.replace("{$N}", String(ordinal));
   };
 
   const transport: TreeTransport = {
@@ -191,20 +202,24 @@ test("新建：重拉父层，返回新 id，并顺手展开父层", async () =>
   );
 });
 
-test("改名就地生效：不重拉整层，空标题与没变都不跑这一趟", async () => {
+test("改名后**重拉这一层**：渲染标题由核心重算（号是位置的函数，会连带变）", async () => {
   const { transport, calls } = fakeWorld(BOOK);
   const tree = new DirectoryTree(transport);
   await tree.openWork(7);
   await tree.toggle(1);
   const before = calls.length;
 
-  await tree.rename(2, "  引子  ");
-  assert.deepEqual(calls.slice(before), ["rename:2:引子"]);
-  assert.equal(tree.rows()[1].title, "引子");
+  await tree.rename(2, "  第{$N}章 引子  ");
+  // ① 写库；② 把这一层拉回来——改宏的有无会让**同层后面每一章的号**都变，
+  //    就地只改一个节点的话，树上挂的还是旧渲染结果（真机反馈过）
+  assert.deepEqual(calls.slice(before), ["rename:2:第{$N}章 引子", "children:7:1"]);
+  const row = tree.rows().find((item) => item.id === 2);
+  assert.equal(row?.title, "第{$N}章 引子", "原文照存（宏还在）");
+  assert.equal(row?.title_rendered, "第1章 引子", "显示用的是核心渲染后的那一份");
 
-  await tree.rename(2, "引子");
+  await tree.rename(2, "第{$N}章 引子");
   await tree.rename(2, "   ");
-  assert.equal(calls.length, before + 1, "没变 / 空标题都不该再跑一趟");
+  assert.equal(calls.length, before + 2, "没变 / 空标题都不该再跑一趟");
 });
 
 test("同层拖动：索引要扣掉自己占的那一位", async () => {

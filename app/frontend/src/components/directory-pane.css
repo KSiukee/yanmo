@@ -104,6 +104,22 @@
   text-overflow: ellipsis;
 }
 
+/* 改名那一段：左边是**渲染后的号**（灰字，点不着也改不了），右边才是作者的名字。
+   号是位置的函数，改名不该让作者碰到宏（`{$N}` 露出来迟早被删掉，编号就丢了）。 */
+.tree__rename-box {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tree__rename-prefix {
+  flex: none;
+  color: var(--ym-ink-soft);
+  font-size: 13px;
+}
+
 .tree__rename {
   flex: 1;
   min-width: 0;

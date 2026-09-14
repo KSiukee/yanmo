@@ -151,13 +151,21 @@ export class DirectoryTree {
     return created;
   }
 
-  /** 改名：就地改，不重拉整层（改名只动一个节点）。 */
+  /**
+   * 改名：写完**重拉这一层**。
+   *
+   * ⚠️ 不能"就地只改一个节点"了：号是位置的函数、`title_rendered` 由核心渲染
+   * （`第{$N}章` → `第1章`）。改名可能让这一行**乃至同层后面每一行**的渲染结果都变
+   * （把 `第{$N}章` 改成 `序章`，这一章就不再占号，后面的号全体前移）。
+   * 真机现象：改完名树上还挂着旧的渲染结果 / 宏原样露在名字里。
+   * 只拉它所在那一层，够用且便宜（不整树重建，展开状态也不动）。
+   */
   async rename(node_id: number, title: string): Promise<void> {
     const next = title.trim();
     const node = this.nodes.get(node_id);
     if (!next || !node || node.title === next) return; // 空标题 = 放弃；没变 = 不白跑一趟
     await this.transport.rename(node_id, next);
-    node.title = next;
+    await this.loadLevel(node.parent_id);
   }
 
   /** 拖动：挪到 `new_parent` 的第 `index` 位（同层拖动时索引要扣掉自己占的那一位）。 */
