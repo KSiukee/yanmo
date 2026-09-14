@@ -1,7 +1,58 @@
 /* 设置面板自己的部分（公共的遮罩/盒子/标题/按钮在 dialog.css）。 */
 
 .settings__box {
-  width: min(520px, 100%);
+  width: min(720px, 100%);
+}
+
+/* 两列：左边选分类，右边只显示那一类（设置项一多，摊成一长列就没法看了）。
+   右列**自己滚**，头部那排按钮（恢复默认 / 关闭）永远待在原地。 */
+.settings__body {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 16px;
+  min-height: 320px;
+}
+
+.settings__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-right: 12px;
+  border-right: 1px solid var(--ym-line);
+}
+
+.settings__nav-item {
+  padding: 7px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--ym-ink-soft);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings__nav-item:hover {
+  background: var(--ym-line);
+  color: inherit;
+}
+
+.settings__nav-item--on {
+  background: var(--ym-line);
+  color: inherit;
+  font-weight: 600;
+}
+
+.settings__pane {
+  max-height: min(58vh, 460px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+/* 一类里的小节标题：与分类名（左列）区分开，灰且小一号 */
+.settings__section > .settings__group:first-child {
+  margin-top: 0;
 }
 
 .settings__group {

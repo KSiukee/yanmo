@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 设置面板：「写作行为」偏好 + 「新建条目」命名规则 + 「稿子放在哪」+ 「关于」。
+// 设置面板：**左列分类 + 右列内容**（写作行为 / 新建条目 / 稿子放在哪 / 关于）。
 //
 // 视图只负责"显示与改"：偏好的真相在核心（单一真相源）；读不出来就如实说，不猜一个默认值糊上去。
 // 「稿子放在哪」只显示壳报告出来的路径，另外把"换位置"那个面板请出来（它自己那套分寸见组件里）。
@@ -10,6 +10,7 @@ import { computed, onMounted, ref } from "vue";
 import { t } from "../locales/index.ts";
 import { openDataDir, readAppVersion, readDataHome, readEngineInfo } from "../api/core";
 import type { EditorSession } from "../editor/session";
+import { SETTINGS_SECTIONS, firstSection } from "../editor/settings-nav.ts";
 import LocationDialog from "./LocationDialog.vue";
 
 const props = defineProps<{ session: EditorSession }>();
@@ -26,6 +27,9 @@ const {
   previewNaming,
   applyNaming,
 } = props.session.appearance;
+
+// 左边一列分类，右边只显示当前这一类：设置项一多，摊成一长列就没法看了（分区表见 editor/settings-nav.ts）
+const activeSection = ref(firstSection());
 
 /** 勾选框的当前值（读不出来就显示未勾选，并禁用） */
 const jumpToEnd = computed(() => values.value?.jump_to_end_on_latest ?? false);
@@ -168,6 +172,23 @@ async function runRewrite() {
         <button type="button" class="settings__button dialog__button" @click="close">{{ t("common.close") }}</button>
       </header>
 
+      <div class="settings__body">
+        <nav class="settings__nav" :aria-label="t('settings.title')">
+          <button
+            v-for="section in SETTINGS_SECTIONS"
+            :key="section.id"
+            type="button"
+            class="settings__nav-item"
+            :class="{ 'settings__nav-item--on': activeSection === section.id }"
+            :aria-current="activeSection === section.id ? 'true' : undefined"
+            @click="activeSection = section.id"
+          >
+            {{ t(section.labelKey) }}
+          </button>
+        </nav>
+
+        <div class="settings__pane">
+      <section v-if="activeSection === 'writing'" class="settings__section">
       <p class="settings__group">{{ t("settings.group_writing") }}</p>
       <label class="settings__row">
         <input
@@ -184,6 +205,8 @@ async function runRewrite() {
       <p class="settings__hint">{{ t("settings.local_only_hint") }}</p>
 
       <!-- 新建条目：命名规则（写哪一层由"作用范围"决定） -->
+      </section>
+      <section v-if="activeSection === 'naming'" class="settings__section">
       <p class="settings__group settings__group--naming">{{ t("settings.group_naming") }}</p>
       <p class="settings__row">
         <span class="settings__label">{{ t("settings.naming_scope") }}</span>
@@ -233,6 +256,8 @@ async function runRewrite() {
         <code>{$N_RESET:101}</code>
       </p>
 
+      </section>
+      <section v-if="activeSection === 'location'" class="settings__section">
       <p class="settings__group settings__group--data">{{ t("settings.group_data") }}</p>
       <p class="settings__row settings__row--path">
         <span class="settings__label">{{ t("location.current") }}</span>
@@ -247,7 +272,9 @@ async function runRewrite() {
         {{ t("settings.unavailable") }}
       </p>
 
+      </section>
       <!-- 关于：只读报告。承诺与限制都写在明面上——信任靠坦白边界建立 -->
+      <section v-if="activeSection === 'about'" class="settings__section">
       <p class="settings__group">{{ t("settings.group_about") }}</p>
       <p class="settings__row">
         <span class="settings__label">{{ t("settings.about_version") }}</span>
@@ -267,6 +294,9 @@ async function runRewrite() {
       <p class="settings__hint">{{ t("settings.about_promise") }}</p>
       <p class="settings__hint">{{ t("settings.about_limits") }}</p>
       <p v-if="aboutError" class="settings__hint settings__hint--bad">{{ aboutError }}</p>
+      </section>
+        </div>
+      </div>
 
       <!-- 预览：会改哪几章、改成什么（确认才动手） -->
       <div v-if="rewriteVisible" class="settings dialog dialog--above" @click.self="rewriteVisible = false">
