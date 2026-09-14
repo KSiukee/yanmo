@@ -19,6 +19,11 @@ tools/sanitize/
 # 内部 QA 工具（文件头带来源血统注解，含内部工具链名，不进公开仓）
 tools/qa/
 
+# Python 工具（构建脚本被 import 时会生成）
+__pycache__/
+**/__pycache__/
+*.pyc
+
 # 编辑器/系统
 .vscode/
 .idea/

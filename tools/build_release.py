@@ -36,10 +36,12 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -116,7 +118,12 @@ def fail(name: str, output: str) -> int:
 
 
 def project_version() -> tuple[str, list[str]]:
-    """版本号：Cargo 工作区 / 应用配置 / 更新日志首条——三处必须一致（返回版本与问题）。"""
+    """版本号：Cargo 工作区 / 应用配置 / 更新日志首条 / README 的「当前版本」——四处必须一致。
+
+    为什么把 README 也拉进来：它写着"当前版本 X"，而那是最容易忘的一处——
+    忘了改就会出现"README 说 0.41.8、包里是 0.42.0"这种对不上的事。
+    靠检查单上写一条"记得改 README"是没用的，靠机器拦住才对。
+    """
     found: dict[str, str] = {}
     cargo = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
     section = re.search(r"\[workspace\.package\](.*?)(?:\n\[|\Z)", cargo, re.S)
@@ -131,6 +138,9 @@ def project_version() -> tuple[str, list[str]]:
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     heading = re.search(r"^##\s+(\d+\.\d+\.\d+)", changelog, re.M)
     found["CHANGELOG.md"] = heading.group(1) if heading else ""
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    stated = re.search(r"当前版本\**\s*[:：]\s*\**(\d+\.\d+\.\d+)", readme)
+    found["README.md"] = stated.group(1) if stated else ""
 
     problems = [f"{name}={value or '空'}" for name, value in found.items() if value != found["Cargo.toml"]]
     return found["Cargo.toml"], problems
@@ -192,6 +202,7 @@ def check_toolchain() -> tuple[bool, dict[str, str]]:
         if candidate and (Path(candidate) / "Microsoft/EdgeWebView/Application").is_dir():
             webview = True
     say(True, "WebView2", "本机有运行时" if webview else "本机没探到（安装包会带联网引导，不影响出包）")
+    tools["webview2"] = "有运行时" if webview else "未探到"
     return ok, tools
 
 
@@ -300,6 +311,69 @@ def collect(out_dir: Path, version: str, no_bundle: bool) -> tuple[Path | None, 
     return target, digest
 
 
+def source_commit() -> tuple[str, bool]:
+    """当前源码提交与"工作区是不是脏的"——构建指纹的一半。
+
+    为什么要记这个：只给产物哈希，别人没法判断"你这包是不是从这份源码出来的"；
+    把提交一起写下来，核对才有起点（配合可复现构建，见 RELEASING.md）。
+    """
+    code, out = run(["git", "rev-parse", "HEAD"], timeout=60)
+    commit = out.strip() if code == 0 else ""
+    if not commit:
+        return "", False
+    code, out = run(["git", "status", "--porcelain"], timeout=60)
+    dirty = code == 0 and bool(out.strip())
+    return commit, dirty
+
+
+def build_fingerprint(
+    out_dir: Path,
+    version: str,
+    tools: dict[str, str],
+    artifact: Path,
+    digest: str,
+) -> Path:
+    """把"这一包到底是怎么来的"写成一页纸：版本 / 提交 / 工具链 / 产物指纹。
+
+    诚实说明为什么不做"逐字节可复现"的宣称：Windows 安装包里含时间戳等非确定性内容，
+    逐字节一致做不到；能给的、也确实有用的是**同一提交 + 同一工具链 → 功能等价的产物**，
+    加上一个可核对的产物指纹。写在这里，比含糊说一句"可复现构建"更经得起追问。
+    """
+    commit, dirty = source_commit()
+    stamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+    lines = [
+        "研墨 构建指纹",
+        "=" * 48,
+        f"版本：{version}",
+        f"源码提交：{commit or '（不是 git 仓库 / 取不到）'}"
+        + ("（**工作区有未提交改动**）" if dirty else ""),
+        f"构建时间：{stamp}",
+        f"平台：{platform.platform()}",
+        "",
+        "工具链：",
+        f"  cargo / rustc：{tools.get('cargo') or '（未知）'}",
+        f"  node：{tools.get('node') or '（未知）'}",
+        f"  tauri：{tools.get('tauri') or '（未知）'}",
+        f"  WebView2：{tools.get('webview2') or '（未探到）'}",
+        "",
+        f"产物：{artifact.name}（{artifact.stat().st_size} 字节）",
+        f"SHA256：{digest}",
+        "",
+        "怎么用它核对（两步）：",
+        f"  1) 核对产物没被掉包：certutil -hashfile {artifact.name} SHA256",
+        "     —— 得到的哈希应与上面 SHA256 一行完全一致。",
+        f"  2) 想自己构建：git checkout {commit[:12] if commit else '<提交>'}，用同一套工具链跑 "
+        "tools\\build-release.bat",
+        "",
+        "诚实说明：Windows 安装包内含时间戳等非确定性内容，**逐字节一致做不到**；",
+        "这里给的是「同一提交 + 同一工具链 → 功能等价的产物」以及可核对的产物指纹。",
+        "",
+    ]
+    target = out_dir / f"构建指纹-{version}.txt"
+    target.write_text("\n".join(lines), encoding="utf-8")
+    return target
+
+
 def main() -> int:
     make_output_readable()
     parser = argparse.ArgumentParser(description="研墨一键构建（自检 → 测试 → 打包 → 归集）")
@@ -359,9 +433,12 @@ def main() -> int:
         say(False, "自检", f"产物只有 {size} 字节，像是没打全")
         return 1
     say(True, "自检", f"产物 {size / 1024 / 1024:.1f} MB、校验文件已写")
+    fingerprint = build_fingerprint(Path(args.out), version, tools, artifact, detail)
+    say(True, "构建指纹", f"{fingerprint.name}（版本 / 提交 / 工具链 / 产物哈希）")
     print("─" * 64)
     print(f"产物：{artifact}")
     print(f"SHA256：{detail}")
+    print(f"指纹：{fingerprint}")
     if args.no_bundle:
         print("下一步：双击这个可执行文件（它是生产模式，不会去连开发服务器）。")
     else:

@@ -1,0 +1,61 @@
+# 打 tag 就出包：测试不过就不出包；出了包就把产物、校验和、构建指纹挂到 Release 上。
+#
+# 为什么校验和必须在第一次分发之前就有：发给别人的是一个没有代码签名的可执行文件，
+# 我们能给的最硬凭据就是「这个哈希 + 这份源码 + 这套工具链」。见 RELEASING.md。
+#
+# 权限说明：只申请 contents: write（建 Release 用），不碰其它任何东西。
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  # 手动跑一遍（只构建、上传产物，不建 Release）——本地出不了包时用得上
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: 装 tauri CLI
+        run: npm install --global @tauri-apps/cli@^2
+
+      # 和人一样跑同一条命令：工具链自检 → 版本一致 → 前端构建 → 跑测试（失败就不出包）
+      # → 打包 → 归集产物 + SHA256 + 构建指纹
+      - name: 一条命令构建
+        run: tools\build-release.bat
+        shell: cmd
+
+      - name: 生成发布说明（CHANGELOG 最新一节 + 怎么核对）
+        run: python tools/release_notes.py release-notes.md
+        shell: cmd
+
+      - name: 上传产物（手动跑时也能下载）
+        uses: actions/upload-artifact@v4
+        with:
+          name: yanmo-installer
+          if-no-files-found: error
+          path: |
+            dist/*.exe
+            dist/*.sha256
+            dist/构建指纹-*.txt
+
+      - name: 建 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md
+          files: |
+            dist/*.exe
+            dist/*.sha256
+            dist/构建指纹-*.txt
