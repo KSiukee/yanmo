@@ -245,7 +245,7 @@ function askDelete(row: TreeRow) {
             })
           "
         >
-          {{ containerLabel(row, volumeTarget) }}
+          {{ containerLabel(row, volumeTarget, caliber) }}
         </span>
         <button
           v-if="addIntent(row)"

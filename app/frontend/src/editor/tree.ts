@@ -11,27 +11,20 @@
 import type { TreeNode } from "../api/core";
 import { formatWords } from "./display.ts";
 import { t } from "../locales/index.ts";
+import type { Counts } from "./wordcount.ts";
+import { pickCount } from "./wordcount.ts";
 
-/** 交给界面渲染的一行——扁平化 + 缩进 + 展开态。 */
-export interface TreeRow {
-  id: number;
-  parent_id: number | null;
-  kind: string;
-  /// 作者写的原文（含 `{$N}` 这类宏时就是模板）——**改名编辑的是它**
-  title: string;
-  /// 显示用的那一份：宏已按同层位置渲染（`第3章`）
-  title_rendered: string;
-  word_count: number;
-  has_body: boolean;
-  holds_body: boolean;
-  accepts_children: boolean;
+/**
+ * 交给界面渲染的一行——扁平化 + 缩进 + 展开态。
+ *
+ * **这里不是又一份字段清单**：它直接继承核心那份 `TreeNode`，只多加两个"界面态"字段。
+ * 曾经这里手抄过一份字段表，抄漏了 `char_count` / `chars_no_punct` / `subtree_char_count`——
+ * 运行时对象是整份展开的（模板读得到），类型上却"没有这个字段"，
+ * 于是"换了口径字数就不刷新"这类毛病在类型层面也照不出来（纯 tsc 不查模板）。
+ */
+export interface TreeRow extends TreeNode {
   depth: number;
-  has_children: boolean;
   expanded: boolean;
-  /** 本卷几章（**非容器是 0**） */
-  chapter_count: number;
-  /** 本卷共多少字（**非容器是 0**） */
-  subtree_word_count: number;
 }
 
 /** 树要用的几个动作（会话层注入真命令，测试注入替身）。 */
@@ -69,15 +62,28 @@ export function addIntent(row: Pick<TreeRow, "holds_body" | "accepts_children">)
  * 只用在校不了正文的容器行上；能写正文的行显示的是它自己那一章的字数。
  */
 export function containerLabel(
-  row: Pick<TreeRow, "chapter_count" | "subtree_word_count">,
+  row: Pick<
+    TreeRow,
+    "chapter_count" | "subtree_word_count" | "subtree_char_count" | "subtree_chars_no_punct"
+  >,
   target: number | null,
+  /** 合计算哪个口径：**跟同一棵树上的章行用同一个口径**（不然 206 字旁边写着 200 词） */
+  caliber: string,
 ): string {
-  if (row.chapter_count === 0 && row.subtree_word_count === 0) return t("tree.container_empty");
+  const total = pickCount(
+    {
+      word_count: row.subtree_word_count,
+      char_count: row.subtree_char_count,
+      chars_no_punct: row.subtree_chars_no_punct,
+    },
+    caliber,
+  );
+  if (row.chapter_count === 0 && total === 0) return t("tree.container_empty");
   const chapters =
     target && target > 0
       ? t("tree.chapter_ratio", { done: row.chapter_count, target })
       : t("tree.chapter_count", { count: row.chapter_count });
-  return t("tree.container_label", { chapters, words: formatWords(row.subtree_word_count) });
+  return t("tree.container_label", { chapters, words: formatWords(total) });
 }
 
 /** 环检测的上行上限——树坏了要明确报错，不是转到天荒地老。 */
@@ -190,20 +196,29 @@ export class DirectoryTree {
   /**
    * 落盘后顺手更新这一行的字数——**不为了几个字重拉一次目录**。
    *
-   * 顺手把差额加到各层祖先的"本卷共多少字"上：卷那一行的小字才不会越写越不准。
+   * **三个口径一起更新**：树上显示哪个口径由作者选的那一档决定（点一下就换一个数），
+   * 只更新一个的话，选别档的那份就永远停在"上次重拉目录"的数字上——
+   * 真机上看到的现象正是"章字数不跟着刷新"（状态栏 206 字，树上还写着 111）。
+   * 差额同时加到各层祖先的"本卷共多少字"上，卷那一行的小字才不会越写越不准。
    */
-  applyWordCount(node_id: number, word_count: number, has_body: boolean): void {
+  applyCounts(node_id: number, counts: Counts, has_body: boolean): void {
     const node = this.nodes.get(node_id);
     if (!node) return; // 这一行还没加载过：界面上也没显示它，下次重拉自然就对了
-    const delta = word_count - node.word_count;
-    node.word_count = word_count;
+    const delta_char = counts.char_count - node.char_count;
+    const delta_punct = counts.chars_no_punct - node.chars_no_punct;
+    const delta_word = counts.word_count - node.word_count;
+    node.char_count = counts.char_count;
+    node.chars_no_punct = counts.chars_no_punct;
+    node.word_count = counts.word_count;
     node.has_body = has_body;
-    if (delta === 0) return;
+    if (delta_char === 0 && delta_punct === 0 && delta_word === 0) return;
     let parent = node.parent_id;
     for (let guard = 0; parent !== null && guard < MAX_DEPTH; guard += 1) {
       const ancestor = this.nodes.get(parent);
       if (!ancestor) break;
-      ancestor.subtree_word_count += delta;
+      ancestor.subtree_char_count += delta_char;
+      ancestor.subtree_chars_no_punct += delta_punct;
+      ancestor.subtree_word_count += delta_word;
       parent = ancestor.parent_id;
     }
   }

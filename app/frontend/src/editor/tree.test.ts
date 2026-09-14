@@ -345,15 +345,39 @@ test("还没打开作品就定位：什么都不做，也不去问核心", async
   assert.deepEqual(calls, []);
 });
 
+/** 容器行小字的夹具：四个字段一个都不能少（`TreeRow` 直接继承核心那份节点类型） */
+const VOLUME_34K = {
+  chapter_count: 12,
+  subtree_word_count: 34000,
+  subtree_char_count: 34000,
+  subtree_chars_no_punct: 32000,
+};
+const EMPTY_VOLUME = {
+  chapter_count: 0,
+  subtree_word_count: 0,
+  subtree_char_count: 0,
+  subtree_chars_no_punct: 0,
+};
+
 test("容器行的小字：本卷几章 · 共多少字（设了卷长就是 x/y）", () => {
-  assert.equal(containerLabel({ chapter_count: 12, subtree_word_count: 34000 }, null), "12章 · 3.4万");
-  assert.equal(containerLabel({ chapter_count: 12, subtree_word_count: 34000 }, 30), "12/30章 · 3.4万");
-  assert.equal(containerLabel({ chapter_count: 0, subtree_word_count: 0 }, 30), "空", "空卷就说空");
-  assert.equal(
-    containerLabel({ chapter_count: 0, subtree_word_count: 900 }, null),
-    "0章 · 900",
-    "只有卡片没有章时，字数照报",
-  );
+  // 口径跟树上章行一致：现在这棵树用「词」档
+  assert.equal(containerLabel(VOLUME_34K, null, "words"), "12章 · 3.4万");
+  assert.equal(containerLabel(VOLUME_34K, 30, "words"), "12/30章 · 3.4万");
+  assert.equal(containerLabel(EMPTY_VOLUME, 30, "words"), "空", "空卷就说空");
+  assert.equal(containerLabel({ ...EMPTY_VOLUME, subtree_word_count: 900 }, null, "words"), "0章 · 900",
+    "只有卡片没有章时，字数照报");
+});
+
+test("容器行的合计跟着口径走——不然「206 字」旁边写着「200 词」", () => {
+  const row = {
+    chapter_count: 3,
+    subtree_word_count: 200,
+    subtree_char_count: 206,
+    subtree_chars_no_punct: 180,
+  };
+  assert.equal(containerLabel(row, null, "chars"), "3章 · 206");
+  assert.equal(containerLabel(row, null, "chars_no_punct"), "3章 · 180");
+  assert.equal(containerLabel(row, null, "words"), "3章 · 200");
 });
 
 test("容器行的汇总来自核心：本卷几章、共多少字", async () => {
@@ -374,11 +398,19 @@ test("落盘改字数：各层容器的「共多少字」跟着挪，不重拉�
   await tree.toggle(1);
   const before = calls.length;
 
-  tree.applyWordCount(2, 1500, true); // 第一章从 1200 写到 1500
+  tree.applyCounts(2, { char_count: 1500, chars_no_punct: 1450, word_count: 1300 }, true);
   assert.equal(calls.length, before, "不该为几个字重拉目录");
   const volume = tree.rows().find((row) => row.title === "第一卷");
-  assert.equal(volume?.subtree_word_count, 2300, "2000 + 300");
-  assert.equal(tree.rows().find((row) => row.id === 2)?.word_count, 1500);
+  // 卷那一行的小字：**三个口径的合计都要跟着差额走**（只修一个的话，换档位又不准了）
+  assert.equal(volume?.subtree_char_count, 2300, "逐字（含标点）：2000 + 300");
+  assert.equal(volume?.subtree_chars_no_punct, 2250, "逐字（不含标点）：2000 + 250");
+  assert.equal(volume?.subtree_word_count, 2100, "按词：2000 + 100");
+  // 行内三个口径一起更新——真机报过"状态栏 206 字、树上还写着 111"，
+  // 就是因为这里只更新了 word_count，而树上显示哪个数由作者的档位决定
+  const chapter = tree.rows().find((row) => row.id === 2);
+  assert.equal(chapter?.char_count, 1500);
+  assert.equal(chapter?.chars_no_punct, 1450);
+  assert.equal(chapter?.word_count, 1300);
 });
 
 test("删掉一段：连子树一起走，并且重拉看得见的层", async () => {
@@ -412,15 +444,31 @@ test("删之前先问一句：这段是不是我正在写的那一支", async ()
   assert.equal(tree.contains(1, 4), true, "隔着两层的子孙也算");
 });
 
-test("落盘后更新这一行的字数：不重拉目录", async () => {  const { transport, calls } = fakeWorld(BOOK);
+test("落盘后更新这一行的字数：不重拉目录", async () => {
+  const { transport, calls } = fakeWorld(BOOK);
   const tree = new DirectoryTree(transport);
   await tree.openWork(7);
   await tree.toggle(1);
   const before = calls.length;
 
-  tree.applyWordCount(2, 1500, true);
+  tree.applyCounts(2, { char_count: 1500, chars_no_punct: 1450, word_count: 1300 }, true);
   assert.equal(calls.length, before);
-  assert.equal(tree.rows()[1].word_count, 1500);
+  const row = tree.rows()[1];
+  assert.equal(row.char_count, 1500);
+  assert.equal(row.chars_no_punct, 1450);
+  assert.equal(row.word_count, 1300);
+});
+
+test("没加载过的那一层：落盘更新碰不到它，下次重拉自然就对", async () => {
+  const { transport, calls } = fakeWorld(BOOK);
+  const tree = new DirectoryTree(transport);
+  await tree.openWork(7); // 只拉了根那一层，第一章还没进树
+
+  tree.applyCounts(2, { char_count: 9999, chars_no_punct: 9999, word_count: 9999 }, true);
+  assert.equal(calls.length, 1, "不该为了更新它去多拉一层");
+
+  await tree.toggle(1); // 展开时按库里的数字进来，不会带着上面那笔假数据
+  assert.equal(tree.rows().find((row) => row.id === 2)?.char_count, 1200);
 });
 
 test("换一部作品：旧树清空，展开状态不串", async () => {

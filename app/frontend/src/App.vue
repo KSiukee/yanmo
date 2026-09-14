@@ -107,12 +107,15 @@ const hint = computed(() => {
       </button>
     </p>
 
-    <main class="shell__body" :class="{ 'shell__body--zen': zenOn }">
+    <main
+      class="shell__body"
+      :class="{ 'shell__body--zen': zenOn, 'shell__body--panel': zenOn && outlineOpen }"
+    >
       <DirectoryPane v-if="zenChrome.directory" :session="session" />
-      <EditorPane :session="session" />
-      <FlowPane v-if="zenChrome.flow" />
 
-      <!-- 专注时：两侧栏换成"唤出来看一眼"的悬浮卡片（同一批组件，不写第二份树） -->
+      <!-- 专注时：两侧栏换成"唤出来看一眼"的卡片（同一批组件，不写第二份树）。
+           卡片**占一列**而不是浮在正文上：窗口态正文左右各只有 10% 边距，
+           浮层必然压住字（真机上就是这么被发现的）；占位后正文让开，谁也挡不着谁。 -->
       <template v-if="zenOn">
         <button
           type="button"
@@ -137,6 +140,9 @@ const hint = computed(() => {
           <DirectoryPane :session="session" />
         </section>
       </template>
+
+      <EditorPane :session="session" />
+      <FlowPane v-if="zenChrome.flow" />
     </main>
 
     <ShelfDialog v-if="shelfVisible" :session="session" />
@@ -249,6 +255,11 @@ const hint = computed(() => {
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* 卡片开着：它**占掉左边那一列**，正文让开——浮在正文上必然压字（窗口态只剩 10% 边距） */
+.shell__body--panel {
+  grid-template-columns: 312px minmax(0, 1fr);
+}
+
 /* 悬浮唤出按钮：**只在专注时出现**（常规态两侧栏本来就在，用不着它）。
    ⚠️ 位置要避开编辑器那条 bar（它就在 .shell__body 的最顶上，36px 上下）——
    压在章名上既挡字又点不准，所以从 46px 起。 */
@@ -273,21 +284,19 @@ const hint = computed(() => {
   color: var(--ym-accent);
 }
 
-/* 卡片：浮在正文之上**不挤正文**；收起即消失（写作时不该被布局变化打断）。
-   水平方向落在正文左侧的留白里（专注时正文是居中的，左右各有余量）。 */
+/* 卡片：**占左边一列**（见 .shell__body--panel），不浮在正文上；收起即消失。
+   高度吃内容、最多占满整行，长了就在卡片里滚（目录树自己有滚动区）。 */
 .shell__card {
-  position: absolute;
-  z-index: 3;
-  top: 74px;
-  left: 12px;
+  align-self: start;
   display: flex;
   flex-direction: column;
   width: 300px;
-  max-height: calc(100% - 86px);
+  max-height: calc(100% - 12px);
+  margin: 6px 0 6px 12px;
   border: 1px solid var(--ym-line);
   border-radius: 8px;
   background: var(--ym-paper-dim);
-  box-shadow: 0 8px 28px rgb(0 0 0 / 18%);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 12%);
   overflow: hidden;
 }
 

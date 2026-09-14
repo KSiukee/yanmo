@@ -112,11 +112,12 @@ export function useDirectory(options: DirectoryOptions): Directory {
     void act(() => tree.reveal(node_id));
   });
 
-  // 落盘成功后只改那一行的字数：目录不为几个字重拉一次
+  // 落盘成功后只改那一行的字数：目录不为几个字重拉一次。
+  // 三个口径一起给（树上显示哪个由作者的档位决定，见 tree.applyCounts 的说明）
   watch(options.saveState, (state) => {
     const node_id = options.currentNodeId.value;
     if (node_id === null || state.status !== "saved") return;
-    tree.applyWordCount(node_id, state.word_count, state.char_count > 0);
+    tree.applyCounts(node_id, state, state.char_count > 0);
     sync();
   });
 
