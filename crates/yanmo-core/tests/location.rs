@@ -116,6 +116,32 @@ fn a_portable_build_adopts_the_library_next_to_the_program_and_recommends_it_too
     assert_eq!(found.dir, beside);
 }
 
+/// 便携形态下"程序旁的 data/"**不算需要记的位置**——记成绝对路径会让改名/换盘符
+/// 变成"凭空建一个空库"或"报数据目录不可用"（见 `location::is_portable_default`）。
+#[test]
+fn the_portable_folder_beside_the_program_is_not_something_to_remember() {
+    let root = tempfile::tempdir().unwrap();
+    let mut sources = machine(root.path());
+    let beside = sources.exe_dir.join(paths::PORTABLE_DATA_FOLDER);
+    let elsewhere = root.path().join("我的稿子");
+
+    // 非便携形态：程序旁不是"默认位置"（那时默认在文档/主目录里），照记不误
+    assert!(!location::is_portable_default(&sources, &beside));
+    // 便携形态：程序旁的 data/ 是默认位置 → 不记
+    std::fs::write(sources.exe_dir.join(paths::PORTABLE_MARKER), b"portable").unwrap();
+    assert!(location::is_portable_default(&sources, &beside));
+    // 便携形态 + 作者亲手换到别处 → 那是他的选择，照记
+    assert!(!location::is_portable_default(&sources, &elsewhere));
+
+    // 换台机器/换个目录名：没有任何记录时，便携形态仍然自己算出"程序旁的 data/"
+    sources.system_dir = Some(root.path().join("appdata"));
+    let found = location::resolve(&sources);
+    assert!(
+        found.is_none() || found.unwrap().source == DirSource::FirstRun,
+        "没有库、没有记录时就该走首启推荐（推荐程序旁），不该去认领别处"
+    );
+}
+
 #[test]
 fn a_synced_documents_folder_pushes_the_suggestion_to_the_home_folder() {
     let root = tempfile::tempdir().unwrap();

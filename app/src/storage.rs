@@ -214,7 +214,14 @@ impl AppData {
         let data = Self::open_at(plan, export_dir)?;
         // 老位置认领来的：**顺手把记录补上**，下次不用再认领一遍。
         // 写不进去不算启动失败——认领是确定性的（老位置就在那儿），下次还会落在同一个地方。
-        if !data.location.source.is_first_run() && data.location.source != DirSource::Recorded {
+        //
+        // ⚠️ **便携模式下不为"程序旁的 data/"写记录**：数据目录由规则确定，没什么要记的；
+        // 而记录存的是绝对路径——写下来之后文件夹改名会凭空建出一个空库、U 盘换盘符会
+        // 直接报"数据目录不可用"，"拔盘即走"当场变味（见 `location::is_portable_default`）。
+        if !data.location.source.is_first_run()
+            && data.location.source != DirSource::Recorded
+            && !location::is_portable_default(data.sources(), &data.data_dir())
+        {
             let _ = location::write_record(&data.pointer, &data.data_dir());
         }
         Ok(data)
@@ -323,7 +330,13 @@ impl AppData {
     }
 
     /// 首启确认「就用这里」：把当前目录记下来，之后不再弹引导。
+    ///
+    /// 便携模式下如果是"程序旁的 data/"，**不用记**（规则已经能算出它在哪）——
+    /// 记成绝对路径反而会让改名/换盘符变成"打开一个空库"。
     pub fn confirm_location(&self) -> Result<(), ApiError> {
+        if location::is_portable_default(self.sources(), &self.data_dir()) {
+            return Ok(());
+        }
         location::write_record(&self.pointer, &self.data_dir()).map_err(ApiError::from)
     }
 

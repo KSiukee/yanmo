@@ -144,6 +144,23 @@ pub fn pointer_path(sources: &Sources) -> Option<PathBuf> {
     sources.system_dir.as_ref().map(|dir| dir.join(paths::LOCATION_FILE))
 }
 
+/// 这个目录是不是**便携模式的默认位置**（程序旁那个 `data/`）。
+///
+/// 便携模式下**不该为它写位置记录**——数据目录本来就由规则（exe 旁有没有标记 / `data`）
+/// 确定，没什么要记的。而记录里存的是**绝对路径**，一旦为默认位置写下来，
+/// "拔盘即走"会当场变成两件吓人的事（2026-09-14 核对代码时发现的）：
+///
+/// - **文件夹改名 / 移动**（同盘）：记录仍指向老路径，而 `open_at` 会 `create_dir_all`
+///   再打开——于是**凭空建出一个空库**，作者看到的是"稿子没了"；
+/// - **U 盘换盘符**（`E:` → `F:`）：老路径所在的盘不在 → 直接报"数据目录不可用"，
+///   而不是回到"跟着 exe 走"。
+///
+/// 只跳过**自动写**（首启确认、老位置认领补记）；作者在"换位置"里**亲手挑过**的目录
+/// 照旧要记——那是他的选择，"记录就是记录，不静默换地方"在这条上仍然成立。
+pub fn is_portable_default(sources: &Sources, dir: &Path) -> bool {
+    paths::is_portable(&sources.exe_dir) && dir == sources.exe_dir.join(paths::PORTABLE_DATA_FOLDER)
+}
+
 /// 读位置记录：文件不在 / 读不出来 / 不是绝对路径 / 空文件 → `None`。
 ///
 /// **坏记录一律当没记录**：宁可走"老位置认领/首启"，也不能拿一行读不懂的字符

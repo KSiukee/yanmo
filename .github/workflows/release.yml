@@ -59,6 +59,7 @@ jobs:
           path: |
             dist/*.exe
             dist/*.sha256
+            dist/*.zip
             dist/*.txt
 
       - name: 建 Release
@@ -69,4 +70,5 @@ jobs:
           files: |
             dist/*.exe
             dist/*.sha256
+            dist/*.zip
             dist/*.txt

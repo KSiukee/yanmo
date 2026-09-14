@@ -43,6 +43,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+import green_package  # 绿色版打包（本体拆在 tools/green_package.py）
 
 # 控制台编码**不由我们决定**：GitHub 的 Windows 跑手默认代码页是 cp1252，直接打印中文会
 # UnicodeEncodeError（真踩过：出包六步全绿，卡在下一步的发布说明上，Release 一步都没走到）。
@@ -440,6 +441,18 @@ def main() -> int:
         say(False, "自检", f"产物只有 {size} 字节，像是没打全")
         return 1
     say(True, "自检", f"产物 {size / 1024 / 1024:.1f} MB、校验文件已写")
+    # 同一份构建产物顺手出齐三种形态（不重复构建：便携 exe 就是 target/release/yanmo.exe）
+    if not args.no_bundle:
+        portable, why = collect(Path(args.out), version, True)
+        green, zip_why = (
+            (None, "便携版没出来，绿色包也就无从谈起")
+            if portable is None
+            else green_package.green_zip(Path(args.out), version, portable, ROOT / "LICENSE")
+        )
+        if portable is None or green is None:
+            say(False, "便携版 / 绿色版", why if portable is None else zip_why)
+            return 1
+        say(True, "三种形态", f"安装包 / {portable.name} / {green.name}")
     fingerprint = build_fingerprint(Path(args.out), version, tools, artifact, detail)
     say(True, "构建指纹", f"{fingerprint.name}（版本 / 提交 / 工具链 / 产物哈希）")
     print("─" * 64)
@@ -449,7 +462,8 @@ def main() -> int:
     if args.no_bundle:
         print("下一步：双击这个可执行文件（它是生产模式，不会去连开发服务器）。")
     else:
-        print("下一步：双击安装包；装完请按「装机冒烟」清单走一遍（装 / 首启 / 写 / 存 / 关 / 重开 / 卸载）。")
+        print(f"三种形态都在 {args.out}：安装包（装机冒烟按 RELEASING 清单）/ 便携 exe / 绿色版 zip。")
+        print("绿色版解压即用；**更新＝解压到同一个文件夹、别动 data\\**（见包内「一页怎么用.txt」）。")
     return 0
 
 

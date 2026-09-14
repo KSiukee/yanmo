@@ -164,7 +164,19 @@ fn installer_cannot_ship_internal_tools() {
         );
     }
 
-    // ③ 前端产物与构建命令也只能在 app/ 内（不许拿命令去拽工具目录）
+    // ③ AGPL 分发二进制要**随包给许可证**：安装包配置必须指到仓库根那份 LICENSE
+    //    （这一条是合规缺口逼出来的：以前 licenseFile 是空的，装出来的包里没有许可证。）
+    let license = bundle.get("licenseFile").and_then(|value| value.as_str()).unwrap_or_default();
+    assert_eq!(
+        license, "../LICENSE",
+        "bundle.licenseFile 应当指向仓库根的 LICENSE（AGPL 分发二进制必须随包给许可证）"
+    );
+    assert!(
+        workspace_root().join("LICENSE").is_file(),
+        "仓库根没有 LICENSE：随包的许可证从哪来？"
+    );
+
+    // ④ 前端产物与构建命令也只能在 app/ 内（不许拿命令去拽工具目录）
     let frontend = conf
         .get("build")
         .and_then(|build| build.get("frontendDist"))
