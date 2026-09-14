@@ -112,14 +112,20 @@ fn the_day_bucket_follows_the_author_timezone() {
         .unwrap()
         .map(|r| r.unwrap())
         .collect();
-    for day in days {
+    for day in &days {
         assert!(
-            day == local_date(now_millis(), 480) || day == local_date(now_millis(), 0),
+            *day == local_date(now_millis(), 480) || *day == local_date(now_millis(), 0),
             "账本里的日子必须是调用方时区算出来的：{day}"
         );
     }
+    // 窗口要用**账本里真实存在的日子**来定：+8 区那一笔可能落在 UTC 的"明天"，
+    // 而 `days_ago(0)` 是按 UTC 数的——上界用它会在本地午夜前后的 8 小时里漏掉那一笔。
+    // 这条断言原来就是这么挂的（真实时钟 + 真机时区撞出来的），别再写回"按今天数窗口"。
+    let (Some(first), Some(last)) = (days.first(), days.last()) else {
+        panic!("两笔都该记进账本：{days:?}");
+    };
     assert_eq!(
-        store.writing_between(None, &days_ago(2), &days_ago(0)).unwrap().len(),
+        store.writing_between(None, first, last).unwrap().len(),
         if local_date(now_millis(), 480) == local_date(now_millis(), 0) { 1 } else { 2 },
         "两笔按各自时区分桶：同一天就并成一行，不同天就是两行"
     );
