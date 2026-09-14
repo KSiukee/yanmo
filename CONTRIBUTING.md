@@ -76,7 +76,7 @@
 | --- | --- |
 | 数据怎么存、怎么迁移 | `crates/yanmo-core/src/db/`（迁移 v1…v7 只往前加） |
 | 目录树 / 正文 / 作品 / 检索 / 导出 / 备份 / 导入 | `crates/yanmo-core/src/store/`（**一个领域一个文件**） |
-| 标题里的自动编号（号 = 位置的函数） | `crates/yanmo-core/src/numbering.rs` |
+| 标题里的自动编号（号 = 位置的函数） | `crates/yanmo-core/src/numbering.rs`（宏与渲染规则）＋ `crates/yanmo-core/src/store/numbering.rs`（分层渲染：**跨卷延续 / 每卷从头数**） |
 | 字数三口径 / 内容指纹 | `crates/yanmo-core/src/text.rs` |
 | 排版清理规则 | `crates/yanmo-core/src/typeset/` |
 | 投稿版 docx / 分章 txt / 合并 txt | `crates/yanmo-core/src/compile/` |
