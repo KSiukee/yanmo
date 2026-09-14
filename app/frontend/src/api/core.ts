@@ -12,6 +12,7 @@
 // 本文件把它们渲染成句子——**界面文案只有这一处来源**，别在组件里另拼中文。
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { asError, CoreError, CoreUnavailableError, healText } from "./errors";
@@ -969,6 +970,20 @@ export async function setFullscreen(on: boolean): Promise<boolean> {
 export async function isFullscreen(): Promise<boolean> {
   try {
     return await getCurrentWindow().isFullscreen();
+  } catch (error) {
+    throw asError(error);
+  }
+}
+
+/**
+ * **安装包版本**（作者在「应用和功能」里看到的那个号）。
+ *
+ * 与核心报的引擎版本是两件事：引擎版本由编译期注入、跟着 `yanmo-core` 走；
+ * 安装包版本跟打包配置走。今天两者同号，混搭（换核心 / 单独驱动 CLI）时才会分开。
+ */
+export async function readAppVersion(): Promise<string> {
+  try {
+    return await getVersion();
   } catch (error) {
     throw asError(error);
   }

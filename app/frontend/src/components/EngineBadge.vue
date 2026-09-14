@@ -1,21 +1,42 @@
 <script setup lang="ts">
-// 核心状态徽标：验证「壳 → 核心」链路已打通，并报告稿子落在哪。
+// 核心状态徽标：报告"这是哪一版 + 稿子落在哪"。
+//
+// 界面上**只留作者用得上的**：安装包版本、库结构版本（能不能打开这个库看它）、稿子路径。
+// 引擎 / 协议 / 数据格式这些内部号收进悬停提示——它们在混搭与排查时才有用，
+// 天天摆在眼前只是噪音（`proto v1` 尤其：那个协议现在还没实现）。
 //
 // 纪律：这里不直接 invoke，也不碰文件系统——一律经 api 网关取数。
 import { computed, onMounted, ref } from "vue";
 
-import { readDataHome, readEngineInfo, openDataDir, type DataHome, type EngineInfo } from "../api/core";
+import {
+  openDataDir,
+  readAppVersion,
+  readDataHome,
+  readEngineInfo,
+  type DataHome,
+  type EngineInfo,
+} from "../api/core";
 import { t } from "../locales/index.ts";
 
 const info = ref<EngineInfo | null>(null);
 const home = ref<DataHome | null>(null);
+/** 安装包版本（读不到就退回引擎版本——两者今天同号，差不到哪去） */
+const appVersion = ref<string | null>(null);
 const error = ref<string | null>(null);
 /** 打开文件夹失败的原因（极少发生；但失败也要说出来，别点了没反应） */
 const openError = ref<string | null>(null);
 
-const engineLine = computed(() =>
-  t("badge.engine", {
-    version: info.value?.version ?? "",
+const versionLine = computed(() =>
+  t("badge.version", {
+    version: appVersion.value ?? info.value?.version ?? "",
+    schema: home.value?.schema_version ?? "",
+  }),
+);
+
+/** 悬停才看的内部号：引擎 / 协议 / 数据格式（排查与混搭时用） */
+const versionTitle = computed(() =>
+  t("badge.version_title", {
+    engine: info.value?.version ?? "",
     protocol: info.value?.protocol_version ?? "",
     format: info.value?.data_format_version ?? "",
   }),
@@ -34,6 +55,8 @@ async function openFolder(): Promise<void> {
 onMounted(async () => {
   try {
     [info.value, home.value] = await Promise.all([readEngineInfo(), readDataHome()]);
+    // 版本号单独读、单独兜底：读不到不该把整个徽标打回"未连接"
+    appVersion.value = await readAppVersion().catch(() => null);
   } catch (e) {
     // 浏览器里直接跑时没有 Tauri 运行时，属预期情况。
     error.value = e instanceof Error ? e.message : String(e);
@@ -44,7 +67,7 @@ onMounted(async () => {
 <template>
   <span class="badge">
     <template v-if="info">
-      <span class="badge__ver">{{ engineLine }}</span>
+      <span class="badge__ver" :title="versionTitle">{{ versionLine }}</span>
       <button
         v-if="home"
         type="button"
