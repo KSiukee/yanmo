@@ -235,7 +235,6 @@
   "snapshots.kept_same": "和上一版一模一样，没有重复留",
   "snapshots.open_title": "这一章的历次版本：对比、留一版、回滚",
   "snapshots.pinned": "手动留的",
-  "snapshots.reason_auto": "自动留的",
   "snapshots.reason_before_restore": "回滚前留的底",
   "snapshots.reason_close": "关窗时留的",
   "snapshots.reason_desync": "正文对不上时抢救留的",

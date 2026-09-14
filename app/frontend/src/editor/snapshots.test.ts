@@ -69,7 +69,9 @@ function build(initial: SnapshotSummary[], opts: { beforeFails?: boolean } = {})
 test("版本是怎么来的：核心只给码，句子在字典里", () => {
   assert.equal(snapshotReason("keep"), "手动留的");
   assert.equal(snapshotReason("before_restore"), "回滚前留的底");
-  assert.equal(snapshotReason("没见过的码"), "自动留的");
+  // 认不出来的码**原样露出来**：绝不拿"自动留的"这种像模像样的话顶上——
+  // 那会让一个没见过来源的版本看起来像正常来源（假安心）。
+  assert.equal(snapshotReason("没见过的码"), "没见过的码");
 });
 
 test("打开就比最新那一版：第一眼想知道的是刚丢的那点东西", async () => {

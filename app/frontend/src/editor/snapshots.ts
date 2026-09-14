@@ -12,10 +12,17 @@ import { ref, type Ref } from "vue";
 import type { SnapshotDiff, SnapshotRestoreAck, SnapshotSummary } from "../api/core";
 import { has, t } from "../locales/index.ts";
 
-/** 这条版本是怎么来的（核心只给 reason 码，句子在字典里）。 */
+/** 这条版本是怎么来的（核心只给 reason 码，句子在字典里）。
+ *
+ * **认不出来的码就原样露出来**——与字典那条"查不到就返回键"同一条纪律：
+ * 宁可屏幕上出现一个 `snapshots.reason_没见过的码`（一眼看得见、改起来快），
+ * 也不要拿一句像模像样的话顶上去。以前这里兜底成「自动留的」，于是**真正没见过的来源**
+ * 会显示成一个正常来源的名字（假安心）；而且 `auto` 这个值根本没有产出点——
+ * 那条兜底文案本身就是个死值（工具仓的 `qa/audit_states.py` 会把这种对不上抓出来）。
+ */
 export function snapshotReason(reason: string): string {
   const key = `snapshots.reason_${reason}`;
-  return t(has(key) ? key : "snapshots.reason_auto");
+  return has(key) ? t(key) : reason;
 }
 
 /** 版本历史要用的几个动作（会话层注入真命令，测试注入替身）。 */
