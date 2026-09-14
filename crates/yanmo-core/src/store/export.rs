@@ -184,18 +184,19 @@ fn collect_text(
 ) -> Result<()> {
     for index in kids.get(&parent).into_iter().flatten() {
         let node = &nodes[*index];
-        let here = if node.kind.accepts_children() {
-            join(path, &segment(node))
-        } else {
-            path.to_string()
-        };
+        // **有没有下级按数据判，不按"这种类型能不能放下级"判**：后者是界面上的可放性
+        // （点「+」往哪儿加），而导出是"把作者的字带走"——一个标志位不该让它偷偷少几章。
+        // 真踩过：单篇挂了一节（数据层允许），分章导出只出了单篇那一个文件，节里的字没影了。
+        let container =
+            node.kind.accepts_children() || kids.contains_key(&Some(node.id));
+        let here = if container { join(path, &segment(node)) } else { path.to_string() };
         if node.kind.holds_body() {
             out.push(RenderedFile::text(
                 format!("{}.txt", join(path, &segment(node))),
                 normalize(&store.read_body(node.id)?),
             ));
         }
-        if node.kind.accepts_children() {
+        if container {
             collect_text(store, nodes, kids, Some(node.id), &here, out)?;
         }
     }

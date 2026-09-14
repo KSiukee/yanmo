@@ -6,6 +6,8 @@
 //! 容器标题留空（新建的卷还没起名）时**大纲里就略过那一行**：核心不替作者编"第 N 卷"
 //! 这样的句子（那是界面文案，语言一变它就过时了）。
 
+use std::collections::HashSet;
+
 use crate::error::Result;
 use crate::store::{NodeSummary, Store};
 
@@ -49,14 +51,17 @@ impl Item {
 /// 按阅读顺序读一遍（父 → 子、sort_order → id，与导出同一条顺序）。
 pub(crate) fn read(store: &Store, work_id: i64) -> Result<Vec<Item>> {
     let nodes = store.list_nodes(work_id)?;
+    // 有下级的节点（按**数据**算一次，别在循环里对着整棵树反复筛）
+    let parents: HashSet<i64> = nodes.iter().filter_map(|node| node.parent_id).collect();
     let mut out = Vec::new();
-    collect(store, &nodes, None, 0, &mut out)?;
+    collect(store, &nodes, &parents, None, 0, &mut out)?;
     Ok(out)
 }
 
 fn collect(
     store: &Store,
     nodes: &[NodeSummary],
+    parents: &HashSet<i64>,
     parent: Option<i64>,
     depth: usize,
     out: &mut Vec<Item>,
@@ -74,9 +79,10 @@ fn collect(
             paragraphs: if chapter { paragraphs(&store.read_body(node.id)?) } else { Vec::new() },
             depth,
         });
-        // 只有容器往下走：章下面不再有正文（场景卡这类挂件不参与排版）
-        if node.kind.accepts_children() {
-            collect(store, nodes, Some(node.id), depth + 1, out)?;
+        // **有没有下级按数据判**，不按"这种类型能不能放下级"判：后者是界面上的可放性，
+        // 而投稿包是"把作者的字带走"——一个标志位不该让它偷偷少几节。
+        if node.kind.accepts_children() || parents.contains(&node.id) {
+            collect(store, nodes, parents, Some(node.id), depth + 1, out)?;
         }
     }
     Ok(())
