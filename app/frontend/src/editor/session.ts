@@ -28,6 +28,7 @@ import {
   emptyTrash,
   exportWork,
   escapeExport,
+  isFullscreen,
   listShelf,
   listTrash,
   onCloseRequested,
@@ -52,6 +53,7 @@ import {
   runBackupNow,
   saveCursor,
   setWorkLanguage,
+  setFullscreen,
   diagnoseNote,
   readLocationInfo,
   pickDataDir,
@@ -111,6 +113,9 @@ import { DEFAULT_QUOTE_STYLE, useTypeset, type TypesetState } from "./typeset";
 import { useLocation, type LocationState } from "./location";
 import { useRestore, type RestoreState } from "./restore";
 import { useTrash, type Trash } from "./trash";
+import { attachGlobalKeys } from "./global-keys";
+import type { KeyTarget } from "./shortcuts";
+import { useZen, type ZenState } from "./zen";
 
 export interface EditorSession {
   editor: ShallowRef<Editor | undefined>;
@@ -168,6 +173,12 @@ export interface EditorSession {
   restore: RestoreState;
   /** 稿子放在哪：首启确认位置、设置里换位置（换完壳会重启；旧位置不删） */
   location: LocationState;
+  /** 专注模式：藏两侧栏与顶栏、只留正文（**当下这一会儿**的状态，不落盘；判断在 zen.ts） */
+  zen: ZenState;
+  /** 全屏开着没有（F11 / Esc 用；只反映窗口真实状态，不落盘） */
+  fullscreenOn: Ref<boolean>;
+  /** 切全屏：只改窗口，不碰稿子；失败只报一句 */
+  toggleFullscreen: () => Promise<void>;
 }
 
 const IDLE: AutosaveState = {
@@ -193,6 +204,9 @@ export function useEditorSession(): EditorSession {
   const language = ref<WorkLanguage>("zh");
   const caliber = ref<Caliber>("chars");
   const currentNodeId = ref<number | null>(null);
+  /** 专注模式（不落盘：重开软件回到常规三栏）与全屏（窗口真实状态，启动时对一次表） */
+  const zen = useZen();
+  const fullscreenOn = ref(false);
 
   const autosave = shallowRef<Autosave | null>(null);
   let gate: ExitGate | null = null;
@@ -200,6 +214,8 @@ export function useEditorSession(): EditorSession {
   let stopCompositionWatch: (() => void) | null = null;
   /** 启动诊断的清理句柄（焦点/输入法事件监听） */
   let stopDiagnoseWatch: (() => void) | null = null;
+  /** 全局快捷键的解绑句柄（键位与分寸见 editor/shortcuts.ts） */
+  let stopGlobalKeys: (() => void) | null = null;
   /** "弹窗关掉就把焦点还给正文"的观察者 */
   let stopDialogFocusWatch: (() => void) | null = null;
 
@@ -507,6 +523,36 @@ export function useEditorSession(): EditorSession {
     } finally {
       switching.value = false;
     }
+  }
+
+  /**
+   * 全屏：**只改窗口，不碰稿子**。
+   *
+   * 为什么不做成偏好：全屏是"当下这一会儿"的窗口状态，跟专注模式一样不落盘——
+   * 重开软件回到常规窗口，作者不会遇到"一打开就是全屏、找不到退出"的尴尬。
+   * 状态以**窗口的真实值**为准（写完读回），界面那份 ref 就不会慢慢漂开。
+   */
+  async function toggleFullscreen(): Promise<void> {
+    try {
+      fullscreenOn.value = await setFullscreen(!fullscreenOn.value);
+    } catch (error) {
+      failure.value = t("session.fullscreen_failed", {
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /** Esc 的语义：回到常规——专注与全屏哪个开着收哪个（两下都收干净）。 */
+  function exitFocus(): void {
+    zen.exit();
+    if (!fullscreenOn.value) return;
+    void setFullscreen(false)
+      .then((on) => {
+        fullscreenOn.value = on;
+      })
+      .catch(() => {
+        fullscreenOn.value = false; // 读不回来就按"已经不在全屏"处理，别把状态卡住
+      });
   }
 
   /// 在某一章后面新建一章并直接切过去（目录树的「+」与"接着写下一章"走同一条路）。
@@ -837,6 +883,38 @@ export function useEditorSession(): EditorSession {
   onMounted(async () => {
     window.addEventListener("blur", persistNow);
     document.addEventListener("visibilitychange", onVisibilityChange);
+    // 全局快捷键：一处定义、一处接线（键位与"不抢键"的分寸见 editor/shortcuts.ts）。
+    // 挂 window 的**捕获阶段**：命中就在编辑器之前拦下，免得同一组合键被处理两遍。
+    stopGlobalKeys = attachGlobalKeys(
+      {
+        dialogOpen: () => anyDialogOpen.value,
+        zenOn: () => zen.on.value,
+        fullscreenOn: () => fullscreenOn.value,
+        toggleZen: () => {
+          zen.toggle();
+        },
+        toggleFullscreen: () => void toggleFullscreen(),
+        exitFocus,
+        prevChapter: () => void switchChapter(neighbors.value?.previous?.id),
+        nextChapter: () => void switchChapter(neighbors.value?.next?.id),
+        saveNow: () => void flushCurrent(),
+        // 与目录树的「+」**同一条路**：在当前章后面建一章并直接开写（不另开确认流程）
+        newChapter: () => {
+          const node_id = currentNodeId.value;
+          if (node_id !== null) void addChapterAfter(node_id);
+        },
+        openSettings: () => void appearance.open(),
+        openShelf: () => shelf.toggle(),
+      },
+      window as unknown as KeyTarget,
+    );
+    // 窗口真实状态对一次表（不卡启动：读不回来就按"没全屏"处理）。
+    // 正常启动都是 false，但万一全屏进来，Esc 才知道该退什么。
+    void isFullscreen()
+      .then((on) => {
+        fullscreenOn.value = on;
+      })
+      .catch(() => {});
     try {
       await appearance.load(); // 先读偏好：焦点策略要用（读失败按"不抢焦点"走）
       // 备份：读现状 + 今天还没备份过就自动做一次（**不 await**：别拖慢开窗能写字的时间）
@@ -914,6 +992,7 @@ export function useEditorSession(): EditorSession {
   onBeforeUnmount(() => {
     window.removeEventListener("blur", persistNow);
     document.removeEventListener("visibilitychange", onVisibilityChange);
+    stopGlobalKeys?.();
     stopCloseListener?.();
     stopCompositionWatch?.();
     stopDiagnoseWatch?.();
@@ -945,6 +1024,9 @@ export function useEditorSession(): EditorSession {
     caliber,
     cycleCaliber,
     cycleLanguage,
+    zen,
+    fullscreenOn,
+    toggleFullscreen,
     chapterTitle,
     saveState,
     exitState,

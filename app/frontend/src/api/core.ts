@@ -12,6 +12,7 @@
 // 本文件把它们渲染成句子——**界面文案只有这一处来源**，别在组件里另拼中文。
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { asError, CoreError, CoreUnavailableError, healText } from "./errors";
 
@@ -944,3 +945,31 @@ export const requestExit = () => call<void>(COMMANDS.exitApp);
  */
 export const onCloseRequested = (handler: () => void): Promise<UnlistenFn> =>
   listen("close-requested", () => handler());
+
+/**
+ * 全屏开关：**窗口能力，不走核心**（只改窗口，正文一个字都不动）。
+ *
+ * 干完**读回一次真实状态**再返回：全屏是窗口的真实状态（系统/作者都可能改动它），
+ * 拿返回值当真相，界面那份 ref 就不会跟实际情况慢慢漂开。
+ *
+ * 权限要在 `capabilities/default.json` 里逐项列（`core:window:allow-set-fullscreen`）——
+ * `core:window:default` 只给了"读"（is-fullscreen），没给"写"。
+ */
+export async function setFullscreen(on: boolean): Promise<boolean> {
+  try {
+    const appWindow = getCurrentWindow();
+    await appWindow.setFullscreen(on);
+    return await appWindow.isFullscreen();
+  } catch (error) {
+    throw asError(error);
+  }
+}
+
+/** 现在是不是全屏（启动时对一次表；之后用 `setFullscreen` 的返回值维护）。 */
+export async function isFullscreen(): Promise<boolean> {
+  try {
+    return await getCurrentWindow().isFullscreen();
+  } catch (error) {
+    throw asError(error);
+  }
+}

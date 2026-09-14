@@ -14,6 +14,7 @@ import {
   pickCount,
 } from "../editor/wordcount.ts";
 import { goalProgress, goalReached, pickDayCount } from "../editor/writing-days.ts";
+import { shortcutKeys } from "../editor/shortcuts.ts";
 import type { EditorSession } from "../editor/session";
 import type { AutosaveState } from "../editor/autosave";
 import ExitDialog from "./ExitDialog.vue";
@@ -35,6 +36,10 @@ const {
   cycleCaliber,
   cycleLanguage,
 } = props.session;
+
+// 专注模式：退出按钮就挂在章名这一行——专注时它是屏幕上唯一的"出口"，
+// 藏起来就等于把作者关在里面了（快捷键是捷径，不能是唯一的路）。
+const { on: zenOn, exit: exitZen } = props.session.zen;
 
 // 今日进度：账本在核心（`writing_days`），会话在每次落盘成功后刷一次。
 // 没设目标就只显示"今天写了多少"——不拿一个假目标糊弄作者。
@@ -106,6 +111,15 @@ function statusText(status: AutosaveState["status"]): string {
   <section class="editor">
     <header class="editor__bar">
       <span class="editor__title">{{ chapterTitle || t("editor.untitled") }}</span>
+      <button
+        v-if="zenOn"
+        type="button"
+        class="editor__versions"
+        :title="t('editor.zen_exit_title', { key: shortcutKeys('exit-focus') })"
+        @click="exitZen()"
+      >
+        {{ t("editor.zen_exit") }}
+      </button>
       <button
         type="button"
         class="editor__versions"

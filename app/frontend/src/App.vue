@@ -9,6 +9,7 @@
 import { computed } from "vue";
 
 import { t } from "./locales/index.ts";
+import { shortcutKeys } from "./editor/shortcuts.ts";
 import { useEditorSession } from "./editor/session";
 import DirectoryPane from "./components/DirectoryPane.vue";
 import EditorPane from "./components/EditorPane.vue";
@@ -34,6 +35,8 @@ const { visible: snapshotsVisible } = session.snapshots;
 const { visible: typesetVisible } = session.typeset;
 const { visible: compileVisible } = session.compile;
 const { visible: settingsVisible, values: settingsValues, open: openSettings } = session.appearance;
+// 专注模式：只改"露哪几块"（判断在 editor/zen.ts），布局层照着渲染，不自己 if
+const { on: zenOn, chrome: zenChrome, toggle: toggleZen } = session.zen;
 // 码字日历：入口在编辑器状态栏那行「今日 …」（也就是"每天手感"那一块）
 const { visible: writingVisible } = session.writing;
 // 备份：入口在顶栏；没有异盘目标时给一条**非阻塞**小条（拒过就不再自动弹）
@@ -52,7 +55,7 @@ const hint = computed(() => {
 
 <template>
   <div class="shell">
-    <header class="shell__bar">
+    <header v-if="zenChrome.topbar" class="shell__bar">
       <!-- i18n-allow-next-line: 产品名（品牌），不是界面文案 -->
       <span class="shell__brand">研墨</span>
       <button
@@ -62,6 +65,14 @@ const hint = computed(() => {
         @click="toggleShelf()"
       >
         {{ t("app.shelf") }}
+      </button>
+      <button
+        type="button"
+        class="shell__settings"
+        :title="t('app.zen_title', { key: shortcutKeys('zen') })"
+        @click="toggleZen()"
+      >
+        {{ t("app.zen") }}
       </button>
       <button
         type="button"
@@ -93,10 +104,10 @@ const hint = computed(() => {
       </button>
     </p>
 
-    <main class="shell__body">
-      <DirectoryPane :session="session" />
+    <main class="shell__body" :class="{ 'shell__body--zen': zenOn }">
+      <DirectoryPane v-if="zenChrome.directory" :session="session" />
       <EditorPane :session="session" />
-      <FlowPane />
+      <FlowPane v-if="zenChrome.flow" />
     </main>
 
     <ShelfDialog v-if="shelfVisible" :session="session" />
@@ -200,5 +211,10 @@ const hint = computed(() => {
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   min-height: 0;
+}
+
+/* 专注模式：只剩正文那一列（两侧栏没渲染，这里也就没有第二、三列可占） */
+.shell__body--zen {
+  grid-template-columns: minmax(0, 1fr);
 }
 </style>
