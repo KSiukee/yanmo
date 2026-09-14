@@ -99,6 +99,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "不能切到该节点（不存在 / 已删除 / 不承载正文）：{node_id}" : ["node_id"],
     NODE_FOREIGN_PARENT => "node.foreign_parent"
         : "节点 {node_id} 属于作品 {owner}，不能挂到作品 {work_id} 下" : ["node_id", "owner", "work_id"],
+    TREE_TOO_DEEP => "tree.too_deep"
+        : "节点树超过深度上限（最多 {max} 层），已拒绝继续" : ["max"],
     TREE_CYCLE_SUSPECTED => "tree.cycle_suspected" : "节点树深度异常（疑似成环），已拒绝继续" : [],
     TREE_MOVE_INTO_DESCENDANT => "tree.move_into_descendant"
         : "不能把节点移进自己的子孙里——那会形成环" : [],

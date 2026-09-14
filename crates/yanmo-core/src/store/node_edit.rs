@@ -8,7 +8,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::json;
 
-use super::{Store, MAX_TREE_DEPTH};
+use super::{too_deep, Store, MAX_TREE_DEPTH};
 use crate::error::{codes, Error, Result};
 use crate::model::{NamingStyle, NodeKind};
 use crate::time::now_millis;
@@ -70,6 +70,52 @@ fn is_descendant(conn: &Connection, candidate: i64, ancestor: i64) -> Result<boo
         }
     }
     Err(Error::invalid(codes::TREE_CYCLE_SUSPECTED))
+}
+
+/// 这个节点在树里的层数（根 = 1）。
+///
+/// **写也要用它守门**：读路径（[`Store::node_ancestors`] / [`Store::subtree_rollup`]）
+/// 有同一个上限，写的时候不守就会造出「写得进去、读不出来」的树——那一章在界面里
+/// 等于打不开，卷行字数还会静默变少（见 `tests/deep_tree.rs` 的来龙去脉）。
+/// 现存数据已经超限时明确报错，**继续往上走**不做。
+fn node_level(conn: &Connection, node_id: i64) -> Result<usize> {
+    let mut level = 1usize;
+    let mut current = node_id;
+    loop {
+        if level > MAX_TREE_DEPTH {
+            return Err(too_deep());
+        }
+        let parent: Option<i64> = conn
+            .query_row("SELECT parent_id FROM nodes WHERE id = ?1", params![current], |r| r.get(0))
+            .optional()?
+            .flatten();
+        match parent {
+            Some(up) => {
+                current = up;
+                level += 1;
+            }
+            None => return Ok(level),
+        }
+    }
+}
+
+/// 以 `node_id` 为根的那棵子树有几层（只有它自己 = 1）。
+///
+/// 递归**带上限**：数据真坏了（成环）也不会转到天荒地老，走到上限就按「超限」处理。
+fn subtree_height(conn: &Connection, node_id: i64) -> Result<usize> {
+    let cap = MAX_TREE_DEPTH as i64 + 1;
+    let height: i64 = conn.query_row(
+        "WITH RECURSIVE sub(id, depth) AS (
+             SELECT id, 1 FROM nodes WHERE id = ?1
+             UNION ALL
+             SELECT n.id, sub.depth + 1 FROM nodes n JOIN sub ON n.parent_id = sub.id
+              WHERE n.deleted_at IS NULL AND sub.depth < ?2
+         )
+         SELECT COALESCE(MAX(depth), 1) FROM sub",
+        params![node_id, cap],
+        |r| r.get(0),
+    )?;
+    Ok(height as usize)
 }
 
 /// 编号骨架的前后缀：`第 12 章` 里的「第」「章」。
@@ -143,6 +189,11 @@ impl Store {
         super::work::ensure_alive(&self.conn, work_id)?;
         if let Some(parent) = parent_id {
             self.ensure_node_in_work(parent, work_id)?;
+            // **入口守门**：新节点会落在父节点的下一层，超过上限就当场拒绝。
+            // 不守的话能造出「写得进、读不了」的树（读路径有同一个上限）。
+            if node_level(&self.conn, parent)? >= MAX_TREE_DEPTH {
+                return Err(too_deep());
+            }
         }
         let title = title.trim();
         let title = if title.is_empty() {
@@ -209,6 +260,12 @@ impl Store {
             self.ensure_node_in_work(parent, work_id)?;
             if parent == id || is_descendant(&self.conn, parent, id)? {
                 return Err(Error::invalid(codes::TREE_MOVE_INTO_DESCENDANT));
+            }
+            // 移动会把**整棵子树**一起带下去：目标位置 + 这棵树的高度不能越过上限，
+            // 只看自己要落地的那一层是不够的（底下还挂着一串）。
+            let landed = node_level(&self.conn, parent)? + 1;
+            if landed + subtree_height(&self.conn, id)? - 1 > MAX_TREE_DEPTH {
+                return Err(too_deep());
             }
         }
 

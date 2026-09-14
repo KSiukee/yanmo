@@ -66,11 +66,31 @@ use rusqlite::Connection;
 use crate::db;
 use crate::error::Result;
 
-/// 节点树的最大深度。
+/// 节点树的最大深度（**层数**，根节点算第 1 层）。
 ///
-/// 超过它说明数据已经坏了——**明确报错，而不是死循环或无限递归**。
-/// 树的读与写都要用，所以放在这一层共用，免得两处各写一个上限（迟早会不一致）。
-pub(super) const MAX_TREE_DEPTH: usize = 512;
+/// # 为什么是 64，不是 512
+///
+/// 这个数同时管三件事，所以只能有一个：
+/// ① **写入口守门**（新建 / 移动超过就拒绝，见 [`super::node_edit`]）；
+/// ② **读路径兜底**（祖先链 / 子树汇总碰到就越限报错，见 [`Store::node_ancestors`]，
+///    [`Store::subtree_rollup`]）——坏数据不许让它转到天荒地老，更不许静默少算；
+/// ③ **递归走法的深度预算**：导出（分章 txt / 单文件 json）与编译都是按层递归的。
+///
+/// 原来定的 512 是当"坏数据哨兵"用的，**比代码实际走得动的深度还大**：
+/// 2026-09-14 由外部演练台（独立工具仓的 `deep-tree` 那一场）实测——调试构建一路建到
+/// 512 层时 `export --format json` **栈溢出**（`thread 'main' has overflowed its stack`）；
+/// 发布构建 512 层能过，但调试构建在 384 层就崩、256 层才稳。而写作软件的大纲
+/// （卷 → 章 → 节 → 场景卡）通常 2~4 层，512 这个数从来没有产品上的理由。
+/// 现在收到 64：离调试构建的崩点（384）还有 ≥4 倍余量，也远宽于任何真实书。
+pub(super) const MAX_TREE_DEPTH: usize = 64;
+
+/// 「太深了」这条错：参数只有上限一个，话怎么说留给界面。
+pub(super) fn too_deep() -> crate::error::Error {
+    crate::error::Error::invalid_with(
+        crate::error_codes::codes::TREE_TOO_DEEP,
+        [("max", MAX_TREE_DEPTH.to_string())],
+    )
+}
 
 /// 数据句柄：一条连接 + 本机设备标识。
 pub struct Store {

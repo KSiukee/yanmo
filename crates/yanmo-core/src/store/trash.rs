@@ -182,8 +182,11 @@ impl Store {
         let mut anchors: Vec<(i64, Option<i64>, i64)> = Vec::new();
         let mut current = Some(node_id);
         while let Some(id) = current {
-            if anchors.len() > MAX_TREE_DEPTH {
-                return Err(Error::invalid(codes::TREE_CYCLE_SUSPECTED));
+            if anchors.len() >= MAX_TREE_DEPTH {
+                // 锚数 ≥ 上限 = 这一层比支持的还深（第 64 条锚是上一层）。
+                // 正常的一棵树到不了这里（写入口会先拒绝），只有坏数据会：
+                // 话要说准——是"比支持的上限还深"，不是"疑似成环"。
+                return Err(super::too_deep());
             }
             let (parent, order, deleted): (Option<i64>, i64, Option<i64>) = self
                 .conn

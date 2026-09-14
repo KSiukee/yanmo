@@ -86,6 +86,7 @@
   "error.trash.purge_needs_trashed": "只能彻底删除已经在回收站里的东西：{id}",
   "error.tree.cycle_suspected": "节点树深度异常（疑似成环），已拒绝继续",
   "error.tree.move_into_descendant": "不能把节点移进自己的子孙里——那会形成环",
+  "error.tree.too_deep": "这一层已经是最深了（最多 {max} 层）——换到浅一点的位置再新建或拖动",
   "error.value.unknown_export_format": "不认识的导出格式：{value}（只支持 txt / json）",
   "error.value.unknown_node_kind": "未知的节点类型：{value}",
   "error.value.unknown_work_kind": "未知的作品类型：{value}",

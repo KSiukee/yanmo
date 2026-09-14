@@ -6,7 +6,7 @@
 
 use rusqlite::{params, OptionalExtension};
 
-use super::{Store, MAX_TREE_DEPTH};
+use super::{too_deep, Store, MAX_TREE_DEPTH};
 use crate::error::{codes, Error, Result};
 use crate::model::{NamingStyle, NodeKind};
 
@@ -298,10 +298,13 @@ impl Store {
         let mut chain = Vec::new();
         let mut current = parent_of(node_id)?;
         while let Some(id) = current {
-            if chain.len() >= MAX_TREE_DEPTH {
-                return Err(Error::invalid(codes::TREE_CYCLE_SUSPECTED));
-            }
             chain.push(id);
+            // 祖先数 ≥ 上限 = 这一层已经比支持的还深（第 64 个祖先是上一层）。
+            // 话要说准：这不是"疑似成环"。正常的一棵树到不了这里——写入口会先拒绝，
+            // 只有坏数据会。
+            if chain.len() >= MAX_TREE_DEPTH {
+                return Err(too_deep());
+            }
             current = parent_of(id)?;
         }
         chain.reverse(); // 根在前，界面照着一层层展开就行
@@ -326,9 +329,12 @@ impl Store {
     /// 子树汇总——**只给容器行算**（叶子行的字数是它自己那一格）。
     ///
     /// 加总的是预聚合字段 `nodes.word_count`，所以卷里有几百章也只是走一遍索引；
-    /// 深度上限与别处一致：数据真坏了会在这里截断，不会转到天荒地老。
+    /// 深度上限与别处一致：**碰到上限就明确报错，绝不静默少算**——卷行数字悄悄变少
+    /// 正是最不能出的那类毛病（"说 ok 但数字不对"）。
     pub fn subtree_rollup(&self, node_id: i64) -> Result<SubtreeRollup> {
         self.node_work(node_id)?; // 顺带确认它存在且没被删
+        // 顺带取回最深那一层的相对深度：它碰到上限就说明这棵树比支持的还深，
+        // 这条查询已经少算了（正常的一棵树到不了，写入口会先拒绝）。
         let sql = format!(
             "WITH RECURSIVE sub(id, word_count, char_count, chars_no_punct, node_kind, depth) AS (
                  SELECT id, word_count, char_count, chars_no_punct, node_kind, 0 FROM nodes
@@ -340,14 +346,17 @@ impl Store {
                   WHERE n.deleted_at IS NULL AND sub.depth < {MAX_TREE_DEPTH}
              )
              SELECT COALESCE(SUM(word_count), 0), COALESCE(SUM(char_count), 0),
-                    COALESCE(SUM(chars_no_punct), 0), COALESCE(SUM(node_kind = 'chapter'), 0)
+                    COALESCE(SUM(chars_no_punct), 0), COALESCE(SUM(node_kind = 'chapter'), 0),
+                    COALESCE(MAX(depth), 0)
                FROM sub"
         );
-        let (word_count, char_count, chars_no_punct, chapters) = self
-            .conn
-            .query_row(&sql, params![node_id], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        let (word_count, char_count, chars_no_punct, chapters, deepest): (i64, i64, i64, i64, i64) =
+            self.conn.query_row(&sql, params![node_id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
             })?;
+        if deepest as usize >= MAX_TREE_DEPTH - 1 {
+            return Err(too_deep());
+        }
         Ok(SubtreeRollup { chapters, word_count, char_count, chars_no_punct })
     }
 }
