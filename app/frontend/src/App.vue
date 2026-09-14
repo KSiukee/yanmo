@@ -107,15 +107,13 @@ const hint = computed(() => {
       </button>
     </p>
 
-    <main
-      class="shell__body"
-      :class="{ 'shell__body--zen': zenOn, 'shell__body--panel': zenOn && outlineOpen }"
-    >
+    <main class="shell__body" :class="{ 'shell__body--zen': zenOn }">
       <DirectoryPane v-if="zenChrome.directory" :session="session" />
 
       <!-- 专注时：两侧栏换成"唤出来看一眼"的卡片（同一批组件，不写第二份树）。
-           卡片**占一列**而不是浮在正文上：窗口态正文左右各只有 10% 边距，
-           浮层必然压住字（真机上就是这么被发现的）；占位后正文让开，谁也挡不着谁。 -->
+           ⚠️ 卡片**浮在常驻留白里**，不占列、也不挤压正文：
+           正文宽度在专注态是恒定的（左边留了一条 gutter），开/关卡片只改变"显示不显示"，
+           一个换行点都不会动——真机上反馈过"占列导致文字重排，观感不好"。 -->
       <template v-if="zenOn">
         <button
           type="button"
@@ -250,14 +248,13 @@ const hint = computed(() => {
   position: relative;
 }
 
-/* 专注模式：只剩正文那一列（两侧栏没渲染，这里也就没有第二、三列可占） */
+/* 专注模式：只剩正文那一列；同时**常驻一条左侧留白**（卡片待的地方）。
+   留白用变量给：正文本体的行宽按它收窄（见 editor-pane.css 的 --wide），
+   于是开/关卡片只改"显示不显示"——正文宽度恒定，一个换行点都不动。
+   窄窗口下留白跟着缩（24vw），卡片也按它收窄，免得小窗口里正文只剩一条。 */
 .shell__body--zen {
   grid-template-columns: minmax(0, 1fr);
-}
-
-/* 卡片开着：它**占掉左边那一列**，正文让开——浮在正文上必然压字（窗口态只剩 10% 边距） */
-.shell__body--panel {
-  grid-template-columns: 312px minmax(0, 1fr);
+  --zen-gutter: min(324px, 24vw);
 }
 
 /* 悬浮唤出按钮：**只在专注时出现**（常规态两侧栏本来就在，用不着它）。
@@ -284,19 +281,22 @@ const hint = computed(() => {
   color: var(--ym-accent);
 }
 
-/* 卡片：**占左边一列**（见 .shell__body--panel），不浮在正文上；收起即消失。
-   高度吃内容、最多占满整行，长了就在卡片里滚（目录树自己有滚动区）。 */
+/* 卡片：浮在**左边那条常驻留白**里（见 .shell__body--zen 的 --zen-gutter），
+   不占列、不挤压正文——正文宽度恒定，开关卡片不会让文字重排。
+   高度吃内容、最多占满整行，长了在卡片里滚（目录树自己有滚动区）。 */
 .shell__card {
-  align-self: start;
+  position: absolute;
+  z-index: 3;
+  top: 74px;
+  left: 12px;
   display: flex;
   flex-direction: column;
-  width: 300px;
-  max-height: calc(100% - 12px);
-  margin: 6px 0 6px 12px;
+  width: calc(var(--zen-gutter) - 24px);
+  max-height: calc(100% - 86px);
   border: 1px solid var(--ym-line);
   border-radius: 8px;
   background: var(--ym-paper-dim);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 12%);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 14%);
   overflow: hidden;
 }
 
