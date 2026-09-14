@@ -10,7 +10,7 @@
 
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref, type ShallowRef } from "vue";
 import { useEditor, type Editor } from "@tiptap/vue-3";
-import StarterKit from "@tiptap/starter-kit";
+import { plainTextExtensions } from "./extensions";
 
 import {
   abandonSession,
@@ -230,7 +230,7 @@ export function useEditorSession(): EditorSession {
 
   const editor = useEditor({
     content: "",
-    extensions: [StarterKit],
+    extensions: plainTextExtensions(),
     // 击键只进这里，不跨进程；真正的落盘由 autosave 按节奏发起
     onUpdate: ({ editor: instance }) => {
       // **输入法组字中途不算改动**：这时正文里还是拼音字母（还没成字），算进字数会让
