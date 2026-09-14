@@ -22,6 +22,8 @@ pub struct AppearanceDto {
     pub daily_goal: Option<i64>,
     /// 新建条目的命名规则（arabic / chinese / padded / none）；null = 没选过（按作品类型）
     pub naming: Option<String>,
+    /// 章的号跨不跨卷数（continue / per_volume）；默认跨卷延续（continue）
+    pub chapter_numbering: String,
 }
 
 impl From<ResolvedAppearance> for AppearanceDto {
@@ -32,6 +34,7 @@ impl From<ResolvedAppearance> for AppearanceDto {
             quote_style: value.quote_style.as_str().to_string(),
             daily_goal: value.daily_goal,
             naming: value.naming.map(|style| style.as_str().to_string()),
+            chapter_numbering: value.chapter_numbering.as_str().to_string(),
         }
     }
 }
@@ -47,6 +50,8 @@ pub struct AppearancePatch {
     pub daily_goal: Option<i64>,
     /// 传四个稳定代码之一；认不出来会被核心明确拒绝
     pub naming: Option<String>,
+    /// 传 `continue` / `per_volume`；传 `"auto"` = 清掉这一层（回到默认：跨卷延续）
+    pub chapter_numbering: Option<String>,
 }
 
 impl From<AppearancePatch> for Appearance {
@@ -57,6 +62,7 @@ impl From<AppearancePatch> for Appearance {
             quote_style: patch.quote_style,
             daily_goal: patch.daily_goal,
             naming: patch.naming,
+            chapter_numbering: patch.chapter_numbering,
         }
     }
 }

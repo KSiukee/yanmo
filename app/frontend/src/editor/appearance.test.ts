@@ -22,6 +22,7 @@ function fakeCore(workNaming: string | null = null) {
     quote_style: "curly",
     daily_goal: null,
     naming,
+    chapter_numbering: "continue",
   });
   return {
     writes,
@@ -90,4 +91,25 @@ test("没有要换的章：执行是空操作", async () => {
   await state.previewNaming();
   assert.equal(await state.applyNaming(), null);
   assert.equal(core.applied.length, 0, "空清单不该惊动核心");
+});
+
+test("设章节编号方式：同样由 target 决定写哪一层，且不必预览", async () => {
+  const core = fakeCore();
+  const workId = ref<number | null>(7);
+  const state = useAppearance({
+    transport: core.transport,
+    workId,
+    onError: () => {},
+  });
+
+  await state.setChapterNumbering("per_volume", "work");
+  assert.deepEqual(core.writes, [{ work_id: 7, patch: { chapter_numbering: "per_volume" } }]);
+
+  await state.setChapterNumbering("continue", "default");
+  assert.deepEqual(core.writes[1], { work_id: null, patch: { chapter_numbering: "continue" } });
+
+  // 没有打开作品时"只设这本书"是空操作：不该把全局悄悄改掉
+  workId.value = null;
+  await state.setChapterNumbering("per_volume", "work");
+  assert.equal(core.writes.length, 2);
 });

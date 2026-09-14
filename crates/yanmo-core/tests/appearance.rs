@@ -251,7 +251,16 @@ fn the_chosen_naming_style_shows_up_in_new_chapters() {
     .enumerate()
     {
         store
-            .set_appearance(None, &Appearance { naming: Some(code.into()), ..Default::default() })
+            .set_appearance(
+                None,
+                &Appearance {
+                    naming: Some(code.into()),
+                    // 这一条只管**命名写法**，不掺编号方式：显式用"每卷从头数"，
+                    // 四档写法才都从"第 1 章"起（跨卷延续有它自己的一组用例）
+                    chapter_numbering: Some("per_volume".into()),
+                    ..Default::default()
+                },
+            )
             .unwrap();
         // 每种规则各放一卷：同一层里换规则会让计数接着上一档往下数（那是另一回事）
         let volume = if at == 0 {

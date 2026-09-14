@@ -412,9 +412,10 @@ fn default_names_are_templates_and_numbers_come_from_positions() {
     assert_eq!(store.rendered_title(ids[2]).unwrap(), "第4章");
 }
 
-/// 「这一层 / 这一类」：分卷与别的类型都不参与对方的计数。
+/// 「这一层 / 这一类」：分卷、卷与别的类型都不参与对方的计数。
 #[test]
 fn numbering_counts_only_its_own_layer_and_kind() {
+    use yanmo_core::store::Appearance;
     let (_dir, mut store) = fresh();
     let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
     let first = store.list_nodes(work.id).unwrap()[0].id;
@@ -423,8 +424,19 @@ fn numbering_counts_only_its_own_layer_and_kind() {
     let a = store.create_node(work.id, Some(first), NodeKind::Chapter, "").unwrap();
     let b = store.create_node(work.id, Some(second), NodeKind::Chapter, "").unwrap();
     assert_eq!(store.rendered_title(a).unwrap(), "第1章");
+    // 默认跨卷延续：第二卷接着数（"分卷各数各的"是另一种设置，见下）
+    assert_eq!(store.rendered_title(b).unwrap(), "第2章", "默认跨卷延续");
+    assert_eq!(store.rendered_title(second).unwrap(), "第2卷", "卷按位置排，不受章的号影响");
+
+    // 换成"每卷从头数"：卷与章各数各的，互不影响
+    store
+        .set_appearance(
+            Some(work.id),
+            &Appearance { chapter_numbering: Some("per_volume".into()), ..Default::default() },
+        )
+        .unwrap();
     assert_eq!(store.rendered_title(b).unwrap(), "第1章", "第二卷从第1章重新数");
-    assert_eq!(store.rendered_title(second).unwrap(), "第2卷", "卷按位置排");
+    assert_eq!(store.rendered_title(second).unwrap(), "第2卷", "卷仍是第2卷");
 }
 
 /// **显示出来的标题里绝不许还留着宏**：树、导航、导出拿到的那一份都必须是渲染过的。

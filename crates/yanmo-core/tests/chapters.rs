@@ -272,12 +272,34 @@ fn default_chapter_name_is_a_template_and_renders_by_position() {
         assert_eq!(store.rendered_title(*id).unwrap(), format!("第{}章", at + 1));
     }
 
-    // 另一卷各数各的：第二卷第一张就是第1章
+    // 另一卷：**默认跨卷延续**（第二卷第4章接着第一卷数）
     let second = store.create_node(work.id, None, NodeKind::Volume, "").unwrap();
     let other = store.create_node(work.id, Some(second), NodeKind::Chapter, "").unwrap();
-    assert_eq!(store.rendered_title(other).unwrap(), "第1章", "分卷各数各的");
+    assert_eq!(store.rendered_title(other).unwrap(), "第4章", "默认跨卷延续（见 chapter_numbering）");
     // 建书时留白的那一卷（还没起名）也按位置渲染成「第1卷」，所以新卷是第2卷
     assert_eq!(store.rendered_title(second).unwrap(), "第2卷");
+}
+
+/// 换成"每卷从头数"：同一棵树立刻各数各的——**标题一个字不动**（改的只是怎么数）。
+#[test]
+fn per_volume_numbering_restarts_each_volume_without_touching_titles() {
+    use yanmo_core::store::Appearance;
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let volume = store.list_nodes(work.id).unwrap()[0].id;
+    for _ in 0..3 {
+        store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap();
+    }
+    let second = store.create_node(work.id, None, NodeKind::Volume, "").unwrap();
+    let other = store.create_node(work.id, Some(second), NodeKind::Chapter, "").unwrap();
+    store
+        .set_appearance(
+            Some(work.id),
+            &Appearance { chapter_numbering: Some("per_volume".into()), ..Default::default() },
+        )
+        .unwrap();
+    assert_eq!(store.rendered_title(other).unwrap(), "第1章", "分卷各数各的");
+    assert_eq!(store.node_title(other).unwrap(), "第{$N}章", "库里存的还是模板");
 }
 
 

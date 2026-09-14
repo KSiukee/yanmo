@@ -24,6 +24,7 @@ mod import;
 mod node;
 mod naming;
 mod node_edit;
+mod numbering;
 mod relocate;
 mod restore;
 mod restore_packages;

@@ -159,7 +159,15 @@ pub struct LayerItem<'a> {
 ///
 /// 占号的两类：带计数宏的、以及 `positional` 的（容器）。`{$N_RESET:n}` 从它自己开始生效。
 pub fn render_layer(items: &[LayerItem<'_>]) -> Vec<String> {
-    let mut counter = 1i64;
+    render_layer_from(items, 1)
+}
+
+/// 同上，但从 `start` 开始数——**跨卷延续**编号用（第二卷接着上一卷的数）。
+///
+/// `start` 是"这一层第一张章进来时计数器是几"（怎么算出来见 `store::numbering`）：
+/// 层内若有人写了 `{$N_RESET:n}`，它仍然说话（那是作者对某章的显式安排）。
+pub fn render_layer_from(items: &[LayerItem<'_>], start: i64) -> Vec<String> {
+    let mut counter = start.max(1);
     let mut out = Vec::with_capacity(items.len());
     for item in items {
         if let Some(start) = reset_at(item.title) {

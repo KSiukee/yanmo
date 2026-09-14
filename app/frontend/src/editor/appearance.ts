@@ -57,6 +57,13 @@ export interface AppearanceState {
   loadWork: () => Promise<void>;
   /** 设命名规则：`target` 决定写全局默认还是只写这本书；值传 `"auto"` = 清掉那一层 */
   setNaming: (value: string, target: NamingTarget) => Promise<void>;
+  /**
+   * 设"章的号跨不跨卷数"（continue / per_volume；传 "auto" = 清掉这一层）。
+   *
+   * 它改的只是**渲染时怎么数**，所以没有"整本一起换"那回事：写进去立刻全见效，
+   * 标题与正文一个字不动（跟命名写法那一条不一样，这里不必先预览）。
+   */
+  setChapterNumbering: (value: string, target: NamingTarget) => Promise<void>;
   /** 整本书换编号写法的清单（还没问回来是 null；空数组 = 不用换） */
   namingPlan: Ref<NamingRewrite[] | null>;
   /** 问一次"这本书哪些章会换" */
@@ -168,6 +175,16 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
         const target = options.workId.value;
         namingPlan.value =
           target === null ? null : await options.transport.previewNaming(target);
+        return written;
+      });
+    },
+    setChapterNumbering: async (value, target) => {
+      const work_id = target === "work" ? options.workId.value : null;
+      if (target === "work" && work_id === null) return;
+      await act(async () => {
+        const written = await options.transport.write(work_id, { chapter_numbering: value });
+        // 这一本生效的那一份也跟着刷（设置面板同时显示"现在生效"）
+        workValues.value = work_id === null ? workValues.value : written;
         return written;
       });
     },

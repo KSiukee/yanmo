@@ -82,6 +82,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     UNKNOWN_COMPILE_PRESET => "value.unknown_compile_preset"
         : "不认识的编译预设：{value}" : ["value"],
     UNKNOWN_NAMING_STYLE => "value.unknown_naming_style" : "不认识的命名规则：{value}" : ["value"],
+    UNKNOWN_CHAPTER_NUMBERING => "value.unknown_chapter_numbering"
+        : "不认识的章节编号方式：{value}（只有 continue / per_volume）" : ["value"],
     UNKNOWN_QUOTE_STYLE => "value.unknown_quote_style"
         : "不认识的引号风格：{value}（只有 curly / corner）" : ["value"],
     TYPESET_CHANGE_UNKNOWN => "typeset.change_unknown"

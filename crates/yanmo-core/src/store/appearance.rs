@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use super::Store;
 use crate::error::Result;
-use crate::model::NamingStyle;
+use crate::model::{ChapterNumbering, NamingStyle};
 use crate::text::WordCaliber;
 use crate::time::now_millis;
 use crate::typeset::QuoteStyle;
@@ -59,6 +59,12 @@ pub struct Appearance {
     /// 由 [`Store::naming_style`] 落定——核心这里不替它猜。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub naming: Option<String>,
+    /// 章的号跨不跨卷数（`ChapterNumbering` 的稳定代码：`continue` / `per_volume`）。
+    ///
+    /// `None` = 没改过 → 跨卷延续（默认）。它只影响**渲染时怎么数**，
+    /// 标题里存的还是模板，所以改一下立刻全见效、正文一个字不动。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chapter_numbering: Option<String>,
 }
 
 impl Appearance {
@@ -69,6 +75,7 @@ impl Appearance {
             && self.quote_style.is_none()
             && self.daily_goal.is_none()
             && self.naming.is_none()
+            && self.chapter_numbering.is_none()
     }
 
     /// 把 `over`（书的覆盖）盖在 `self`（全局）上：**只覆盖它真设过的项**。
@@ -82,6 +89,10 @@ impl Appearance {
             quote_style: over.quote_style.clone().or_else(|| self.quote_style.clone()),
             daily_goal: over.daily_goal.or(self.daily_goal),
             naming: over.naming.clone().or_else(|| self.naming.clone()),
+            chapter_numbering: over
+                .chapter_numbering
+                .clone()
+                .or_else(|| self.chapter_numbering.clone()),
         }
     }
 }
@@ -98,6 +109,8 @@ pub struct ResolvedAppearance {
     pub daily_goal: Option<i64>,
     /// 作者选过的命名规则；`None` = 没选过（界面按作品类型显示默认那一档）。
     pub naming: Option<NamingStyle>,
+    /// 章的号跨不跨卷数（没选过就是默认：跨卷延续）。
+    pub chapter_numbering: ChapterNumbering,
 }
 
 impl Default for ResolvedAppearance {
@@ -109,6 +122,7 @@ impl Default for ResolvedAppearance {
             quote_style: QuoteStyle::default(),
             daily_goal: None,
             naming: None,
+            chapter_numbering: ChapterNumbering::default(),
         }
     }
 }
@@ -143,6 +157,12 @@ impl Store {
             daily_goal: merged.daily_goal.filter(|v| *v > 0).map(|v| v.min(MAX_DAILY_GOAL)),
             // 认不出来的代码当没设过（与口径 / 引号同一条规矩），界面回"按作品类型"
             naming: merged.naming.as_deref().and_then(NamingStyle::parse),
+            // 同上：认不出来当没设过 → 回默认（跨卷延续）
+            chapter_numbering: merged
+                .chapter_numbering
+                .as_deref()
+                .and_then(ChapterNumbering::parse)
+                .unwrap_or_default(),
         })
     }
 
@@ -166,6 +186,14 @@ impl Store {
             return Ok(chosen);
         }
         Ok(self.get_work(work_id)?.kind.default_naming())
+    }
+
+    /// **落定后的章节编号方式**：作者选过就听作者的，没选过是默认（跨卷延续）。
+    ///
+    /// 与 [`Store::naming_style`] 同一处出口：渲染标题的地方都从这里取口径，
+    /// 界面与壳都不许自己抄一份"怎么数"（两份迟早走偏）。
+    pub fn chapter_numbering(&self, work_id: i64) -> Result<ChapterNumbering> {
+        Ok(self.appearance(Some(work_id))?.chapter_numbering)
     }
 
     /// 写偏好（**稀疏合并**）：只覆盖传进来的项，没传的保持原样。
@@ -217,6 +245,20 @@ impl Store {
             // 超大的值夹到上限，免得手滑多打几个零后进度条永远不动
             stored.daily_goal = (value > 0).then(|| value.min(MAX_DAILY_GOAL));
         }
+        if let Some(value) = patch.chapter_numbering.as_deref() {
+            // `"auto"` = 清掉这一层（回到默认：跨卷延续）——与命名规则同一条路
+            if value == "auto" {
+                stored.chapter_numbering = None;
+            } else {
+                let parsed = ChapterNumbering::parse(value).ok_or_else(|| {
+                    crate::error::Error::invalid_with(
+                        crate::error::codes::UNKNOWN_CHAPTER_NUMBERING,
+                        [("value", value.to_string())],
+                    )
+                })?;
+                stored.chapter_numbering = Some(parsed.as_str().to_string());
+            }
+        }
         write_appearance(&self.conn, work_id, &stored)?;
         self.record(
             "settings",
@@ -228,6 +270,7 @@ impl Store {
                 "quote_style": patch.quote_style,
                 "daily_goal": patch.daily_goal,
                 "naming": patch.naming,
+                "chapter_numbering": patch.chapter_numbering,
             }),
         )
     }

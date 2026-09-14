@@ -124,6 +124,8 @@ export interface Appearance {
   daily_goal: number | null;
   /** 没选过（null）= 按作品类型：长篇给号、单篇与文集不编号 */
   naming: string | null;
+  /** 章的号跨不跨卷数（continue / per_volume）；默认跨卷延续（continue） */
+  chapter_numbering: string;
 }
 
 /** 要改的偏好项：**只写传进来的**，没传的保持原样。 */
@@ -135,6 +137,8 @@ export interface AppearancePatch {
   daily_goal?: number;
   /** arabic / chinese / padded / none；传 "auto" 就是**清掉这一层**（回到按作品类型） */
   naming?: string;
+  /** continue / per_volume；传 "auto" 就是**清掉这一层**（回到默认：跨卷延续） */
+  chapter_numbering?: string;
 }
 
 /** 某一天的字数（三个口径都给，界面按当前口径显示）。 */

@@ -23,6 +23,7 @@ const {
   setJumpToEnd,
   resetToDefault,
   setNaming,
+  setChapterNumbering,
   loadWork,
   namingPlan,
   previewNaming,
@@ -130,6 +131,25 @@ function onNaming(event: Event) {
   void setNaming(code, namingScope.value === "work" ? "work" : "default");
 }
 
+// ── 章的号怎么数：跨卷延续（默认）/ 每卷从头数 ────────────────────
+// 与命名写法同一处、同一个"作用范围"：号是位置的函数，这里换的是**数的范围**。
+/** 选择框显示的那一档（读不到就当"跟随默认"） */
+const numberingValue = computed(() => {
+  const source = namingScope.value === "work" ? workValues.value : values.value;
+  return source?.chapter_numbering ?? "auto";
+});
+
+const NUMBERING_OPTIONS = [
+  { code: "auto", key: "settings.chapter_numbering.auto" },
+  { code: "continue", key: "settings.chapter_numbering.continue" },
+  { code: "per_volume", key: "settings.chapter_numbering.per_volume" },
+];
+
+function onChapterNumbering(event: Event) {
+  const code = (event.target as HTMLSelectElement).value;
+  void setChapterNumbering(code, namingScope.value === "work" ? "work" : "default");
+}
+
 // ── 把已有章节一起换写法（显式动作：先预览再确认，绝不静默改稿）─────────────
 const rewriteVisible = ref(false);
 const rewriteBusy = ref(false);
@@ -233,6 +253,20 @@ async function runRewrite() {
         </select>
       </p>
       <p class="settings__hint">{{ t("settings.naming_hint") }}</p>
+      <p class="settings__row">
+        <span class="settings__label">{{ t("settings.chapter_numbering") }}</span>
+        <select class="settings__select" :disabled="busy" @change="onChapterNumbering">
+          <option
+            v-for="option in NUMBERING_OPTIONS"
+            :key="option.code"
+            :value="option.code"
+            :selected="option.code === numberingValue"
+          >
+            {{ t(option.key) }}
+          </option>
+        </select>
+      </p>
+      <p class="settings__hint">{{ t("settings.chapter_numbering_hint") }}</p>
       <!-- 把已有章节一起换写法：显式动作 + 先预览（改的是作者的文字，绝不静默做） -->
       <button
         v-if="namingPlan !== null && namingPlan.length > 0"

@@ -112,6 +112,46 @@ impl NodeKind {
     }
 }
 
+/// 章的号**怎么数**（显示与导出时由核心渲染；标题里存的还是模板，正文一个字不动）。
+///
+/// 它只回答一个问题：**第二卷的第一章是"第11章"还是"第1章"**。
+/// 两种都是正经写法（网文常见跨卷续数，出版向常每卷重来），所以由作者在设置里选，
+/// **默认跨卷延续**——大多数作者写的是同一本书里的连续故事。
+/// **默认跨卷延续**——大多数作者写的是同一本书里的连续故事。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub enum ChapterNumbering {
+    /// 跨卷延续：全书按阅读顺序数下去（第1卷 1~10、第2卷 11~20）
+    Continue,
+    /// 每卷从头数：每一卷各自从 1 开始（第2卷第1章）
+    PerVolume,
+}
+
+impl ChapterNumbering {
+    /// 界面按这个顺序列。
+    pub const ALL: [ChapterNumbering; 2] =
+        [ChapterNumbering::Continue, ChapterNumbering::PerVolume];
+
+    /// 稳定代码（存进偏好；别改）。
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            ChapterNumbering::Continue => "continue",
+            ChapterNumbering::PerVolume => "per_volume",
+        }
+    }
+
+    /// 从稳定代码解析；认不出来当没设过（回默认：跨卷延续）。
+    pub fn parse(s: &str) -> Option<Self> {
+        ChapterNumbering::ALL.into_iter().find(|mode| mode.as_str() == s)
+    }
+}
+
+impl Default for ChapterNumbering {
+    /// 默认**跨卷延续**（用户 2026-09-14 定：有些作者习惯第2卷接着第11章）。
+    fn default() -> Self {
+        ChapterNumbering::Continue
+    }
+}
+
 /// 一个结构节点。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Node {
@@ -158,5 +198,14 @@ mod tests {
         assert!(NodeKind::Volume.accepts_children() && NodeKind::Chapter.accepts_children());
         assert!(!NodeKind::Piece.accepts_children(), "单篇是零层级的根，不该再往下塞");
         assert!(!NodeKind::Scene.accepts_children(), "场景卡是叶子");
+    }
+
+    #[test]
+    fn chapter_numbering_round_trips_and_defaults_to_continuing() {
+        for mode in ChapterNumbering::ALL {
+            assert_eq!(ChapterNumbering::parse(mode.as_str()).unwrap(), mode);
+        }
+        assert_eq!(ChapterNumbering::parse("rotate"), None, "认不出来当没设过");
+        assert_eq!(ChapterNumbering::default(), ChapterNumbering::Continue, "默认跨卷延续");
     }
 }

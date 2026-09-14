@@ -132,7 +132,8 @@ fn closing_inside_a_volume_splits_the_tail_into_the_next_volume() {
     assert_eq!(store.subtree_rollup(receipt.volume_id).unwrap().chapters, 6, "本卷 6 章");
     assert_eq!(reading_order(&store, work_id), before_order);
     assert_eq!(bodies(&store, &chapters), before_bodies, "成卷不碰正文");
-    assert_eq!(store.rendered_title(chapters[24]).unwrap(), "第1章", "新卷从第1章重新起号");
+    // 号怎么数**跟设置走**（默认跨卷延续）：新卷第一张接着第一卷数下去
+    assert_eq!(store.rendered_title(chapters[24]).unwrap(), "第25章");
     assert_dense(&store, work_id);
 }
 
@@ -146,7 +147,7 @@ fn closing_early_opens_the_next_volume_with_its_first_chapter() {
     assert_eq!(receipt.moved, 0, "收卷点就是最后一章：没有章要搬");
     let opened = receipt.opened_chapter.expect("空卷写不了字，得顺手起第一章让光标落过去");
     assert_eq!(ids(&store, work_id, Some(receipt.volume_id)), vec![opened]);
-    assert_eq!(store.rendered_title(opened).unwrap(), "第1章");
+    assert_eq!(store.rendered_title(opened).unwrap(), "第25章", "默认跨卷延续：接着第一卷数");
     assert_eq!(ids(&store, work_id, Some(volume_one)).len(), 24);
     assert_eq!(reading_order(&store, work_id), [chapters.clone(), vec![opened]].concat());
     assert_eq!(bodies(&store, &chapters), before_bodies, "成卷不碰正文");

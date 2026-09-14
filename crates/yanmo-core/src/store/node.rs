@@ -8,7 +8,7 @@ use rusqlite::{params, OptionalExtension};
 
 use super::{too_deep, Store, MAX_TREE_DEPTH};
 use crate::error::{codes, Error, Result};
-use crate::model::{NamingStyle, NodeKind};
+use crate::model::NodeKind;
 
 /// 目录树条目：**没有正文字段**。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,7 +80,7 @@ fn build_summary(row: SummaryRow) -> Result<NodeSummary> {
         parent_id: row.2,
         kind: NodeKind::parse(&row.3)?,
         title: row.4.clone(),
-        // 先原样占位：编号要**按同层位置**算，等这一层都到齐了再渲染（见 render_titles）
+        // 先原样占位：编号要**按同层位置**算，等这一层都到齐了再渲染（见 super::numbering）
         title_rendered: row.4,
         sort_order: row.5,
         word_count: row.6,
@@ -92,55 +92,15 @@ fn build_summary(row: SummaryRow) -> Result<NodeSummary> {
     })
 }
 
-/// 把一批节点按"层 + 同类"分批，逐批渲染 `title_rendered`。
+/// 渲染一批节点的显示标题——**口径只在这一处取**：命名写法 + 章的号跨不跨卷数。
 ///
-/// 为什么分批到"层 + 同类"：`{$N}` 是同层序号，混进别的类型（比如一层里既有卷又有章）时
-/// 不该互相推号——取号、补写、默认名一直也是按"同层同类"算的。
-fn render_titles(nodes: &mut [NodeSummary], style: NamingStyle) {
-    let mut seen: Vec<(i64, Option<i64>, String)> = Vec::new();
-    for node in nodes.iter() {
-        let key = (node.work_id, node.parent_id, node.kind.as_str().to_string());
-        if !seen.contains(&key) {
-            seen.push(key);
-        }
-    }
-    for key in seen {
-        let members: Vec<usize> = nodes
-            .iter()
-            .enumerate()
-            .filter(|(_, node)| {
-                (node.work_id, node.parent_id, node.kind.as_str().to_string()) == key
-            })
-            .map(|(at, _)| at)
-            .collect();
-        // 空名字的容器 = "还没起名"（建书时留白的那一卷）：用模板渲染成 `第1卷`，
-        // 于是"第几卷"只在核心这一处算——界面不用再自己补一份占位（两处算迟早不一致）。
-        let blanks: Vec<String> = members
-            .iter()
-            .map(|at| {
-                let node = &nodes[*at];
-                let positional = node.kind == crate::model::NodeKind::Volume;
-                if positional && node.title.trim().is_empty() {
-                    super::node_edit::template_for(node.kind, style)
-                } else {
-                    node.title.clone()
-                }
-            })
-            .collect();
-        let items: Vec<crate::numbering::LayerItem<'_>> = members
-            .iter()
-            .enumerate()
-            .map(|(slot, at)| crate::numbering::LayerItem {
-                title: &blanks[slot],
-                // 容器（卷 / 部）按位置排；叶子章只有带计数宏才占号（见 numbering 的说明）
-                positional: nodes[*at].kind == crate::model::NodeKind::Volume,
-            })
-            .collect();
-        let rendered = crate::numbering::render_layer(&items);
-        for (slot, at) in members.iter().enumerate() {
-            nodes[*at].title_rendered = rendered[slot].clone();
-        }
-    }
+/// 分批、占号与跨卷延续的规则在 [`super::numbering`]（那边不认数据库之外的任何东西）。
+fn render_nodes(store: &Store, nodes: &mut [NodeSummary], work_id: i64) -> Result<()> {
+    let style = store.naming_style(work_id)?;
+    let mode = store.chapter_numbering(work_id)?;
+    let starts = super::numbering::starts_for(store.conn(), work_id, mode)?;
+    super::numbering::render_titles(nodes, style, mode, &starts);
+    Ok(())
 }
 
 impl Store {
@@ -156,7 +116,7 @@ impl Store {
         for row in rows {
             out.push(build_summary(row?)?);
         }
-        render_titles(&mut out, self.naming_style(work_id)?);
+        render_nodes(self, &mut out, work_id)?;
         Ok(out)
     }
 
@@ -171,13 +131,13 @@ impl Store {
         for row in rows {
             out.push(build_summary(row?)?);
         }
-        render_titles(&mut out, self.naming_style(work_id)?);
+        render_nodes(self, &mut out, work_id)?;
         Ok(out)
     }
 
     /// **单节点的显示标题**（打开章节、界面提示这类"只要一个标题"的地方用）。
     ///
-    /// 与 `render_titles` 同一套规矩：按它所在层的顺序数到它。只查这一层，不拉整棵树。
+    /// 与整树渲染同一套规矩（含"跨卷延续"的起始号）：按它所在层的顺序数到它。
     pub fn rendered_title(&self, node_id: i64) -> Result<String> {
         let (work_id, parent_id, kind, title): (i64, Option<i64>, String, String) = self
             .conn
@@ -208,6 +168,10 @@ impl Store {
         let positional = kind == crate::model::NodeKind::Volume.as_str();
         let kind_parsed = crate::model::NodeKind::parse(&kind)?;
         let style = self.naming_style(work_id)?;
+        // 起始号与整树渲染同一条来路：跨卷延续时接着前面的号往下数
+        let mode = self.chapter_numbering(work_id)?;
+        let start =
+            super::numbering::start_for_layer(&self.conn, work_id, parent_id, kind_parsed, mode)?;
         let blanks: Vec<String> = siblings
             .iter()
             .map(|(_, candidate)| {
@@ -222,7 +186,7 @@ impl Store {
             .iter()
             .map(|candidate| crate::numbering::LayerItem { title: candidate, positional })
             .collect();
-        let rendered = crate::numbering::render_layer(&items);
+        let rendered = crate::numbering::render_layer_from(&items, start);
         let mine = siblings
             .iter()
             .position(|(id, _)| *id == node_id)
