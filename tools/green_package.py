@@ -65,7 +65,7 @@ def green_readme(version: str) -> str:
 五、它需要什么
    Windows 10/11。界面用的是系统自带的 WebView2：
    Win11 一定有；Win10 1803 以后的机器多半也自带。老机器或精简系统如果打开是白屏，
-   请改用安装版（研墨-{version}-setup.exe）。
+   请改用安装版（yanmo-{version}-setup.exe）。
 
 六、许可证
    AGPL-3.0-or-later，全文见同目录的 LICENSE。
@@ -79,7 +79,7 @@ def green_zip(out_dir: Path, version: str, exe: Path, license_file: Path) -> tup
     if not license_file.is_file():
         return None, f"找不到许可证：{license_file}（AGPL 二进制要随包给）"
     out_dir.mkdir(parents=True, exist_ok=True)
-    wanted = out_dir / f"研墨-{version}-绿色版.zip"
+    wanted = out_dir / f"yanmo-{version}-portable.zip"
     with zipfile.ZipFile(wanted, "w", zipfile.ZIP_DEFLATED) as bundle:
         bundle.write(exe, f"{GREEN_FOLDER}/研墨.exe")
         bundle.writestr(f"{GREEN_FOLDER}/{PORTABLE_MARKER}", MARKER_NOTE)

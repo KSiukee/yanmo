@@ -287,7 +287,7 @@ def collect(out_dir: Path, version: str, no_bundle: bool) -> tuple[Path | None, 
     """
     if no_bundle:
         built = ROOT / "target/release/yanmo.exe"
-        wanted = f"研墨-{version}.exe"
+        wanted = f"yanmo-{version}-portable.exe"
     else:
         folder = ROOT / "target/release/bundle/nsis"
         candidates = sorted(folder.glob("*.exe")) if folder.is_dir() else []
@@ -299,14 +299,14 @@ def collect(out_dir: Path, version: str, no_bundle: bool) -> tuple[Path | None, 
                 + "）——版本号是不是没同步？"
             )
         built = matched[-1]
-        wanted = f"研墨-{version}-setup.exe"
+        wanted = f"yanmo-{version}-setup.exe"
     if not built or not built.is_file():
         return None, f"没找到打包产物（找过 {built or 'bundle 目录不存在'}）"
     out_dir.mkdir(parents=True, exist_ok=True)
     # 顺手提醒：dist 里还躺着别的版本，别拿旧包去装（用户已经踩过一次）
     stale = sorted(
         path.name
-        for path in out_dir.glob("研墨-*")
+        for path in out_dir.glob("yanmo-*")
         if version not in path.name and path.suffix in {".exe", ".sha256"}
     )
     if stale:
@@ -314,7 +314,9 @@ def collect(out_dir: Path, version: str, no_bundle: bool) -> tuple[Path | None, 
     target = out_dir / wanted
     shutil.copy2(built, target)
     digest = hashlib.sha256(target.read_bytes()).hexdigest()
-    # UTF-8：产物文件名带中文（`研墨-<版本>-setup.exe`），按 ASCII 写会当场炸
+    # 产物文件名**一律 ASCII**：GitHub 的 Release 资产 `name` 存不了中文
+    # （实测：连 API 直接 PATCH 成中文都会被退回 ASCII），中文名只留在页面上的展示
+    # 与包内。页面名与下载名因此一致（`yanmo-<版本>-setup.exe`），不再出现"-0.50.0-setup.exe"这种。
     (out_dir / f"{wanted}.sha256").write_text(f"{digest}  {wanted}\n", encoding="utf-8")
     return target, digest
 
@@ -377,7 +379,7 @@ def build_fingerprint(
         "这里给的是「同一提交 + 同一工具链 → 功能等价的产物」以及可核对的产物指纹。",
         "",
     ]
-    target = out_dir / f"构建指纹-{version}.txt"
+    target = out_dir / f"yanmo-{version}-build-fingerprint.txt"
     target.write_text("\n".join(lines), encoding="utf-8")
     return target
 
