@@ -297,20 +297,37 @@ fn read_works(store: &Store, out: &mut impl Write, input: &mut impl BufRead) -> 
 }
 
 /// 体检：把库文件的完整性说成作者看得懂的一句话。
+///
+/// **三态**（不只是"是不是 ok"）：查过是好的 / 查过有问题 / **这次没查成**。
+/// 最后那一档最要紧：库文件只读时 SQLite 的 FTS5 索引核对需要写权限，它给的原话是
+/// "unable to validate … readonly database"——那不是"库坏了"，可作者看到"库文件有问题，
+/// 先别做别的操作、赶紧导出留底找开发者"会白白吓一跳（2026-09-14 组合故障演练发现）。
 fn health(store: &Store, out: &mut impl Write) -> Result<(), String> {
     let _ = writeln!(out, "\n正在检查数据库……");
-    let integrity = db::quick_check(store.conn()).map_err(|error| error.to_string())?;
+    let verdict = db::integrity(store.conn()).map_err(|error| error.to_string())?;
     let schema = db::migrations::user_version(store.conn()).map_err(|error| error.to_string())?;
-    let _ = writeln!(out, "  库文件完整性：{integrity}");
+    let _ = writeln!(out, "  库文件完整性：{}", verdict.raw());
     let _ = writeln!(out, "  结构版本：{schema}");
     let _ = writeln!(out, "  引擎版本：{}", version::engine_version());
-    if integrity == "ok" {
-        let _ = writeln!(out, "\n结论：看起来没问题。稿子都在，可以放心用 [3] / [4] 导出。");
-    } else {
-        let _ = writeln!(
-            out,
-            "\n结论：库文件有问题（上面那行就是问题所在）。\n建议：先别做别的操作，用 [4] 把还能读出来的稿子导出成文件；\n再把这个数据目录整个复制一份留底，然后找开发者看看。"
-        );
+    match verdict {
+        db::Integrity::Clean => {
+            let _ = writeln!(out, "\n结论：看起来没问题。稿子都在，可以放心用 [3] / [4] 导出。");
+        }
+        db::Integrity::NotChecked(_) => {
+            let _ = writeln!(
+                out,
+                "\n结论：这一次**没能核对**（上面那行就是原因——多半是库文件被设成了只读，\
+                 核对索引那一步需要写权限）。\n这不是说库有问题：你的稿子照常读得出来。\
+                 \n想核对：先把只读去掉（右键库文件 → 属性 → 取消「只读」），再跑一次 [2]；\
+                 \n只想拿稿子：用 [3] / [4] 导出就行。"
+            );
+        }
+        db::Integrity::Problem(_) => {
+            let _ = writeln!(
+                out,
+                "\n结论：库文件有问题（上面那行就是问题所在）。\n建议：先别做别的操作，用 [4] 把还能读出来的稿子导出成文件；\n再把这个数据目录整个复制一份留底，然后找开发者看看。"
+            );
+        }
     }
     Ok(())
 }

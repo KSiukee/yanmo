@@ -131,12 +131,15 @@ fn rescue(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError> {
     let value = match args.command.as_str() {
         "verify" => {
             // 打开这一步就已经跑过环境校验与迁移：库坏了 / 版本过新都会在这里明确报错
-            let integrity = db::quick_check(store.conn())?;
+            let verdict = db::integrity(store.conn())?;
             let schema = db::migrations::user_version(store.conn())?;
             json!({
                 "ok": true,
                 "command": "verify",
-                "integrity": integrity,
+                // 原话（日志与报告留档用）与**结论**分开给：
+                // clean / problem / not_checked（只读库上 FTS5 那一步核对不了）
+                "integrity": verdict.raw(),
+                "integrity_state": verdict.as_str(),
                 "schema_version": schema,
                 "engine_version": version::engine_version(),
             })

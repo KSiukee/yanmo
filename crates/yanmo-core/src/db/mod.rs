@@ -83,8 +83,73 @@ pub fn verify_environment(conn: &Connection) -> Result<()> {
 ///
 /// **只读、不改任何东西**。体检、异常中断之后的判断、自动化脚本都靠它拿一个明确结论——
 /// 这样调用方不必自己写 PRAGMA（SQL 只该出现在数据层）。
+///
+/// ⚠️ 它给的是 SQLite 的**原话**："ok"、"某处坏了"、以及**"这次没查成"**都可能出现在
+/// 同一个字段里。要判"库到底好不好"请用 [`integrity`]（三态），别拿这个字符串跟 `"ok"` 比。
 pub fn quick_check(conn: &Connection) -> Result<String> {
     Ok(conn.query_row("PRAGMA quick_check", [], |row| row.get(0))?)
+}
+
+/// 完整性核对的**结论**：三态，而不是"是不是 ok"。
+///
+/// 为什么要分开（2026-09-14 组合故障演练发现，救援工具上真出过洋相）：
+/// 库文件只读时，`PRAGMA quick_check` 里的 FTS5 那一大步需要**写权限**，于是它回一句
+/// `unable to validate the inverted index for FTS5 table main.node_fts:
+/// attempt to write a readonly database`。原来的调用方拿"不是 ok"当"库有问题"，
+/// 救援工具就对着一本**完好**的书喊「库文件有问题，先别做别的操作，赶紧导出留底找开发者」——
+/// **把"没查成"说成"坏了"**，比不说更坏（作者会为一本好书去做一堆抢救动作）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Integrity {
+    /// 查过了，是好的。
+    Clean,
+    /// 查过了，确有问题（附 SQLite 的原话）。
+    Problem(String),
+    /// **这次没查成**（附原因）——不等于库有问题。
+    NotChecked(String),
+}
+
+impl Integrity {
+    /// 稳定代码（进 JSON 与报告；别改）。
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Integrity::Clean => "clean",
+            Integrity::Problem(_) => "problem",
+            Integrity::NotChecked(_) => "not_checked",
+        }
+    }
+
+    /// SQLite 的**原话**（日志与报告留档用；`Clean` 就是 `"ok"`）。
+    pub fn raw(&self) -> &str {
+        match self {
+            Integrity::Clean => "ok",
+            Integrity::Problem(text) | Integrity::NotChecked(text) => text,
+        }
+    }
+}
+
+/// 跑一次完整性核对，给出三态结论。
+///
+/// 与 [`quick_check`] 的分工：那个给 SQLite 的原话（日志/报告留档用），
+/// 这个给**判断**（"能不能用"的结论只该由它下）。
+pub fn integrity(conn: &Connection) -> Result<Integrity> {
+    Ok(classify_integrity(&quick_check(conn)?))
+}
+
+/// 把 `PRAGMA quick_check` 的原话分到三态里。
+///
+/// **认不出来的一律当 `Problem`**：宁可保守，也绝不把可能的问题说成"没事"。
+fn classify_integrity(raw: &str) -> Integrity {
+    let text = raw.trim();
+    if text.eq_ignore_ascii_case("ok") {
+        return Integrity::Clean;
+    }
+    let lowered = text.to_ascii_lowercase();
+    // FTS5 的索引核对要写权限：只读库上它当场说"核对不了"，而不是"索引坏了"。
+    // 两个关键词都要在才算——比如 "…: database disk image is malformed" 那是真问题。
+    if lowered.contains("unable to validate") && lowered.contains("readonly database") {
+        return Integrity::NotChecked(text.to_string());
+    }
+    Integrity::Problem(text.to_string())
 }
 
 /// 记录一条动作日志（op-log，append-only，为多端同步预留）。
@@ -143,6 +208,29 @@ mod tests {
         let conn = open(&path).unwrap();
         let mode: String = conn.query_row("PRAGMA journal_mode", [], |r| r.get(0)).unwrap();
         assert_eq!(mode.to_lowercase(), "wal");
+    }
+
+    /// 三态分类：**"没查成"不许被当成"坏了"**，认不出来的一律当问题（保守）。
+    #[test]
+    fn integrity_classification_keeps_three_states_apart() {
+        assert_eq!(classify_integrity("ok"), Integrity::Clean);
+        assert_eq!(classify_integrity("  ok\n"), Integrity::Clean, "原话带空白也算好的");
+
+        // 只读库上 FTS5 那一步核对不了——这是"没查成"，不是"坏了"
+        let readonly = "unable to validate the inverted index for FTS5 table main.node_fts: \
+                        attempt to write a readonly database";
+        assert!(matches!(classify_integrity(readonly), Integrity::NotChecked(_)));
+
+        // 真坏了：原话留下，结论是问题
+        assert_eq!(
+            classify_integrity("*** in database main ***\nPage 4 is never used"),
+            Integrity::Problem("*** in database main ***\nPage 4 is never used".to_string())
+        );
+        // 同样带 "unable to validate"，但原因是索引真坏了 → 不许说成"没查成"
+        assert!(matches!(
+            classify_integrity("unable to validate the inverted index for FTS5 table main.node_fts: database disk image is malformed"),
+            Integrity::Problem(_)
+        ));
     }
 
     #[test]
