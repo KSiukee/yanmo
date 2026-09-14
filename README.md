@@ -124,7 +124,7 @@
 ## 版本与下载
 
 - **当前版本**：0.47.1
-- **下载**：GitHub Releases —— <https://github.com/KbyAndroid/yanmo/releases>
+- **下载**：GitHub Releases —— <https://github.com/KSiukee/yanmo/releases>
   （装哪个、怎么装、第一次打开会看到什么，见下面的「上手三步」）
 - **校验和**：每个安装包与便携版旁边都有一个同名 `.sha256` 文件，可用来核对文件有没有被改过：
 
@@ -198,7 +198,7 @@
 
 ## 联系开发者
 
-- **提问题 / 报 bug / 想要某个功能**：<https://github.com/KbyAndroid/yanmo/issues>
+- **提问题 / 报 bug / 想要某个功能**：<https://github.com/KSiukee/yanmo/issues>
 - 杀毒误报、数据相关的疑问，也走这里——附上现象与截图最快。
 
 ## 爱发电

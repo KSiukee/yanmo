@@ -46,10 +46,10 @@ FOOTER = """
 
 2. **没签名，第一次运行会被 Windows 拦一下**：点「更多信息」→「仍要运行」即可。
    为什么暂时不签名、以及"零出网"怎么自己验证（看依赖树 / 跑检查 / 断网实测），都写在
-   [SECURITY.md](https://github.com/KbyAndroid/yanmo/blob/main/SECURITY.md) 里，不在这儿重复一遍。
+   [SECURITY.md](https://github.com/KSiukee/yanmo/blob/main/SECURITY.md) 里，不在这儿重复一遍。
 
 > 想自己从源码构建、出一份你自己的安装包：见
-> [RELEASING.md](https://github.com/KbyAndroid/yanmo/blob/main/RELEASING.md)，
+> [RELEASING.md](https://github.com/KSiukee/yanmo/blob/main/RELEASING.md)，
 > 一条命令 `tools\\build-release.bat` 即可。
 """
 
