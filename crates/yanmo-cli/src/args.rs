@@ -79,8 +79,9 @@ pub const HELP_DEV: &str = "\
   begin                     开始一次会话（登记标记），并报告上次退得干不干净
   report                    只看上次会话的交代（只读，不写标记）
   note-open --node <id>     记下「现在打开的是哪一章」
-  write --node <id> --body <文本> | --body-file <路径>
-                            写入一章正文（内容没变时不写库）
+  write --node <id> --body <文本> | --body-file <路径> [--tz <分钟>]
+                            写入一章正文（内容没变时不写库）；给了 --tz 就走编辑器那条路，
+                            顺带记进「每日码字」账本（东八区 480）
   fingerprint --node <id>   库里正文的指纹
   end --node <id>           正常退出收尾（留快照 + 标记干净）
   abandon                   放弃这次会话（只标记干净，不留快照）

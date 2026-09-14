@@ -275,3 +275,32 @@ fn import_only_writes_when_asked_and_then_the_book_is_there() {
     ));
     assert!(matches!(run(target.path(), "import", &[]), Err(CliError::Usage(_))), "--from 是必填");
 }
+
+#[test]
+fn a_counted_write_lands_in_the_daily_ledger() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, node_id) = seed(dir.path(), "novel");
+
+    // 不给 --tz：只写正文，不进账本（备份恢复、脚本灌数据走这条）
+    ok(dir.path(), "write", &[("node", &node_id.to_string()), ("body", "不计账的字。")]);
+    let plain = ledger_rows(dir.path());
+    assert_eq!(plain, 0, "不给 --tz 就不该记进每日码字");
+
+    // 给了 --tz：编辑器落盘那条路，按作者本地时区记账
+    ok(
+        dir.path(),
+        "write",
+        &[("node", &node_id.to_string()), ("body", "计账的字。"), ("tz", "480")],
+    );
+    assert_eq!(ledger_rows(dir.path()), 1, "给了 --tz 就该留下这一天的账");
+    assert!(
+        matches!(run(dir.path(), "write", &[("node", "1"), ("body", "x"), ("tz", "东八")]), Err(CliError::Usage(_))),
+        "--tz 不是整数要报用法错误"
+    );
+}
+
+/// 每日码字账本里有几行（直接读库：命令行没有"看账本"的命令，这是驱动方的活）。
+fn ledger_rows(dir: &Path) -> i64 {
+    let conn = yanmo_core::db::open_ready(dir.join("yanmo.db")).unwrap();
+    conn.query_row("SELECT COUNT(*) FROM writing_days", [], |row| row.get(0)).unwrap()
+}

@@ -19,7 +19,7 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
     match command {
         "begin" | "report" | "abandon" => Some(&[]),
         "note-open" | "fingerprint" | "end" => Some(&["node"]),
-        "write" => Some(&["node", "body", "body-file"]),
+        "write" => Some(&["node", "body", "body-file", "tz"]),
         "new-work" => Some(&["kind", "title"]),
         "new-node" => Some(&["work", "parent", "kind", "title"]),
         "hold" => Some(&["node", "seconds"]),
@@ -54,7 +54,18 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
         "write" => {
             let node = args.required_i64("node")?;
             let body = body_of(args)?;
-            let stats = store.write_body(node, &body)?;
+            // 给了 `--tz <分钟>` 就走**编辑器那条路**（顺带记进「每日码字」账本）；
+            // 不给就只写正文——备份恢复、脚本灌数据这类"不是作者今天敲的字"走这条路。
+            // 时区偏移只有调用方知道（核心不猜作者在哪），东八区是 480。
+            let stats = match args.optional("tz") {
+                None => store.write_body(node, &body)?,
+                Some(text) => {
+                    let tz: i32 = text
+                        .parse()
+                        .map_err(|_| Usage::from("--tz 需要是一个整数（分钟，东八区 480）"))?;
+                    store.write_body_counted(node, &body, tz)?
+                }
+            };
             json!({
                 "ok": true,
                 "command": "write",
