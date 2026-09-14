@@ -32,6 +32,7 @@ mod search;
 mod session;
 mod snapshot;
 mod trash;
+mod volume;
 mod work;
 mod writing;
 
@@ -56,6 +57,7 @@ pub use search::SearchHit;
 pub use session::{EditorCursor, EditorTarget, SessionReport};
 pub use snapshot::{SnapshotSummary, AUTO_SNAPSHOTS_KEPT};
 pub use trash::{TrashEntry, TrashKind};
+pub use volume::{CloseReceipt, DissolveReceipt};
 pub use work::ShelfEntry;
 pub use writing::WritingDay;
 

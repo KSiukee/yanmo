@@ -36,6 +36,8 @@ pub mod text;
 pub mod time;
 /// 排版清理：规则、引号风格与差异报告。
 pub mod typeset;
+/// 分卷规则：一卷大概几章、什么时候该劝作者收卷（纯规则，不碰数据库）。
+pub mod volume;
 /// 引擎版本与数据格式版本。
 pub mod version;
 

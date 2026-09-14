@@ -30,6 +30,8 @@ pub mod trash;
 pub mod tree;
 /// 排版清理：预览与执行。
 pub mod typeset;
+/// 分卷：卷长口径、收卷提议、成卷与撤卷。
+pub mod volume;
 /// 书架：列表、新建、改名、删除、导出与编译入口。
 pub mod work;
 /// 码字账本：今日进度、日历、每日目标。

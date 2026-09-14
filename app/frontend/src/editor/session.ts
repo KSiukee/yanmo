@@ -73,6 +73,7 @@ import {
   compileWork,
   setNodeSummary,
   setWorkSummary,
+  treeSetVolumeTarget,
   typesetApply,
   typesetRules,
   typesetScan,
@@ -677,12 +678,16 @@ export function useEditorSession(): EditorSession {
    * ③ `trash` / `shelf` / `snapshots` / `restore` 最后（它们只在回调里互相引用，运行时才碰）。
    */
   function createParts() {
+    /** 打开"刚新建/补写"的那一章——要接着写（走同一条切章纪律，只是焦点策略不同） */
+    const openFreshChapter = (node_id: number) => switchChapter(node_id, true);
+
     // 目录树：只接"看得见、点得动、拖得走"，切章仍走上面那条（先落盘再切）
     const directory = useDirectory({
       workId,
       currentNodeId,
       saveState,
       openChapter: (node_id) => switchChapter(node_id),
+      openFresh: openFreshChapter,
       onError: (message) => {
         failure.value = t("session.directory_failed", { detail: message });
       },
@@ -728,9 +733,6 @@ export function useEditorSession(): EditorSession {
       },
     });
 
-    /** 打开"刚新建/补写"的那一章——要接着写（走同一条切章纪律，只是焦点策略不同） */
-    const openFreshChapter = (node_id: number) => switchChapter(node_id, true);
-
     // 点「+」之后的编排（先问路标 → 补写 / 接着建章）：**不放在视图里**，视图只管"点了哪一行"
     const adding = useAddChapter({ directory, addChapterAfter, openFreshChapter });
 
@@ -769,6 +771,8 @@ export function useEditorSession(): EditorSession {
         writeSummary: setWorkSummary,
         // 命名规则就是外观偏好里那一项，写到"这本书"那一层（每书覆盖）
         writeNaming: (work_id, naming) => writeAppearance(work_id, { naming }).then(() => undefined),
+        // 建书页填的「一卷大概多少章」：写进这本书的分卷口径（只影响提示，不改结构）
+        writeVolumeTarget: treeSetVolumeTarget,
       },
       workId,
       openWork: (target) => switchWork(target),

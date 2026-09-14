@@ -530,8 +530,11 @@ export interface RelocationReport {
 }
 
 
-/** 命令白名单：新增命令先在这里登记，别在组件里裸调。 */
-const COMMANDS = {
+/** 命令白名单：新增命令先在这里登记，别在组件里裸调。
+ *
+ * 别的域（如 [`./volumes`](api/volumes.ts)）要用 `call` 与这里的命令名，
+ * 所以两样都是导出的——**通道仍然只有 core.ts 一条**（只有它 import Tauri API）。 */
+export const COMMANDS = {
   engineInfo: "engine_info",
   dataHome: "data_home",
   openDataDir: "open_data_dir",
@@ -555,6 +558,10 @@ const COMMANDS = {
   treeDeleteNode: "tree_delete_node",
   treeVolumeTarget: "tree_volume_target",
   treeSetVolumeTarget: "tree_set_volume_target",
+  volumePlan: "volume_plan",
+  volumeOffer: "volume_offer",
+  volumeClose: "volume_close",
+  volumeDissolve: "volume_dissolve",
   appearanceRead: "appearance_read",
   appearanceWrite: "appearance_write",
   appearanceReset: "appearance_reset",
@@ -608,7 +615,7 @@ const COMMANDS = {
   compileOpenFolder: "compile_open_folder",
 } as const;
 
-async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+export async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   try {
     // 参数先修一遍「半个字符」：JS 允许落单代理项，Rust 的 JSON 解析器直接拒收，
     // 真让它过去，用户会收到一句英文解析错误（见 api/errors.ts 的说明）。

@@ -63,9 +63,16 @@ export interface NewWorkDraft {
   summary: string;
   /** 卷 / 章的命名规则（`NamingStyle` 的稳定代码）；`null` = **跟随设置**（不写这本书的覆盖） */
   naming: string | null;
+  /**
+   * 「一卷大概多少章」；`null` = 先不填。
+   *
+   * 它只影响目录里「本卷 12/30 章」这行小字与到点后的那句收卷提示，
+   * **不改书的结构**——所以建书页问一次就够，之后在目录栏里随时能改。
+   */
+  volumeTarget: number | null;
 }
 
-/** 书架要用的四个动作（会话层注入真命令，测试注入替身）。 */
+/** 书架要用的动作（会话层注入真命令，测试注入替身）。 */
 export interface ShelfTransport {
   list: () => Promise<ShelfEntry[]>;
   create: (kind: string, title: string) => Promise<number>;
@@ -77,6 +84,8 @@ export interface ShelfTransport {
   writeSummary: (work_id: number, summary: string) => Promise<void>;
   /** 把"这本书用哪套卷/章命名规则"写成它的覆盖（留 null 就是跟随设置，不调它） */
   writeNaming: (work_id: number, naming: string) => Promise<void>;
+  /** 写"一卷大概多少章"（留 null 就是没设过，不调它） */
+  writeVolumeTarget: (work_id: number, chapters: number) => Promise<void>;
 }
 
 /** 「编辑作品」表单填的那两样：书名与简介。
@@ -217,6 +226,10 @@ export function useShelf(options: ShelfOptions): Shelf {
     if (draft.naming !== null) {
       await options.transport.writeNaming(work_id, draft.naming);
     }
+    // 建书页上填的「一卷大概多少章」也一次落好（没填就不写：**没设过 ≠ 设成 0**）
+    if (draft.volumeTarget !== null && draft.volumeTarget > 0) {
+      await options.transport.writeVolumeTarget(work_id, draft.volumeTarget);
+    }
     if (await options.openWork(work_id)) visible.value = false;
     // 收空壳放在**切过去之后**：万一收不动，作者也已经在新书里了，不至于卡住
     if (shell !== null && shell !== work_id) {
@@ -272,6 +285,9 @@ export function useShelf(options: ShelfOptions): Shelf {
           await options.transport.rename(work_id, title);
           await options.transport.writeSummary(work_id, draft.summary.trim());
           if (draft.naming !== null) await options.transport.writeNaming(work_id, draft.naming);
+          if (draft.volumeTarget !== null && draft.volumeTarget > 0) {
+            await options.transport.writeVolumeTarget(work_id, draft.volumeTarget);
+          }
           return;
         }
         // 换了类型：空壳的根节点是"篇"，跟长篇 / 短篇集不是一回事，就地改类型得重建整棵树——

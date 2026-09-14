@@ -28,6 +28,7 @@ const {
   create,
   canDrop,
   volumeTarget,
+  plan,
   setVolumeTarget,
 } = props.session.directory;
 // 目录树里的字数按**当前口径**显示（口径跟着作品语言，可在状态栏切换）
@@ -35,6 +36,9 @@ const { caliber } = props.session;
 const { neighbors, switching, switchChapter, deleteNode, adding, trash } = props.session;
 // 点「+」之后的编排在 editor/add-chapter.ts（这里只接线，不写流程）
 const { addHere } = adding;
+// 分卷：到点了提一句、收好之后能撤销（编排与分寸在 editor/volumes.ts）
+const { offer: volumeOffer, closed: closedVolume, closeHere, snooze, undo } =
+  props.session.directory.volumes;
 
 /**
  * 同层序号（1 起）：**没起名的卷靠它显示「第 1 卷」**，而不是一个冷冰冰的"未命名"。
@@ -64,6 +68,32 @@ function rowLabel(row: TreeRow): string {
 
 /** 有卷才显示"每卷多少章"这一栏：零层级作品用不上它 */
 const hasVolumes = computed(() => rows.value.some((row) => row.accepts_children && !row.holds_body));
+
+/**
+ * 目录里分母用哪个数：**学到的那个阈值说了算**（核心那边口径只有一份）。
+ *
+ * 只显示作者手填的那个数的话，会出现「本卷 26/30 章」旁边却问
+ * "要不要在 27 章收卷"——同一个界面上两个数打架，作者只会觉得软件在瞎猜。
+ */
+const threshold = computed(() => plan.value?.effective ?? null);
+
+/** 收卷那句话：按"提前 / 正好 / 延后"换话术，并把阈值是从哪来的说清楚 */
+const offerText = computed(() => {
+  const offer = volumeOffer.value;
+  if (!offer) return "";
+  const target = offer.plan.effective ?? offer.count;
+  const source =
+    offer.plan.learned !== null
+      ? t("tree.volume_source_learned", { target })
+      : t("tree.volume_source_target", { target });
+  const key =
+    offer.phase === "early"
+      ? "tree.volume_offer_early"
+      : offer.phase === "late"
+        ? "tree.volume_offer_late"
+        : "tree.volume_offer_on_target";
+  return t(key, { count: offer.count, source });
+});
 
 /** 改卷长：空着或 ≤0 就当作"没设过"（清掉） */
 function saveVolumeTarget(event: Event) {
@@ -195,6 +225,46 @@ function askDelete(row: TreeRow) {
       </label>
     </p>
 
+    <!-- 到收卷点了：安静地问一句，两个按钮就是全部（绝不自动改结构） -->
+    <p v-if="offerText" class="pane__volume">
+      <span class="pane__volume-text">{{ offerText }}</span>
+      <span class="pane__volume-actions">
+        <button
+          type="button"
+          class="pane__button"
+          :title="t('tree.volume_close_here_title')"
+          @click="closeHere"
+        >
+          {{ t("tree.volume_close_here") }}
+        </button>
+        <button
+          type="button"
+          class="pane__button"
+          :title="t('tree.volume_wait_title')"
+          @click="snooze"
+        >
+          {{ t("tree.volume_wait") }}
+        </button>
+      </span>
+    </p>
+
+    <!-- 刚收好一卷：一句回执 + 一个撤销出口（撤了正文一个字都不动） -->
+    <p v-if="closedVolume" class="pane__volume pane__volume--done">
+      <span class="pane__volume-text">
+        {{ t("tree.volume_closed", { count: closedVolume.count }) }}
+      </span>
+      <span class="pane__volume-actions">
+        <button
+          type="button"
+          class="pane__button"
+          :title="t('tree.volume_undo_title')"
+          @click="undo"
+        >
+          {{ t("tree.volume_undo") }}
+        </button>
+      </span>
+    </p>
+
     <p v-if="rows.length === 0" class="pane__empty">{{ t("tree.empty") }}</p>
     <ul ref="listEl" class="tree">
       <li
@@ -256,7 +326,7 @@ function askDelete(row: TreeRow) {
             })
           "
         >
-          {{ containerLabel(row, volumeTarget, caliber) }}
+          {{ containerLabel(row, threshold, caliber) }}
         </span>
         <button
           v-if="addIntent(row)"

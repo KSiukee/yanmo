@@ -17,8 +17,11 @@ import {
   treeSetVolumeTarget,
   treeVolumeTarget,
 } from "../api/core";
+import { volumeClose, volumeDissolve, volumeOffer, volumePlan } from "../api/volumes";
+import type { VolumePlan } from "../api/volumes";
 import type { AutosaveState } from "./autosave";
 import { DirectoryTree, type TreeRow } from "./tree";
+import { useVolumes, type Volumes } from "./volumes";
 
 export interface DirectoryOptions {
   /** 当前作品（换作品＝换一棵树） */
@@ -29,6 +32,8 @@ export interface DirectoryOptions {
   saveState: Ref<AutosaveState>;
   /** 点一行就切过去（切章纪律在会话层：先落盘再切） */
   openChapter: (node_id: number) => Promise<void>;
+  /** 打开"刚新建/补写"的那一章（成卷时核心顺手起的第一章走这条，要接着写） */
+  openFresh: (node_id: number) => Promise<void>;
   onError?: (message: string) => void;
 }
 
@@ -38,6 +43,13 @@ export interface Directory {
   current: Ref<number | null>;
   /** 每卷目标章数（作者设过才有）：目录里「本卷 12/30 章」的分母 */
   volumeTarget: Ref<number | null>;
+  /**
+   * 分卷口径：作者设的、从他收好的卷学到的、以及**真正在用的**那个阈值。
+   *
+   * 目录里的分母用 `effective`——**学到的那个数说了算**，不然会出现
+   * 「本卷 26/30 章」旁边却问"要不要在 27 章收卷"这种自相矛盾的画面。
+   */
+  plan: Ref<VolumePlan | null>;
   /** 设定 / 清除每卷目标章数（null = 清掉） */
   setVolumeTarget: (chapters: number | null) => Promise<void>;
   toggle: (node_id: number) => Promise<void>;
@@ -52,8 +64,17 @@ export interface Directory {
   create: (parent_id: number | null, kind: string, title: string) => Promise<number | null>;
   /** 拖拽前问一句：这个落点能不能放（不许拖进自己的子树） */
   canDrop: (node_id: number, parent_id: number | null) => boolean;
+  /**
+   * 分卷：目录栏上「要不要在这里收卷 / 撤销」那一小段。
+   *
+   * 放在这里是因为**它就长在目录栏上**：提示按当前章算、收完要重拉树。
+   * 状态机本身在 [`useVolumes`]（不认命令、可单测），这里只负责接线。
+   */
+  volumes: Volumes;
   /** 别处改了结构（例如新建章节走的是编辑会话那条路）之后重拉可见的层 */
   refresh: () => Promise<void>;
+  /** 把某一章在树上露出来（成卷之后新卷是收着的，得摊开才看得见里面的章） */
+  reveal: (node_id: number) => Promise<void>;
 }
 
 export function useDirectory(options: DirectoryOptions): Directory {
@@ -68,6 +89,7 @@ export function useDirectory(options: DirectoryOptions): Directory {
   });
   const rows = ref<TreeRow[]>([]);
   const volumeTarget = ref<number | null>(null);
+  const plan = ref<VolumePlan | null>(null);
   const sync = () => {
     rows.value = tree.rows();
   };
@@ -89,10 +111,29 @@ export function useDirectory(options: DirectoryOptions): Directory {
   /** 作品那一棵树打开（含根层拉取）完成了吗——决定"定位当前章"由哪条路做 */
   let opened = false;
 
+  // 分卷：目录栏上「要不要在这里收卷 / 撤销」那一段的接线。
+  // 提示按**当前章**算、收完要重拉树，所以它跟目录树同一处装配（状态机在 volumes.ts）
+  const volumes = useVolumes({
+    transport: { offer: volumeOffer, close: volumeClose, dissolve: volumeDissolve },
+    afterChange: async () => {
+      // 结构变了：重拉看得见的层 + 重读卷长口径，并把正在写的那一章露出来
+      // （卷内收卷时收卷点之后的章整体进了新卷，不摊开就"看不见了"）
+      await tree.reloadVisible();
+      await reloadPlan();
+      const node_id = options.currentNodeId.value;
+      if (node_id !== null) await tree.reveal(node_id);
+    },
+    // 空卷写不了字：核心顺手起了第一章，落过去接着写（焦点策略与普通切章不同）
+    openChapter: options.openFresh,
+    onError: (message) => options.onError?.(message),
+  });
+
   watch(
     options.workId,
     (work_id) => {
       opened = false;
+      // 换作品：分卷的提示与"问过几次"的记忆只对当前这本书，换书就清干净
+      volumes.reset();
       if (work_id === null) return;
       void act(async () => {
         await tree.openWork(work_id);
@@ -101,13 +142,16 @@ export function useDirectory(options: DirectoryOptions): Directory {
         const node_id = options.currentNodeId.value;
         if (node_id !== null) await tree.reveal(node_id);
         volumeTarget.value = await loadVolumeTarget(work_id);
+        await reloadPlan(work_id);
       });
     },
     { immediate: true },
   );
 
-  // 切到别的卷里的章：把那条路摊开（作品还没打开完时交给上面那条一并做）
+  // 切章：把那条路摊开，并问一句"这一章后面要不要收卷"
+  // （作品还没打开完时，摊开交给上面那条一并做；问话只读一次库，不受它影响）
   watch(options.currentNodeId, (node_id) => {
+    void volumes.consider(node_id);
     if (node_id === null || !opened) return;
     void act(() => tree.reveal(node_id));
   });
@@ -157,6 +201,25 @@ export function useDirectory(options: DirectoryOptions): Directory {
     }
   }
 
+  /**
+   * 重读分卷口径：作者设的、从历史学到的、以及**真正在用的**那个阈值。
+   *
+   * 目录里的分母用 `effective`——不然会出现「本卷 26/30 章」旁边却问
+   * "要不要在 27 章收卷"这种自相矛盾的画面。读不到就当"没尺子"（不影响目录本身）。
+   */
+  async function reloadPlan(work_id?: number): Promise<void> {
+    const id = work_id ?? options.workId.value;
+    if (id === null) {
+      plan.value = null;
+      return;
+    }
+    try {
+      plan.value = await volumePlan(id);
+    } catch {
+      plan.value = null;
+    }
+  }
+
   /** 写卷长：写进去再回读一次，界面显示的永远是库里那份 */
   async function setVolumeTarget(chapters: number | null): Promise<void> {
     const work_id = options.workId.value;
@@ -165,6 +228,7 @@ export function useDirectory(options: DirectoryOptions): Directory {
       const next = chapters !== null && chapters > 0 ? chapters : null;
       await treeSetVolumeTarget(work_id, next);
       volumeTarget.value = await loadVolumeTarget(work_id);
+      await reloadPlan(work_id);
     });
   }
 
@@ -172,6 +236,8 @@ export function useDirectory(options: DirectoryOptions): Directory {
     rows,
     current: options.currentNodeId,
     volumeTarget,
+    plan,
+    volumes,
     setVolumeTarget,
     toggle: (node_id) => act(() => tree.toggle(node_id)),
     select: (node_id) => options.openChapter(node_id),
@@ -182,6 +248,12 @@ export function useDirectory(options: DirectoryOptions): Directory {
     create,
     canDrop: (node_id, parent_id) =>
       parent_id === null || (parent_id !== node_id && !tree.isDescendant(node_id, parent_id)),
-    refresh: () => act(() => tree.reloadVisible()),
+    // 重拉看得见的层 + 重读卷长口径：成卷 / 撤卷会改历史，分母得跟着变
+    refresh: () =>
+      act(async () => {
+        await tree.reloadVisible();
+        await reloadPlan();
+      }),
+    reveal: (node_id) => act(() => tree.reveal(node_id)),
   };
 }

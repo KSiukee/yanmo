@@ -206,6 +206,37 @@
   text-align: center;
 }
 
+/* 收卷那一条：安静地挂在目录栏里——不弹窗、不抢焦点，写作中不打断
+   （在他自己要停下来的时刻说：写完一章、换章的时候） */
+.pane__volume {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 10px 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--ym-line);
+  border-left: 2px solid var(--ym-accent);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ym-ink-soft);
+}
+
+.pane__volume-text {
+  min-width: 0;
+}
+
+.pane__volume-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* 收好了那一条：只是一句回执 + 撤销出口，不必再抢眼 */
+.pane__volume--done {
+  border-left-color: var(--ym-line);
+}
+
 .pane__foot {
   display: flex;
   align-items: center;

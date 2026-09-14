@@ -36,6 +36,8 @@ const kind = ref(entry.value?.kind ?? "novel");
 const summary = ref(entry.value?.summary ?? "");
 /** `""` = 跟随设置（不写这本书的覆盖）；否则是 NamingStyle 的稳定代码 */
 const naming = ref("");
+/** 「一卷大概多少章」：空着 = 先不填（那是"没设过"，不是 0） */
+const volumeTarget = ref("");
 const titleEl = ref<HTMLInputElement | null>(null);
 
 /** 长篇才谈得上"卷 / 章怎么叫" */
@@ -59,11 +61,14 @@ void nextTick(() => titleEl.value?.focus());
 function submit() {
   const name = title.value.trim();
   if (!name || busy.value) return;
+  const chapters = Number.parseInt(volumeTarget.value, 10);
   const draft = {
     kind: kind.value,
     title: name,
     summary: summary.value,
     naming: numbered.value && naming.value !== "" ? naming.value : null,
+    // 卷长只在长篇上问（单篇 / 短篇集不分卷）；空着或 ≤0 都当"没填"
+    volumeTarget: numbered.value && Number.isFinite(chapters) && chapters > 0 ? chapters : null,
   };
   if (props.form.mode === "edit") {
     void edit(props.form.entry.id, { title: name, summary: summary.value });
@@ -139,6 +144,19 @@ function submit() {
             </select>
           </label>
           <p v-else class="newwork__hint">{{ t("shelf.naming_not_needed") }}</p>
+          <!-- 「一卷大概多少章」：长篇才问（它决定目录里那行小字与到点后的收卷提示） -->
+          <label v-if="numbered" class="newwork__row">
+            <span class="newwork__label">{{ t("shelf.field_volume_target") }}</span>
+            <input
+              v-model="volumeTarget"
+              class="newwork__input dialog__input"
+              type="number"
+              min="1"
+              :placeholder="t('shelf.volume_target_placeholder')"
+              @keydown.esc="emit('close')"
+            />
+          </label>
+          <p v-if="numbered" class="newwork__hint">{{ t("shelf.volume_target_hint") }}</p>
           <p class="newwork__hint">{{ t("shelf.new_work_hint") }}</p>
         </template>
 

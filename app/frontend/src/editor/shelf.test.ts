@@ -50,6 +50,9 @@ function harness(onError?: (message: string) => void, listed: ShelfEntry[] = [])
       writeNaming: async (work_id: number, naming: string) => {
         calls.push(`naming:${work_id}:${naming}`);
       },
+      writeVolumeTarget: async (work_id: number, chapters: number) => {
+        calls.push(`volume:${work_id}:${chapters}`);
+      },
     },
     workId: ref<number | null>(null),
     openWork: async (work_id: number | null) => {
@@ -76,6 +79,28 @@ test("没填简介 / 没选命名规则：不写多余的覆盖", async () => {
   const { shelf, calls } = harness();
   await shelf.create({ kind: "collection", title: "故园随笔", summary: "   ", naming: null });
   assert.deepEqual(calls, ["create:collection:故园随笔", "open:9"], "空简介与跟随设置都不写库");
+});
+
+test("建书页填了「一卷大概多少章」：也一次落好；没填就不写（没设过 ≠ 设成 0）", async () => {
+  const filled = harness();
+  await filled.shelf.create({
+    kind: "novel",
+    title: "长夜",
+    summary: "",
+    naming: null,
+    volumeTarget: 30,
+  });
+  assert.deepEqual(filled.calls, ["create:novel:长夜", "volume:9:30", "open:9"], "开写之前落好");
+
+  const blank = harness();
+  await blank.shelf.create({
+    kind: "novel",
+    title: "长夜",
+    summary: "",
+    naming: null,
+    volumeTarget: null,
+  });
+  assert.deepEqual(blank.calls, ["create:novel:长夜", "open:9"], "没填就不写");
 });
 
 test("简介两头的空白不算内容", async () => {

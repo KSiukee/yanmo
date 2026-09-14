@@ -104,6 +104,10 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     TREE_CYCLE_SUSPECTED => "tree.cycle_suspected" : "节点树深度异常（疑似成环），已拒绝继续" : [],
     TREE_MOVE_INTO_DESCENDANT => "tree.move_into_descendant"
         : "不能把节点移进自己的子孙里——那会形成环" : [],
+    VOLUME_CLOSE_POINT => "volume.close_point"
+        : "这里收不了卷：收卷点要落在一章上，且它所在的那一层是卷或根" : [],
+    VOLUME_NOT_VOLUME => "volume.not_volume"
+        : "这个节点不是卷，撤不了卷：{node_id}" : ["node_id"],
     TRASH_PURGE_NEEDS_TRASHED => "trash.purge_needs_trashed"
         : "只能彻底删除已经在回收站里的东西：{id}" : ["id"],
     SNAPSHOT_NOT_FOUND => "snapshot.not_found"
