@@ -24,7 +24,11 @@ function openTrash() {
 }
 
 /** 展开了"更多"动作的那一本（同时只可能有一本）：日常只用「打开 / 编译」，
- *  导出、简介、改名、删除这些低频动作收进去，免得一行挤六个按钮。 */
+ *  导出、编辑、删除这些低频动作收进去，免得一行挤六个按钮。
+ *
+ *  按钮次序（用户 2026-09-14 真机定的）：`编译 | 编辑 导出 删除 | 收起`——
+ *  「收起」这个开合开关挪到最右边，三种低频动作紧跟在「编译」后面。
+ *  注意它是**同一个元素**：收起时它排在第 2 位（紧跟「编译」），展开后跑到第 5 位。 */
 const expanded = ref<number | null>(null);
 
 function toggleMore(work_id: number) {
@@ -112,27 +116,8 @@ function confirmRemove(work_id: number, title: string) {
             >
               {{ t("compile.button") }}
             </button>
-            <button
-              type="button"
-              class="shelf__button dialog__button"
-              :disabled="busy"
-              :title="t('shelf.more_title')"
-              @click="toggleMore(entry.id)"
-            >
-              {{ expanded === entry.id ? t("shelf.more_close") : t("shelf.more") }}
-            </button>
-
-            <!-- 低频动作：收在「更多」里 -->
+            <!-- 低频动作：收在「更多」里（编辑 → 导出 → 删除） -->
             <template v-if="expanded === entry.id">
-              <button
-                type="button"
-                class="shelf__button dialog__button"
-                :disabled="busy"
-                :title="t('shelf.export_title')"
-                @click="exportWork(entry.id, 'both')"
-              >
-                {{ t("shelf.export") }}
-              </button>
               <button
                 type="button"
                 class="shelf__button dialog__button"
@@ -144,6 +129,15 @@ function confirmRemove(work_id: number, title: string) {
               </button>
               <button
                 type="button"
+                class="shelf__button dialog__button"
+                :disabled="busy"
+                :title="t('shelf.export_title')"
+                @click="exportWork(entry.id, 'both')"
+              >
+                {{ t("shelf.export") }}
+              </button>
+              <button
+                type="button"
                 class="shelf__button shelf__button--danger dialog__button"
                 :disabled="busy"
                 @click="confirmRemove(entry.id, entry.title)"
@@ -151,6 +145,17 @@ function confirmRemove(work_id: number, title: string) {
                 {{ t("shelf.delete") }}
               </button>
             </template>
+
+            <!-- 开合开关：**排在最后**（用户真机定的次序） -->
+            <button
+              type="button"
+              class="shelf__button dialog__button"
+              :disabled="busy"
+              :title="t('shelf.more_title')"
+              @click="toggleMore(entry.id)"
+            >
+              {{ expanded === entry.id ? t("shelf.more_close") : t("shelf.more") }}
+            </button>
           </div>
         </li>
       </ul>
