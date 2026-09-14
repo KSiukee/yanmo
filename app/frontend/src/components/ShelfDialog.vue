@@ -68,6 +68,11 @@ function confirmRemove(work_id: number, title: string) {
         <button type="button" class="shelf__button dialog__button" :title="t('shelf.close_title')" @click="close">{{ t("common.close") }}</button>
       </header>
 
+      <!-- 上一次动作的交代（"导出到哪儿了"之类）：与回收站 / 版本那两个弹窗同一条样式。
+           这一行在 v0.39.0 的建书页重构里被误删过——导出照样写文件，只是屏幕上
+           再没人告诉作者"导出到哪儿了"，看着就像按钮失效（用户报上来的就是这个）。 -->
+      <p v-if="note" class="shelf__note dialog__note">{{ note }}</p>
+
       <ul class="shelf__list">
         <li
           v-for="entry in entries"

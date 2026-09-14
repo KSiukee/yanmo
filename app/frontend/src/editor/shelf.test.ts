@@ -10,11 +10,11 @@ import { ref } from "vue";
 import type { ExportAck, ShelfEntry } from "../api/core";
 import { looksLikeFirstRun, useShelf } from "./shelf.ts";
 
-function harness(onError?: (message: string) => void) {
+function harness(onError?: (message: string) => void, listed: ShelfEntry[] = []) {
   const calls: string[] = [];
   const shelf = useShelf({
     transport: {
-      list: async (): Promise<ShelfEntry[]> => [],
+      list: async (): Promise<ShelfEntry[]> => listed,
       create: async (kind: string, title: string) => {
         calls.push(`create:${kind}:${title}`);
         return 9;
@@ -22,7 +22,9 @@ function harness(onError?: (message: string) => void) {
       rename: async (work_id: number, title: string) => {
         calls.push(`rename:${work_id}:${title}`);
       },
-      remove: async () => {},
+      remove: async (work_id: number) => {
+        calls.push(`remove:${work_id}`);
+      },
       export: async (): Promise<ExportAck> => ({ path: "x" }),
       writeSummary: async (work_id: number, summary: string) => {
         calls.push(`summary:${work_id}:${summary}`);
@@ -123,4 +125,42 @@ test("作品表单的开合：书架与首启提示都能打开它（新建 / �
   assert.deepEqual(shelf.form.value, { mode: "edit", entry });
   shelf.closeForm();
   assert.equal(shelf.form.value, null);
+});
+
+test("建了自己的书：第一次打开自动建的那本空壳顺手收进回收站，并且**说一声**", async () => {
+  const shell = {
+    id: 1,
+    kind: "article",
+    title: "",
+    summary: "",
+    word_count: 0,
+    char_count: 0,
+    chars_no_punct: 0,
+    chapters: 0,
+    opened_at: 0,
+    created_at: 0,
+    updated_at: 0,
+  } as ShelfEntry;
+  const { shelf, calls } = harness(undefined, [shell]);
+  await shelf.create({ kind: "novel", title: "长夜", summary: "", naming: null });
+  assert.deepEqual(
+    calls,
+    ["create:novel:长夜", "open:9", "remove:1"],
+    "建完自己的书、切过去之后，才把那本空壳收走",
+  );
+  assert.match(shelf.note.value, /回收站/, "收走了要说一声（可捞回），别悄悄动书架");
+});
+
+test("已经起过名的书：建新书时不许动它", async () => {
+  const named = { id: 1, title: "旧书", word_count: 0 } as ShelfEntry;
+  const { shelf, calls } = harness(undefined, [named]);
+  await shelf.create({ kind: "novel", title: "长夜", summary: "", naming: null });
+  assert.deepEqual(calls, ["create:novel:长夜", "open:9"], "有名字的书不是「空壳」，一个字都不许动");
+});
+
+test("写过一个字的书：建新书时也不许动它", async () => {
+  const written = { id: 1, title: "", word_count: 12 } as ShelfEntry;
+  const { shelf, calls } = harness(undefined, [written]);
+  await shelf.create({ kind: "novel", title: "长夜", summary: "", naming: null });
+  assert.deepEqual(calls, ["create:novel:长夜", "open:9"], "写过字的更不许动");
 });

@@ -198,6 +198,12 @@ export function useShelf(options: ShelfOptions): Shelf {
     open,
     create: (draft) =>
       act(async () => {
+        // 首启那本**自动建的空壳**：作者建了自己的书之后顺手收进回收站（可捞回）。
+        // 判据取在动手之前——`entries` 这会儿还是动作前那一份列表。
+        // 列表还没拉过（比如启动那次读失败）就先补一次：这条判断不该取决于
+        // "列表恰好已经加载好了没有"（那是时序运气，不是逻辑）。
+        if (entries.value.length === 0) await refresh();
+        const shell = looksLikeFirstRun(entries.value) ? entries.value[0].id : null;
         const work_id = await options.transport.create(draft.kind, draft.title);
         // 建书页上填的简介与命名规则**一次落好**：作者填完就不用再去别处补
         if (draft.summary.trim()) {
@@ -207,6 +213,12 @@ export function useShelf(options: ShelfOptions): Shelf {
           await options.transport.writeNaming(work_id, draft.naming);
         }
         if (await options.openWork(work_id)) visible.value = false;
+        // 收空壳放在**切过去之后**：万一收不动，作者也已经在新书里了，不至于卡住
+        if (shell !== null && shell !== work_id) {
+          await options.transport.remove(shell);
+          // 收掉了要说一声（收进回收站、可捞回）——悄悄动作者的书架是要不得的
+          note.value = t("shelf.first_run_shell_tidied");
+        }
       }),
     rename: (work_id, title) =>
       act(async () => {
