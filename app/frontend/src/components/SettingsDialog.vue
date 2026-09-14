@@ -1,11 +1,13 @@
 <script setup lang="ts">
-// 设置面板：「写作行为」偏好 + 「新建条目」命名规则 + 「稿子放在哪」。
+// 设置面板：「写作行为」偏好 + 「新建条目」命名规则 + 「稿子放在哪」+ 「关于」。
 //
 // 视图只负责"显示与改"：偏好的真相在核心（单一真相源）；读不出来就如实说，不猜一个默认值糊上去。
 // 「稿子放在哪」只显示壳报告出来的路径，另外把"换位置"那个面板请出来（它自己那套分寸见组件里）。
-import { computed, ref } from "vue";
+// 「关于」是只读报告：版本 / 库结构 / 稿子在哪 + 安全承诺与限制的摘要（完整清单在仓库的 SECURITY.md）。
+import { computed, onMounted, ref } from "vue";
 
 import { t } from "../locales/index.ts";
+import { openDataDir, readAppVersion, readDataHome, readEngineInfo } from "../api/core";
 import type { EditorSession } from "../editor/session";
 import LocationDialog from "./LocationDialog.vue";
 
@@ -37,6 +39,44 @@ function startRelocate(): void {
   void props.session.location.load();
   relocating.value = true;
 }
+
+// ── 关于（只读报告；经 api 网关取数，组件不直接碰 Tauri）────────────
+const appVersion = ref("");
+const engineVersion = ref("");
+const schemaVersion = ref<number | null>(null);
+const aboutError = ref<string | null>(null);
+/** 打开稿子文件夹失败的原因（点了没反应最难查，所以要把原因说出来） */
+const openError = ref<string | null>(null);
+
+/** 一行报全：安装包版本 / 引擎版本 / 库结构版本 */
+const aboutVersion = computed(() =>
+  t("settings.about_version_value", {
+    version: appVersion.value || "—",
+    engine: engineVersion.value || "—",
+    schema: schemaVersion.value ?? "—",
+  }),
+);
+
+async function openDataFolder(): Promise<void> {
+  try {
+    await openDataDir();
+    openError.value = null;
+  } catch (error) {
+    openError.value = error instanceof Error ? error.message : String(error);
+  }
+}
+
+onMounted(async () => {
+  // 版本号单独兜底：读不到不该把整块"关于"打成错误
+  appVersion.value = await readAppVersion().catch(() => "");
+  try {
+    const [engine, home] = await Promise.all([readEngineInfo(), readDataHome()]);
+    engineVersion.value = engine.version;
+    schemaVersion.value = home.schema_version;
+  } catch (error) {
+    aboutError.value = error instanceof Error ? error.message : String(error);
+  }
+});
 
 /** 勾选框：改完写回核心，界面显示的永远是库里那份 */
 function onToggle(event: Event) {
@@ -205,6 +245,29 @@ async function runRewrite() {
       <p v-if="unavailable" class="settings__hint settings__hint--bad">
         {{ t("settings.unavailable") }}
       </p>
+
+      <!-- 关于：只读报告。承诺与限制都写在明面上——信任靠坦白边界建立 -->
+      <p class="settings__group">{{ t("settings.group_about") }}</p>
+      <p class="settings__row">
+        <span class="settings__label">{{ t("settings.about_version") }}</span>
+        <code class="settings__path">{{ aboutVersion }}</code>
+      </p>
+      <p class="settings__row settings__row--path">
+        <span class="settings__label">{{ t("location.current") }}</span>
+        <code class="settings__path">{{ dataPath }}</code>
+      </p>
+      <button
+        type="button"
+        class="settings__button dialog__button"
+        :disabled="!dataPath"
+        @click="void openDataFolder()"
+      >
+        {{ t("settings.about_open_data") }}
+      </button>
+      <span v-if="openError" class="settings__hint settings__hint--bad">{{ openError }}</span>
+      <p class="settings__hint">{{ t("settings.about_promise") }}</p>
+      <p class="settings__hint">{{ t("settings.about_limits") }}</p>
+      <p v-if="aboutError" class="settings__hint settings__hint--bad">{{ aboutError }}</p>
 
       <!-- 预览：会改哪几章、改成什么（确认才动手） -->
       <div v-if="rewriteVisible" class="settings dialog dialog--above" @click.self="rewriteVisible = false">
