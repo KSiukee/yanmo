@@ -304,3 +304,51 @@ fn ledger_rows(dir: &Path) -> i64 {
     let conn = yanmo_core::db::open_ready(dir.join("yanmo.db")).unwrap();
     conn.query_row("SELECT COUNT(*) FROM writing_days", [], |row| row.get(0)).unwrap()
 }
+
+#[test]
+fn a_backup_from_the_command_line_writes_a_package_and_a_skipped_target_is_recorded() {
+    let dir = tempfile::tempdir().unwrap();
+    let (work_id, node_id) = seed(dir.path(), "novel");
+    ok(dir.path(), "write", &[("node", &node_id.to_string()), ("body", "备份之前写下的字。")]);
+    let target = dir.path().join("备份盘");
+
+    // ① 正常备份：包里该有的东西都点了名，读回体检过
+    let report = ok(
+        dir.path(),
+        "backup",
+        &[("to", target.to_str().unwrap()), ("keep", "3"), ("device", "演练台")],
+    );
+    assert_eq!(report["succeeded"], 1, "{report}");
+    let package = std::path::Path::new(report["outcomes"][0]["package"].as_str().unwrap());
+    assert!(package.join("yanmo.db").is_file(), "快照要在包里");
+    assert!(package.join("manifest.json").is_file(), "清单要在包里");
+
+    // ② 目标不可达（拿一个"文件下面"的路径当目录）：**跳过并记账**，不算整体失败
+    let blocked = dir.path().join("占位文件");
+    std::fs::write(&blocked, b"x").unwrap();
+    let bad = ok(
+        dir.path(),
+        "backup",
+        &[("to", blocked.join("子目录").to_str().unwrap())],
+    );
+    assert_eq!(bad["succeeded"], 0, "{bad}");
+    // 目标不可达算「跳过」（不是「失败」）：跳过与失败都记进账本，但语义不同——
+    // 跳过是"这一处没成，别的目标照做"，失败是"做备份这件事本身出问题了"。
+    assert_eq!(bad["skipped"], 1, "不可达的目标要记成跳过：{bad}");
+    assert_eq!(bad["failed"], 0, "不可达不该算整体失败：{bad}");
+    assert!(
+        !bad["outcomes"][0]["reason"].as_str().unwrap_or("").is_empty(),
+        "跳过也要给原因，别只说跳过：{bad}"
+    );
+
+    // ③ 账本里两次尝试都记着（成功与跳过都记，空档不用猜）
+    let ledger: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join("backup-ledger.json")).unwrap())
+            .unwrap();
+    let entries = ledger["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 2, "两次尝试都该记进账本：{ledger}");
+    assert_eq!(entries[0]["status"], "written");
+    assert_eq!(entries[1]["status"], "skipped");
+    assert!(!entries[1]["reason"].as_str().unwrap_or("").is_empty());
+    assert!(work_id > 0);
+}

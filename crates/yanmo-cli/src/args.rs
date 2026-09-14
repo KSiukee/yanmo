@@ -85,6 +85,8 @@ pub const HELP_DEV: &str = "\
   fingerprint --node <id>   库里正文的指纹
   end --node <id>           正常退出收尾（留快照 + 标记干净）
   abandon                   放弃这次会话（只标记干净，不留快照）
+  backup --to <目录> [--keep <n>] [--tz <分钟>] [--device <名字>]
+                            立刻做一次备份（演练用：验「备份目标不可写会怎样」与保留滚动）
   new-work --kind <novel|collection|article> --title <书名>
                             新建一本书
   new-node --work <id> [--parent <id>] --kind <volume|chapter|section|piece|scene> [--title <名字>]

@@ -8,7 +8,7 @@
 
 use serde_json::{json, Value};
 use yanmo_core::model::{NodeKind, WorkKind};
-use yanmo_core::store::{SessionReport, Store};
+use yanmo_core::store::{BackupRequest, BackupTarget, SessionReport, Store};
 use yanmo_core::text;
 
 use crate::args::{Args, Usage};
@@ -20,6 +20,7 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         "begin" | "report" | "abandon" => Some(&[]),
         "note-open" | "fingerprint" | "end" => Some(&["node"]),
         "write" => Some(&["node", "body", "body-file", "tz"]),
+        "backup" => Some(&["to", "keep", "tz", "device"]),
         "new-work" => Some(&["kind", "title"]),
         "new-node" => Some(&["work", "parent", "kind", "title"]),
         "hold" => Some(&["node", "seconds"]),
@@ -88,6 +89,47 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
         "abandon" => {
             store.abandon_session()?;
             json!({ "ok": true, "command": "abandon" })
+        }
+        "backup" => {
+            // 演练用：把「多处备份」这条链从**外部**驱动起来（备份平时只挂在界面命令上，
+            // 而七层防线里的"备份目标不可写会怎样"必须有人能从外面验）。
+            // 与别的写库命令一样：只在开发构建里存在，发行版连解析分支都没有。
+            let to = std::path::PathBuf::from(args.required("to")?);
+            let keep = match args.optional("keep") {
+                None => 7usize,
+                Some(text) => text
+                    .parse()
+                    .map_err(|_| Usage::from("--keep 需要是一个整数（每个目标留几份）"))?,
+            };
+            let tz: i32 = match args.optional("tz") {
+                None => 0,
+                Some(text) => text
+                    .parse()
+                    .map_err(|_| Usage::from("--tz 需要是一个整数（分钟，东八区 480）"))?,
+            };
+            let request = BackupRequest {
+                data_dir: args.data.clone(),
+                targets: vec![BackupTarget {
+                    path: to.display().to_string(),
+                    // 卷标识由壳从 Windows 卷信息里取；命令行给不出来，留空（只影响"异盘提醒"）
+                    volume_id: String::new(),
+                    volume_label: String::new(),
+                    removable: false,
+                }],
+                keep,
+                tz_offset_minutes: tz,
+                device: args.optional("device").unwrap_or("cli").to_string(),
+            };
+            let report = store.backup_now(&request)?;
+            json!({
+                "ok": true,
+                "command": "backup",
+                "stamp": report.stamp,
+                "succeeded": report.succeeded(),
+                "skipped": report.skipped(),
+                "failed": report.failed(),
+                "outcomes": report.outcomes,
+            })
         }
         "new-work" => {
             let kind = WorkKind::parse(args.required("kind")?)?;
