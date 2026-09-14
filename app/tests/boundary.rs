@@ -43,8 +43,17 @@ fn workspace_root() -> PathBuf {
     package_root().parent().expect("app 应当在 workspace 根目录下").to_path_buf()
 }
 
+/// 读一份源文件，**换行一律归一成 `\n`**。
+///
+/// ⚠️ 为什么必须归一（真踩过，第一次真跑 CI 就红了）：Windows 上 `core.autocrlf=true` 是默认，
+/// 检出来的源码是 **CRLF**；而本仓开发机上是 `autocrlf=false`（LF）。守卫里有几条断言查的是
+/// **跨行选择器**（`.a,\n.b {`），硬编码 `\n` 就会在 CRLF 检出上永远找不到——本地全绿、CI 全红，
+/// 而且报错是"找不到那条规则"，看着像样式被删了，查起来极绕。
+/// 守卫要盯的是"有没有这条规则"，不该被检出设置影响。
 fn read(path: &Path) -> String {
-    fs::read_to_string(path).unwrap_or_else(|e| panic!("读取 {} 失败：{e}", path.display()))
+    fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("读取 {} 失败：{e}", path.display()))
+        .replace("\r\n", "\n")
 }
 
 /// 递归收集目录下指定后缀的文件（跳过构建产物）。
@@ -360,4 +369,26 @@ fn every_declared_command_is_registered_and_reachable_from_the_gateway() {
             "命令 {name} 没有登记进前端网关（src/api/core.ts 的命令白名单）"
         );
     }
+}
+
+/// 守卫自己也要防这一脚：**CRLF 检出**（Windows 上 `core.autocrlf=true` 是默认）下，
+/// 读源码的断言必须照样命中。这条是"第一次真跑 CI 就红"那次的回归——
+/// 当时本地全绿、CI 全红，报错还是"找不到那条规则"，看着像样式被删了。
+#[test]
+fn reading_source_survives_a_crlf_checkout() {
+    let crlf = ".editor__count,\r\n.editor__lang,\r\n.editor__today,\r\n.editor__status {\r\n  flex: none;\r\n}\r\n";
+    let dir = std::env::temp_dir().join(format!("yanmo-boundary-crlf-{}", std::process::id()));
+    fs::create_dir_all(&dir).expect("临时目录可建");
+    let path = dir.join("sample.css");
+    fs::write(&path, crlf).expect("临时文件可写");
+
+    let text = read(&path);
+    assert!(!text.contains('\r'), "read() 必须把 CRLF 归一掉，否则跨行选择器永远找不到：{text:?}");
+    let shared = rule_block(
+        &text,
+        ".editor__count,\n.editor__lang,\n.editor__today,\n.editor__status",
+    );
+    assert!(shared.contains("flex: none"), "归一之后跨行选择器要能命中：{shared}");
+    assert!(rule_block_optional(&text, ".editor__status").is_some());
+    fs::remove_dir_all(&dir).ok();
 }
