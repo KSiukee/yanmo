@@ -116,6 +116,7 @@ import { useTrash, type Trash } from "./trash";
 import { attachGlobalKeys } from "./global-keys";
 import type { KeyTarget } from "./shortcuts";
 import { useZen, type ZenState } from "./zen";
+import { useFloatingPanels, type FloatingPanels, type PanelId } from "./panels";
 
 export interface EditorSession {
   editor: ShallowRef<Editor | undefined>;
@@ -179,6 +180,12 @@ export interface EditorSession {
   fullscreenOn: Ref<boolean>;
   /** 切全屏：只改窗口，不碰稿子；失败只报一句 */
   toggleFullscreen: () => Promise<void>;
+  /** 专注时的悬浮卡片（大纲这类"看一眼就走"的内容）：开着哪一张；不落盘 */
+  panels: FloatingPanels;
+  /** 点悬浮按钮：开着就收（并把焦点还给正文），收着就开 */
+  togglePanel: (id: PanelId) => void;
+  /** 收起卡片并**把焦点还给正文**（焦点留在按钮上输入法就没落点，见 focus.ts） */
+  closePanel: () => void;
 }
 
 const IDLE: AutosaveState = {
@@ -207,6 +214,8 @@ export function useEditorSession(): EditorSession {
   /** 专注模式（不落盘：重开软件回到常规三栏）与全屏（窗口真实状态，启动时对一次表） */
   const zen = useZen();
   const fullscreenOn = ref(false);
+  /** 专注时的悬浮卡片（大纲）：一次只开一张 */
+  const panels = useFloatingPanels();
 
   const autosave = shallowRef<Autosave | null>(null);
   let gate: ExitGate | null = null;
@@ -555,6 +564,23 @@ export function useEditorSession(): EditorSession {
       });
   }
 
+  /** 收起悬浮卡片，并把**焦点还给正文**：焦点留在按钮上的话，输入法就没有落点
+   *  （作者看到的现象是"打不出中文"——这条在 focus.ts 里踩过，别再踩第二遍）。 */
+  function closePanel(): void {
+    if (panels.open.value === null) return;
+    panels.close();
+    editor.value?.commands.focus();
+  }
+
+  /** 点悬浮按钮：开着就收，收着就开（一次只开一张）。 */
+  function togglePanel(id: PanelId): void {
+    if (panels.isOpen(id)) {
+      closePanel();
+      return;
+    }
+    panels.open.value = id;
+  }
+
   /// 在某一章后面新建一章并直接切过去（目录树的「+」与"接着写下一章"走同一条路）。
   ///
   /// **返回新章 id**：目录树连点同一个「+」时要靠它接着往下排（见 `editor/add-chapter.ts`）。
@@ -890,6 +916,8 @@ export function useEditorSession(): EditorSession {
         dialogOpen: () => anyDialogOpen.value,
         zenOn: () => zen.on.value,
         fullscreenOn: () => fullscreenOn.value,
+        panelOpen: () => panels.open.value !== null,
+        closePanel,
         toggleZen: () => {
           zen.toggle();
         },
@@ -1027,6 +1055,9 @@ export function useEditorSession(): EditorSession {
     zen,
     fullscreenOn,
     toggleFullscreen,
+    panels,
+    togglePanel,
+    closePanel,
     chapterTitle,
     saveState,
     exitState,

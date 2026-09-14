@@ -17,6 +17,10 @@ export interface GlobalKeyDeps {
   dialogOpen: () => boolean;
   zenOn: () => boolean;
   fullscreenOn: () => boolean;
+  /** 专注时的悬浮卡片开着吗（Esc 先关它） */
+  panelOpen: () => boolean;
+  /** 收起悬浮卡片并把焦点还给正文 */
+  closePanel: () => void;
   toggleZen: () => void;
   toggleFullscreen: () => void;
   /** 退出专注：专注与全屏一起收（Esc 的语义是"回到常规"） */
@@ -42,6 +46,9 @@ export function runShortcut(id: ShortcutId, deps: GlobalKeyDeps): void {
       return;
     case "exit-focus":
       deps.exitFocus();
+      return;
+    case "close-panel":
+      deps.closePanel();
       return;
     case "prev-chapter":
       deps.prevChapter();
@@ -74,6 +81,7 @@ export function attachGlobalKeys(deps: GlobalKeyDeps, target: KeyTarget): () => 
         inTextField: isTextFieldTarget(event.target),
         zenOn: deps.zenOn(),
         fullscreenOn: deps.fullscreenOn(),
+        panelOpen: deps.panelOpen(),
       }),
     (id) => runShortcut(id, deps),
   );

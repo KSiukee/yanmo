@@ -40,6 +40,10 @@ const {
 // 专注模式：退出按钮就挂在章名这一行——专注时它是屏幕上唯一的"出口"，
 // 藏起来就等于把作者关在里面了（快捷键是捷径，不能是唯一的路）。
 const { on: zenOn, exit: exitZen } = props.session.zen;
+// 专注 / 全屏时**放宽阅读行宽**：窗口变宽了，正文还卡在 42em 会白掉一大片。
+// 也不是无限拉——上限 64em（中文长文再宽，眼睛回行容易串行）。
+const fullscreenOn = props.session.fullscreenOn;
+const wideMeasure = computed(() => zenOn.value || fullscreenOn.value);
 
 // 今日进度：账本在核心（`writing_days`），会话在每次落盘成功后刷一次。
 // 没设目标就只显示"今天写了多少"——不拿一个假目标糊弄作者。
@@ -232,7 +236,12 @@ function statusText(status: AutosaveState["status"]): string {
       <span class="editor__note-label">{{ t("editor.note_label") }}</span>{{ noteValue }}
     </p>
 
-    <EditorContent v-if="editor" :editor="editor" class="editor__area" />
+    <EditorContent
+      v-if="editor"
+      :editor="editor"
+      class="editor__area"
+      :class="{ 'editor__area--wide': wideMeasure }"
+    />
 
     <ExitDialog
       v-if="exitState.blocked"

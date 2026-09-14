@@ -210,6 +210,12 @@
   outline: none;
 }
 
+/* 专注 / 全屏时放宽行宽：跟窗口一起长，但**封顶 64em**（约 64 个中文字）——
+   再宽眼睛回行就开始串行了。留 20% 的边（不贴窗口边）比拉满更好读。 */
+.editor__area--wide :deep(.ProseMirror) {
+  max-width: min(80%, 64em);
+}
+
 /* 中文写作的第一条排版规则：首行缩进两字符（视觉用 2em，导出走 OOXML 的 firstLineChars）。 */
 .editor__area :deep(.ProseMirror p) {
   margin: 0 0 0.6em;

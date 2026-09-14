@@ -37,6 +37,9 @@ const { visible: compileVisible } = session.compile;
 const { visible: settingsVisible, values: settingsValues, open: openSettings } = session.appearance;
 // 专注模式：只改"露哪几块"（判断在 editor/zen.ts），布局层照着渲染，不自己 if
 const { on: zenOn, chrome: zenChrome, toggle: toggleZen } = session.zen;
+// 专注时的悬浮卡片：一次只开一张；卡片里放的是**原来那个目录树组件**，不写第二份
+const { panels, togglePanel, closePanel } = session;
+const outlineOpen = computed(() => panels.isOpen("outline"));
 // 码字日历：入口在编辑器状态栏那行「今日 …」（也就是"每天手感"那一块）
 const { visible: writingVisible } = session.writing;
 // 备份：入口在顶栏；没有异盘目标时给一条**非阻塞**小条（拒过就不再自动弹）
@@ -108,6 +111,32 @@ const hint = computed(() => {
       <DirectoryPane v-if="zenChrome.directory" :session="session" />
       <EditorPane :session="session" />
       <FlowPane v-if="zenChrome.flow" />
+
+      <!-- 专注时：两侧栏换成"唤出来看一眼"的悬浮卡片（同一批组件，不写第二份树） -->
+      <template v-if="zenOn">
+        <button
+          type="button"
+          class="shell__float"
+          :title="t('zen.outline_open')"
+          @click="togglePanel('outline')"
+        >
+          {{ t("zen.outline") }}
+        </button>
+        <section v-if="outlineOpen" class="shell__card">
+          <header class="shell__card-bar">
+            <span class="shell__card-title">{{ t("zen.outline") }}</span>
+            <button
+              type="button"
+              class="shell__card-close"
+              :title="t('zen.card_close')"
+              @click="closePanel()"
+            >
+              {{ t("common.close") }}
+            </button>
+          </header>
+          <DirectoryPane :session="session" />
+        </section>
+      </template>
     </main>
 
     <ShelfDialog v-if="shelfVisible" :session="session" />
@@ -211,10 +240,91 @@ const hint = computed(() => {
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   min-height: 0;
+  /* 悬浮卡片与悬浮按钮的定位基准（它们浮在正文之上，不参与分栏） */
+  position: relative;
 }
 
 /* 专注模式：只剩正文那一列（两侧栏没渲染，这里也就没有第二、三列可占） */
 .shell__body--zen {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* 悬浮唤出按钮：**只在专注时出现**（常规态两侧栏本来就在，用不着它）。
+   ⚠️ 位置要避开编辑器那条 bar（它就在 .shell__body 的最顶上，36px 上下）——
+   压在章名上既挡字又点不准，所以从 46px 起。 */
+.shell__float {
+  position: absolute;
+  z-index: 3;
+  top: 46px;
+  left: 12px;
+  padding: 1px 10px;
+  border: 1px solid var(--ym-line);
+  border-radius: 999px;
+  background: var(--ym-paper);
+  color: var(--ym-ink-soft);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 10%);
+}
+
+.shell__float:hover {
+  border-color: var(--ym-accent);
+  color: var(--ym-accent);
+}
+
+/* 卡片：浮在正文之上**不挤正文**；收起即消失（写作时不该被布局变化打断）。
+   水平方向落在正文左侧的留白里（专注时正文是居中的，左右各有余量）。 */
+.shell__card {
+  position: absolute;
+  z-index: 3;
+  top: 74px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  max-height: calc(100% - 86px);
+  border: 1px solid var(--ym-line);
+  border-radius: 8px;
+  background: var(--ym-paper-dim);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 18%);
+  overflow: hidden;
+}
+
+.shell__card-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  border-bottom: 1px solid var(--ym-line);
+}
+
+.shell__card-title {
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--ym-ink-soft);
+}
+
+.shell__card-close {
+  padding: 1px 8px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.shell__card-close:hover {
+  border-color: var(--ym-accent);
+  color: var(--ym-accent);
+}
+
+/* 卡片里塞的是原来那个侧栏组件：去掉"当一列用"时的右边框与底色，让它老实待在卡里 */
+.shell__card :deep(.pane) {
+  border-right: none;
+  background: transparent;
 }
 </style>

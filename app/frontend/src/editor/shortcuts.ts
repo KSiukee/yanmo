@@ -23,6 +23,8 @@ export type ShortcutId =
   | "new-chapter"
   | "settings"
   | "shelf"
+  /** Esc：先关悬浮卡片（专注模式下的大纲等），没有卡片才退专注 */
+  | "close-panel"
   /** Esc：退出专注（顺手把全屏也收了），"回到常规"一个键说完 */
   | "exit-focus";
 
@@ -75,6 +77,8 @@ export interface MatchContext {
   zenOn: boolean;
   /** 全屏开着吗（Esc 也管它） */
   fullscreenOn: boolean;
+  /** 专注模式下的悬浮卡片开着吗（Esc 的第一优先：先关卡，再退专注） */
+  panelOpen: boolean;
 }
 
 /** 焦点是不是落在**输入框**里。 */
@@ -99,6 +103,9 @@ export function matchShortcut(event: KeyLike, context: MatchContext): ShortcutId
 
   if (key === "Escape") {
     if (context.inTextField) return null; // 输入框里的 Esc 是"取消输入"
+    // 一层一层退：先收悬浮卡片，再退专注/全屏。反过来的话，一下 Esc 会连退两层，
+    // 作者的预期是"关掉眼前这张"——退专注得再按一次。
+    if (context.panelOpen) return "close-panel";
     return context.zenOn || context.fullscreenOn ? "exit-focus" : null;
   }
 

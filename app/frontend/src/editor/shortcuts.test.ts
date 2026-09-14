@@ -26,7 +26,14 @@ function key(overrides: Partial<KeyLike> & { key: string }): KeyLike {
 }
 
 function ctx(overrides: Partial<MatchContext> = {}): MatchContext {
-  return { dialogOpen: false, inTextField: false, zenOn: false, fullscreenOn: false, ...overrides };
+  return {
+    dialogOpen: false,
+    inTextField: false,
+    zenOn: false,
+    fullscreenOn: false,
+    panelOpen: false,
+    ...overrides,
+  };
 }
 
 test("命中的键：每一个都在表里认得出来", () => {
@@ -108,6 +115,23 @@ test("Esc 只在「有东西可退」时才认（专注或全屏开着）", () =
     matchShortcut(key({ key: "Escape" }), ctx({ zenOn: true, fullscreenOn: true })),
     "exit-focus",
     "两个都开着也是「回到常规」一下收完",
+  );
+});
+
+test("Esc 一层一层退：先关悬浮卡片，再退专注（不能一下连退两层）", () => {
+  // 作者的预期是"关掉眼前这张"——卡片开着时 Esc 只能关卡片
+  assert.equal(matchShortcut(key({ key: "Escape" }), ctx({ panelOpen: true, zenOn: true })), "close-panel");
+  assert.equal(
+    matchShortcut(key({ key: "Escape" }), ctx({ panelOpen: true, zenOn: true, fullscreenOn: true })),
+    "close-panel",
+    "全屏开着也一样：先把卡片收掉",
+  );
+  // 卡片收掉之后再按一次，才轮到退专注
+  assert.equal(matchShortcut(key({ key: "Escape" }), ctx({ zenOn: true })), "exit-focus");
+  // 卡片里那个输入框（改名）保持着"取消输入"的语义，不被抢走
+  assert.equal(
+    matchShortcut(key({ key: "Escape" }), ctx({ panelOpen: true, inTextField: true })),
+    null,
   );
 });
 

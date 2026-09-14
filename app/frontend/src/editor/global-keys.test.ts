@@ -12,11 +12,13 @@ import { SHORTCUTS, type ShortcutId } from "./shortcuts.ts";
 /** 动作记录器 + 可改的界面状态（模拟"弹窗开着""专注开着"这些情形）。 */
 function makeDeps() {
   const calls: string[] = [];
-  const state = { dialogOpen: false, zenOn: false, fullscreenOn: false };
+  const state = { dialogOpen: false, zenOn: false, fullscreenOn: false, panelOpen: false };
   const deps: GlobalKeyDeps = {
     dialogOpen: () => state.dialogOpen,
     zenOn: () => state.zenOn,
     fullscreenOn: () => state.fullscreenOn,
+    panelOpen: () => state.panelOpen,
+    closePanel: () => calls.push("closePanel"),
     toggleZen: () => calls.push("toggleZen"),
     toggleFullscreen: () => calls.push("toggleFullscreen"),
     exitFocus: () => calls.push("exitFocus"),
@@ -174,16 +176,22 @@ test("焦点在输入框里：功能键让位，带修饰键的组合照常", ()
   assert.deepEqual(calls, ["saveNow"], "在输入框里也想「立刻落盘」");
 });
 
-test("正文里按 Esc：退出专注（正文本体是 contenteditable，不算输入框）", () => {
+test("正文里按 Esc：先关悬浮卡片，再退专注（一层一层退）", () => {
   const { deps, calls, state } = makeDeps();
   const win = new FakeWindow();
   attachGlobalKeys(deps, win);
   state.zenOn = true;
-
   const body = { tagName: "DIV", isContentEditable: true };
-  const pressed = win.press({ key: "Escape", target: body });
-  assert.deepEqual(calls, ["exitFocus"]);
-  assert.equal(pressed.prevented, true, "退专注这一下要拦下，别让编辑器再处理一遍");
+
+  // 卡片开着：Esc 只关卡片，专注不动
+  state.panelOpen = true;
+  assert.equal(win.press({ key: "Escape", target: body }).prevented, true);
+  assert.deepEqual(calls, ["closePanel"], "卡片开着时 Esc 只能关卡");
+
+  // 卡片收掉之后再按一次，才退专注
+  state.panelOpen = false;
+  win.press({ key: "Escape", target: body });
+  assert.deepEqual(calls, ["closePanel", "exitFocus"]);
 });
 
 test("解绑之后再按：一点反应都没有（监听也摘干净了）", () => {
@@ -208,10 +216,15 @@ test("每个键位都接上了动作（表里加了键却没接线，这条会�
     "new-chapter": "newChapter",
     settings: "openSettings",
     shelf: "openShelf",
+    "close-panel": "closePanel",
     "exit-focus": "exitFocus",
   };
   // Esc 是特判（不在表里），其余每一个表项都要有自己的动作
-  const ids: ShortcutId[] = [...SHORTCUTS.map((entry) => entry.id), "exit-focus"];
+  const ids: ShortcutId[] = [
+    ...SHORTCUTS.map((entry) => entry.id),
+    "close-panel",
+    "exit-focus",
+  ];
   assert.equal(new Set(ids).size, ids.length, "同一件事不该在表里出现两次");
   for (const id of ids) {
     const { deps, calls } = makeDeps();
