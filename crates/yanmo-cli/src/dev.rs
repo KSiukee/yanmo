@@ -7,7 +7,7 @@
 //! 发布版把它们剃掉是有意的：**命令面越小，需要被信任的代码就越少**。
 
 use serde_json::{json, Value};
-use yanmo_core::model::{NodeKind, WorkKind};
+use yanmo_core::model::{NewQuestionCard, NodeKind, QuestionState, WorkKind};
 use yanmo_core::store::{BackupRequest, BackupTarget, SessionReport, Store};
 use yanmo_core::text;
 
@@ -24,6 +24,12 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         "new-work" => Some(&["kind", "title"]),
         "new-node" => Some(&["work", "parent", "kind", "title"]),
         "hold" => Some(&["node", "seconds"]),
+        // 叩问·问题卡：建卡 / 迁移 / 列卡 / 看迁移史。给外部演练台从命令行驱动 6 态状态机，
+        // 每一条迁移的证据（fragments.status + op-log）都能被外面独立核对。
+        "card-new" => Some(&["work", "body", "body-file", "source", "template", "importance", "derived-from"]),
+        "card-move" => Some(&["id", "to", "trigger"]),
+        "card-list" => Some(&["work", "state"]),
+        "card-events" => Some(&["id"]),
         _ => None,
     }
 }
@@ -161,6 +167,67 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
             // 然后从外面把它中断掉。到时间自然退出也算一次正常结束。
             std::thread::sleep(std::time::Duration::from_secs(seconds));
             json!({ "ok": true, "command": "hold", "node_id": node, "seconds": seconds })
+        }
+        // ── 叩问·问题卡：把状态机从外面驱动起来 ──────────────────────────
+        //
+        // 为什么这几条要在命令行上：六个态的可达性要能从**外部**驱动并核对，
+        // 而叩问的处置与作答界面还没做。与别的写库命令一样，
+        // 它们只存在于开发构建里——发布版连解析分支都没有。
+        "card-new" => {
+            let work = args.required_i64("work")?;
+            let body = body_of(args)?;
+            let importance = match args.optional("importance") {
+                None => 0.5,
+                Some(text) => text
+                    .parse::<f64>()
+                    .map_err(|_| Usage::from("--importance 需要是一个 0~1 的小数"))?,
+            };
+            let derived_from = match args.optional("derived-from") {
+                None => None,
+                Some(text) => Some(
+                    text.parse::<i64>()
+                        .map_err(|_| Usage::from("--derived-from 需要是一个整数（卡 id）"))?,
+                ),
+            };
+            let card_id = store.create_question_card(&NewQuestionCard {
+                work_id: work,
+                body,
+                source: args.optional("source").unwrap_or("core").to_string(),
+                template_key: args.optional("template").unwrap_or("").to_string(),
+                importance,
+                derived_from,
+            })?;
+            json!({ "ok": true, "command": "card-new", "card_id": card_id })
+        }
+        "card-move" => {
+            let id = args.required_i64("id")?;
+            let to = QuestionState::parse(args.required("to")?)?;
+            let trigger = args.optional("trigger").unwrap_or("cli").to_string();
+            let from = store.move_question_card(id, to, &trigger)?;
+            let card = store.question_card(id)?;
+            json!({
+                "ok": true,
+                "command": "card-move",
+                "card_id": id,
+                "from": from.as_str(),
+                "to": to.as_str(),
+                "used_count": card.used_count,
+                "updated_at": card.updated_at,
+            })
+        }
+        "card-list" => {
+            let work = args.required_i64("work")?;
+            let state = match args.optional("state") {
+                None => None,
+                Some(text) => Some(QuestionState::parse(text)?),
+            };
+            let cards = store.question_cards(work, state)?;
+            json!({ "ok": true, "command": "card-list", "count": cards.len(), "cards": cards })
+        }
+        "card-events" => {
+            let id = args.required_i64("id")?;
+            let events = store.card_events(id)?;
+            json!({ "ok": true, "command": "card-events", "card_id": id, "events": events })
         }
         _ => return Ok(None),
     };

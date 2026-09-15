@@ -65,6 +65,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     UNKNOWN_NODE_KIND => "value.unknown_node_kind" : "未知的节点类型：{value}" : ["value"],
     UNKNOWN_WORK_KIND => "value.unknown_work_kind" : "未知的作品类型：{value}" : ["value"],
     UNKNOWN_WORK_LANGUAGE => "value.unknown_work_language" : "未知的作品语言：{value}" : ["value"],
+    UNKNOWN_QUESTION_STATE => "value.unknown_question_state"
+        : "未知的问题卡状态：{value}" : ["value"],
     BACKUP_SNAPSHOT_FAILED => "backup.snapshot_failed"
         : "做一致性快照失败（库可能有问题）：{detail}" : ["detail"],
     BACKUP_RESTORE_SOURCE_INVALID => "backup.restore_source_invalid"
@@ -101,6 +103,15 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "不能切到该节点（不存在 / 已删除 / 不承载正文）：{node_id}" : ["node_id"],
     NODE_FOREIGN_PARENT => "node.foreign_parent"
         : "节点 {node_id} 属于作品 {owner}，不能挂到作品 {work_id} 下" : ["node_id", "owner", "work_id"],
+    CARD_NOT_FOUND => "card.not_found" : "问题卡不存在：{card_id}" : ["card_id"],
+    CARD_BODY_EMPTY => "card.body_empty" : "问题卡的内容不能为空" : [],
+    CARD_IMPORTANCE_OUT_OF_RANGE => "card.importance_out_of_range"
+        : "问题卡的重要度要落在 0~1：{value}" : ["value"],
+    CARD_DERIVED_FROM_INVALID => "card.derived_from_invalid"
+        : "派生来源对不上：{derived_from} 不是这本书（{work_id}）里的一张卡"
+        : ["derived_from", "work_id"],
+    CARD_ILLEGAL_TRANSITION => "card.illegal_transition"
+        : "问题卡不能从 {from} 走到 {to}——这不是生命周期里的合法一条边" : ["from", "to"],
     TREE_TOO_DEEP => "tree.too_deep"
         : "节点树超过深度上限（最多 {max} 层），已拒绝继续" : ["max"],
     TREE_CYCLE_SUSPECTED => "tree.cycle_suspected" : "节点树深度异常（疑似成环），已拒绝继续" : [],

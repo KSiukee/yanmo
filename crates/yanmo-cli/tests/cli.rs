@@ -421,3 +421,93 @@ fn help_text_tells_the_truth_about_opening_the_library() {
     assert!(!help.contains("不会改动稿库"), "不许再自称不改稿库（那是假的）：\n{help}");
     assert!(help.contains("先把库文件复制一份"), "要体检坏库得先提示复制一份");
 }
+
+/// 叩问问题卡：**命令行能把 6 态状态机从头驱动一遍**，每条迁移都有回执与可核对的历史。
+///
+/// 这条测试在验两件事：① 状态机在命令行上够得着（外部演练台不必等界面）；② 每次迁移
+/// 留下的证据（`op` / `from` / `to` / `trigger`）能被独立读回来——"谁触发、从哪到哪"。
+#[test]
+fn question_card_states_are_drivable_from_the_command_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let (work_id, _node) = seed(dir.path(), "novel");
+    let work = work_id.to_string();
+
+    let made = ok(
+        dir.path(),
+        "card-new",
+        &[
+            ("work", &work),
+            ("body", "第 12 章埋下的信物，现在该让它露头了吗？"),
+            ("template", "foreshadow.due"),
+            ("importance", "0.8"),
+        ],
+    );
+    let card_id = made["card_id"].as_i64().expect("建卡要给 id");
+    let card = card_id.to_string();
+    assert_eq!(
+        ok(dir.path(), "card-list", &[("work", &work), ("state", "pending")])["count"],
+        1,
+        "新建的卡在「待问」上"
+    );
+
+    // pending → asked：回执说清从哪到哪，并记上新颖度的账
+    let asked =
+        ok(dir.path(), "card-move", &[("id", &card), ("to", "asked"), ("trigger", "push")]);
+    assert_eq!(asked["from"], "pending");
+    assert_eq!(asked["to"], "asked");
+    assert_eq!(asked["used_count"], 1, "问出一次，账加一（新颖度冷却靠它）");
+
+    // asked → answered：终态
+    ok(dir.path(), "card-move", &[("id", &card), ("to", "answered"), ("trigger", "author")]);
+    assert_eq!(ok(dir.path(), "card-list", &[("work", &work), ("state", "answered")])["count"], 1);
+
+    // 终态出不去：非法边当场给码，不是静默不动
+    match run(dir.path(), "card-move", &[("id", &card), ("to", "pending")]) {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "card.illegal_transition"),
+        other => panic!("answered 是终态，该出不去：{other:?}"),
+    }
+
+    // 第二条卡：延后 → 重出 → 舍弃 → 捞回 → 静音 → 解除，一条不落
+    let second = ok(dir.path(), "card-new", &[("work", &work), ("body", "要不要插个喘息？")]);
+    let second_id = second["card_id"].as_i64().unwrap();
+    let second = second_id.to_string();
+    for (to, trigger) in [
+        ("asked", "pull"),
+        ("deferred", "author"),
+        ("pending", "requeue"),
+        ("asked", "push"),
+        ("discarded", "author"),
+        ("pending", "retrieve"),
+        ("muted", "author"),
+        ("pending", "unmute"),
+    ] {
+        ok(dir.path(), "card-move", &[("id", &second), ("to", to), ("trigger", trigger)]);
+    }
+    assert_eq!(
+        ok(dir.path(), "card-list", &[("work", &work), ("state", "pending")])["count"],
+        1,
+        "捞回 / 解除静音之后，这张卡又回到候选池里"
+    );
+
+    // 迁移史：谁触发、从哪到哪，一条不少、顺序不乱
+    let events = ok(dir.path(), "card-events", &[("id", &second)]);
+    let ops: Vec<&str> = events["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|event| event["op"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ops,
+        ["create", "ask", "defer", "requeue", "ask", "discard", "retrieve", "mute", "unmute"],
+        "事件历史该按发生顺序摊开：{events}"
+    );
+    assert_eq!(events["events"][2]["from"], "asked", "延后是从「已问」出发的");
+    assert_eq!(events["events"][2]["trigger"], "author");
+
+    // 认不出来的态要给出码（不是用法错，也不是默默当成 pending）
+    match run(dir.path(), "card-move", &[("id", &card), ("to", "nowhere")]) {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "value.unknown_question_state"),
+        other => panic!("不认识的态该被拒：{other:?}"),
+    }
+}

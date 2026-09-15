@@ -10,12 +10,15 @@
 //!
 //! # 文件划分
 //!
-//! 一个领域一个文件（`work` / `node` + `node_edit` / `content` / `search` / `export` / `trash` / `appearance`），
-//! 各自只管自己的 SQL；公共句柄与留痕在 `mod` 与 `device`。
+//! 一个领域一个文件（`work` / `node` + `node_edit` / `content` / `search` / `export` / `trash` /
+//! `appearance` / `card` + `card_move`），各自只管自己的 SQL；公共句柄与留痕在 `mod` 与 `device`。
 //! 节点的**读**与**编辑**特意分开：目录树查询和树结构变更的变化理由不一样。
+//! 问题卡同理：**读写**与**状态迁移**分开（迁移要留可核对的证据，理由不一样）。
 
 mod appearance;
 mod backup;
+mod card;
+mod card_move;
 mod content;
 mod device;
 mod draft;
@@ -43,6 +46,8 @@ pub use backup::{
     BackupLedger, BackupManifest, BackupReport, BackupRequest, BackupTarget, BackupVerify,
     LedgerEntry, TargetOutcome, WorkStamp,
 };
+pub use card::KIND_QUESTION;
+pub use card_move::CardEvent;
 pub use content::ContentStats;
 pub use export::{ExportFormat, RenderedFile};
 pub use draft::{parse_work_json, DraftScale, NodeDraft, StampMismatch, WorkDraft};

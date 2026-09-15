@@ -98,7 +98,15 @@ pub const HELP_DEV: &str = "\
   new-node --work <id> [--parent <id>] --kind <volume|chapter|section|piece|scene> [--title <名字>]
                             在书里新建一个节点（标题留空＝按同层取号命名）
   hold --node <id> [--seconds <n>]
-                            把这次会话保持打开（默认 30 秒）——供外部在「运行中」中断它";
+                            把这次会话保持打开（默认 30 秒）——供外部在「运行中」中断它
+  card-new --work <id> --body <文本> | --body-file <路径> [--source <来源>] [--template <模板键>]
+           [--importance <0~1>] [--derived-from <卡 id>]
+                            建一张问题卡（叩问）：落进碎片统一表，状态从 pending 开始
+  card-move --id <id> --to <pending|asked|answered|deferred|discarded|muted> [--trigger <谁触发>]
+                            迁移一张问题卡的状态（非法边当场拒绝；每次迁移留一条可核对的事件）
+  card-list --work <id> [--state <态>]
+                            列出一本书里的问题卡（不给 --state 就是全部）
+  card-events --id <id>     一张卡的状态迁移史（谁触发、从哪个态到哪个态）";
 
 /// 这个构建的帮助文本（发布构建只列救援档）。
 pub fn help_text() -> String {

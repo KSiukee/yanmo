@@ -11,7 +11,7 @@ pub use rusqlite::Connection;
 use crate::error::{codes, Error, Result};
 use crate::time::now_millis;
 
-/// 结构迁移：v1…v7，每条只往前、不改历史。
+/// 结构迁移：v1…v8，每条只往前、不改历史。
 pub mod migrations;
 mod migrations_v1;
 mod migrations_v2;
@@ -20,6 +20,7 @@ mod migrations_v4;
 mod migrations_v5;
 mod migrations_v6;
 mod migrations_v7;
+mod migrations_v8;
 
 /// schema 版本要求的最低 SQLite（trigram tokenizer 自 3.34 起，中文子串匹配要用）。
 /// 口径同 `rusqlite::version_number()`：3.34.0 → 3_034_000（i32）。
