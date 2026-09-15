@@ -1,0 +1,20 @@
+# 换行一律 LF（2026-09-15 实测定案）
+#
+# 为什么要这份文件：Windows 跑手/本机的 git 默认 `core.autocrlf=true`，检出的工作区是 CRLF、
+# 索引里是 LF——于是 `git status --porcelain` 把**272 个文件**全报成"已改"，
+# 云端构建的指纹因此一直写着「工作区有未提交改动」（v0.50.1、v0.50.2 都中招）。
+# 钉住 eol=lf 之后，检出到哪个平台都是同一份字节，指纹里那句"这是哪份源码"才真的可核对。
+#
+# 另一处一直被这份差异咬：一条查跨行选择器的界面守卫在 CI（CRLF 检出）上找不到那段 CSS，
+# 本地（LF）全绿、云端红（见 RELEASING.md 的"出包前先预演"表）。
+* text=auto eol=lf
+
+# 二进制/归档：不做任何换行转换（`text=auto` 大多能认出来，这里对几类明确钉死）
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.exe binary
+*.zip binary
+*.docx binary
+*.woff2 binary

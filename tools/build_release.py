@@ -321,19 +321,33 @@ def collect(out_dir: Path, version: str, no_bundle: bool) -> tuple[Path | None, 
     return target, digest
 
 
-def source_commit() -> tuple[str, bool]:
-    """当前源码提交与"工作区是不是脏的"——构建指纹的一半。
+def source_commit() -> tuple[str, bool, list[str]]:
+    """源码提交 / 已跟踪源码有没有改动 / 未跟踪文件（只提示，不算"脏"）——构建指纹的一半。
 
     为什么要记这个：只给产物哈希，别人没法判断"你这包是不是从这份源码出来的"；
     把提交一起写下来，核对才有起点（配合可复现构建，见 RELEASING.md）。
+
+    **"脏"只按已跟踪文件的内容差异判**（2026-09-15 实测定案）：
+    - 原来直接看 `git status --porcelain`，于是**换行差异**也被算成改动——Windows 跑手
+      （`core.autocrlf=true`）检出的工作区是 CRLF、索引里是 LF，**272 个文件全报"已改"**，
+      云端构建的指纹因此一直写着"工作区有未提交改动"（v0.50.1、v0.50.2 都中招）。那句话
+      本来是给人核对来源用的，恒真就等于噪声。
+    - 现在比之前先 `-c core.autocrlf=true`，让比较**把换行归一化后再比内容**；
+      `--untracked-files=no` 则把构建产物之类的未跟踪文件排除在"脏"之外，但它们会
+      单独列出来给人看（它们改变不了"这份源码是哪次提交"这个结论，可也不该藏起来）。
     """
     code, out = run(["git", "rev-parse", "HEAD"], timeout=60)
     commit = out.strip() if code == 0 else ""
     if not commit:
-        return "", False
-    code, out = run(["git", "status", "--porcelain"], timeout=60)
+        return "", False, []
+    code, out = run(
+        ["git", "-c", "core.autocrlf=true", "status", "--porcelain", "--untracked-files=no"],
+        timeout=60,
+    )
     dirty = code == 0 and bool(out.strip())
-    return commit, dirty
+    code, out = run(["git", "ls-files", "--others", "--exclude-standard"], timeout=60)
+    untracked = [line.strip() for line in out.splitlines() if line.strip()] if code == 0 else []
+    return commit, dirty, untracked
 
 
 def build_fingerprint(
@@ -349,7 +363,7 @@ def build_fingerprint(
     逐字节一致做不到；能给的、也确实有用的是**同一提交 + 同一工具链 → 功能等价的产物**，
     加上一个可核对的产物指纹。写在这里，比含糊说一句"可复现构建"更经得起追问。
     """
-    commit, dirty = source_commit()
+    commit, dirty, untracked = source_commit()
     stamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
     lines = [
         "研墨 构建指纹",
@@ -359,6 +373,11 @@ def build_fingerprint(
         + ("（**工作区有未提交改动**）" if dirty else ""),
         f"构建时间：{stamp}",
         f"平台：{platform.platform()}",
+    ]
+    if untracked:
+        sample = "、".join(untracked[:3]) + ("…" if len(untracked) > 3 else "")
+        lines.append(f"未跟踪文件：{len(untracked)} 个（例如 {sample}）——多为本机构建产物，不计入上面的提交")
+    lines += [
         "",
         "工具链：",
         f"  cargo / rustc：{tools.get('cargo') or '（未知）'}",
