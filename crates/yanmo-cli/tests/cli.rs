@@ -367,3 +367,14 @@ fn a_read_only_command_never_creates_an_empty_library() {
     assert!(!empty.join("yanmo.db").exists(), "拒绝之后不许留下空库");
     assert!(!empty.exists(), "连目录都不该建出来");
 }
+
+#[test]
+fn help_text_tells_the_truth_about_opening_the_library() {
+    // 2026-09-15 代码质量评审：中等 4——看稿那几条走的是 `Store::open`，会跑结构迁移、
+    // 登记本机、给老库回填字数标记。帮助里原来写着"只看不写（不会改动稿库）"，是句错话。
+    // 这条守卫钉住"如实描述"，免得哪天又被改回一句好听但不真的承诺。
+    let help = yanmo_cli::args::HELP_RESCUE;
+    assert!(help.contains("会打开库"), "帮助必须说清它会打开库（可能升级结构）：\n{help}");
+    assert!(!help.contains("不会改动稿库"), "不许再自称不改稿库（那是假的）：\n{help}");
+    assert!(help.contains("先把库文件复制一份"), "要体检坏库得先提示复制一份");
+}

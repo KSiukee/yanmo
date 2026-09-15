@@ -165,7 +165,10 @@ fn parse_optional_i64(value: Option<&str>, name: &str) -> Result<Option<i64>, Cl
     }
 }
 
-/// 救援档：**只读或只写文件**，一条都不改稿库。
+/// 救援档：**看稿 / 导出 / 从成稿导入**——不碰作者的稿子，但都会打开库。
+///
+/// 措辞注意（评审：中等 4）：`Store::open` 会跑结构迁移、登记本机、给老库回填字数标记，
+/// 所以"一条都不改稿库"是句错话（改的不是稿子，是库文件本身）；帮助文本已按事实改过。
 fn rescue(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError> {
     let value = match args.command.as_str() {
         "verify" => {
