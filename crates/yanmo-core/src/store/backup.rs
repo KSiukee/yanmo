@@ -325,7 +325,11 @@ impl Store {
         let mut ledger = read_ledger(&req.data_dir);
 
         // ① 先做一份一致性快照到暂存区，并把成稿、清单一起准备好
-        let staging = req.data_dir.join(format!(".backup-staging-{stamp}"));
+        // 暂存区名精确到毫秒（评审：轻微 4）：只到分钟时，上一轮崩溃留下的同名目录会让
+        // `VACUUM INTO` 因"目标已存在"失败——那正是"备份突然做不了"的常见来路。
+        let staging = req
+            .data_dir
+            .join(format!(".backup-staging-{stamp}-{:03}", at.rem_euclid(1000)));
         let prepared = self.prepare_package(&staging, &stamp, at, req, &ledger);
         let (manifest, snapshot_bytes) = match prepared {
             Ok(v) => v,
@@ -829,22 +833,18 @@ pub fn gaps_for(ledger: &BackupLedger, target_path: &str, today: &str, days: u32
 }
 
 /// `2026-09-13` → 1970 起的天数（只用于按天回退，解析失败就返回 None）。
+///
+/// 换算**只有一份实现**（`time::days_from_civil`）：本地再抄一份的后果是"改一处漏一处"，
+/// 于是"缺了哪几天"会算歪（2026-09-15 代码质量评审：轻微 1）。
 fn days_from_date(date: &str) -> Option<i64> {
     let mut parts = date.split('-');
     let y: i64 = parts.next()?.parse().ok()?;
-    let m: i64 = parts.next()?.parse().ok()?;
-    let d: i64 = parts.next()?.parse().ok()?;
-    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+    let m: u32 = parts.next()?.parse().ok()?;
+    let d: u32 = parts.next()?.parse().ok()?;
+    if parts.next().is_some() || !(1..=12).contains(&m) || !(1..=31).contains(&d) {
         return None;
     }
-    // 与 time::civil_from_days 互逆的 days_from_civil
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = y - era * 400;
-    let mp = if m > 2 { m - 3 } else { m + 9 };
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    Some(era * 146_097 + doe - 719_468)
+    Some(crate::time::days_from_civil(y, m, d))
 }
 
 /// 1970 起的天数 → `2026-09-13`。

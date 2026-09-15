@@ -51,7 +51,14 @@ fn macros(title: &str) -> Vec<(usize, usize, Macro)> {
         let start = at + start;
         let Some(close) = title[start..].find('}') else { break };
         let end = start + close + 1; // 含 '}'
-        if let Some(found) = parse_macro(&title[start + 2..end - 1]) {
+        let body = &title[start + 2..end - 1];
+        // 体内又出现 `{$` = 前一个没闭合（作者手写坏了）：跳过它接着扫，
+        // 后面的合法宏照样认，不跟着一起失效（2026-09-15 代码质量评审：轻微 11）。
+        if body.contains("{$") {
+            at = start + 2;
+            continue;
+        }
+        if let Some(found) = parse_macro(body) {
             out.push((start, end, found));
         }
         at = end;

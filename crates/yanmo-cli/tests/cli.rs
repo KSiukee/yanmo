@@ -277,6 +277,49 @@ fn import_only_writes_when_asked_and_then_the_book_is_there() {
 }
 
 #[test]
+fn a_broken_draft_in_the_batch_stops_the_whole_import_before_anything_is_written() {
+    // 2026-09-15 代码质量评审：轻微 19——帮助文本承诺"一份成稿读不进来就整批停下（不许救一半）"，
+    // 而老实现是边解析边写：第 2 份坏掉时第 1 份已经入库了。现在两遍法：先全解析，再统一写。
+    //
+    // 造一份真成稿（建书 → 导出 json）放进包里，再配一份坏成稿排在它后面
+    // （`find_drafts` 用 BTreeSet 排序，A 开头的一定先被解析到）。
+    let library = tempfile::tempdir().unwrap();
+    let (work_id, node_id) = seed(library.path(), "novel");
+    ok(library.path(), "write", &[("node", &node_id.to_string()), ("body", "甲书的正文。")]);
+    ok(
+        library.path(),
+        "export",
+        &[("work", &work_id.to_string()), ("format", "json"), ("out", library.path().to_str().unwrap())],
+    );
+
+    let pack = tempfile::tempdir().unwrap();
+    let good = pack.path().join("成稿").join("A书");
+    std::fs::create_dir_all(&good).unwrap();
+    std::fs::copy(library.path().join("work.json"), good.join("work.json")).unwrap();
+    let bad = pack.path().join("成稿").join("Z坏书");
+    std::fs::create_dir_all(&bad).unwrap();
+    std::fs::write(
+        bad.join("work.json"),
+        r#"{"title":"Z坏书","kind":"novel","nodes":[{"kind":"章"}]}"#,
+    )
+    .unwrap();
+
+    let target = tempfile::tempdir().unwrap();
+    seed(target.path(), "novel"); // 库里先有作者自己的一本
+    let before = ok(target.path(), "works", &[])["works"].as_array().unwrap().len();
+
+    match run(target.path(), "import", &[("from", pack.path().to_str().unwrap()), ("yes", "")]) {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "value.unknown_node_kind"),
+        other => panic!("坏成稿该被拒绝：{other:?}"),
+    }
+    assert_eq!(
+        ok(target.path(), "works", &[])["works"].as_array().unwrap().len(),
+        before,
+        "整批停下：好那一本也不许先进库"
+    );
+}
+
+#[test]
 fn a_counted_write_lands_in_the_daily_ledger() {
     let dir = tempfile::tempdir().unwrap();
     let (_, node_id) = seed(dir.path(), "novel");

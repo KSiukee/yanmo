@@ -34,7 +34,10 @@ pub(crate) fn run(args: &Args, store: &mut Store) -> Result<Value, CliError> {
         Some(text) => WorkLanguage::parse(text)?,
     };
 
-    let mut drafts = Vec::new();
+    // **两遍法**（评审：轻微 19）：第一遍只解析与校验，一份都不写；整批都读得进来，
+    // 第二遍才统一写。否则第 2 份解析失败时第 1 份已经入库了，而帮助文本承诺的是
+    // "一份成稿读不进来就整批停下（不许救一半）"。
+    let mut parsed: Vec<(PathBuf, WorkDraft)> = Vec::new();
     let mut titles = Vec::new();
     for path in collect_drafts(&from)? {
         let text = std::fs::read_to_string(&path)?;
@@ -47,7 +50,12 @@ pub(crate) fn run(args: &Args, store: &mut Store) -> Result<Value, CliError> {
                 continue;
             }
         }
-        drafts.push(one(store, &draft, &path, write, fallback)?);
+        parsed.push((path, draft));
+    }
+
+    let mut drafts = Vec::new();
+    for (path, draft) in &parsed {
+        drafts.push(one(store, draft, path, write, fallback)?);
     }
     if drafts.is_empty() {
         return Err(Usage(format!(

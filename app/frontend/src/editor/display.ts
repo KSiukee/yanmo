@@ -28,6 +28,24 @@ export function formatBytes(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+/**
+ * 两个时间戳相差几个**本地日历日**（正数 = `later` 在后）。
+ *
+ * 不能拿毫秒差直接除 86400000：那算的是"过去 24 小时"，而作者眼里的"今天/昨天"是**本地
+ * 日历日**——凌晨 0:30 看昨晚 23:50 打开的书，毫秒差只有 40 分钟，却该说"昨天"。
+ * （2026-09-15 代码质量评审：轻微 27）
+ *
+ * 先把两边的本地年月日取出来，再按 UTC 的同一天算差：夏令时那两天（23/25 小时）也不会
+ * 算歪，`Math.round` 兜住那一个小时的零头。
+ */
+export function localDaysBetween(earlier: number, later: number): number {
+  const a = new Date(earlier);
+  const b = new Date(later);
+  const dayA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+  const dayB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.round((dayB - dayA) / 86_400_000);
+}
+
 /** 最近打开时间给人看：今天 / 昨天 / N 天前 / 具体日期；从没打开过就直说。 */
 export function formatWhen(ms: number | null, now: number = Date.now()): string {
   if (ms === null) return t("display.never_opened");
@@ -35,7 +53,8 @@ export function formatWhen(ms: number | null, now: number = Date.now()): string 
   // 不认就直接说"时间未知"，别算出 "NaN-NaN-NaN"，也别把很远的未来时间说成"今天"
   const date = new Date(ms);
   if (!Number.isFinite(date.getTime())) return t("display.time_unknown");
-  const days = Math.floor((now - ms) / 86_400_000);
+  // 按**本地日历日**算差（不是毫秒差）：跨零点前后那几十分钟最容易被说错。
+  const days = localDaysBetween(ms, now);
   if (days <= 0) return t("display.today");
   if (days === 1) return t("display.yesterday");
   if (days < 30) return t("display.days_ago", { days });

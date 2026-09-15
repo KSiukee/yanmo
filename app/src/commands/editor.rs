@@ -97,7 +97,11 @@ pub struct SaveAck {
     pub char_count: i64,
     pub chars_no_punct: i64,
     pub word_count: i64,
-    /// 落盘后库里的内容指纹——界面据此做**写后读回校验**
+    /// 这次落盘**提交的那份正文**的指纹（不是从库里读回来的值）。
+    ///
+    /// 界面拿它当"我以为库里现在是这个"的比对基准，之后由 `body_fingerprint` 轮询核对
+    /// 库里真的是不是它——所以这里必须给手上这份的哈希，读回来的值反而会让校验失去意义
+    /// （2026-09-15 代码质量评审：轻微 9）。
     pub fingerprint: String,
 }
 

@@ -191,3 +191,18 @@ fn an_unknown_numbering_code_is_rejected_not_guessed() {
         ChapterNumbering::Continue
     );
 }
+
+#[test]
+fn an_unclosed_macro_does_not_swallow_the_macros_after_it() {
+    // 2026-09-15 代码质量评审：轻微 11——作者手写坏一个 `{$`（没闭合）时，老实现从它一直扫到
+    // 下一个 `}`，把中间那个**合法宏**也当成坏宏吞掉了，表现为"后面的号不渲染"。
+    // 现在跳过这一个继续扫。
+    assert_eq!(
+        yanmo_core::numbering::render("{$ 手写坏了 第{$N}章", 7),
+        "{$ 手写坏了 第7章",
+        "未闭合的宏只该影响它自己"
+    );
+    // 末尾那个未闭合的宏原样留着（作者看得见），前面的合法宏照常渲染
+    assert_eq!(yanmo_core::numbering::render("第{$N}章 {$", 3), "第3章 {$");
+    assert_eq!(yanmo_core::numbering::render("第{$N}章", 12), "第12章");
+}

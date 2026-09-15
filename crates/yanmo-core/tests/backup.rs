@@ -14,7 +14,6 @@ use yanmo_core::model::{NodeKind, WorkKind};
 use yanmo_core::store::{
     read_ledger, read_manifest, BackupConfig, BackupRequest, BackupTarget, Store,
 };
-use yanmo_core::time::now_millis;
 
 struct Fixture {
     _dir: tempfile::TempDir,
@@ -229,12 +228,17 @@ fn the_chain_links_each_backup_to_the_previous_one() {
 fn a_failed_snapshot_is_reported_per_target_instead_of_blowing_up() {
     let mut f = fixture();
     seed_book(&mut f.store);
-    // 暂存区被一个**文件**占住 → 快照写不出来：报告里每个目标都该被记失败，而不是 panic
-    std::fs::create_dir_all(&f.data_dir).unwrap();
-    let stamp = yanmo_core::time::local_stamp(now_millis(), 480);
-    std::fs::write(f.data_dir.join(format!(".backup-staging-{stamp}")), "占位".as_bytes()).unwrap();
+    // 暂存区建不出来 → 快照做不出来：报告里每个目标都该被记失败，而不是 panic。
+    //
+    // 注入方式：把"数据目录"这个位置变成一个**文件**——暂存区必然建不出来。
+    // （2026-09-15 之后暂存区名精确到毫秒，没法再用"同名占位文件"来挡它了：这正是不再
+    //   撞名的意义所在。）
+    let blocked = f.data_dir.with_extension("blocked");
+    std::fs::write(&blocked, "占位".as_bytes()).unwrap();
+    let mut req = request(&f, 7);
+    req.data_dir = blocked;
 
-    let report = f.store.backup_now(&request(&f, 7)).unwrap();
+    let report = f.store.backup_now(&req).unwrap();
     assert_eq!(report.failed(), 1, "报告：{:?}", report.outcomes);
     assert!(report.outcomes[0].reason.contains("快照"), "原因要说清是快照做不出来：{}", report.outcomes[0].reason);
 }

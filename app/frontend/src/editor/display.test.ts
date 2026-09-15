@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { formatBytes, formatWhen, formatWords } from "./display.ts";
+import { formatBytes, formatWhen, formatWords, localDaysBetween } from "./display.ts";
 import { nextWorkAfterDelete, shelfKindLabel, shelfLabel } from "./shelf.ts";
 import type { ShelfEntry } from "../api/core.ts";
 
@@ -39,6 +39,29 @@ test("最近打开时间给人看：今天 / 昨天 / N 天前 / 日期 / 从没
   assert.equal(formatWhen(now - DAY, now), "昨天");
   assert.equal(formatWhen(now - 5 * DAY, now), "5 天前");
   assert.match(formatWhen(now - 100 * DAY, now), /^\d{4}-\d{2}-\d{2}$/, "太久远就报日期");
+});
+
+// 2026-09-15 代码质量评审：轻微 27——"今天/昨天"必须按**本地日历日**算，不是毫秒差。
+// 凌晨 0:30 看昨晚 23:50 打开的书，毫秒差只有 40 分钟，但那是"昨天"。
+test("跨零点：按本地日历日算「昨天」，不拿毫秒差除 24 小时", () => {
+  const lateNight = new Date(2026, 8, 14, 23, 50, 0); // 9 月 14 日 23:50
+  const afterMidnight = new Date(2026, 8, 15, 0, 30, 0); // 9 月 15 日 00:30
+  assert.equal(
+    formatWhen(lateNight.getTime(), afterMidnight.getTime()),
+    "昨天",
+    "只差 40 分钟也算昨天（过了本地零点）"
+  );
+  // 同一天早上的记录，晚上看还是"今天"
+  assert.equal(
+    formatWhen(new Date(2026, 8, 15, 8, 0, 0).getTime(), new Date(2026, 8, 15, 23, 0, 0).getTime()),
+    "今天"
+  );
+  // 前天同样按日历日数
+  assert.equal(
+    formatWhen(new Date(2026, 8, 13, 23, 50, 0).getTime(), new Date(2026, 8, 15, 0, 10, 0).getTime()),
+    "2 天前"
+  );
+  assert.equal(localDaysBetween(afterMidnight.getTime(), afterMidnight.getTime()), 0);
 });
 
 // 库里的时间戳坏了（NaN / 超出 Date 范围）是可能的：**不许把 "NaN-NaN-NaN" 摆到界面上**，
