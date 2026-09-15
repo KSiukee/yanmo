@@ -29,7 +29,9 @@ fn new_card(work_id: i64, body: &str) -> NewQuestionCard {
         source: "core".to_string(),
         template_key: String::new(),
         importance: 0.5,
+        linked: Vec::new(),
         derived_from: None,
+        auto_derived: false,
     }
 }
 

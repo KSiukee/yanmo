@@ -1,0 +1,260 @@
+{
+  "note": "跨语言对齐向量：遗忘曲线与档位判定。取自一处 MIT 许可的复用内核的测试向量（原文件的来源标识与私有路径不入公开仓，登记在仓内资料区）；只保留本项目复制了的那几个函数的用例，数字一个未改。",
+  "tolerance": 1e-09,
+  "cases": [
+    {
+      "args": [
+        0.8,
+        0.0
+      ],
+      "expected": 0.8,
+      "fn": "decayed_strength",
+      "kind": "scalar",
+      "params": {
+        "decay_rate": 0.1,
+        "reinforcement_delta": 0.3,
+        "strength_floor": 0.05
+      }
+    },
+    {
+      "args": [
+        0.8,
+        10.0
+      ],
+      "expected": 0.2943035529371539,
+      "fn": "decayed_strength",
+      "kind": "scalar",
+      "params": {
+        "decay_rate": 0.1,
+        "reinforcement_delta": 0.3,
+        "strength_floor": 0.05
+      }
+    },
+    {
+      "args": [
+        0.5,
+        30.0
+      ],
+      "expected": 0.05,
+      "fn": "decayed_strength",
+      "kind": "scalar",
+      "params": {
+        "decay_rate": 0.1,
+        "reinforcement_delta": 0.3,
+        "strength_floor": 0.05
+      }
+    },
+    {
+      "args": [
+        0.2,
+        5.0
+      ],
+      "expected": 0.1213061319425267,
+      "fn": "decayed_strength",
+      "kind": "scalar",
+      "params": {
+        "decay_rate": 0.1,
+        "reinforcement_delta": 0.3,
+        "strength_floor": 0.05
+      }
+    },
+    {
+      "args": [
+        0.5
+      ],
+      "expected": 0.8,
+      "fn": "reinforce",
+      "kind": "scalar",
+      "params": {
+        "decay_rate": 0.1,
+        "reinforcement_delta": 0.3,
+        "strength_floor": 0.05
+      }
+    },
+    {
+      "args": [
+        0.9
+      ],
+      "expected": 1.0,
+      "fn": "reinforce",
+      "kind": "scalar",
+      "params": {
+        "decay_rate": 0.1,
+        "reinforcement_delta": 0.3,
+        "strength_floor": 0.05
+      }
+    },
+    {
+      "args": [
+        1.0
+      ],
+      "expected": 1.0,
+      "fn": "reinforce",
+      "kind": "scalar",
+      "params": {
+        "decay_rate": 0.1,
+        "reinforcement_delta": 0.3,
+        "strength_floor": 0.05
+      }
+    },
+    {
+      "args": [
+        0.0
+      ],
+      "expected": 0.3,
+      "fn": "reinforce",
+      "kind": "scalar",
+      "params": {
+        "decay_rate": 0.1,
+        "reinforcement_delta": 0.3,
+        "strength_floor": 0.05
+      }
+    },
+    {
+      "args": [
+        0.2,
+        "mid"
+      ],
+      "expected": true,
+      "fn": "should_sink",
+      "kind": "scalar",
+      "params": {
+        "decay_rate": 0.1,
+        "reinforcement_delta": 0.3,
+        "strength_floor": 0.05
+      }
+    },
+    {
+      "args": [
+        0.6,
+        "mid"
+      ],
+      "expected": false,
+      "fn": "should_sink",
+      "kind": "scalar",
+      "params": {
+        "decay_rate": 0.1,
+        "reinforcement_delta": 0.3,
+        "strength_floor": 0.05
+      }
+    },
+    {
+      "args": [
+        0.2,
+        "short"
+      ],
+      "expected": true,
+      "fn": "should_sink",
+      "kind": "scalar",
+      "params": {
+        "decay_rate": 0.1,
+        "reinforcement_delta": 0.3,
+        "strength_floor": 0.05
+      }
+    },
+    {
+      "args": [
+        0.4,
+        "long"
+      ],
+      "expected": true,
+      "fn": "should_sink",
+      "kind": "scalar",
+      "params": {
+        "decay_rate": 0.1,
+        "reinforcement_delta": 0.3,
+        "strength_floor": 0.05
+      }
+    },
+    {
+      "args": [
+        0,
+        0.9
+      ],
+      "expected": "long",
+      "fn": "decide_level",
+      "kind": "scalar",
+      "params": {
+        "importance_threshold": 0.8,
+        "long_term_threshold": 7,
+        "mention_window_days": 30,
+        "mid_term_threshold": 2
+      }
+    },
+    {
+      "args": [
+        8,
+        0.0
+      ],
+      "expected": "long",
+      "fn": "decide_level",
+      "kind": "scalar",
+      "params": {
+        "importance_threshold": 0.8,
+        "long_term_threshold": 7,
+        "mention_window_days": 30,
+        "mid_term_threshold": 2
+      }
+    },
+    {
+      "args": [
+        3,
+        0.0
+      ],
+      "expected": "mid",
+      "fn": "decide_level",
+      "kind": "scalar",
+      "params": {
+        "importance_threshold": 0.8,
+        "long_term_threshold": 7,
+        "mention_window_days": 30,
+        "mid_term_threshold": 2
+      }
+    },
+    {
+      "args": [
+        0,
+        0.0
+      ],
+      "expected": "short",
+      "fn": "decide_level",
+      "kind": "scalar",
+      "params": {
+        "importance_threshold": 0.8,
+        "long_term_threshold": 7,
+        "mention_window_days": 30,
+        "mid_term_threshold": 2
+      }
+    },
+    {
+      "args": [
+        2,
+        0.0
+      ],
+      "expected": "mid",
+      "fn": "decide_level",
+      "kind": "scalar",
+      "params": {
+        "importance_threshold": 0.8,
+        "long_term_threshold": 7,
+        "mention_window_days": 30,
+        "mid_term_threshold": 2
+      }
+    },
+    {
+      "args": [
+        7,
+        0.0
+      ],
+      "expected": "long",
+      "fn": "decide_level",
+      "kind": "scalar",
+      "params": {
+        "importance_threshold": 0.8,
+        "long_term_threshold": 7,
+        "mention_window_days": 30,
+        "mid_term_threshold": 2
+      }
+    }
+  ]
+}

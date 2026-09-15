@@ -112,6 +112,10 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : ["derived_from", "work_id"],
     CARD_ILLEGAL_TRANSITION => "card.illegal_transition"
         : "问题卡不能从 {from} 走到 {to}——这不是生命周期里的合法一条边" : ["from", "to"],
+    CARD_AUTO_DERIVED_NEEDS_SOURCE => "card.auto_derived_needs_source"
+        : "自动派生的问题必须说清它是从哪张卡派生的" : [],
+    CARD_DERIVATION_TOO_DEEP => "card.derivation_too_deep"
+        : "自动派生已经到链深上限（最多 {max} 层）——作者自己顺着灵感再问不受此限" : ["max"],
     TREE_TOO_DEEP => "tree.too_deep"
         : "节点树超过深度上限（最多 {max} 层），已拒绝继续" : ["max"],
     TREE_CYCLE_SUSPECTED => "tree.cycle_suspected" : "节点树深度异常（疑似成环），已拒绝继续" : [],

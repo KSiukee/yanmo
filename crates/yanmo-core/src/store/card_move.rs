@@ -18,6 +18,7 @@ use serde_json::{json, Value};
 use super::card::KIND_QUESTION;
 use super::Store;
 use crate::error::{codes, Error, Result};
+use crate::gravity::signal_for_action;
 use crate::model::{transition, QuestionState};
 use crate::time::now_millis;
 
@@ -56,14 +57,17 @@ impl Store {
         to: QuestionState,
         trigger: &str,
     ) -> Result<QuestionState> {
-        let from = self.question_card(id)?.state;
+        let card = self.question_card(id)?;
+        let from = card.state;
         let edge = transition(from, to).ok_or_else(|| illegal(from, to))?;
 
         let now = now_millis();
         let tx = self.conn.transaction()?;
         let affected = if edge.action == "ask" {
+            // 问出：记下次数**与时刻**——新颖度冷却要靠这两样（次数管多少回、时刻管多久以前）
             tx.execute(
-                "UPDATE fragments SET status = ?1, used_count = used_count + 1, updated_at = ?2
+                "UPDATE fragments SET status = ?1, used_count = used_count + 1,
+                                      last_asked_at = ?2, updated_at = ?2
                   WHERE id = ?3 AND frag_kind = ?4 AND deleted_at IS NULL AND status = ?5",
                 params![to.as_str(), now, id, KIND_QUESTION, from.as_str()],
             )?
@@ -100,6 +104,10 @@ impl Store {
             edge.action,
             json!({ "from": from.as_str(), "to": to.as_str(), "trigger": trigger }),
         )?;
+        // 处置**就是**教学：动作码折算成偏好信号，喂给同类模板（同一事务，漏不掉）
+        if let Some(signal) = signal_for_action(edge.action) {
+            super::question_weights::learn_in(&tx, &card.template_key, signal, now)?;
+        }
         tx.commit()?;
         Ok(from)
     }

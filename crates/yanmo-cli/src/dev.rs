@@ -26,10 +26,26 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         "hold" => Some(&["node", "seconds"]),
         // 叩问·问题卡：建卡 / 迁移 / 列卡 / 看迁移史。给外部演练台从命令行驱动 6 态状态机，
         // 每一条迁移的证据（fragments.status + op-log）都能被外面独立核对。
-        "card-new" => Some(&["work", "body", "body-file", "source", "template", "importance", "derived-from"]),
+        "card-new" => Some(&[
+            "work",
+            "body",
+            "body-file",
+            "source",
+            "template",
+            "importance",
+            "linked",
+            "derived-from",
+            "auto-derived",
+        ]),
         "card-move" => Some(&["id", "to", "trigger"]),
         "card-list" => Some(&["work", "state"]),
         "card-events" => Some(&["id"]),
+        // 叩问·选题与偏好：草稿 / 排序 / 学到了什么 / 说好 / 解除静音
+        "question-draft" => Some(&["work"]),
+        "question-select" => Some(&["work", "limit"]),
+        "question-weights" => Some(&[]),
+        "question-praise" => Some(&["id", "trigger"]),
+        "question-unmute" => Some(&["template"]),
         _ => None,
     }
 }
@@ -189,13 +205,26 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
                         .map_err(|_| Usage::from("--derived-from 需要是一个整数（卡 id）"))?,
                 ),
             };
+            // 关联锚点用逗号分隔（生成器给的 anchors 直接贴过来即可）
+            let linked: Vec<String> = args
+                .optional("linked")
+                .map(|text| {
+                    text.split(',')
+                        .map(|item| item.trim().to_string())
+                        .filter(|item| !item.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default();
             let card_id = store.create_question_card(&NewQuestionCard {
                 work_id: work,
                 body,
                 source: args.optional("source").unwrap_or("core").to_string(),
                 template_key: args.optional("template").unwrap_or("").to_string(),
                 importance,
+                linked,
                 derived_from,
+                // 这是个"在不在"的开关：给了 `--auto-derived` 就是系统自动派生的
+                auto_derived: args.optional("auto-derived").is_some(),
             })?;
             json!({ "ok": true, "command": "card-new", "card_id": card_id })
         }
@@ -228,6 +257,40 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
             let id = args.required_i64("id")?;
             let events = store.card_events(id)?;
             json!({ "ok": true, "command": "card-events", "card_id": id, "events": events })
+        }
+        "question-draft" => {
+            // 草稿里没有一个字的句子（文案在界面字典里）——驱动方按 locale 渲染，或直接看结构
+            let work = args.required_i64("work")?;
+            let drafts = store.question_drafts(work)?;
+            json!({ "ok": true, "command": "question-draft", "count": drafts.len(), "drafts": drafts })
+        }
+        "question-select" => {
+            let work = args.required_i64("work")?;
+            let limit = match args.optional("limit") {
+                None => 5usize,
+                Some(text) => text
+                    .parse::<usize>()
+                    .map_err(|_| Usage::from("--limit 需要是一个非负整数"))?,
+            };
+            let picked = store.select_questions(work, limit)?;
+            json!({ "ok": true, "command": "question-select", "count": picked.len(), "questions": picked })
+        }
+        "question-weights" => {
+            let learned = store.template_weights()?;
+            json!({ "ok": true, "command": "question-weights", "count": learned.len(), "weights": learned })
+        }
+        "question-praise" => {
+            let id = args.required_i64("id")?;
+            let trigger = args.optional("trigger").unwrap_or("cli").to_string();
+            store.praise_question_card(id, &trigger)?;
+            let key = store.question_card(id)?.template_key;
+            let learned = store.template_weight(&key)?;
+            json!({ "ok": true, "command": "question-praise", "card_id": id, "template_key": key, "learned": learned })
+        }
+        "question-unmute" => {
+            let key = args.required("template")?;
+            let lifted = store.unmute_template(key)?;
+            json!({ "ok": true, "command": "question-unmute", "template_key": key, "learned": lifted })
         }
         _ => return Ok(None),
     };

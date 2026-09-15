@@ -26,10 +26,19 @@ pub struct QuestionCard {
     pub importance: f64,
     /// 被问出来的次数——**新颖度冷却**就靠它（问过越多次，越不该再挤到前面）
     pub used_count: i64,
+    /// 上次被问出的时刻（毫秒）；从没问过 = `None`。
+    ///
+    /// 与 `used_count` 分工：次数管"问过多少回"，时刻管"上次是多久以前"——
+    /// 新颖度随时间回收要用它（见 `crate::gravity::novelty`）。
+    pub last_asked_at: Option<i64>,
     /// 关联的人物 / 线（JSON 数组文本；灵感关联度用它）
     pub linked: String,
     /// 溯源：这条卡是哪张卡派生出来的（作者「记灵感」勾出的灵感卡会指回问题卡）
     pub derived_from: Option<i64>,
+    /// 是不是**系统自动派生**出来的（作者自己顺着灵感再问的不算）。
+    ///
+    /// 它决定两件事：引力里的派生折扣打不打（只打自动的），以及自动派生链深要不要卡上限。
+    pub auto_derived: bool,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -45,6 +54,11 @@ pub struct NewQuestionCard {
     pub template_key: String,
     /// 0~1，越界会被拒（不静默夹取）
     pub importance: f64,
+    /// 关联锚点（`chapter:12` 这种）：生成候选时靠它**去重**，
+    /// 将来"这条问题是拿哪一章问的"也靠它；没有就交空数组。
+    pub linked: Vec<String>,
     /// 溯源到哪张卡；不是派生就给 `None`
     pub derived_from: Option<i64>,
+    /// 系统自动派生的（`true` 时 `derived_from` 必填，且链深不得超过上限）
+    pub auto_derived: bool,
 }

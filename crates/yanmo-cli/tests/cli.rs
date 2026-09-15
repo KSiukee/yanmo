@@ -511,3 +511,80 @@ fn question_card_states_are_drivable_from_the_command_line() {
         other => panic!("不认识的态该被拒：{other:?}"),
     }
 }
+
+/// 叩问的选题与偏好：命令行能把「生成草稿 → 按引力选题 → 处置即学习 → 解除静音」走一遍。
+///
+/// 这条测试盯的是**机制能从外面驱动、且每一步都可核对**：草稿里只有模板与槽位（没有句子）、
+/// 选题是只读的、同锚点不会重复问、说好只教同类模板、静音是整类开关且可撤销。
+#[test]
+fn question_selection_and_preference_are_drivable_from_the_command_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let (work_id, chapter_id) = seed(dir.path(), "novel");
+    let work = work_id.to_string();
+    let anchor = format!("chapter:{chapter_id}");
+
+    // ① 草稿：这一章还没动笔 → 问「从哪儿开始」
+    let drafts = ok(dir.path(), "question-draft", &[("work", &work)]);
+    assert_eq!(drafts["count"], 1, "{drafts}");
+    assert_eq!(drafts["drafts"][0]["template_key"], "chapter.empty_body");
+    assert_eq!(drafts["drafts"][0]["slots"]["chapter"], "第一章");
+    assert_eq!(drafts["drafts"][0]["anchors"][0], anchor);
+
+    // ② 落成卡（真实链路里句子由界面按语言渲染；这里给一句占位正文）
+    let made = ok(
+        dir.path(),
+        "card-new",
+        &[
+            ("work", &work),
+            ("body", "占位"),
+            ("template", "chapter.empty_body"),
+            ("importance", "0.7"),
+            ("linked", &anchor),
+        ],
+    );
+    let first = made["card_id"].as_i64().unwrap();
+    assert_eq!(
+        ok(dir.path(), "question-draft", &[("work", &work)])["count"],
+        0,
+        "同一个锚点上同一条模板，问过就不该再生成"
+    );
+
+    // ③ 选题（只读）：候选里有它，且引力是**拆解过的**（将来界面能回答"为什么问这个"）
+    let picked = ok(dir.path(), "question-select", &[("work", &work), ("limit", "3")]);
+    assert_eq!(picked["questions"][0]["card_id"], first);
+    assert_eq!(picked["questions"][0]["gravity"]["novelty"], 1.0, "没问过的新颖度是满的");
+    assert_eq!(picked["questions"][0]["gravity"]["derived_discount"], 1.0);
+
+    // ④ 说「这个问题好」：状态一个字节不动，只教同类模板
+    let praised = ok(dir.path(), "question-praise", &[("id", &first.to_string()), ("trigger", "author")]);
+    assert_eq!(praised["learned"]["positives"], 1);
+    assert!(praised["learned"]["weight"].as_f64().unwrap() > 1.0);
+    assert_eq!(
+        ok(dir.path(), "card-list", &[("work", &work), ("state", "pending")])["count"],
+        1,
+        "评价与处置是两件事：夸过之后它还在待问上"
+    );
+
+    // ⑤ 静音那一类（第二张同模板的卡还待问着）→ 整类从候选里消失 → 解除静音又回来
+    let second = ok(
+        dir.path(),
+        "card-new",
+        &[("work", &work), ("body", "第二条"), ("template", "chapter.empty_body"), ("linked", "chapter:99")],
+    )["card_id"]
+        .as_i64()
+        .unwrap();
+    ok(dir.path(), "card-move", &[("id", &first.to_string()), ("to", "muted"), ("trigger", "author")]);
+    let weights = ok(dir.path(), "question-weights", &[]);
+    assert_eq!(weights["weights"][0]["template_key"], "chapter.empty_body");
+    assert_eq!(weights["weights"][0]["enabled"], false, "静音把这一类整体停用");
+    assert_eq!(
+        ok(dir.path(), "question-select", &[("work", &work)])["count"],
+        0,
+        "停用的一类不排到后面，是不出现（第二张卡虽然待问着）"
+    );
+
+    ok(dir.path(), "question-unmute", &[("template", "chapter.empty_body")]);
+    let back = ok(dir.path(), "question-select", &[("work", &work)]);
+    assert_eq!(back["count"], 1, "解除静音之后又回到候选池");
+    assert_eq!(back["questions"][0]["card_id"], second);
+}
