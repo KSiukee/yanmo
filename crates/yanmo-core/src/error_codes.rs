@@ -118,6 +118,9 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "记不下稿子的位置（{path}）：{detail}" : ["path", "detail"],
     STORE_RELOCATE_SOURCE_MISSING => "store.relocate_source_missing"
         : "原目录里找不到稿子库：{path}" : ["path"],
+    STORE_MISSING => "store.missing"
+        : "这个位置没有稿库：{path}（库文件叫 yanmo.db）。命令行不会替你新建一个空库——先用研墨打开一次，或确认路径写对了"
+        : ["path"],
     STORE_RELOCATE_INSIDE => "store.relocate_inside"
         : "新位置在现在的稿子目录里面（{from} → {to}），不能往自己里面搬" : ["from", "to"],
     STORE_RELOCATE_TARGET_IN_USE => "store.relocate_target_in_use"

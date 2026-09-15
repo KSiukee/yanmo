@@ -68,10 +68,41 @@ fn allowed_options(command: &str) -> Result<Vec<&'static str>, Usage> {
     Ok(known)
 }
 
-/// 打开数据目录里的库（目录不存在就建），完成环境校验与结构迁移。
+/// 打开数据目录里的库。
+///
+/// **不做"目录不存在就建、库不存在就开一个新的"**：`--data` 写错一个字符时，
+/// `verify` / `works` / `read` 这些命令会当场造出一个空库、再一本正经地回"没有作品"——
+/// 作者看到的正是"稿子没了"（2026-09-15 代码质量评审：轻微 16/26；壳侧同类问题已在严重 3 修掉，
+/// CLI 这条一直没堵）。库由**研墨本体**创建（首启 / 建书），命令行只认已经存在的库。
+///
+/// 错误只给码与参数（CLI 不拼人类句子，见模块头）：`store.missing` + `path`。
 pub(crate) fn open_store(dir: &Path) -> Result<Store, CliError> {
+    let db = dir.join(DB_FILE);
+    if !db.is_file() {
+        return Err(yanmo_core::Error::invalid_with(
+            yanmo_core::error_codes::codes::STORE_MISSING,
+            [("path", dir.display().to_string())],
+        )
+        .into());
+    }
+    Ok(Store::open(db)?)
+}
+
+/// 允许**建库**的那一条路：只有"本来就是在造新东西"的命令才配走它。
+///
+/// 见 [`may_create_library`]：出货的 CLI 里一条都没有（`new-work` 是开发档命令），
+/// 所以发布出去的二进制**永远不会**替你造出一个空库。
+fn open_store_creating(dir: &Path) -> Result<Store, CliError> {
     std::fs::create_dir_all(dir)?;
     Ok(Store::open(dir.join(DB_FILE))?)
+}
+
+/// 这条命令允许把库开出来吗（＝库里没有就建一个新的）。
+///
+/// 只有 `new-work` 算——它就是"开一本新书"，测试与脚本也拿它给空目录播种。
+/// 其余一律只认已经存在的库（2026-09-15 代码质量评审：轻微 16/26）。
+fn may_create_library(command: &str) -> bool {
+    command == "new-work"
 }
 
 /// 调试用的注入参数：给库设一个**页数上限**，让后续写入真的走到"写不下"这条路。
@@ -96,13 +127,21 @@ pub(crate) fn apply_debug_limits(_store: &Store, _args: &Args) -> Result<(), Cli
 
 /// 执行一条命令，产出要打印的 JSON。
 pub fn execute(args: &Args) -> Result<Value, CliError> {
+    // **先把命令与选项认全，再去碰磁盘**：`allowed_options` 对不认识的命令会报用法错误。
+    // 这一步原先只在"带了选项"时才触发，于是 `dance`（不带选项）会先去看库，
+    // 把"命令写错了"报成"这里没有稿库"——既有测试当场抓出来的。
+    let allowed = allowed_options(&args.command)?;
     for name in args.options.keys() {
-        if !allowed_options(&args.command)?.contains(&name.as_str()) {
+        if !allowed.contains(&name.as_str()) {
             return Err(Usage(format!("命令 {} 不认识选项 --{name}", args.command)).into());
         }
     }
 
-    let mut store = open_store(&args.data)?;
+    let mut store = if may_create_library(&args.command) {
+        open_store_creating(&args.data)?
+    } else {
+        open_store(&args.data)?
+    };
     apply_debug_limits(&store, args)?;
 
     if let Some(value) = rescue(args, &mut store)? {

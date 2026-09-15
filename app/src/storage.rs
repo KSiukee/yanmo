@@ -511,6 +511,15 @@ impl AppData {
         if guard.is_some() {
             return Ok(());
         }
+        // **库文件不在原位就别挂**：`Store::open` 会凭空建一个新库，而这条路的调用者
+        // 是"换库失败要回到原状"——真库没搬回来时在原地建个空库，界面就会若无其事地
+        // 跑在一本空书架上（2026-09-15 代码质量评审：中等 3）。宁可明确报"库不在"。
+        if !self.db_path.is_file() {
+            return Err(ApiError::with(
+                "shell.store_reopen_missing",
+                [("path", self.db_path.display().to_string())],
+            ));
+        }
         let store = Store::open(&self.db_path).map_err(|error| {
             ApiError::with("shell.store_reopen_failed", [("path", self.db_path.display().to_string())])
                 .caused_by(error)
@@ -539,8 +548,18 @@ impl AppData {
         match yanmo_core::store::swap_in(source, &data_dir, &stamp) {
             Ok(outcome) => Ok(outcome),
             Err(error) => {
-                // 换库没成：原库已经被 swap_in 搬回原处，重新挂上让作者接着写
-                self.reopen_store()?;
+                // 换库没成：原库本该已经被 swap_in 搬回原处，重新挂上让作者接着写。
+                //
+                // 但如果**它没搬回来**（回滚也失败）——原位没有库文件——就绝不能再挂一个空库顶上：
+                // 那会让界面看起来一切正常、其实跑在空书架上（2026-09-15 代码质量评审：中等 3）。
+                // 这时把两件事一起报出去：换库为什么失败 + 库不在原位（真库多半在「旧库留底」里）。
+                if let Err(reopen) = self.reopen_store() {
+                    return Err(ApiError::with(
+                        "shell.restore_left_without_library",
+                        [("path", self.db_path.display().to_string())],
+                    )
+                    .caused_by(format!("{error}／{reopen}")));
+                }
                 Err(ApiError::from(error))
             }
         }
@@ -603,6 +622,26 @@ mod tests {
             Err(e) => e,
         };
         assert_eq!(err.code, "shell.data_dir_create_failed", "错误码应当指明失败原因：{err:?}");
+    }
+
+    /// **库文件不在原位时，重新挂库必须拒绝**（2026-09-15 代码质量评审：中等 3）。
+    ///
+    /// 这条路的调用者是"换库失败要回到原状"：如果真库没搬回来（回滚也失败），
+    /// `Store::open` 会在原地建出一个空库——界面于是若无其事地跑在一本空书架上。
+    /// 宁可明确报"库不在"，也不许凭空造一本。
+    #[test]
+    fn reopening_refuses_when_the_library_is_not_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = AppData::open_at_for_test(dir.path()).unwrap();
+        let db = data.db_path().to_path_buf();
+        assert!(db.is_file(), "前提：启动后库文件在");
+
+        data.close_store().unwrap();
+        std::fs::remove_file(&db).unwrap(); // 模拟"原库没能回到原位"
+
+        let error = data.reopen_store().expect_err("库不在原位时不许挂，更不许建一个新的");
+        assert_eq!(error.code, "shell.store_reopen_missing");
+        assert!(!db.exists(), "拒绝之后不许留下一个空库");
     }
 
     #[test]

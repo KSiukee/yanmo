@@ -352,3 +352,18 @@ fn a_backup_from_the_command_line_writes_a_package_and_a_skipped_target_is_recor
     assert!(!entries[1]["reason"].as_str().unwrap_or("").is_empty());
     assert!(work_id > 0);
 }
+
+#[test]
+fn a_read_only_command_never_creates_an_empty_library() {
+    // 2026-09-15 代码质量评审：轻微 16/26——`--data` 写错一个字符时，只读命令会当场造出一个空库、
+    // 再一本正经地回"没有作品"，作者看到的正是"稿子没了"。现在只认已经存在的库。
+    let dir = tempfile::tempdir().unwrap();
+    let empty = dir.path().join("这不是稿库");
+
+    let error = run(&empty, "verify", &[]).expect_err("空目录里不该开出一个新库");
+    let text = format!("{error:?}");
+    assert!(text.contains("store.missing"), "要回机器可读的码（store.missing）：{text}");
+
+    assert!(!empty.join("yanmo.db").exists(), "拒绝之后不许留下空库");
+    assert!(!empty.exists(), "连目录都不该建出来");
+}

@@ -74,18 +74,24 @@ pub fn swap_in(source: &Path, data_dir: &Path, stamp: &str) -> Result<RestoreOut
         match std::fs::rename(&from, &to) {
             Ok(()) => moved.push((from, to)),
             Err(error) => {
-                rollback(&moved);
+                let rollback_failed = rollback(&moved);
                 std::fs::remove_file(&staged).ok();
-                return Err(swap_failed(format!("把原库搬去留底时失败：{error}")));
+                return Err(swap_failed_after_rollback(
+                    format!("把原库搬去留底时失败：{error}"),
+                    rollback_failed,
+                ));
             }
         }
     }
 
     // ③ 放新库（同一目录内 rename，不会出现"半个库"）
     if let Err(error) = std::fs::rename(&staged, &target) {
-        rollback(&moved);
+        let rollback_failed = rollback(&moved);
         std::fs::remove_file(&staged).ok();
-        return Err(swap_failed(format!("把新库放回数据目录时失败：{error}")));
+        return Err(swap_failed_after_rollback(
+            format!("把新库放回数据目录时失败：{error}"),
+            rollback_failed,
+        ));
     }
 
     // ④ 当场再体检一次：不过就把它扔掉、把留底搬回来——**失败必须能回到原状**
@@ -101,8 +107,7 @@ pub fn swap_in(source: &Path, data_dir: &Path, stamp: &str) -> Result<RestoreOut
             for suffix in ["-wal", "-shm"] {
                 std::fs::remove_file(data_dir.join(format!("{DB_FILE}{suffix}"))).ok();
             }
-            rollback(&moved);
-            Err(swap_failed(problem))
+            Err(swap_failed_after_rollback(problem, rollback(&moved)))
         }
     }
 }
@@ -121,15 +126,35 @@ fn database_file(source: &Path) -> Result<PathBuf> {
 }
 
 /// 把留底搬回原处，并收掉空掉的留底目录。
-fn rollback(moved: &[(PathBuf, PathBuf)]) {
+fn rollback(moved: &[(PathBuf, PathBuf)]) -> Vec<String> {
+    let mut failed = Vec::new();
     for (original, kept) in moved {
-        let _ = std::fs::rename(kept, original);
-    }
-    if let Some((_, first)) = moved.first() {
-        if let Some(dir) = first.parent() {
-            let _ = std::fs::remove_dir(dir);
+        if let Err(error) = std::fs::rename(kept, original) {
+            failed.push(format!("把 {} 搬回 {} 失败：{error}", kept.display(), original.display()));
         }
     }
+    if failed.is_empty() {
+        if let Some((_, first)) = moved.first() {
+            if let Some(dir) = first.parent() {
+                let _ = std::fs::remove_dir(dir);
+            }
+        }
+    }
+    failed
+}
+
+/// 换库失败的错误：**回滚也失败时把"真库在哪"写进 detail**，不然作者只看到一句"换库失败"。
+///
+/// 2026-09-15 代码质量评审：中等 3——回滚失败以前被 `let _ =` 吞掉，壳层失败分支接着
+/// 去 `reopen_store()`，那一步会在原位建出一个空库，界面于是若无其事地跑在空书架上。
+fn swap_failed_after_rollback(problem: String, rollback_failed: Vec<String>) -> Error {
+    if rollback_failed.is_empty() {
+        return swap_failed(problem);
+    }
+    swap_failed(format!(
+        "{problem}；**而且回滚也失败了**（真库可能只剩在「旧库留底」目录里）：{}",
+        rollback_failed.join("；")
+    ))
 }
 
 /// 复制 + 落盘（`fs::copy` 不保证内容已经落到介质上，换库这一步必须稳）。
@@ -160,4 +185,37 @@ pub(super) fn same_file(a: &Path, b: &Path) -> bool {
 
 fn swap_failed(detail: String) -> Error {
     Error::invalid_with(codes::BACKUP_RESTORE_SWAP_FAILED, [("detail", detail)])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **回滚失败必须被说出来**（2026-09-15 代码质量评审：中等 3）。
+    ///
+    /// 一对不存在的路径就能让 `rename` 失败——以前这里被 `let _ =` 吞掉，上层只知道
+    /// "换库失败"，不知道真库只剩在留底目录里。现在必须留下记录，并且带上去哪找。
+    #[test]
+    fn a_failed_rollback_is_reported_not_swallowed() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = dir.path().join("原位").join("yanmo.db");
+        let kept = dir.path().join("留底").join("yanmo.db"); // 不存在 → 搬不回去
+
+        let failed = rollback(&[(original, kept)]);
+        assert_eq!(failed.len(), 1, "搬不回去必须留一条记录，不能静默吞掉");
+        assert!(failed[0].contains("留底"), "记录里要带留底路径，作者才知道去哪找：{}", failed[0]);
+
+        // 错误文案里必须出现「回滚也失败」——不然作者只看到一句"换库失败"，会继续写下去
+        let error = swap_failed_after_rollback("换库失败".to_string(), failed);
+        let text = format!("{error:?}");
+        assert!(text.contains("回滚也失败"), "{text}");
+        assert!(text.contains("留底"), "{text}");
+    }
+
+    /// 回滚干净时错误文案保持原样，别把作者吓一跳。
+    #[test]
+    fn a_clean_rollback_keeps_the_plain_error() {
+        let error = swap_failed_after_rollback("换库失败".to_string(), Vec::new());
+        assert!(!format!("{error:?}").contains("回滚也失败"), "干净的失败不该牵扯回滚");
+    }
 }
