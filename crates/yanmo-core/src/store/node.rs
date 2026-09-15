@@ -225,11 +225,6 @@ impl Store {
         node_work_in(&self.conn, id)
     }
 
-    /// 确认节点属于指定作品——**防跨作品挂错父级**。
-    pub(super) fn ensure_node_in_work(&self, node_id: i64, work_id: i64) -> Result<()> {
-        node_in_work_in(&self.conn, node_id, work_id)
-    }
-
     /// 从**根到该节点父级**的 id 链（不含它自己）——"打开就定位到正在写的那一章"要用。
     ///
     /// 逐级往上走，不写递归查询：链长就是树的深度（通常个位数），
