@@ -22,6 +22,8 @@ use crate::exitwatch::ExitWatch;
 
 /// 逃生导出目录（关窗存不下去时，把手上这份正文原子写到这里）。
 const ESCAPE_DIR: &str = "escape";
+/// 系统临时目录 / 主目录下的逃生文件夹名（语言无关，跟导出目录同一个语言）。
+const ESCAPE_ROOT: &str = "YanmoEscape";
 /// 系统答不上"文档在哪"时的导出落点：数据目录里的一个子目录。
 const EXPORT_DIR: &str = "export";
 // 库文件名与"文档/导出目录"的名字**不写在本文件**：图形界面与命令行救援入口是两个壳，
@@ -448,6 +450,27 @@ impl AppData {
             .join(ESCAPE_DIR)
     }
 
+    /// 逃生导出的候选落点，**按"最不容易与故障同源"排序**（评审：中等 20）。
+    ///
+    /// "存不下去"的常见原因正是盘满、目录只读、介质写保护、UNC 断开——逃生通道要是与故障
+    /// 同源（默认就写在数据目录里），最需要它的时候恰好也用不了。所以顺序是：
+    /// ① 系统临时目录（通常另一块盘 / 另一个卷）→ ② 作者主目录 → ③ 数据目录（最后兜底）。
+    /// 调用方依次真写，**第一个成功的就把实际落点报给界面**。
+    pub fn escape_candidates(&self) -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> = Vec::new();
+        let push = |out: &mut Vec<PathBuf>, dir: PathBuf| {
+            if !out.contains(&dir) {
+                out.push(dir);
+            }
+        };
+        push(&mut out, std::env::temp_dir().join(ESCAPE_ROOT));
+        if let Some(home) = yanmo_core::paths::home_dir() {
+            push(&mut out, home.join(ESCAPE_ROOT));
+        }
+        push(&mut out, self.escape_dir());
+        out
+    }
+
     /// 把渲染好的文件写进这本书的导出目录，并清掉上次导出、这次不再需要的残留。
     ///
     /// 两条讲究：
@@ -686,6 +709,24 @@ mod tests {
         assert!(!data.exit_gate_armed(), "界面没就绪前不该拦关窗");
         data.arm_exit_gate();
         assert!(data.exit_gate_armed());
+    }
+
+    #[test]
+    fn escape_candidates_never_put_the_data_dir_first() {
+        // 2026-09-15 代码质量评审：中等 20——"存不下去"的常见原因正是盘满 / 只读 / 写保护，
+        // 逃生通道与故障同源（就在数据目录里）等于最需要它时用不了。数据目录只能兜底。
+        let dir = tempfile::tempdir().unwrap();
+        let data = AppData::open_at_for_test(dir.path()).unwrap();
+        let candidates = data.escape_candidates();
+
+        assert!(candidates.len() >= 2, "至少要有临时目录与数据目录两站：{candidates:?}");
+        assert_eq!(
+            candidates.first().unwrap(),
+            &std::env::temp_dir().join(ESCAPE_ROOT),
+            "第一站必须是系统临时目录（通常另一块盘）"
+        );
+        assert_eq!(candidates.last().unwrap(), &data.escape_dir(), "数据目录只能垫底");
+        assert!(!candidates.contains(&data.data_dir()), "候选是子目录，不是库文件所在的那个目录本身");
     }
 
     #[test]

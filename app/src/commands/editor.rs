@@ -322,10 +322,13 @@ pub fn abandon_session(data: State<'_, AppData>) -> Result<(), ApiError> {
     data.with_store(|store| store.abandon_session())
 }
 
-/// 逃生导出：把手上这份正文**原子写**到数据目录下的逃生文件夹，返回路径给界面展示。
+/// 逃生导出：把手上这份正文**原子写**到第一个写得进去的落点，返回**实际落点**给界面展示。
 ///
 /// 这是"存不下去"时唯一还能把字带走的通道——所以它自己必须是最可靠的那一段：
-/// 同目录临时文件 + 落盘 + rename，绝不会留下半截文件。
+/// ① 同目录临时文件 + 落盘 + rename，绝不会留下半截文件；
+/// ② **不与故障同源**：依次试系统临时目录 → 主目录 → 数据目录，哪个真写成了就用哪个，
+///    把实际落点如实报给界面（评审：中等 20）。盘满 / 只读 / 写保护正是"存不下去"的
+///    常见原因，只认数据目录就等于在同一个坑里再摔一次。
 #[tauri::command(rename_all = "snake_case")]
 pub fn escape_export(data: State<'_, AppData>, node_id: i64, body: String) -> Result<EscapeAck, ApiError> {
     let title = data.with_store(|store| store.node_title(node_id))?;
@@ -334,9 +337,75 @@ pub fn escape_export(data: State<'_, AppData>, node_id: i64, body: String) -> Re
         yanmo_core::time::now_millis(),
         yanmo_core::atomic::safe_file_name(&title)
     );
-    let path = data.escape_dir().join(file_name);
-    yanmo_core::atomic::write_atomic(&path, body.as_bytes()).map_err(ApiError::from)?;
+    let path = write_escape(&data.escape_candidates(), &file_name, body.as_bytes())?;
     Ok(EscapeAck {
         path: path.display().to_string(),
     })
+}
+
+/// 依次试候选落点，返回**第一个真写成功**的完整路径；都写不进去才报错（带最后一次原因）。
+///
+/// 失败时给界面的永远是"最后一站为什么没成"——那个原因最接近"整条路都堵死了"的实情。
+fn write_escape(
+    candidates: &[std::path::PathBuf],
+    file_name: &str,
+    body: &[u8],
+) -> Result<std::path::PathBuf, ApiError> {
+    let mut failure: Option<ApiError> = None;
+    for dir in candidates {
+        let path = dir.join(file_name);
+        match yanmo_core::atomic::write_atomic(&path, body) {
+            Ok(()) => return Ok(path),
+            Err(error) => {
+                failure = Some(
+                    ApiError::with(
+                        "shell.export_write_failed",
+                        [("path", path.display().to_string())],
+                    )
+                    .caused_by(&error),
+                );
+            }
+        }
+    }
+    // 候选至少有一个（数据目录兜底）；"一个都没有"也按"写不进去"报，不 panic
+    Err(failure.unwrap_or_else(|| {
+        ApiError::with("shell.export_write_failed", [("path", String::new())])
+            .caused_by("逃生导出没有可用的落点")
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 逃生导出：**一个落点写不进去就换下一个**，并把真正写成的那个路径回来。
+    ///
+    /// 2026-09-15 代码质量评审：中等 20——以前只有一个落点（数据目录），而"存不下去"的
+    /// 常见原因正是那个盘满 / 只读 / 写保护，逃生通道于是与故障同源。
+    #[test]
+    fn escape_moves_on_to_the_next_candidate_when_one_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        // 造一个必定建不出来的目录：父路径是个普通文件
+        let blocker = dir.path().join("blocker");
+        std::fs::write(&blocker, b"x").unwrap();
+        let dead = blocker.join("nope");
+        let alive = dir.path().join("alive");
+
+        let body = "手上的正文";
+        let path = write_escape(&[dead, alive.clone()], "1-第一章.txt", body.as_bytes()).unwrap();
+
+        assert_eq!(path, alive.join("1-第一章.txt"), "必须落到真正写得进去的那一站");
+        assert_eq!(std::fs::read(&path).unwrap(), body.as_bytes());
+    }
+
+    #[test]
+    fn escape_reports_the_last_failure_when_every_candidate_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let blocker = dir.path().join("blocker");
+        std::fs::write(&blocker, b"x").unwrap();
+
+        let error = write_escape(&[blocker.join("a"), blocker.join("b")], "1.txt", b"x")
+            .expect_err("全都写不进去时必须报错，而不是默默成功");
+        assert!(!error.code.is_empty(), "要有机器可读的码给界面查字典");
+    }
 }
