@@ -583,6 +583,7 @@ export const COMMANDS = {
   questionSync: "question_sync",
   questionBoard: "question_board",
   questionAsk: "question_ask",
+  questionAnswer: "question_answer",
   questionDefer: "question_defer",
   questionDiscard: "question_discard",
   questionPraise: "question_praise",

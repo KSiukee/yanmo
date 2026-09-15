@@ -48,6 +48,9 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         "question-mute-source" => Some(&["source", "off"]),
         "question-inspire" => Some(&["id", "body", "body-file", "source", "trigger"]),
         "question-inspirations" => Some(&["id"]),
+        // 叩问·作答：答案进答案池（文本与输入方式解耦：--source 记怎么打出来的）
+        "question-answer" => Some(&["id", "body", "body-file", "source", "trigger"]),
+        "question-answers" => Some(&["id"]),
         _ => None,
     }
 }
@@ -264,6 +267,21 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
             let ideas = store.inspirations_of_question(id)?;
             json!({ "ok": true, "command": "question-inspirations", "card_id": id,
                     "count": ideas.len(), "inspirations": ideas })
+        }
+        "question-answer" => {
+            // 作答：答案进答案池，卡走到「已答」终态——正文一个字节都不动
+            let id = args.required_i64("id")?;
+            let body = body_of(args)?;
+            let source = args.optional("source").unwrap_or("typed").to_string();
+            let trigger = args.optional("trigger").unwrap_or("cli").to_string();
+            let answer_id = store.record_question_answer(id, &body, &source, &trigger)?;
+            json!({ "ok": true, "command": "question-answer", "card_id": id, "answer_id": answer_id })
+        }
+        "question-answers" => {
+            let id = args.required_i64("id")?;
+            let answers = store.answers_of_question(id)?;
+            json!({ "ok": true, "command": "question-answers", "card_id": id,
+                    "count": answers.len(), "answers": answers })
         }
         "question-deferrals" => {
             // 两种问法：这本书里**还等着**的（默认），或某张卡的**全部历史**

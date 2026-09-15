@@ -1,4 +1,4 @@
-// 叩问面板的纯展示逻辑：句子渲染、引力拆解、等多久、来源称呼。
+// 叩问面板的纯展示逻辑：句子渲染、引力拆解、等多久、来源称呼、输入方式称呼。
 //
 // 这几条守的都是"静默出错"：键写错会露出键名、槽位缺了会留 `{槽位}`、
 // 乘数全列出来会把真正的原因埋掉——都在这里钉住。
@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { classLabel, dueLabel, reasonLines, renderDraft, sourceLabel } from "./question.ts";
+import { classLabel, dueLabel, inputLabel, reasonLines, renderDraft, sourceLabel } from "./question.ts";
 import type { Gravity, QuestionDraft } from "../api/question.ts";
 
 const draft: QuestionDraft = {
@@ -72,4 +72,16 @@ test("类别称呼：字典里有就用模板句，没有就原样露键", () =>
 test("来源称呼：核心自带给一句人话", () => {
   assert.equal(sourceLabel("core"), "研墨自带");
   assert.equal(sourceLabel("module-x"), "来自 module-x");
+});
+
+test("输入方式称呼：三种各有各的说法，认不出来的原样露出来", () => {
+  // 不是"来源"那一档：这里说的是**答案怎么打出来的**（文本与输入方式解耦）
+  assert.equal(inputLabel("typed"), "键盘打的");
+  assert.equal(inputLabel("voice"), "口述转的");
+  assert.equal(inputLabel("mixed"), "口述加手改的");
+  assert.equal(inputLabel("telepathy"), "telepathy", "认不出来的取值不许静默吞掉");
+  // 字典缺键时 t() 原样返回键——这里要能一眼看出来是字典漏了
+  for (const source of ["typed", "voice", "mixed"]) {
+    assert.ok(!inputLabel(source).startsWith("flow."), `字典里缺 flow.input.${source}`);
+  }
 });

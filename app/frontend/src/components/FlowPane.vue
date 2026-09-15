@@ -1,21 +1,22 @@
 <script setup lang="ts">
 // 叩问面板：**只问不写**。
 //
-// 机制挑出来的问题摆到作者面前，他只做处置：说好（这个问题好）、延后（什么时候再问我）、
-// 舍弃（进冷却库）、静音（这类/这个来源）、记灵感（被勾起的念头；记完回到原问题，状态不变）。
+// 机制挑出来的问题摆到作者面前，他做两件事：**处置**（说好 / 延后 / 舍弃 / 静音 / 记灵感）
+// 与**作答**（把心里那一句写下来——进答案池，不动正文）。
 //
 // 三条界面纪律：
 // 1. **点开一张才算"问出"**——那一刻才消耗新颖度；只看列表不算已问；
-// 2. 没有"作答"入口：答案输入是下一步的事，宁可没有也不放按不动的按钮；
+// 2. 作答**不写正文**：答案落到答案池（碎片统一表），要不要落进章里是两条落点模式的事；
 // 3. 界面不拼句子：模板句从字典渲染（`question.template.*`），核心只给键与槽位。
 //
-// 拆件：一条候选在 `QuestionCard`、延后菜单在 `DeferMenu`、记灵感在 `InspireBox`——
-// 它们各有各的变化理由，堆在一个文件里只会越长越难改。
+// 拆件：一条候选在 `QuestionCard`、延后菜单在 `DeferMenu`、记灵感在 `InspireBox`、
+// 作答在 `AnswerBox`——它们各有各的变化理由，堆在一个文件里只会越长越难改。
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
 import { t } from "../locales/index.ts";
 import { asError } from "../api/errors.ts";
 import {
+  questionAnswer,
   questionAsk,
   questionBoard,
   questionDefer,
@@ -34,9 +35,11 @@ import {
   type QuestionBoard,
   type SelectedQuestion,
 } from "../api/question.ts";
-import { classLabel, dueLabel, renderDraft, sourceLabel } from "./question.ts";
+import { dueLabel, inputLabel, renderDraft } from "./question.ts";
 import QuestionCard from "./QuestionCard.vue";
+import AnswerBox from "./AnswerBox.vue";
 import DeferMenu from "./DeferMenu.vue";
+import FlowRecall from "./FlowRecall.vue";
 import InspireBox from "./InspireBox.vue";
 
 const props = defineProps<{ workId: number | null }>();
@@ -48,6 +51,7 @@ const busy = ref(false);
 const errorCode = ref("");
 const deferFor = ref<number | null>(null);
 const inspireFor = ref<number | null>(null);
+const answerFor = ref<number | null>(null);
 const justSaved = ref("");
 
 let timer: number | undefined;
@@ -101,6 +105,8 @@ async function dispose(action: () => Promise<QuestionBoard>) {
     active.value = null;
     deferFor.value = null;
     inspireFor.value = null;
+    answerFor.value = null;
+    justSaved.value = "";
   } catch (error) {
     report(error);
   } finally {
@@ -114,6 +120,46 @@ async function ask(card: SelectedQuestion) {
     errorCode.value = "";
     board.value = await questionAsk(card.card_id);
     active.value = card;
+    answerFor.value = null;
+    justSaved.value = "";
+  } catch (error) {
+    report(error);
+  } finally {
+    busy.value = false;
+  }
+}
+
+/**
+ * 打开作答框：把上一次那张的回执清掉，免得"答下了：…"跟着新的一张走。
+ */
+function openAnswer(cardId: number) {
+  answerFor.value = cardId;
+  justSaved.value = "";
+}
+
+/**
+ * 作答：答案进答案池，问题卡就此走到终态（**不动正文**）。
+ *
+ * `source` 现在只有 `typed`（键盘）；口述那条链路落地后，那条路把 `voice` / `mixed`
+ * 传进来就行——命令与存储的形状都不变，这正是"文本与输入方式解耦"要的效果。
+ */
+async function saveAnswer(body: string) {
+  const cardId = answerFor.value;
+  if (!cardId || !body.trim()) return;
+  try {
+    busy.value = true;
+    errorCode.value = "";
+    // 这一版只有键盘这一条通道；口述那条链路落地后，这里换成 voice / mixed 就行
+    const source = "typed";
+    const receipt = await questionAnswer(cardId, body, source);
+    board.value = receipt.board;
+    // 回执照**核心落下的那一份**说（不是照界面自己传的那份）：修剪过的原文、认下的输入方式
+    justSaved.value = t("flow.answer.saved", {
+      kind: inputLabel(receipt.answer.source),
+      body: receipt.answer.body,
+    });
+    active.value = null;
+    answerFor.value = null;
   } catch (error) {
     report(error);
   } finally {
@@ -173,6 +219,9 @@ watch(() => props.workId, () => void refresh());
         <button class="act" :disabled="busy" @click="dispose(() => questionPraise(active!.card_id))">
           {{ t("flow.action.praise") }}
         </button>
+        <button class="act act--answer" :disabled="busy" @click="openAnswer(active!.card_id)">
+          {{ t("flow.action.answer") }}
+        </button>
         <button class="act" :disabled="busy" @click="deferFor = active!.card_id">
           {{ t("flow.action.defer") }}
         </button>
@@ -186,14 +235,24 @@ watch(() => props.workId, () => void refresh());
           {{ t("flow.action.inspire") }}
         </button>
       </div>
-      <p v-if="justSaved" class="saved">{{ justSaved }}</p>
     </section>
+
+    <!-- 「记下了」这条回执放在面板上固定一处：作答之后那一张就离开"正在问"了，
+         回执留在里面会跟着一起消失（作者会以为没记上） -->
+    <p v-if="justSaved" class="saved">{{ justSaved }}</p>
 
     <DeferMenu
       v-if="deferFor !== null"
       :busy="busy"
       @confirm="(preset, note) => dispose(() => questionDefer(deferFor!, preset, note))"
       @cancel="deferFor = null"
+    />
+
+    <AnswerBox
+      v-if="answerFor !== null"
+      :busy="busy"
+      @save="saveAnswer"
+      @cancel="answerFor = null"
     />
 
     <InspireBox
@@ -231,62 +290,17 @@ watch(() => props.workId, () => void refresh());
       </p>
     </section>
 
-    <!-- 冷却库：舍弃不等于删除 -->
-    <section v-if="cooled.length > 0">
-      <h3 class="sec">{{ t("flow.cooled") }}</h3>
-      <p class="pane__hint">{{ t("flow.cooled.hint") }}</p>
-      <article v-for="item in cooled" :key="item.card_id" class="card">
-        <p class="card__dim">{{ item.body }}</p>
-        <div class="row">
-          <span class="src">{{ sourceLabel(item.source) }}</span>
-          <button class="link" :disabled="busy" @click="dispose(() => questionRetrieve(item.card_id))">
-            {{ t("flow.action.retrieve") }}
-          </button>
-          <button
-            class="link"
-            :disabled="busy"
-            @click="dispose(() => questionMuteSource(props.workId as number, item.source))"
-          >
-            {{ t("flow.source.mute") }}
-          </button>
-        </div>
-      </article>
-    </section>
-
-    <!-- 已静音的类别：「这类别再问」的回头路 -->
-    <section v-if="mutedClasses.length > 0">
-      <h3 class="sec">{{ t("flow.muted_classes") }}</h3>
-      <p class="pane__hint">{{ t("flow.muted_classes.hint") }}</p>
-      <div class="row">
-        <span v-for="key in mutedClasses" :key="key" class="chip">
-          {{ classLabel(key) }}
-          <button
-            class="link"
-            :disabled="busy"
-            @click="dispose(() => questionUnmuteClass(props.workId as number, key))"
-          >
-            ✕
-          </button>
-        </span>
-      </div>
-    </section>
-
-    <!-- 已静音的来源：能一键让它闭嘴，也能解除 -->
-    <section v-if="mutedSources.length > 0">
-      <h3 class="sec">{{ t("flow.muted_sources") }}</h3>
-      <div class="row">
-        <span v-for="source in mutedSources" :key="source" class="chip">
-          {{ sourceLabel(source) }}
-          <button
-            class="link"
-            :disabled="busy"
-            @click="dispose(() => questionUnmuteSource(props.workId as number, source))"
-          >
-            ✕
-          </button>
-        </span>
-      </div>
-    </section>
+    <!-- 回头路：冷却库（捞回）与两张已静音清单——单独成件，见 `FlowRecall` -->
+    <FlowRecall
+      :busy="busy"
+      :cooled="cooled"
+      :muted-classes="mutedClasses"
+      :muted-sources="mutedSources"
+      @retrieve="(cardId) => dispose(() => questionRetrieve(cardId))"
+      @mute-source="(source) => dispose(() => questionMuteSource(props.workId as number, source))"
+      @unmute-class="(key) => dispose(() => questionUnmuteClass(props.workId as number, key))"
+      @unmute-source="(source) => dispose(() => questionUnmuteSource(props.workId as number, source))"
+    />
   </aside>
 </template>
 
@@ -319,18 +333,6 @@ watch(() => props.workId, () => void refresh());
   font-size: 11px;
   opacity: 0.75;
 }
-.card {
-  padding: 8px;
-  margin-bottom: 6px;
-  border: 1px solid var(--ym-line);
-  border-radius: 6px;
-  background: var(--ym-paper);
-}
-.card__dim {
-  margin: 0 0 6px;
-  line-height: 1.6;
-  opacity: 0.65;
-}
 .row {
   display: flex;
   flex-wrap: wrap;
@@ -353,6 +355,10 @@ watch(() => props.workId, () => void refresh());
   opacity: 0.5;
   cursor: default;
 }
+/* 作答是这个面板上唯一的"写点什么"入口，给它一点分量 */
+.act--answer {
+  font-weight: 600;
+}
 .asking__body {
   margin: 0 0 8px;
   line-height: 1.6;
@@ -364,15 +370,6 @@ watch(() => props.workId, () => void refresh());
 .waiting em {
   font-style: normal;
   opacity: 0.7;
-}
-.chip {
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
-  padding: 1px 6px;
-  font-size: 11px;
-  border: 1px solid var(--ym-line);
-  border-radius: 10px;
 }
 .saved {
   margin: 6px 0 0;

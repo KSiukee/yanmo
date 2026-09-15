@@ -20,7 +20,7 @@ use crate::error::ApiError;
 use crate::storage::AppData;
 use yanmo_core::model::QuestionState;
 use yanmo_core::question::{DeferPreset, QuestionDraft};
-use yanmo_core::store::{CooledCard, Deferral, Inspiration, SelectedQuestion, Store};
+use yanmo_core::store::{Answer, CooledCard, Deferral, Inspiration, SelectedQuestion, Store};
 
 /// 面板一次要的全部数据。
 #[derive(Debug, Serialize)]
@@ -110,6 +110,36 @@ pub fn question_ask(data: State<'_, AppData>, card_id: i64) -> Result<QuestionBo
         let work_id = store.question_card(card_id)?.work_id;
         store.move_question_card(card_id, QuestionState::Asked, "pull")?;
         board(store, work_id)
+    })
+}
+
+/// 作答的回执：**核心落下来的那一条**答案 + 落完之后的最新面板。
+///
+/// 回执为什么要从核心读回来（而不是把界面传进去的那份原样返回）：界面显示的就该是
+/// **库里真有的东西**——修剪后的原文、核心认下的输入方式。自己回显自己等于没核对。
+#[derive(Debug, Serialize)]
+pub struct AnswerReceiptDto {
+    pub answer: Answer,
+    pub board: QuestionBoardDto,
+}
+
+/// 作答：把答案落成一张碎片（**不动正文**），并把问题卡走到「已答」终态。
+///
+/// `source` 是**怎么打出来的**（`typed` / `voice` / `mixed`）——它与答案文本解耦，
+/// 是创作留痕的原始素材，所以照原样交给核心、由核心那一处校验（认不出就拒，界面只报码）。
+/// 答案落到章里是两条落点模式（穿插式 / 先问后排版）的事，本命令一个字节都不写正文。
+#[tauri::command(rename_all = "snake_case")]
+pub fn question_answer(
+    data: State<'_, AppData>,
+    card_id: i64,
+    body: String,
+    source: String,
+) -> Result<AnswerReceiptDto, ApiError> {
+    crate::acceptance::note_command("question_answer");
+    data.with_store(|store| {
+        let work_id = store.question_card(card_id)?.work_id;
+        store.record_question_answer(card_id, &body, &source, "author")?;
+        Ok(AnswerReceiptDto { answer: store.answer_of_question(card_id)?, board: board(store, work_id)? })
     })
 }
 

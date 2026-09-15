@@ -80,6 +80,23 @@ export interface Inspiration {
   created_at: number;
 }
 
+/** 答下的那张答案卡（与灵感卡同表，`card_id` 指回问题卡）。 */
+export interface Answer {
+  id: number;
+  work_id: number;
+  card_id: number;
+  body: string;
+  /** 怎么打出来的：`typed` / `voice` / `mixed`（用 `inputLabel` 讲成人话） */
+  source: string;
+  created_at: number;
+}
+
+/** 作答的回执：**核心落下来的那一条** + 落完之后的最新面板。 */
+export interface AnswerReceipt {
+  answer: Answer;
+  board: QuestionBoard;
+}
+
 /** 界面渲染好的一条候选（核心只认键与槽位，句子是界面按字典填出来的）。 */
 export interface QuestionOffer {
   template_key: string;
@@ -103,6 +120,16 @@ export const questionBoard = (work_id: number) =>
 /** 问出这一张（新颖度从这一刻开始算）。 */
 export const questionAsk = (card_id: number) =>
   call<QuestionBoard>(COMMANDS.questionAsk, { card_id });
+
+/**
+ * 作答：答案落进答案池，问题卡走到终态（**不动正文**）。
+ *
+ * `source` 是**怎么打出来的**（`typed` / `voice` / `mixed`）——文本与输入方式解耦：
+ * 口述那条链路落地后，这里换成 `voice` / `mixed` 就行，命令形状不变。
+ * 回执里那条答案是**核心读回来的**（修剪过的原文 + 核心认下的输入方式），不是界面自己回显。
+ */
+export const questionAnswer = (card_id: number, body: string, source: string) =>
+  call<AnswerReceipt>(COMMANDS.questionAnswer, { card_id, body, source });
 
 /** 延后：`preset` 是界面那一档的键，`note` 是作者自己填的那一句。 */
 export const questionDefer = (card_id: number, preset: string, note: string) =>

@@ -835,3 +835,73 @@ fn question_disposition_is_drivable_from_the_command_line() {
         .expect("派生出来的卡要在列表里");
     assert_eq!(row["auto_derived"], true, "开关没传下去就成了作者手动派生：{row}");
 }
+
+/// 作答：答案进答案池、卡走到「已答」终态、输入方式如实记下——**正文一个字节都不动**。
+#[test]
+fn question_answering_is_drivable_from_the_command_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let (work_id, chapter_id) = seed(dir.path(), "novel");
+    let work = work_id.to_string();
+    let node = chapter_id.to_string();
+    ok(dir.path(), "write", &[("node", &node), ("body", "第一章的正文，作答不该动它一个字。")]);
+    let before = ok(dir.path(), "fingerprint", &[("node", &node)])["fingerprint"].clone();
+
+    // 没点开就答也算答：先补一条「问出」，新颖度照常消耗
+    let card = ok(
+        dir.path(),
+        "card-new",
+        &[("work", &work), ("body", "他为什么不肯烧那封信？"), ("template", "chapter.empty_body")],
+    )["card_id"]
+        .as_i64()
+        .unwrap();
+    let answered = ok(
+        dir.path(),
+        "question-answer",
+        &[("id", &card.to_string()), ("body", "  他怕烧掉就认不出自己  "), ("source", "mixed")],
+    );
+    let answer_id = answered["answer_id"].as_i64().unwrap();
+
+    // 答案读得回来：原文（修剪过）、输入方式、溯源
+    let answers = ok(dir.path(), "question-answers", &[("id", &card.to_string())]);
+    assert_eq!(answers["count"], 1, "{answers}");
+    assert_eq!(answers["answers"][0]["id"], answer_id);
+    assert_eq!(answers["answers"][0]["body"], "他怕烧掉就认不出自己");
+    assert_eq!(answers["answers"][0]["source"], "mixed", "输入方式与文本解耦，照原样记下");
+    assert_eq!(answers["answers"][0]["card_id"], card, "答案查得到自己答的是哪张卡");
+
+    // 状态走到终态，两条证据（字段 + 事件）都在
+    assert_eq!(ok(dir.path(), "card-list", &[("work", &work), ("state", "answered")])["count"], 1);
+    let events = ok(dir.path(), "card-events", &[("id", &card.to_string())]);
+    let ops: Vec<&str> = events["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|event| event["op"].as_str().unwrap())
+        .collect();
+    assert_eq!(ops, vec!["create", "ask", "answer"], "{events}");
+
+    // 已答是终态：再答一次被状态机拒，原答案与事件都不多不少
+    match run(dir.path(), "question-answer", &[("id", &card.to_string()), ("body", "改一版")]) {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "card.illegal_transition"),
+        other => panic!("已答的卡不该还能再答：{other:?}"),
+    }
+    assert_eq!(ok(dir.path(), "question-answers", &[("id", &card.to_string())])["count"], 1);
+
+    // 认不出的输入方式当场拒绝（留痕那一列不能写歪）
+    let fresh = ok(
+        dir.path(),
+        "card-new",
+        &[("work", &work), ("body", "再来一张"), ("template", "chapter.empty_body")],
+    )["card_id"]
+        .as_i64()
+        .unwrap();
+    match run(dir.path(), "question-answer", &[("id", &fresh.to_string()), ("body", "答案"), ("source", "telepathy")]) {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "input.source_unknown"),
+        other => panic!("认不出的输入方式该被拒：{other:?}"),
+    }
+    assert_eq!(ok(dir.path(), "question-answers", &[("id", &fresh.to_string())])["count"], 0);
+
+    // 只问不写：作答前后正文指纹一模一样
+    let after = ok(dir.path(), "fingerprint", &[("node", &node)])["fingerprint"].clone();
+    assert_eq!(before, after, "作答不碰正文");
+}

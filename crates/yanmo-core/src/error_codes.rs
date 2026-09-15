@@ -120,6 +120,11 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "自动派生已经到链深上限（最多 {max} 层）——作者自己顺着灵感再问不受此限" : ["max"],
     IDEA_BODY_EMPTY => "idea.body_empty" : "灵感卡的内容不能为空" : [],
     IDEA_NOT_FOUND => "idea.not_found" : "灵感卡不存在：{idea_id}" : ["idea_id"],
+    ANSWER_BODY_EMPTY => "answer.body_empty" : "答案内容不能为空" : [],
+    ANSWER_NOT_FOUND => "answer.not_found"
+        : "这张问题卡还没有答案：{card_id}" : ["card_id"],
+    INPUT_SOURCE_UNKNOWN => "input.source_unknown"
+        : "认不出的输入方式：{value}（只认 typed / voice / mixed）" : ["value"],
     QUESTION_DEFER_NEEDS_ANCHOR => "question.defer_needs_anchor"
         : "这张卡上找不到可用的章节锚点，「写完这一章再问」这一档用不了：{card_id}" : ["card_id"],
     QUESTION_DEFER_TIME_NOT_FUTURE => "question.defer_time_not_future"

@@ -7,10 +7,12 @@
 
 mod card;
 mod card_state;
+mod input_source;
 mod node;
 mod work;
 
 pub use card::{NewQuestionCard, QuestionCard};
 pub use card_state::{transition, QuestionState, Transition, TRANSITIONS};
+pub use input_source::InputSource;
 pub use node::{ChapterNumbering, NamingStyle, Node, NodeKind};
 pub use work::{Work, WorkKind, WorkLanguage};

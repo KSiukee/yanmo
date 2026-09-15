@@ -16,7 +16,7 @@ use serde::Serialize;
 
 use super::Store;
 use crate::error::{codes, Error, Result};
-use crate::model::QuestionCard;
+use crate::model::{InputSource, QuestionCard};
 use crate::time::now_millis;
 
 /// 灵感卡在碎片统一表里的种类码（写进 `fragments.frag_kind`；**别改**）。
@@ -74,6 +74,8 @@ impl Store {
         if body.is_empty() {
             return Err(Error::invalid(codes::IDEA_BODY_EMPTY));
         }
+        // 输入方式与答案走同一个闭集：认不出来的当场拒绝（留痕里的一列不能写歪）
+        let source = InputSource::parse(source)?.as_str();
         let card: QuestionCard = self.question_card(card_id)?;
         let now = now_millis();
         let tx = self.conn.transaction()?;

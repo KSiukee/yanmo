@@ -75,3 +75,16 @@ export function classLabel(template_key: string): string {
 export function sourceLabel(source: string): string {
   return source === "core" ? t("flow.source.core") : t("flow.source.module", { name: source });
 }
+
+/**
+ * 这一段文字是**怎么打出来的**：`typed` / `voice` / `mixed` 的人话说法。
+ *
+ * 与 [`sourceLabel`] 是两件事：那个说的是"问题从哪来"，这个说的是"答案怎么进来的"。
+ * 认不出的取值**照原样露出来**（屏幕上出现一个 `telepathy` 是一眼看得见的错，比空着强）。
+ */
+export function inputLabel(source: string): string {
+  if (source === "typed") return t("flow.input.typed");
+  if (source === "voice") return t("flow.input.voice");
+  if (source === "mixed") return t("flow.input.mixed");
+  return source;
+}

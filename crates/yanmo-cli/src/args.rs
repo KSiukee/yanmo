@@ -135,10 +135,14 @@ pub const HELP_DEV: &str = "\
   question-mute-source --source <来源> [--off]
                             按来源静音 / 解除静音（某个模块太吵时只让它闭嘴）
   question-inspire --id <卡 id> --body <文本> | --body-file <路径> [--source typed|voice|mixed]
-                   [--trigger <谁触发>]
+                             [--trigger <谁触发>]
                             记一条灵感：从这张卡勾出来，**不动它的状态**
   question-inspirations --id <卡 id>
-                            这张卡勾出过哪些灵感";
+                            这张卡勾出过哪些灵感
+  question-answer --id <卡 id> --body <文本> | --body-file <路径> [--source typed|voice|mixed]
+                            作答：答案进答案池，卡走到「已答」终态（**不动正文一个字**）
+  question-answers --id <卡 id>
+                            这张卡上答过什么（答案池里那几条，按答下的先后）";
 
 /// 这个构建的帮助文本（发布构建只列救援档）。
 pub fn help_text() -> String {
