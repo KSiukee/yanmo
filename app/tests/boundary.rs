@@ -278,32 +278,93 @@ fn frontend_talks_to_core_only_through_the_gateway() {
     }
 }
 
+/// 界面真正需要的能力：**权限 → 展开后的命令 → 前端调用点**（反向枚举的落点）。
+///
+/// 2026-09-15 代码质量评审：中等 19——原来的守卫只查 `core:path:/fs:/…` 前缀，于是
+/// `core:image:default` 一路绿灯，而它内含 `allow-from-path`（前端能按任意路径读文件）。
+/// 现在反过来：从"前端到底调了什么"出发，把授权逐条对齐；
+/// 任何一条新授权都必须写进这张表，并给出前端真实调用点（棘轮）。
+///
+/// 为什么不现场展开 `gen/schemas/acl-manifests.json`：`app/gen` 是构建生成物、不进仓，
+/// 新克隆 / CI 里没有那个文件——守卫会在最该管用的地方静默失效。
+const GRANTED: &[(&str, &[&str], &[&str])] = &[
+    // 权限（写到具体命令，不写 :default）, 它放开的命令, 前端真实用到的调用点
+    ("core:app:allow-version", &["app|version"], &["getVersion("]),
+    ("core:event:allow-listen", &["event|listen"], &["listen(\"close-requested\""]),
+    ("core:event:allow-unlisten", &["event|unlisten"], &["UnlistenFn"]),
+    ("core:window:allow-is-fullscreen", &["window|is_fullscreen"], &[".isFullscreen("]),
+    ("core:window:allow-set-fullscreen", &["window|set_fullscreen"], &[".setFullscreen("]),
+];
+
+/// 权限里**永远不许**出现这些字样：路径 / 文件系统 / 调试开关 / 没用到的子系统。
+const FORBIDDEN_GRANTS: &[&str] = &[
+    "path", "fs", "dialog", "shell", "http", "image", "menu", "tray", "resources", "devtools",
+];
+
 #[test]
-fn capabilities_grant_no_path_or_file_access() {
+fn capabilities_expand_to_exactly_the_commands_the_ui_uses() {
     let path = package_root().join("capabilities/default.json");
     let json: serde_json::Value =
         serde_json::from_str(&read(&path)).expect("权限集应当是合法 JSON");
-    let permissions: Vec<String> = json["permissions"]
+    let mut permissions: Vec<String> = json["permissions"]
         .as_array()
         .expect("permissions 应当是数组")
         .iter()
         .map(|v| v.as_str().unwrap_or_default().to_string())
         .collect();
+    permissions.sort();
 
-    assert!(!permissions.is_empty(), "权限集不能为空");
-    for permission in &permissions {
-        for forbidden in ["core:path:", "fs:", "path:", "dialog:", "shell:", "http:"] {
+    // ① 授权与登记表**逐条对齐**：多一条 / 少一条都在这里红
+    let mut expected: Vec<String> = GRANTED.iter().map(|(p, _, _)| p.to_string()).collect();
+    expected.sort();
+    assert_eq!(
+        permissions, expected,
+        "权限集与登记表对不上：每条授权都要在 GRANTED 里写清「放开了什么命令 + 前端哪个调用点用它」"
+    );
+
+    // ② 反向枚举：每条权限都必须有前端真实调用点；授权了没人用的能力就是多余面
+    let mut frontend = String::new();
+    for file in source_files(&package_root().join("frontend/src"), &["ts", "vue"]) {
+        frontend.push_str(&read(&file));
+        frontend.push('\n');
+    }
+    assert!(frontend.len() > 1000, "没扫到前端源码，这条守卫会假绿");
+    for (permission, commands, needles) in GRANTED {
+        // 不许再用 :default（它是"这个子系统全给"的同义词，正是漏洞的来源）
+        assert!(!permission.ends_with(":default"), "不许授权整个子系统：{permission}");
+        for needle in *needles {
             assert!(
-                !permission.starts_with(forbidden),
-                "权限「{permission}」超出了「界面不碰文件系统」的边界"
+                frontend.contains(needle),
+                "授权「{permission}」却在前端找不到调用点 {needle}——没人用的能力不该授权"
             );
         }
-        assert!(!permission.contains('*'), "不用通配授权：{permission}");
-        assert!(
-            permission != "core:default",
-            "core:default 会把路径能力一起装回来，必须逐项列举"
-        );
+        // ③ 展开出来的命令一条都不许碰路径 / 文件 / 调试开关
+        for command in *commands {
+            for forbidden in FORBIDDEN_GRANTS {
+                assert!(
+                    !command.contains(forbidden),
+                    "命令 {command}（来自 {permission}）越过了「界面不碰文件系统」的边界"
+                );
+            }
+        }
     }
+}
+
+/// CSP 不许再是 `null`（2026-09-15 代码质量评审：中等 19）。
+///
+/// 纵深防御：万一哪天前端出现注入 sink，没有 CSP 就等于没有第二道门。
+/// 这里只钉住"设了、而且是最小集"，不追求 CSP 语法检查（那是 WebView 的事）。
+#[test]
+fn the_webview_has_a_content_security_policy() {
+    let path = package_root().join("tauri.conf.json");
+    let json: serde_json::Value =
+        serde_json::from_str(&read(&path)).expect("tauri 配置应当是合法 JSON");
+    let csp = json["app"]["security"]["csp"].as_str().unwrap_or_default();
+    assert!(!csp.is_empty(), "csp 不许是 null / 空：没有它就没有第二道门");
+    assert!(csp.contains("default-src 'self'"), "CSP 必须默认只信自己：{csp}");
+    assert!(csp.contains("script-src 'self'"), "脚本只许来自本包：{csp}");
+    assert!(!csp.contains("script-src 'unsafe-inline'"), "不许给脚本开内联：{csp}");
+    assert!(!csp.contains('*'), "CSP 不许用通配源：{csp}");
 }
 
 /// 从源码里读出「声明了哪些命令」（`#[tauri::command]` 之后的 `pub fn`）。
