@@ -407,6 +407,22 @@ pub(super) fn soft_delete_node_in(conn: &Connection, id: i64) -> Result<usize> {
             .optional()?
             .flatten();
 
+    // 同一次删除给整棵子树盖**同一个戳**——恢复时就是靠它区分"这次删的"与"更早单独删的"
+    // （见 `Store::restore_node`）。所以戳必须**大于这一支里已有的任何删除戳**：
+    // 同一毫秒内连删两次（先删一节、紧接着删它所属那一章）若戳相同，
+    // 恢复父级就会把更早删掉的那一节一起复活——0.50.2 的测试当场抓出来的飘。
+    let deepest: i64 = conn.query_row(
+        "WITH RECURSIVE sub(id) AS (
+             SELECT id FROM nodes WHERE id = ?1
+             UNION ALL
+             SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id
+         )
+         SELECT COALESCE(MAX(deleted_at), 0) FROM nodes WHERE id IN (SELECT id FROM sub)",
+        params![id],
+        |r| r.get(0),
+    )?;
+    let stamp = now_millis().max(deepest + 1);
+
     let affected = conn.execute(
         "WITH RECURSIVE sub(id) AS (
              SELECT id FROM nodes WHERE id = ?1
@@ -415,7 +431,7 @@ pub(super) fn soft_delete_node_in(conn: &Connection, id: i64) -> Result<usize> {
          )
          UPDATE nodes SET deleted_at = ?2
          WHERE id IN (SELECT id FROM sub) AND deleted_at IS NULL",
-        params![id, now_millis()],
+        params![id, stamp],
     )?;
     if affected == 0 {
         return Err(Error::invalid_with(codes::NODE_GONE, [("node_id", id.to_string())]));
