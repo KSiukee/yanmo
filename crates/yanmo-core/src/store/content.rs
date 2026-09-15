@@ -229,8 +229,10 @@ impl Store {
     ///
     /// 没有正文行时返回空串（调用方据此区分"从未写过"与"写过但内容不同"）。
     pub fn body_fingerprint(&self, node_id: i64) -> Result<String> {
-        // 界面每几秒就会调它一次，正好当作"我还活着"的心跳，不必再加一个新命令
-        self.note_heartbeat(None, None)?;
+        // 界面每几秒就会调它一次，正好当作"我还活着"的心跳，不必再加一个新命令。
+        // 但只能推进时间戳：**这是一次读**，不能把"干净退出"标记撤掉
+        //（评审：中等 11——关窗后的一次校验轮询会让下次启动误报崩溃）。
+        self.touch()?;
         Ok(self
             .conn
             .query_row(

@@ -301,3 +301,23 @@ fn every_book_gets_its_own_draft_file() {
     }
     assert!(f.store.verify_backup(&package).ok, "体检仍应通过");
 }
+
+#[test]
+fn a_ledger_that_cannot_be_written_is_reported_not_swallowed() {
+    // 2026-09-15 代码质量评审：中等 10。账本（「最后一次成功 / 缺了哪几天」靠它）写失败时
+    // 以前被 `write_atomic(...).ok()` 吞掉——界面照样报"备份成功"，而那两个数字是旧值。
+    // 备份包是写好了，所以这不该算失败，但**必须让作者知道**。
+    let mut f = fixture();
+    let work = f.store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let volume = f.store.list_nodes(work.id).unwrap()[0].id;
+    let chapter = f.store.create_node(work.id, Some(volume), NodeKind::Chapter, "第一章").unwrap();
+    f.store.write_body(chapter, "正文。").unwrap();
+
+    // 让账本写不进去：在它的位置上放一个**目录**（往目录上原子写必然失败）
+    std::fs::create_dir_all(f.data_dir.join("backup-ledger.json")).unwrap();
+
+    let report = f.store.backup_now(&request(&f, 7)).unwrap();
+
+    assert_eq!(report.succeeded(), 1, "包还是写好了（不该因为账本没记上就报失败）");
+    assert!(!report.ledger_written, "账本没写成功，必须如实报出来");
+}

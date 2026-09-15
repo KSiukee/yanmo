@@ -144,6 +144,27 @@ fn heartbeat_advances_on_saves_and_readback_checks() {
 }
 
 #[test]
+fn a_read_only_check_after_a_clean_close_does_not_report_a_crash() {
+    // 2026-09-15 代码质量评审：中等 11。关窗时 `end_session` 标"干净退出"，而界面还能再轮询
+    // 一次读回校验——那次"读"以前会把 clean 标回 false，于是下次启动误报"上次没有正常退出"。
+    let (_dir, path) = fresh();
+    let node_id;
+    {
+        let mut store = Store::open(&path).unwrap();
+        store.begin_session().unwrap();
+        node_id = store.ensure_editor_target().unwrap().node_id;
+        store.write_body(node_id, "写完就关。").unwrap();
+        store.end_session(node_id).unwrap(); // 正常退出：标干净
+        // 关窗之后界面可能还来得及再校验一次（这正是误报的来源）
+        store.body_fingerprint(node_id).unwrap();
+    }
+
+    let mut store = Store::open(&path).unwrap();
+    let report = store.begin_session().unwrap();
+    assert!(!report.unclean, "一次只读的读回校验不该把干净退出标成崩溃");
+}
+
+#[test]
 fn crash_recovery_reopens_the_chapter_that_was_being_edited() {
     let (_dir, path) = fresh();
     let second;

@@ -151,6 +151,13 @@ pub struct BackupReport {
     pub at: i64,
     pub stamp: String,
     pub outcomes: Vec<TargetOutcome>,
+    /// 账本（"最后一次成功 / 缺了哪几天"靠它）写成功了吗。
+    ///
+    /// 为什么要有这一栏（2026-09-15 代码质量评审：中等 10）：以前账本写的失败被
+    /// `write_atomic(...).ok()` 吞掉——数据目录可写、但账本文件被占用/只读或磁盘最后一步满时，
+    /// 界面照样报"备份成功"，而"缺了哪几天"显示的是旧值或空档。备份包是写好了，
+    /// 但**这件事必须让作者知道**，所以是"成功 + 警告"，不是"失败"（包已经在那儿了）。
+    pub ledger_written: bool,
 }
 
 impl BackupReport {
@@ -333,8 +340,10 @@ impl Store {
                     ledger.entries.push(entry(target, &date, &stamp, "failed", &reason, "", at));
                 }
                 ledger.updated_at = at;
-                write_ledger(&req.data_dir, &ledger);
-                return Ok(BackupReport { at, stamp, outcomes });
+                // 包里也带一份账本副本（权威账本在数据目录，见下面那次回写）
+                let ledger_written = write_ledger(&req.data_dir, &ledger);
+                // 这条早退路径：所有目标都失败了，账本状态如实报
+                return Ok(BackupReport { at, stamp, outcomes, ledger_written });
             }
         };
 
@@ -354,9 +363,9 @@ impl Store {
         if overflow > 0 {
             ledger.entries.drain(0..overflow);
         }
-        write_ledger(&req.data_dir, &ledger);
+        let ledger_written = write_ledger(&req.data_dir, &ledger);
         std::fs::remove_dir_all(&staging).ok(); // 暂存区用完就删（失败也无所谓）
-        Ok(BackupReport { at, stamp, outcomes })
+        Ok(BackupReport { at, stamp, outcomes, ledger_written })
     }
 
     /// 把"这一份备份"准备好：快照 + 成稿导出 + 清单（都放暂存区，之后逐个目标复制）。
@@ -711,10 +720,11 @@ fn entry(
     }
 }
 
-/// 写账本（原子写：账本读坏了就没人知道备份做没做）。
-fn write_ledger(data_dir: &Path, ledger: &BackupLedger) {
+/// 写账本（原子写：账本读坏了就没人知道备份做没做）。**返回是否写成功**——
+/// 失败必须让调用方知道并报给作者，不能吞（评审：中等 10）。
+fn write_ledger(data_dir: &Path, ledger: &BackupLedger) -> bool {
     let bytes = serde_json::to_vec_pretty(ledger).unwrap_or_default();
-    write_atomic(&data_dir.join(LEDGER_FILE), &bytes).ok();
+    write_atomic(&data_dir.join(LEDGER_FILE), &bytes).is_ok()
 }
 
 /// 目标路径所在盘的根在不在（区分"盘不在"与"写不进去"用）。

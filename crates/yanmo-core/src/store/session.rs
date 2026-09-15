@@ -106,6 +106,24 @@ impl Store {
     ///
     /// `None` 表示"这一项保持不变"——它由落盘与读回校验顺带调用，不额外增加界面往返。
     pub(super) fn note_heartbeat(&self, node_id: Option<i64>, fingerprint: Option<&str>) -> Result<()> {
+        self.bump(node_id, fingerprint, true)
+    }
+
+    /// 只推进"我还活着"的时间戳，**不碰干净标记**——读回校验（纯粹是读）走这条。
+    ///
+    /// 为什么要分开（2026-09-15 代码质量评审：中等 11）：关窗时 `end_session` 会标"干净退出"，
+    /// 而界面在那之后还可能轮询一次读回校验——以前那次"读"会把 `clean` 标回 false，
+    /// 于是下次启动误报"上次没有正常退出"。崩溃提醒是作者唯一的崩溃线索，误报几次就会被忽略。
+    pub(super) fn touch(&self) -> Result<()> {
+        self.bump(None, None, false)
+    }
+
+    fn bump(
+        &self,
+        node_id: Option<i64>,
+        fingerprint: Option<&str>,
+        dirty: bool,
+    ) -> Result<()> {
         let Some(mut marker) = self.read_marker()? else {
             return Ok(()); // 没有会话标记（尚未 begin_session）：不凭空造一个
         };
@@ -116,7 +134,10 @@ impl Store {
             marker.fingerprint = fp.to_string();
         }
         marker.heartbeat_at = now_millis();
-        marker.clean = false;
+        if dirty {
+            // 只有**写路径**才把"干净退出"撤掉：读一下不该被算成还没退干净
+            marker.clean = false;
+        }
         self.write_marker(&marker)
     }
 

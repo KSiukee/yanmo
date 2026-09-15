@@ -337,6 +337,8 @@ export interface BackupReport {
   at: number;
   stamp: string;
   outcomes: BackupTargetOutcome[];
+  /** 账本（「最后一次成功 / 缺了哪几天」靠它）写成功了吗；false ＝ 包写好了但账没记上 */
+  ledger_written: boolean;
 }
 
 /** 一份备份包的摘要（恢复页列表用；只看清单，不做体检）。 */

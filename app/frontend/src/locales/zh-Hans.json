@@ -364,6 +364,7 @@
   "backup.status.skipped": "跳过",
   "backup.status.failed": "失败",
   "backup.safe_to_unplug": "写完了——移动盘可以安全拔出。",
+  "backup.ledger_not_written": "备份包写好了，但**账本没记上**——「最后一次成功 / 缺了哪几天」会显示成旧值。多半是账本文件被占用或那一瞬间盘满了，过一会儿再备份一次通常就好（你的备份包是完好的）。",
   "backup.tip": "稿子还没有第二份：去设置里勾一块备份盘吧。",
   "backup.tip_open": "去设置",
   "backup.tip_dismiss": "不用了",

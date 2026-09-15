@@ -227,6 +227,11 @@ function openRestore(): void {
         <p v-if="lastReport.outcomes.some((o) => o.status === 'written')" class="dialog__note">
           {{ t("backup.safe_to_unplug") }}
         </p>
+        <!-- 包写好了但账本没记上：必须说，否则「缺了哪几天」看着正常其实不准 -->
+        <p v-if="lastReport.outcomes.some((o) => o.status === 'written') && !lastReport.ledger_written"
+           class="backup__bad">
+          {{ t("backup.ledger_not_written") }}
+        </p>
       </template>
 
       <p v-if="error" class="backup__bad">{{ error }}</p>
