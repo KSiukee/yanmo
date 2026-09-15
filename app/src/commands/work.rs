@@ -164,7 +164,7 @@ pub fn export_work(
         }
         Ok((store.get_work(work_id)?.title, files))
     })?;
-    let outcome = data.write_export(&title, &files)?;
+    let outcome = data.write_export(work_id, &title, &files)?;
     Ok(ExportAckDto {
         path: outcome.dir.display().to_string(),
         files: outcome.files,

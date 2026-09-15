@@ -39,3 +39,9 @@ Thumbs.db
 
 # 发布说明由 tools/release_notes.py 生成（CI 与本地预演都会写它）
 release-notes.md
+
+# 验收脚本跑完的产物（报告/日志留在本机，不进版本库）
+tools/acceptance/acceptance-report*
+tools/acceptance/*.log
+# 放在脚本旁边的便携 exe（让脚本优先用它，见 run-acceptance.bat 的查找顺序）
+tools/acceptance/yanmo.exe

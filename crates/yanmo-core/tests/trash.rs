@@ -284,3 +284,35 @@ fn restore_preview_shows_who_would_share_the_name() {
     assert!(live.iter().any(|n| n.title == "第二章（旧稿）"));
     assert_eq!(store.read_body(chapters[1]).unwrap(), "第二章的正文。", "旧稿的字还在");
 }
+
+#[test]
+fn restoring_a_chapter_does_not_revive_an_earlier_deleted_section() {
+    // 2026-09-15 代码质量评审：中等 2。作者先单独删了一节、又删了它所属的那一章；
+    // 恢复那一章时，那一节**不该**跟着复活——那是一次明确的删除，而且它当时就从回收站列表里
+    // 消失了（列表只列"父级未被删"的最上层），作者再也看不见它。
+    let (_dir, mut store) = fresh();
+    let (work, _volume, chapters) = book(&mut store, "长夜");
+    let chapter = chapters[0];
+
+    // 章里挂一节（数据层允许：单篇挂一节就是这种形状）
+    let section = store.create_node(work, Some(chapter), NodeKind::Section, "第一节").unwrap();
+    store.write_body(section, "节里的正文。").unwrap();
+
+    store.soft_delete_node(section).unwrap(); // ① 先单独删那一节
+    store.soft_delete_node(chapter).unwrap(); // ② 再删那一章（连带整棵子树）
+
+    store.restore_node(chapter, None).unwrap(); // ③ 恢复那一章
+
+    assert_eq!(
+        count(&store, "SELECT deleted_at IS NULL FROM nodes WHERE id = ?1", chapter),
+        1,
+        "章本身要回来"
+    );
+    assert_eq!(
+        count(&store, "SELECT deleted_at IS NOT NULL FROM nodes WHERE id = ?1", section),
+        1,
+        "更早单独删掉的那一节不该跟着复活"
+    );
+    let listed: Vec<i64> = store.list_trash().unwrap().iter().map(|entry| entry.id).collect();
+    assert!(listed.contains(&section), "它还该在回收站里看得见（父级活了，它就是最上层那一条）");
+}

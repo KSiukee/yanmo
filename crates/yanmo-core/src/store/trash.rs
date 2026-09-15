@@ -172,11 +172,29 @@ impl Store {
     /// `rename_to` 是作者在"有重名"时给的新名字——**名字永远由他给**，系统不替他起；
     /// 改名与恢复在同一个事务里，所以不会出现"两章同名"的中间状态。
     ///
+    /// **只捞同一次删除带下去的子孙**（与 [`Store::restore_work`] 同一口径）：先单独删掉一节、
+    /// 再删它所属的那一章，然后恢复那一章——那一节**不该**跟着复活，它是一次明确的删除，
+    /// 回收站里还能看见它（2026-09-15 代码质量评审：中等 2）。
+    ///
     /// 返回恢复的节点数（含父链）。
     pub fn restore_node(&mut self, node_id: i64, rename_to: Option<&str>) -> Result<usize> {
         if !self.trashed("nodes", node_id)? {
             return Err(Error::invalid_with(codes::NODE_NOT_TRASHED, [("node_id", node_id.to_string())]));
         }
+        // 这一支的删除时间戳：同一次子树删除给所有行盖的是同一个戳（见 `soft_delete_node`），
+        // 所以拿它当"这次删除"的凭据——更早删掉的子孙戳不同，会留在回收站里。
+        let stamp: i64 = self
+            .conn
+            .query_row(
+                "SELECT deleted_at FROM nodes WHERE id = ?1",
+                params![node_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten()
+            .ok_or_else(|| {
+                Error::invalid_with(codes::NODE_NOT_TRASHED, [("node_id", node_id.to_string())])
+            })?;
         let work_id = self.work_of_any(node_id)?;
         // 记下每一层"原来在第几位"当锚：被删那天它停在哪，恢复就回到那一带
         let mut anchors: Vec<(i64, Option<i64>, i64)> = Vec::new();
@@ -211,8 +229,9 @@ impl Store {
                  UNION ALL
                  SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id
              )
-             UPDATE nodes SET deleted_at = NULL WHERE id IN (SELECT id FROM sub)",
-            params![node_id],
+             UPDATE nodes SET deleted_at = NULL
+             WHERE id IN (SELECT id FROM sub) AND deleted_at = ?2",
+            params![node_id, stamp],
         )?;
         // 父链：捞出来的东西不能挂在看不见的父级下面
         for (id, _, _) in anchors.iter().skip(1) {

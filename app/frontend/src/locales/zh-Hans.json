@@ -66,7 +66,6 @@
   "error.shell.data_dir_unavailable": "无法确定应用数据目录：{detail}",
   "error.shell.db_open_failed": "无法打开数据库 {path}：{detail}",
   "error.shell.export_dir_create_failed": "无法创建导出目录 {path}：{detail}",
-  "error.shell.export_dir_unreadable": "读导出目录 {path} 失败：{detail}",
   "error.shell.export_file_remove_failed": "清旧导出文件 {path} 失败：{detail}",
   "error.shell.export_write_failed": "写导出文件 {path} 失败：{detail}",
   "error.shell.data_dir_readonly": "稿子所在的文件夹写不进去：{path}。可能是盘没插上、盘写保护，或者你没有这个位置的写权限。稿子还在原处，没有被动过。",

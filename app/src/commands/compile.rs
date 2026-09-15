@@ -102,7 +102,7 @@ pub fn compile_open_folder(
 ) -> Result<(), ApiError> {
     let preset = Preset::parse(&preset).map_err(ApiError::from)?;
     let title = data.with_store(|store: &mut Store| Ok(store.get_work(work_id)?.title))?;
-    let dir = data.compile_dir(&title, preset.folder());
+    let dir = data.compile_dir(work_id, &title, preset.folder());
     std::fs::create_dir_all(&dir).map_err(|e| {
         ApiError::with("shell.export_dir_create_failed", [("path", dir.display().to_string())])
             .caused_by(e)
@@ -129,7 +129,7 @@ pub fn compile_work(
         Ok((title, compile(store, work_id, preset, &options)?))
     })?;
     let extension = if preset == Preset::SubmissionDocx { "docx" } else { "txt" };
-    let outcome = data.write_compile(&title, preset.folder(), extension, &files)?;
+    let outcome = data.write_compile(work_id, &title, preset.folder(), extension, &files)?;
     Ok(CompileAckDto {
         path: outcome.dir.display().to_string(),
         files: files

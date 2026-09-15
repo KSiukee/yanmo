@@ -66,12 +66,59 @@ fn write_files(dir: &Path, files: &[yanmo_core::store::RenderedFile]) -> Result<
     Ok(())
 }
 
-/// 清残留：只删**我们自己写的那几种后缀**、且只在这个目录里。
+/// 导出/编译落点的文件夹名：`<归一化书名>-<作品 id>`。
 ///
-/// `ours` 由调用方给：导出的产物是 txt/json，编译的产物还可能是 docx——
-/// 后缀写死在一处，换个场景就会误删作者自己放进来的文件。
+/// 为什么要带 id：**重名作品是允许的**，而"清残留"是按目录做的——两本同名书共用同一个目录时，
+/// 后导的那本会把先导的那本刚写下的文件删掉（2026-09-15 代码质量评审：中等 17）。
+/// 备份那条路早就是这么防撞的（`-<id>`），这里跟它对齐。
+fn export_folder_name(work_id: i64, work_title: &str) -> String {
+    format!("{}-{}", yanmo_core::atomic::safe_file_name(work_title), work_id)
+}
+
+/// 导出清单：这个目录里**上一次导出写了哪些文件**（相对路径，一行一个）。
+///
+/// 放一个点开头的文件，作者在文件管理器里默认看不见它。
+const EXPORT_MANIFEST: &str = ".yanmo-export-manifest.txt";
+
+/// 读上一次的导出清单；读不到就当空（**空清单意味着什么都不删**，见 `prune_export`）。
+fn read_export_manifest(dir: &Path) -> Vec<String> {
+    std::fs::read_to_string(dir.join(EXPORT_MANIFEST))
+        .map(|text| {
+            text.lines()
+                .map(|line| line.trim().replace('/', std::path::MAIN_SEPARATOR_STR))
+                .filter(|line| !line.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// 写下这一次的导出清单。**失败不报错**：清单只是"下次能清得更准"，
+/// 写不下不该让一次成功的导出变成失败。
+fn write_export_manifest(dir: &Path, files: &[yanmo_core::store::RenderedFile]) {
+    let mut text = files
+        .iter()
+        .map(|file| file.relative_path.replace('/', std::path::MAIN_SEPARATOR_STR))
+        .collect::<Vec<_>>()
+        .join("\n");
+    text.push('\n');
+    let _ = std::fs::write(dir.join(EXPORT_MANIFEST), text);
+}
+
+/// 清掉**上一次导出留下的孤儿**：只删"上次我们自己写、这次没写"的那些文件。
+///
+/// 为什么按清单清，而不是"把这个目录里所有不认识的 txt/json 都删掉"：
+/// ① 目录名按书名归一化，而**重名作品是允许的**——B 的导出会把 A 刚导出的文件删掉；
+/// ② 同一本书的编译产物（`submission/`、`chapters/`、`merged/` 里的 txt）就在同一个目录下，
+///    那样扫会把作者刚拿去投稿的那份一并删掉（2026-09-15 代码质量评审：中等 17）。
+///
+/// 只认自己的清单还有个好处：**升级后第一次导出时清单还是空的，于是什么都不删**——
+/// 宁可留几个孤儿，也不误删作者的产物。
+///
+/// `ours` 由调用方给（导出的产物是 txt/json，编译的产物还可能是 docx）：后缀写死在一处，
+/// 换个场景就会误删作者自己放进来的文件。
 fn prune_export(
     dir: &Path,
+    previous: &[String],
     files: &[yanmo_core::store::RenderedFile],
     ours: &[&str],
 ) -> Result<usize, ApiError> {
@@ -83,42 +130,27 @@ fn prune_export(
         .map(|file| file.relative_path.replace('/', std::path::MAIN_SEPARATOR_STR))
         .collect();
     let mut removed = 0;
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(current) = stack.pop() {
-        let entries = std::fs::read_dir(&current).map_err(|e| {
+    for relative in previous {
+        if keep.contains(relative) {
+            continue; // 这次也写了它，留着
+        }
+        let path = dir.join(relative);
+        // 安全阀：清单里的路径必须是**这个目录内的相对路径**（清单文件也可能被人手改）
+        if !path.starts_with(dir) || !path.is_file() {
+            continue;
+        }
+        let is_ours = path.extension().is_some_and(|ext| ours.iter().any(|ours| ext == *ours));
+        if !is_ours {
+            continue;
+        }
+        std::fs::remove_file(&path).map_err(|e| {
             ApiError::with(
-                "shell.export_dir_unreadable",
-                [("path", current.display().to_string())],
+                "shell.export_file_remove_failed",
+                [("path", path.display().to_string())],
             )
             .caused_by(e)
         })?;
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-                continue;
-            }
-            let is_ours = path
-                .extension()
-                .is_some_and(|ext| ours.iter().any(|ours| ext == *ours));
-            if !is_ours {
-                continue;
-            }
-            let relative = path
-                .strip_prefix(dir)
-                .map(|rest| rest.to_string_lossy().to_string())
-                .unwrap_or_default();
-            if !keep.contains(&relative) {
-                std::fs::remove_file(&path).map_err(|e| {
-                    ApiError::with(
-                        "shell.export_file_remove_failed",
-                        [("path", path.display().to_string())],
-                    )
-                    .caused_by(e)
-                })?;
-                removed += 1;
-            }
-        }
+        removed += 1;
     }
     // 收掉空目录（自下而上，失败就当它还有用，不报错）
     let mut dirs: Vec<PathBuf> = Vec::new();
@@ -424,14 +456,15 @@ impl AppData {
     ///   （只清理我们自己的 txt / json，且绝不出这个文件夹）。
     pub fn write_export(
         &self,
+        work_id: i64,
         work_title: &str,
         files: &[yanmo_core::store::RenderedFile],
     ) -> Result<ExportOutcome, ApiError> {
-        let dir = self
-            .export_dir
-            .join(yanmo_core::atomic::safe_file_name(work_title));
+        let dir = self.export_dir.join(export_folder_name(work_id, work_title));
+        let previous = read_export_manifest(&dir);
         write_files(&dir, files)?;
-        let removed = prune_export(&dir, files, &["txt", "json"])?;
+        let removed = prune_export(&dir, &previous, files, &["txt", "json"])?;
+        write_export_manifest(&dir, files);
         Ok(ExportOutcome {
             dir,
             files: files.len(),
@@ -443,10 +476,8 @@ impl AppData {
     ///
     /// 路径**在壳里算**，界面只说要哪本书、哪种预设——与"命令不接受路径参数"同一条纪律。
     /// 写产物与"打开这个目录"都用它，两处不会走偏。
-    pub fn compile_dir(&self, work_title: &str, folder: &str) -> std::path::PathBuf {
-        self.export_dir
-            .join(yanmo_core::atomic::safe_file_name(work_title))
-            .join(folder)
+    pub fn compile_dir(&self, work_id: i64, work_title: &str, folder: &str) -> std::path::PathBuf {
+        self.export_dir.join(export_folder_name(work_id, work_title)).join(folder)
     }
 
     /// 把**编译产物**写进 `<导出目录>/<书名>/<预设子目录>`，并只清这个子目录里的旧产物。
@@ -455,12 +486,13 @@ impl AppData {
     /// 产物路径里带着子目录前缀（`submission/长夜.docx`），这里把前缀摘掉再落到子目录里。
     pub fn write_compile(
         &self,
+        work_id: i64,
         work_title: &str,
         folder: &str,
         extension: &str,
         files: &[yanmo_core::store::RenderedFile],
     ) -> Result<ExportOutcome, ApiError> {
-        let dir = self.compile_dir(work_title, folder);
+        let dir = self.compile_dir(work_id, work_title, folder);
         let prefix = format!("{folder}/");
         let stripped: Vec<yanmo_core::store::RenderedFile> = files
             .iter()
@@ -473,8 +505,10 @@ impl AppData {
                 content: file.content.clone(),
             })
             .collect();
+        let previous = read_export_manifest(&dir);
         write_files(&dir, &stripped)?;
-        let removed = prune_export(&dir, &stripped, &[extension])?;
+        let removed = prune_export(&dir, &previous, &stripped, &[extension])?;
+        write_export_manifest(&dir, &stripped);
         Ok(ExportOutcome {
             dir,
             files: stripped.len(),
@@ -663,7 +697,7 @@ mod tests {
             file("001-第一卷/002-第二章.txt", "第二章的正文。\n"),
         ];
 
-        let first = data.write_export("长夜", &files).unwrap();
+        let first = data.write_export(1, "长夜", &files).unwrap();
         assert_eq!(first.files, 2);
         assert_eq!(first.removed, 0);
         assert!(first.dir.starts_with(dir.path()), "导出只该落在自己的导出目录里");
@@ -677,7 +711,7 @@ mod tests {
             .unwrap()
             .modified()
             .unwrap();
-        let second = data.write_export("长夜", &files).unwrap();
+        let second = data.write_export(1, "长夜", &files).unwrap();
         assert_eq!(second.files, 2);
         assert_eq!(second.removed, 0);
         assert_eq!(
@@ -698,15 +732,15 @@ mod tests {
             file("001-第一卷/001-旧章.txt", "旧正文\n"),
             file("001-第一卷/002-留着的.txt", "留下的正文\n"),
         ];
-        data.write_export("长夜", &before).unwrap();
+        data.write_export(1, "长夜", &before).unwrap();
 
         // 作者自己在导出夹里放了个东西：**不碰**
-        let mine = data.export_dir.join("长夜").join("我的笔记.md");
+        let mine = data.export_dir.join("长夜-1").join("我的笔记.md");
         std::fs::write(&mine, "手工写的").unwrap();
 
         // 旧章改名了：上一次的文件应当被清掉，空目录也收掉
         let after = vec![file("001-第一卷/002-留着的.txt", "留下的正文\n")];
-        let outcome = data.write_export("长夜", &after).unwrap();
+        let outcome = data.write_export(1, "长夜", &after).unwrap();
         assert_eq!(outcome.removed, 1);
         assert!(!outcome.dir.join("001-第一卷/001-旧章.txt").exists(), "旧的该清掉");
         assert!(outcome.dir.join("001-第一卷/002-留着的.txt").exists());
@@ -726,7 +760,7 @@ mod tests {
             content: vec![0x50, 0x4b, 0x03, 0x04, 0x00],
         }];
 
-        let first = data.write_compile("长夜", "submission", "docx", &docx).unwrap();
+        let first = data.write_compile(1, "长夜", "submission", "docx", &docx).unwrap();
         assert_eq!(first.files, 1);
         assert!(first.dir.ends_with("submission"), "{:?}", first.dir);
         assert_eq!(
@@ -737,7 +771,7 @@ mod tests {
 
         // 换一种预设：它的产物不许被动
         let merged = vec![file("merged/长夜.txt", "全文\n")];
-        data.write_compile("长夜", "merged", "txt", &merged).unwrap();
+        data.write_compile(1, "长夜", "merged", "txt", &merged).unwrap();
         assert!(first.dir.join("长夜.docx").exists(), "换预设不该动上一种的产物");
 
         // 同一种预设再编译一次，上一次多出来的那个要清掉
@@ -751,8 +785,8 @@ mod tests {
                 content: vec![2],
             },
         ];
-        data.write_compile("长夜", "submission", "docx", &stale).unwrap();
-        let outcome = data.write_compile("长夜", "submission", "docx", &docx).unwrap();
+        data.write_compile(1, "长夜", "submission", "docx", &stale).unwrap();
+        let outcome = data.write_compile(1, "长夜", "submission", "docx", &docx).unwrap();
         assert_eq!(outcome.removed, 1, "上一次多出来的产物要清掉");
         assert!(!first.dir.join("旧稿.docx").exists());
         assert!(first.dir.join("长夜.docx").exists());
@@ -763,7 +797,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let data = AppData::open_at_for_test(dir.path()).unwrap();
         let outcome = data
-            .write_export("../../跑出去的书名", &[file("a.txt", "x\n")])
+            .write_export(1, "../../跑出去的书名", &[file("a.txt", "x\n")])
             .unwrap();
         assert!(
             outcome.dir.starts_with(&data.export_dir),
@@ -1002,5 +1036,43 @@ mod tests {
         data.set_pending_dir(home.path().join("新家"));
         assert_eq!(data.take_pending_dir(), Some(home.path().join("新家")));
         assert_eq!(data.take_pending_dir(), None);
+    }
+
+    /// **导出一本书不许删掉另一本书的产物**（2026-09-15 代码质量评审：中等 17）。
+    ///
+    /// 目录名按书名归一化，而重名作品是允许的：以前"清残留"会把目录里所有不在本次清单里的
+    /// txt/json 删掉——于是 B 的导出顺手删掉 A 刚导出的那一份，还会删掉同一本书上次的编译产物。
+    /// 现在只按**自己的清单**清。
+    #[test]
+    fn exporting_does_not_delete_another_books_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = AppData::open_at_for_test(dir.path()).unwrap();
+        let book = dir.path().join(EXPORT_DIR).join("长夜-1");
+
+        data.write_export(
+            1,
+            "长夜",
+            &[file("第一章.txt", "A1"), file("第二章.txt", "A2"), file("第三章.txt", "A3")],
+        )
+        .unwrap();
+        // 另一本同名的书（两本重名是允许的）：它只写两个文件
+        data.write_export(2, "长夜", &[file("第一章.txt", "B1"), file("第二章.txt", "B2")])
+            .unwrap();
+
+        assert!(book.join("第三章.txt").is_file(), "B 的导出不许删掉 A 的文件");
+    }
+
+    /// 反向钉子：**同一本书再导出，上次多出来的那个还得清掉**（这是"清残留"的本职）。
+    #[test]
+    fn exporting_the_same_book_again_still_clears_its_own_stale_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = AppData::open_at_for_test(dir.path()).unwrap();
+        let book = dir.path().join(EXPORT_DIR).join("长夜-1");
+
+        data.write_export(1, "长夜", &[file("第一章.txt", "v1"), file("第二章.txt", "v1")]).unwrap();
+        data.write_export(1, "长夜", &[file("第一章.txt", "v2")]).unwrap();
+
+        assert_eq!(std::fs::read_to_string(book.join("第一章.txt")).unwrap(), "v2");
+        assert!(!book.join("第二章.txt").exists(), "上次多出来那个要清掉");
     }
 }
