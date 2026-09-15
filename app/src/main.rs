@@ -20,6 +20,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::exitwatch::RequestOutcome;
 
 mod acceptance;
+mod acceptance_guard;
 mod commands;
 mod diagnose;
 mod error;
