@@ -38,10 +38,12 @@ pub struct Answer {
     pub body: String,
     /// 怎么打出来的：`typed` / `voice` / `mixed`（创作留痕的原始素材）
     pub source: String,
+    /// 这条答案的处置：`pending` = 躺在答案池里，`landed` = 落进过正文（见 [`Store::mark_answer_landed`]）
+    pub status: String,
     pub created_at: i64,
 }
 
-fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, Option<i64>, String, String, Option<i64>, i64)> {
+fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, Option<i64>, String, String, String, Option<i64>, i64)> {
     Ok((
         row.get(0)?,
         row.get(1)?,
@@ -49,19 +51,21 @@ fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, Option<i64>, Stri
         row.get(3)?,
         row.get(4)?,
         row.get(5)?,
+        row.get(6)?,
     ))
 }
 
-fn into_answer(raw: (i64, Option<i64>, String, String, Option<i64>, i64)) -> Answer {
+fn into_answer(raw: (i64, Option<i64>, String, String, String, Option<i64>, i64)) -> Answer {
     Answer {
         id: raw.0,
         // 与问题卡同一条口径：库里被手改成没有归属的按作品 0 算（如实显示，不假装有主）
         work_id: raw.1.unwrap_or(0),
         // 溯源断了的（库被手改）按"不知道答的是哪张"算，不编一个卡号出来
-        card_id: raw.4.unwrap_or(0),
+        card_id: raw.5.unwrap_or(0),
         body: raw.2,
         source: raw.3,
-        created_at: raw.5,
+        status: raw.4,
+        created_at: raw.6,
     }
 }
 
@@ -132,6 +136,46 @@ impl Store {
         Ok(answer_id)
     }
 
+    /// 把一条答案标成「落进过正文」——**只留痕，不写正文**。
+    ///
+    /// 正文里那一段字是**作者自己的字**：界面把答案插进编辑会话（于是自动落盘、字数、
+    /// 码字账本、版本快照全照常走）。核心在这里做的是另一件事——记下"这一条用掉了、
+    /// 落到哪一章"。分开的两条理由：
+    ///
+    /// 1. 击键级的正文写入必须留在壳内的编辑会话里（详见架构铁律）；核心直接改正文，
+    ///    编辑器手里那一份就跟库里的分家了；
+    /// 2. 留痕是核心的事：一条 op-log 从一处写，界面不自己编记录。
+    ///
+    /// 落点校验：得是**同一本书里、承载正文的节点**。允许反复落（作者觉得这一句还想
+    /// 再放一次）：每落一次记一条，历史看得见——标记只说"落过"，不断言正文里现在还有。
+    pub fn mark_answer_landed(&mut self, card_id: i64, node_id: i64, trigger: &str) -> Result<i64> {
+        let card: QuestionCard = self.question_card(card_id)?;
+        let answer = self.answer_of_question(card_id)?;
+        check_landing_node(self, card.work_id, node_id)?;
+        let now = now_millis();
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "UPDATE fragments SET status = 'landed', updated_at = ?1
+              WHERE id = ?2 AND frag_kind = ?3 AND deleted_at IS NULL",
+            params![now, answer.id, KIND_ANSWER],
+        )?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "fragments",
+            answer.id,
+            "land",
+            json!({
+                "card_id": card_id,
+                "node_id": node_id,
+                "work_id": card.work_id,
+                "trigger": trigger,
+            }),
+        )?;
+        tx.commit()?;
+        Ok(answer.id)
+    }
+
     /// 取一张问题卡上的答案（已答的卡一定有）。
     ///
     /// 一张卡是终态，正常只有一条；库里被手改成多条时给**最近那条**，不装作没看见。
@@ -139,7 +183,7 @@ impl Store {
         let raw = self
             .conn
             .query_row(
-                "SELECT id, work_id, body, source, derived_from, created_at FROM fragments
+                "SELECT id, work_id, body, source, status, derived_from, created_at FROM fragments
                   WHERE derived_from = ?1 AND frag_kind = ?2 AND deleted_at IS NULL
                   ORDER BY created_at DESC, id DESC LIMIT 1",
                 params![card_id, KIND_ANSWER],
@@ -155,7 +199,7 @@ impl Store {
     /// 一张问题卡上的全部答案（按答下的先后；正常只有一条）。
     pub fn answers_of_question(&self, card_id: i64) -> Result<Vec<Answer>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, work_id, body, source, derived_from, created_at FROM fragments
+            "SELECT id, work_id, body, source, status, derived_from, created_at FROM fragments
               WHERE derived_from = ?1 AND frag_kind = ?2 AND deleted_at IS NULL
               ORDER BY created_at, id",
         )?;
@@ -166,4 +210,21 @@ impl Store {
         }
         Ok(out)
     }
+}
+
+/// 落点校验：那个节点得**存在、属于这本书、且承载正文**。
+///
+/// 三种不对分别报错（"没了"用既有的 `node.gone`；"不是这本书的 / 不是正文节点"合成一条，
+/// 因为对作者来说是同一件事：这一段放不了）。节点那一列的读法走 [`super::node`]，
+/// 不在这边另写一份 SELECT。
+fn check_landing_node(store: &Store, work_id: i64, node_id: i64) -> Result<()> {
+    let owner = super::node::node_work_in(store.conn(), node_id)?;
+    let holds_body = super::node::node_kind_in(store.conn(), node_id)?.holds_body();
+    if owner != work_id || !holds_body {
+        return Err(Error::invalid_with(
+            codes::ANSWER_LAND_NODE_INVALID,
+            [("node_id", node_id.to_string())],
+        ));
+    }
+    Ok(())
 }

@@ -375,6 +375,19 @@ impl Store {
     }
 }
 
+/// 事务内版本：这个节点是哪一类（不存在 / 已删除报 `node.gone`）。
+pub(super) fn node_kind_in(conn: &Connection, id: i64) -> Result<NodeKind> {
+    let kind: String = conn
+        .query_row(
+            "SELECT node_kind FROM nodes WHERE id = ?1 AND deleted_at IS NULL",
+            params![id],
+            |r| r.get(0),
+        )
+        .optional()?
+        .ok_or_else(|| Error::invalid_with(codes::NODE_GONE, [("node_id", id.to_string())]))?;
+    NodeKind::parse(&kind)
+}
+
 /// 事务内版本：这个节点属于哪本书（`Store::node_work` 走它）。
 ///
 /// 单列出来的原因见 [`super::node_edit::create_node_in`]：收卷 / 撤卷这类多步结构操作

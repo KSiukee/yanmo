@@ -102,6 +102,7 @@ import {
 } from "./wordcount.ts";
 import { useDirectory, type Directory } from "./directory";
 import { docToText, textToHtml } from "./doc";
+import { insertIntoChapter } from "./insert-text";
 import { watchFocusAndIme } from "./diagnose";
 import { primeImeThen } from "./ime-prime";
 import { ExitGate, type ExitGateState } from "./exitguard";
@@ -151,6 +152,12 @@ export interface EditorSession {
   /** 当前作品 id（书架用来标"正在写这本"） */
   workId: Ref<number | null>;
   persistNow: () => void;
+  /**
+   * 把一段文字插进当前这一章的正文（作答落章走这条）——算一次正常编辑，自动落盘照常。
+   * `at`：`cursor` 光标处 / `end` 章末；没在正文里点过时一律按章末（分寸见 [`insertIntoChapter`]）。
+   * 返回有没有插进去（没打开任何一章就是 `false`）。
+   */
+  insertText: (text: string, at: "cursor" | "end") => boolean;
   switchChapter: (node_id: number | null | undefined, fresh?: boolean) => Promise<void>;
   /// 在某一章后面新建一章并切过去（目录树的「+」走这条）；返回新章 id，没建成是 null
   addChapterAfter: (node_id: number) => Promise<number | null>;
@@ -413,6 +420,13 @@ export function useEditorSession(): EditorSession {
     flushQuietly();
     const cursor = currentCursor();
     if (cursor) void saveCursor(engine.node_id, cursor).catch(() => {});
+  }
+
+  /** 插字那点分寸在 [`insertIntoChapter`]；这里只回答"有没有打开的章、有没有光标"。 */
+  function insertText(text: string, at: "cursor" | "end"): boolean {
+    const instance = editor.value;
+    if (!instance || currentNodeId.value === null) return false;
+    return insertIntoChapter(instance, text, at, instance.isFocused || openedHadCursor);
   }
 
   /**
@@ -1093,6 +1107,7 @@ export function useEditorSession(): EditorSession {
     failure,
     crashNotice,
     persistNow,
+    insertText,
     switchChapter,
     retryExit: () => void gate?.retry(),
     escapeExit: () => void gate?.escape(),

@@ -4,8 +4,15 @@
 // "核心报错长什么样、界面怎么渲染"这条链路必须能测。
 import { t } from "../locales/index.ts";
 
-/** 核心不可达：浏览器预览模式，或核心启动失败。 */
-export class CoreUnavailableError extends Error {}
+/**
+ * 核心不可达：浏览器预览模式，或核心启动失败。
+ *
+ * 它也有 `code`：界面按码做分支的那条路（`error.code`）不该因为"失败得比较早"
+ * 就要求调用方分两种写法——两种失败对界面是同一件事：**拿一个码去显示**。
+ */
+export class CoreUnavailableError extends Error {
+  readonly code = "ipc.unavailable";
+}
 
 /**
  * 核心 / 壳明确报回来的失败：**码 + 参数**。
@@ -68,7 +75,7 @@ export function healText<T>(value: T, depth = 0): T {
  * 一律按"核心不可达"处理——**两者对用户是两回事**：前者是"这件事做不成"，
  * 后者是"程序出了问题"，处置方式不一样。
  */
-export function asError(e: unknown): Error {
+export function asError(e: unknown): CoreError | CoreUnavailableError {
   if (e !== null && typeof e === "object" && typeof (e as { code?: unknown }).code === "string") {
     const raw = (e as { code: string; params?: unknown }).params;
     const params: Record<string, string> = {};

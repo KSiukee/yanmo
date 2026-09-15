@@ -51,8 +51,21 @@ pub struct QuestionOffer {
 }
 
 fn board(store: &Store, work_id: i64) -> yanmo_core::Result<QuestionBoardDto> {
+    board_at(store, work_id, None)
+}
+
+/// 面板本体：`prefer_node` 给了就是模式 A 的「这一章优先」（排序在核心那一处）。
+fn board_at(
+    store: &Store,
+    work_id: i64,
+    prefer_node: Option<i64>,
+) -> yanmo_core::Result<QuestionBoardDto> {
+    let selected = match prefer_node {
+        Some(node) => store.select_questions_for_chapter(work_id, node, 5)?,
+        None => store.select_questions(work_id, 5)?,
+    };
     Ok(QuestionBoardDto {
-        selected: store.select_questions(work_id, 5)?,
+        selected,
         cooled: store.cooled_questions(work_id)?,
         muted_sources: store.muted_sources()?,
         muted_classes: store.muted_templates()?,
@@ -96,10 +109,36 @@ pub fn question_sync(
     })
 }
 
-/// 只看一眼面板（不写库）。
+/// 看一眼面板（不写库）。
+///
+/// 给了 `node_id` 就按**「这一章优先」**排候选（模式 A）：与这一章有关的问题排最前，
+/// 其余照旧按引力跟着。排序规则在核心——界面只把当前章报上来，不在这边重排一遍。
 #[tauri::command(rename_all = "snake_case")]
-pub fn question_board(data: State<'_, AppData>, work_id: i64) -> Result<QuestionBoardDto, ApiError> {
-    data.with_store(|store| board(store, work_id))
+pub fn question_board(
+    data: State<'_, AppData>,
+    work_id: i64,
+    node_id: Option<i64>,
+) -> Result<QuestionBoardDto, ApiError> {
+    data.with_store(|store| board_at(store, work_id, node_id))
+}
+
+/// 落章：把一条答案标成「落进过正文」——**只留痕，不写正文**。
+///
+/// 正文那一段字由界面插进编辑会话（于是自动落盘、字数、账本、版本快照全照常走）：
+/// 击键级的正文写入必须留在壳内的编辑会话里，核心直接改正文会让两边分家。
+/// 这里做的是另一半——记下"这一条用掉了、落到哪一章"。
+#[tauri::command(rename_all = "snake_case")]
+pub fn question_land_answer(
+    data: State<'_, AppData>,
+    card_id: i64,
+    node_id: i64,
+) -> Result<QuestionBoardDto, ApiError> {
+    crate::acceptance::note_command("question_land_answer");
+    data.with_store(|store| {
+        let work_id = store.question_card(card_id)?.work_id;
+        store.mark_answer_landed(card_id, node_id, "author")?;
+        board(store, work_id)
+    })
 }
 
 /// 问出这一张：状态从「待问」到「已问」——**新颖度从这一刻开始算**，与延后/作答同一条来路。

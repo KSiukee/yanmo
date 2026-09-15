@@ -36,6 +36,8 @@ export interface SelectedQuestion {
   card_id: number;
   template_key: string;
   body: string;
+  /** 卡上的关联锚点（`chapter:12` 这种）：界面靠它认"这条问的是不是这一章" */
+  anchors: string[];
   gravity: Gravity;
 }
 
@@ -88,6 +90,8 @@ export interface Answer {
   body: string;
   /** 怎么打出来的：`typed` / `voice` / `mixed`（用 `inputLabel` 讲成人话） */
   source: string;
+  /** `pending` = 躺在答案池里；`landed` = 落进过正文（见 `questionLandAnswer`） */
+  status: string;
   created_at: number;
 }
 
@@ -113,16 +117,21 @@ export const questionDrafts = (work_id: number) =>
 export const questionSync = (work_id: number, offers: QuestionOffer[]) =>
   call<QuestionBoard>(COMMANDS.questionSync, { work_id, offers });
 
-/** 只看一眼面板（不写库）。 */
-export const questionBoard = (work_id: number) =>
-  call<QuestionBoard>(COMMANDS.questionBoard, { work_id });
+/**
+ * 看一眼面板（不写库）。
+ *
+ * 给了 `node_id` 就按**「这一章优先」**排序（模式 A 用）：与这一章有关的问题排最前，
+ * 其余照旧按引力跟着。排序规则在核心——界面只把当前章报上去。
+ */
+export const questionBoard = (work_id: number, node_id: number | null = null) =>
+  call<QuestionBoard>(COMMANDS.questionBoard, { work_id, node_id });
 
 /** 问出这一张（新颖度从这一刻开始算）。 */
 export const questionAsk = (card_id: number) =>
   call<QuestionBoard>(COMMANDS.questionAsk, { card_id });
 
 /**
- * 作答：答案落进答案池，问题卡走到终态（**不动正文**）。
+ * 作答：答案落进答案池，问题卡走到终态。
  *
  * `source` 是**怎么打出来的**（`typed` / `voice` / `mixed`）——文本与输入方式解耦：
  * 口述那条链路落地后，这里换成 `voice` / `mixed` 就行，命令形状不变。
@@ -154,6 +163,15 @@ export const questionRetrieve = (card_id: number) =>
 /** 记灵感：不动问题状态。 */
 export const questionInspire = (card_id: number, body: string, source: string) =>
   call<Inspiration>(COMMANDS.questionInspire, { card_id, body, source });
+
+/**
+ * 落章：把一条答案标成「落进过正文」（**只留痕，不写正文**）。
+ *
+ * 正文那一段字由调用方插进编辑会话（`session.insertText`）——那是作者的一次正常编辑，
+ * 自动落盘、字数、账本、版本快照全照常。这里只记下"这一条用掉了、落到哪一章"。
+ */
+export const questionLandAnswer = (card_id: number, node_id: number) =>
+  call<QuestionBoard>(COMMANDS.questionLandAnswer, { card_id, node_id });
 
 /** 解除**这一类**的静音（"这类别再问"的回头路）。 */
 export const questionUnmuteClass = (work_id: number, template_key: string) =>

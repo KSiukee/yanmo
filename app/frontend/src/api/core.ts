@@ -584,6 +584,7 @@ export const COMMANDS = {
   questionBoard: "question_board",
   questionAsk: "question_ask",
   questionAnswer: "question_answer",
+  questionLandAnswer: "question_land_answer",
   questionDefer: "question_defer",
   questionDiscard: "question_discard",
   questionPraise: "question_praise",

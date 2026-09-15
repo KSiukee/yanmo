@@ -193,3 +193,92 @@ fn input_source_codes_are_the_only_ones_accepted() {
         assert_eq!(store.answer_of_question(id).unwrap().source, source.as_str());
     }
 }
+
+/// 落进正文：**只留痕，不写正文**——正文那一笔是界面那条编辑路写的。
+#[test]
+fn landing_marks_the_answer_and_leaves_a_trail_without_touching_the_prose() {
+    let (_dir, mut store) = fresh();
+    let (work, chapter) = seeded(&mut store);
+    store.write_body(chapter, "第一章的正文，本命令一个字都不该动它。").unwrap();
+    let id = store.create_question_card(&card(work)).unwrap();
+    store.record_question_answer(id, "他怕烧掉就认不出自己", "typed", "author").unwrap();
+    let before = store.read_body(chapter).unwrap();
+
+    let answer_id = store.mark_answer_landed(id, chapter, "author").unwrap();
+
+    let saved = store.answer_of_question(id).unwrap();
+    assert_eq!(saved.id, answer_id);
+    assert_eq!(saved.status, "landed", "落过正文的答案看得出来");
+    let ops: Vec<String> = store
+        .card_events(answer_id)
+        .unwrap()
+        .into_iter()
+        .map(|event| event.op)
+        .collect();
+    assert_eq!(ops, vec!["create", "land"], "落一次记一条");
+    let payload: String = store
+        .conn()
+        .query_row(
+            "SELECT payload FROM op_log WHERE entity = 'fragments' AND entity_id = ?1 AND op = 'land'",
+            [answer_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(payload.contains(&format!("\"node_id\":{chapter}")), "留痕要说清落到哪一章：{payload}");
+    assert_eq!(store.read_body(chapter).unwrap(), before, "只留痕：正文一个字节没动");
+}
+
+#[test]
+fn landing_twice_is_allowed_and_records_each_time() {
+    let (_dir, mut store) = fresh();
+    let (work, chapter) = seeded(&mut store);
+    let id = store.create_question_card(&card(work)).unwrap();
+    store.record_question_answer(id, "同一句话再放一次也无妨", "typed", "author").unwrap();
+
+    store.mark_answer_landed(id, chapter, "author").unwrap();
+    store.mark_answer_landed(id, chapter, "author").unwrap();
+
+    let ops: Vec<String> = store
+        .card_events(store.answer_of_question(id).unwrap().id)
+        .unwrap()
+        .into_iter()
+        .map(|event| event.op)
+        .collect();
+    assert_eq!(ops, vec!["create", "land", "land"], "每落一次都有据可查");
+}
+
+#[test]
+fn landing_refuses_a_node_that_holds_no_body_or_belongs_to_another_book() {
+    let (_dir, mut store) = fresh();
+    let (work, chapter) = seeded(&mut store);
+    let volume = store.create_node(work, None, NodeKind::Volume, "第一卷").unwrap();
+    let other = store.create_work(WorkKind::Novel, "另一本").unwrap();
+    let stranger = store.create_node(other.id, None, NodeKind::Chapter, "别人的第一章").unwrap();
+    let id = store.create_question_card(&card(work)).unwrap();
+    store.record_question_answer(id, "答案", "typed", "author").unwrap();
+
+    for (node, expected, why) in [
+        (volume, codes::ANSWER_LAND_NODE_INVALID, "卷不承载正文"),
+        (stranger, codes::ANSWER_LAND_NODE_INVALID, "别的作品的章"),
+        (9999, codes::NODE_GONE, "不存在的节点"),
+    ] {
+        let err = store.mark_answer_landed(id, node, "author").unwrap_err();
+        assert_eq!(err.code(), expected, "{why}");
+    }
+    assert_eq!(
+        store.answer_of_question(id).unwrap().status,
+        "pending",
+        "被拒之后一个字节都没写：答案还躺在答案池里"
+    );
+    assert_eq!(store.read_body(chapter).unwrap(), "", "也没往任何一章里塞字");
+}
+
+#[test]
+fn landing_without_an_answer_says_so() {
+    let (_dir, mut store) = fresh();
+    let (work, chapter) = seeded(&mut store);
+    let id = store.create_question_card(&card(work)).unwrap();
+
+    let err = store.mark_answer_landed(id, chapter, "author").unwrap_err();
+    assert_eq!(err.code(), codes::ANSWER_NOT_FOUND);
+}

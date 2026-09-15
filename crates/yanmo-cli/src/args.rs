@@ -110,8 +110,9 @@ pub const HELP_DEV: &str = "\
   card-events --id <id>     一张卡的状态迁移史（谁触发、从哪个态到哪个态）
   question-draft --work <id>
                             按书的现状生成候选问题**草稿**（模板 + 槽位，不含句子）
-  question-select --work <id> [--limit <n>]
-                            按引力排出此刻该问的问题（只读；默认 5 条）
+  question-select --work <id> [--limit <n>] [--node <章节 id>]
+                            按引力排出此刻该问的问题（只读；默认 5 条）；
+                            给了 --node 就是「跟着这一章走」：与这一章有关的问题排最前
   question-weights          学到的模板权重一览（偏好学习闭环的账本）
   question-praise --id <id> [--trigger <谁触发>]
                             说「这个问题好」：状态不动，只教同类模板
@@ -142,7 +143,9 @@ pub const HELP_DEV: &str = "\
   question-answer --id <卡 id> --body <文本> | --body-file <路径> [--source typed|voice|mixed]
                             作答：答案进答案池，卡走到「已答」终态（**不动正文一个字**）
   question-answers --id <卡 id>
-                            这张卡上答过什么（答案池里那几条，按答下的先后）";
+                            这张卡上答过什么（答案池里那几条，按答下的先后）
+  question-land --id <卡 id> --node <章节 id> [--trigger <谁触发>]
+                            落章：把一条答案标成「落进过正文」——**只留痕，不写正文**";
 
 /// 这个构建的帮助文本（发布构建只列救援档）。
 pub fn help_text() -> String {

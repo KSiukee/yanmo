@@ -141,7 +141,7 @@ const hint = computed(() => {
       </template>
 
       <EditorPane :session="session" />
-      <FlowPane v-if="zenChrome.flow" :work-id="workId" />
+      <FlowPane v-if="zenChrome.flow" :session="session" :work-id="workId" />
     </main>
 
     <ShelfDialog v-if="shelfVisible" :session="session" />

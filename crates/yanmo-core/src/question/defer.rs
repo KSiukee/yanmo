@@ -103,13 +103,20 @@ impl DeferCondition {
     }
 }
 
-/// 卡上的**章节锚点**：从 `fragments.linked` 那一串里找出 `chapter:<id>`。
+/// 卡上的**关联锚点**（`fragments.linked` 那一串 JSON 数组）。
+///
+/// 读不动的当"没有锚点"：坏记录不该让整条链路转不动（与别的读侧同一条口径）。
+/// 只此一处解析这一列——章锚点、界面判断"这条问的是不是这一章"都走它。
+pub fn anchors_of(linked: &str) -> Vec<String> {
+    serde_json::from_str(linked).unwrap_or_default()
+}
+
+/// 卡上的**章节锚点**：从锚点里找出第一个 `chapter:<id>`。
 ///
 /// 用途：作者点「写完这一章再问」时，界面不必再问一遍"哪一章"——问题卡自己记着
 /// 它是拿哪一章问的（候选生成时就把锚点写进卡里了）。
 pub fn chapter_anchor(linked: &str) -> Option<i64> {
-    let anchors: Vec<String> = serde_json::from_str(linked).ok()?;
-    anchors.iter().find_map(|anchor| {
+    anchors_of(linked).iter().find_map(|anchor| {
         anchor.strip_prefix("chapter:").and_then(|id| id.trim().parse::<i64>().ok())
     })
 }

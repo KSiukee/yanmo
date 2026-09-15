@@ -14,7 +14,7 @@ pub mod elements;
 pub mod generate;
 pub mod template;
 
-pub use defer::{chapter_anchor, DeferCondition, DeferKind, DAY_MS};
+pub use defer::{anchors_of, chapter_anchor, DeferCondition, DeferKind, DAY_MS};
 pub use defer_preset::DeferPreset;
 pub use elements::{ChapterFacts, RhythmParams, WritingElements};
 pub use generate::{generate, QuestionDraft};

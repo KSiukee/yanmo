@@ -350,3 +350,37 @@ fn rerunning_v9_keeps_the_learned_weights() {
         yanmo_core::db::migrations::schema_version()
     );
 }
+
+/// 模式 A「跟着这一章走」：**锚点落在这一章的抬到最前**，其余照旧按引力跟着——一条都不少。
+///
+/// 只抬当前章、不去猜"下一章是哪一章"：作者换到哪一章，那一章的问题就自然浮上来。
+#[test]
+fn following_a_chapter_lifts_just_its_own_questions_to_the_front() {
+    let (_dir, mut store) = fresh();
+    let (work, empty_chapter) = seeded_book(&mut store);
+    let here = store
+        .create_question_card(&card(
+            work,
+            "chapter.empty_body",
+            &[&format!("chapter:{empty_chapter}")],
+        ))
+        .unwrap();
+    let elsewhere =
+        store.create_question_card(&card(work, "review.recent_chapter", &["chapter:1"])).unwrap();
+
+    let plain = store.select_questions(work, 10).unwrap();
+    let ordered = store.select_questions_for_chapter(work, empty_chapter, 10).unwrap();
+
+    assert_eq!(ordered.len(), plain.len(), "只是抬顺序，不是把别的筛掉");
+    assert_eq!(ordered[0].card_id, here, "这一章的问题排最前");
+    assert_eq!(
+        ordered[0].anchors,
+        vec![format!("chapter:{empty_chapter}")],
+        "锚点要带给界面——界面靠它认这条问的是不是这一章"
+    );
+    assert!(ordered.iter().any(|q| q.card_id == elsewhere), "别的问题照样在列表里");
+
+    // 这一章没有专属问题时，顺序**原样不动**（不猜、不筛）
+    let untouched = store.select_questions_for_chapter(work, 999, 10).unwrap();
+    assert_eq!(untouched, plain);
+}

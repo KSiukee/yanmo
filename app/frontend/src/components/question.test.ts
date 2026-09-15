@@ -1,4 +1,4 @@
-// 叩问面板的纯展示逻辑：句子渲染、引力拆解、等多久、来源称呼、输入方式称呼。
+// 叩问面板的纯展示逻辑：句子渲染、引力拆解、等多久、来源称呼、输入方式称呼、落点与"这一章"。
 //
 // 这几条守的都是"静默出错"：键写错会露出键名、槽位缺了会留 `{槽位}`、
 // 乘数全列出来会把真正的原因埋掉——都在这里钉住。
@@ -6,7 +6,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { classLabel, dueLabel, inputLabel, reasonLines, renderDraft, sourceLabel } from "./question.ts";
+import {
+  asksThisChapter,
+  classLabel,
+  countForChapter,
+  dueLabel,
+  inputLabel,
+  landLabel,
+  reasonLines,
+  renderDraft,
+  sourceLabel,
+} from "./question.ts";
 import type { Gravity, QuestionDraft } from "../api/question.ts";
 
 const draft: QuestionDraft = {
@@ -84,4 +94,21 @@ test("输入方式称呼：三种各有各的说法，认不出来的原样露�
   for (const source of ["typed", "voice", "mixed"]) {
     assert.ok(!inputLabel(source).startsWith("flow."), `字典里缺 flow.input.${source}`);
   }
+});
+
+test("落点称呼：两个落点各有各的说法", () => {
+  assert.equal(landLabel("cursor"), "落在光标处");
+  assert.equal(landLabel("end"), "落在本章末尾");
+});
+
+test("认一条问题是不是这一章问出来的——只认 chapter:<当前章> 这一条", () => {
+  const asked = { anchors: ["chapter:7", "volume:2"] };
+  assert.equal(asksThisChapter(asked, 7), true);
+  assert.equal(asksThisChapter(asked, 8), false, "别的章不算");
+  assert.equal(asksThisChapter(asked, null), false, "没有当前章时不声称");
+  assert.equal(asksThisChapter({ anchors: [] }, 7), false, "没锚点的卡不算这一章的");
+  // 只认整条锚点：`chapter:70` 不能被 `chapter:7` 认下来
+  assert.equal(asksThisChapter({ anchors: ["chapter:70"] }, 7), false);
+  assert.equal(countForChapter([asked, { anchors: ["chapter:7"] }, { anchors: ["chapter:1"] }], 7), 2);
+  assert.equal(countForChapter([asked], null), 0);
 });

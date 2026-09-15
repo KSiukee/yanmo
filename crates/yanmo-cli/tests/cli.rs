@@ -904,4 +904,38 @@ fn question_answering_is_drivable_from_the_command_line() {
     // 只问不写：作答前后正文指纹一模一样
     let after = ok(dir.path(), "fingerprint", &[("node", &node)])["fingerprint"].clone();
     assert_eq!(before, after, "作答不碰正文");
+
+    // 落章：**只留痕，不写正文**（稿子还是那一个字节，正文那一笔由界面插进编辑会话）
+    ok(dir.path(), "question-land", &[("id", &card.to_string()), ("node", &node)]);
+    let answers = ok(dir.path(), "question-answers", &[("id", &card.to_string())]);
+    assert_eq!(answers["answers"][0]["status"], "landed", "落过正文的答案看得出来：{answers}");
+    let landed = ok(dir.path(), "fingerprint", &[("node", &node)])["fingerprint"].clone();
+    assert_eq!(landed, before, "落章命令自己不写正文");
+
+    // 落点不合法（另一本书的章 / 不承载正文的节点）当场拒
+    match run(dir.path(), "question-land", &[("id", &card.to_string()), ("node", "99999")]) {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "node.gone"),
+        other => panic!("不存在的落点该被拒：{other:?}"),
+    }
+
+    // 「跟着这一章走」：给 --node 时，与这一章有关的问题排最前（其余照样在列表里）
+    let anchored = ok(
+        dir.path(),
+        "card-new",
+        &[
+            ("work", &work),
+            ("body", "这一章的问题"),
+            ("template", "chapter.empty_body"),
+            ("linked", &format!("chapter:{chapter_id}")),
+        ],
+    )["card_id"]
+        .as_i64()
+        .unwrap();
+    let picked = ok(dir.path(), "question-select", &[("work", &work), ("node", &node)]);
+    assert_eq!(picked["questions"][0]["card_id"], anchored, "这一章的问题排最前：{picked}");
+    assert_eq!(picked["questions"][0]["anchors"][0], format!("chapter:{chapter_id}"));
+    assert!(
+        picked["questions"].as_array().unwrap().iter().any(|q| q["card_id"] == fresh),
+        "别的问题照样在列表里，只是排在后面"
+    );
 }

@@ -32,7 +32,7 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         "card-events" => Some(&["id"]),
         // 叩问·选题与偏好：草稿 / 排序 / 学到了什么 / 说好 / 解除静音
         "question-draft" => Some(&["work"]),
-        "question-select" => Some(&["work", "limit"]),
+        "question-select" => Some(&["work", "limit", "node"]),
         "question-weights" => Some(&[]),
         "question-praise" => Some(&["id", "trigger"]),
         "question-unmute" => Some(&["template"]),
@@ -51,6 +51,7 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         // 叩问·作答：答案进答案池（文本与输入方式解耦：--source 记怎么打出来的）
         "question-answer" => Some(&["id", "body", "body-file", "source", "trigger"]),
         "question-answers" => Some(&["id"]),
+        "question-land" => Some(&["id", "node", "trigger"]),
         _ => None,
     }
 }
@@ -146,7 +147,16 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
                     .parse::<usize>()
                     .map_err(|_| Usage::from("--limit 需要是一个非负整数"))?,
             };
-            let picked = store.select_questions(work, limit)?;
+            // 给了 --node 就是模式 A 的顺序：与这一章有关的问题排最前
+            let picked = match args.optional("node") {
+                Some(text) => {
+                    let node = text
+                        .parse::<i64>()
+                        .map_err(|_| Usage::from("--node 需要是一个整数（章节节点 id）"))?;
+                    store.select_questions_for_chapter(work, node, limit)?
+                }
+                None => store.select_questions(work, limit)?,
+            };
             json!({ "ok": true, "command": "question-select", "count": picked.len(), "questions": picked })
         }
         "question-weights" => {
@@ -282,6 +292,15 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
             let answers = store.answers_of_question(id)?;
             json!({ "ok": true, "command": "question-answers", "card_id": id,
                     "count": answers.len(), "answers": answers })
+        }
+        "question-land" => {
+            // 落章：**只留痕，不写正文**——正文那一段字由界面插进编辑会话（这里不动稿子）
+            let id = args.required_i64("id")?;
+            let node = args.required_i64("node")?;
+            let trigger = args.optional("trigger").unwrap_or("cli").to_string();
+            let answer_id = store.mark_answer_landed(id, node, &trigger)?;
+            json!({ "ok": true, "command": "question-land", "card_id": id,
+                    "answer_id": answer_id, "node_id": node })
         }
         "question-deferrals" => {
             // 两种问法：这本书里**还等着**的（默认），或某张卡的**全部历史**

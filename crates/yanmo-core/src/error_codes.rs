@@ -123,6 +123,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     ANSWER_BODY_EMPTY => "answer.body_empty" : "答案内容不能为空" : [],
     ANSWER_NOT_FOUND => "answer.not_found"
         : "这张问题卡还没有答案：{card_id}" : ["card_id"],
+    ANSWER_LAND_NODE_INVALID => "answer.land_node_invalid"
+        : "不能把答案落到这一段：{node_id} 不在这一章所属的书里，或不承载正文" : ["node_id"],
     INPUT_SOURCE_UNKNOWN => "input.source_unknown"
         : "认不出的输入方式：{value}（只认 typed / voice / mixed）" : ["value"],
     QUESTION_DEFER_NEEDS_ANCHOR => "question.defer_needs_anchor"

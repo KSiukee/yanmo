@@ -232,6 +232,7 @@ fn main() {
             commands::question::question_board,
             commands::question::question_ask,
             commands::question::question_answer,
+            commands::question::question_land_answer,
             commands::question::question_defer,
             commands::question::question_discard,
             commands::question::question_praise,

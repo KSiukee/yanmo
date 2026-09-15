@@ -88,3 +88,27 @@ export function inputLabel(source: string): string {
   if (source === "mixed") return t("flow.input.mixed");
   return source;
 }
+
+/** 答案落进正文的落点：`cursor` 光标处 / `end` 章末。 */
+export type LandAt = "cursor" | "end";
+
+/** 落点怎么称呼（面板上那两个单选）。 */
+export function landLabel(at: LandAt): string {
+  return at === "cursor" ? t("flow.land.cursor") : t("flow.land.end");
+}
+
+/**
+ * 一条问题是不是**这一章问出来的**：锚点里有没有 `chapter:<当前章>`。
+ *
+ * 只认这一条锚点格式（与核心写进 `fragments.linked` 的一致）：认不出就当不是——
+ * 拿不准的时候不要声称"这条是问这一章的"，那会把不相干的问题推到作者眼前。
+ */
+export function asksThisChapter(question: { anchors: string[] }, node_id: number | null): boolean {
+  if (node_id === null) return false;
+  return question.anchors.includes(`chapter:${node_id}`);
+}
+
+/** 候选里与这一章有关的有几条（面板顶上那句话用）。 */
+export function countForChapter(questions: { anchors: string[] }[], node_id: number | null): number {
+  return questions.filter((question) => asksThisChapter(question, node_id)).length;
+}
