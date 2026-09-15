@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import type { Autosave, AutosaveState } from "./autosave.ts";
-import { ExitGate, isSafeToExit } from "./exitguard.ts";
+import { ExitGate, isSafeToExit, type ExitGateDeps } from "./exitguard.ts";
 
 function stateOf(status: AutosaveState["status"], detail = ""): AutosaveState {
   return { status, detail, char_count: 0, chars_no_punct: 0, word_count: 0, incident: null };
@@ -52,7 +52,7 @@ function recorder() {
   };
 }
 
-function build(autosave: () => Autosave | null, extra: Partial<Parameters<typeof ExitGate.prototype.requestExit>> = {}) {
+function build(autosave: () => Autosave | null, extra: Partial<ExitGateDeps> = {}) {
   const rec = recorder();
   const gate = new ExitGate({
     autosave,
@@ -130,6 +130,28 @@ test("界面还没就绪：没什么可丢的，直接放行", async () => {
   assert.equal(await gate.requestExit(), "allowed");
   assert.deepEqual(calls, ["exit"]);
 });
+
+test("落盘永不返回（卡死）：照样拦住并弹对话框，不把关窗请求挂住", async () => {
+  // 失效模式（2026-09-15 代码质量评审：中等 14）：闸门 `await autosave.flush()`，
+  // 一次永不返回的落盘会让 requestExit 也永不返回——对话框根本弹不出来，窗口像死了一样。
+  let flushCalls = 0;
+  const stuck = {
+    node_id: 7,
+    flush: () => {
+      flushCalls += 1;
+      return new Promise<void>(() => {});
+    },
+    state: () => stateOf("saving"),
+  };
+  const { gate, calls } = build(() => stuck as unknown as Autosave, { flushDeadlineMs: 5 });
+
+  assert.equal(await gate.requestExit(), "blocked");
+  assert.equal(flushCalls, 1, "仍然要真的去逼一次落盘");
+  assert.equal(gate.state_().blocked, true, "必须拦住——对话框靠这个标志弹出来");
+  assert.match(gate.state_().message, /没有回应/);
+  assert.deepEqual(calls, [], "拦住时不该退出，也不该留下关窗快照");
+});
+
 
 test("判定口径：只有已落盘（或从没写过）才算安全", () => {
   assert.equal(isSafeToExit(stateOf("saved")), true);

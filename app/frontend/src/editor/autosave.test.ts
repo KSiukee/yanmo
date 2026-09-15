@@ -335,3 +335,61 @@ test("节点被删后「摘下来」：状态亮红字、flush 一律失败、�
     "摘下来之后 flush 必须失败——闸门靠它拦住退出，否则新写的字无声消失"
   );
 });
+
+test("一笔落盘永远不回来（IPC 卡住）：不锁死状态机，超时后作废并抢救", async () => {
+  // 失效模式（2026-09-15 代码质量评审：中等 14）：`verifyNow` 首句是 `if (this.inFlight) return`，
+  // 于是 transport.save 永不 settle 时，读回校验与卡住抢救全部停摆、退出闸门永久 blocked。
+  // 触发条件是"不返回"（通道异常/核心卡在锁上），比"报错"更没有出路。
+  const clock = new FakeClock();
+  const core = fakeCore({ manual: true });
+  const autosave = build(core, clock);
+  autosave.attach("", { char_count: 0, chars_no_punct: 0, word_count: 0, fingerprint: "" });
+
+  autosave.changed("挂在半路的一版");
+  await clock.advance(250);
+  assert.equal(autosave.state().status, "saving");
+
+  await clock.advance(1600); // 超过卡住阈值
+  await autosave.verifyNow(); // ← 校验不再被"在飞"永久关掉
+
+  assert.ok(
+    core.calls.some((c) => c.startsWith("emergency:stuck:")),
+    `在飞的那一笔超时也必须抢救，实际调用：${core.calls.join(" | ")}`
+  );
+  assert.equal(core.stored(), "挂在半路的一版");
+  assert.equal(autosave.state().status, "saved");
+
+  // 又写了一点：新的一笔在飞
+  autosave.changed("挂在半路的一版，又补了一句");
+  await clock.advance(250);
+  assert.equal(autosave.state().status, "saving");
+
+  // 那一笔被作废的旧写这时候才回来：不许改状态，也不许把新那一笔的锁清掉
+  core.gates.shift()!();
+  await settle();
+  assert.equal(autosave.state().status, "saving", "被作废的那一笔回来时不许动状态");
+
+  core.gates.shift()!();
+  await settle();
+  assert.equal(autosave.state().status, "saved");
+  assert.equal(core.stored(), "挂在半路的一版，又补了一句");
+});
+
+test("一笔落盘永远不回来：flush 有期限，不会把关窗闸门永久锁死", async () => {
+  // 同一条失效模式的另一面：flush 里 `await saveNow()` 会等那一笔永不返回的 Promise，
+  // 于是六道守卫与关窗闸门一起挂住——连"存不下去"的对话框都弹不出来。
+  const clock = new FakeClock();
+  const core = fakeCore({ manual: true });
+  const autosave = build(core, clock);
+  autosave.attach("", { char_count: 0, chars_no_punct: 0, word_count: 0, fingerprint: "" });
+
+  autosave.changed("等不回来的一版");
+  // 先把"必须失败"的断言挂上（到期才拒绝，这里不能晚于下一次宏任务）
+  const rejected = assert.rejects(() => autosave.flush(), /没有回应/, "flush 必须有限时间内失败，不能永久挂着");
+  assert.equal(autosave.state().status, "saving");
+
+  await clock.advance(1600);
+  await rejected;
+  assert.equal(autosave.state().status, "error");
+});
+

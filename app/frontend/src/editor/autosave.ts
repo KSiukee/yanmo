@@ -98,6 +98,10 @@ export class Autosave {
   private savedFingerprint: string | null = null;
 
   private inFlight: Promise<void> | null = null;
+  /** 在飞的那一笔是什么时候起的——用来判断它是不是挂住了（评审：中等 14） */
+  private inflightSince = 0;
+  /** 作废计数器：被作废的那一笔回来时认不出自己，不许再改状态 */
+  private writeEpoch = 0;
   private saveTimer: TimerHandle | null = null;
   private verifyTimer: TimerHandle | null = null;
   private lastChangeAt = 0;
@@ -119,6 +123,9 @@ export class Autosave {
 
   /** 载入一章之后建立比对基准（`ack` 来自打开编辑器时的返回）。 */
   attach(body: string, ack: SaveAck): void {
+    // 回滚/排版清理会"换内容不换实例"：在飞的那一笔写的是旧内容，作废它，
+    // 免得它回来时把刚建立的基准改回旧指纹。
+    this.abandonInFlight();
     this.text = body;
     this.rev = 0;
     this.savedRev = 0;
@@ -154,6 +161,10 @@ export class Autosave {
    *
    * 现在：排到干净为止（最多 `FLUSH_ROUNDS` 笔，避免写不进去时空转），还脏就抛错。
    * 抛错是刻意的——**"存不下去就不许走"是这条承诺的实现方式**，调用方必须接住并拦住动作。
+   *
+   * 而且**每笔都有期限**：一次永不返回的 IPC 不能把这里永久挂住（评审：中等 14）——
+   * 超过 `stuckMs` 还不回来就作废那一笔并按"卡住"报错，调用方与关窗闸门都能照常走到
+   * "拦住 + 弹对话框"那一步。
    */
   async flush(): Promise<void> {
     this.cancelSaveTimer();
@@ -162,7 +173,7 @@ export class Autosave {
       throw new Error(this.detail || t("autosave.detached"));
     }
     for (let round = 0; round < FLUSH_ROUNDS && this.rev > this.savedRev; round += 1) {
-      await this.saveNow();
+      if (await this.saveWithinDeadline()) break; // 挂住了：别再空等下一轮
     }
     if (this.rev > this.savedRev) {
       // 还在脏着：把失败说清楚（原因多半已经在 detail 里了）
@@ -172,7 +183,17 @@ export class Autosave {
 
   /** 立刻做一次读回校验（测试与"我现在就想确认一下"用）。 */
   async verifyNow(): Promise<void> {
-    if (this.stopped || this.inFlight) return;
+    if (this.stopped) return;
+
+    // ⓪ 在飞的那一笔一直不回来（IPC/核心挂住）：以前这里直接 return，于是读回校验、
+    //    卡住抢救全部停摆——"不返回"比"报错"更没有出路（评审：中等 14）。
+    if (this.inFlight) {
+      if (this.now() - this.inflightSince <= this.stuckMs) return;
+      this.abandonInFlight();
+      this.setStatus("error", t("autosave.save_stuck", { ms: this.stuckMs }));
+      await this.rescue("stuck");
+      return;
+    }
 
     // ① 有没落盘的改动：看看是不是卡住了
     if (this.rev > this.savedRev) {
@@ -261,23 +282,27 @@ export class Autosave {
 
     const text = this.text;
     const rev = this.rev;
+    const epoch = this.writeEpoch;
     this.setStatus("saving");
 
     const run = async (): Promise<void> => {
       try {
         const ack = await this.transport.save(this.node_id, text);
+        if (epoch !== this.writeEpoch) return; // 这一笔已被作废（挂住 → 抢救）：不许再改状态
         this.savedFingerprint = ack.fingerprint;
         this.savedRev = rev;
         this.charCount = ack.char_count;
         this.charsNoPunct = ack.chars_no_punct;
         this.wordCount = ack.word_count;
       } catch (e) {
+        if (epoch !== this.writeEpoch) return;
         this.setStatus("error", t("autosave.save_failed", { detail: messageOf(e) }));
         this.armSave(); // 还脏着：过一会儿再试
         return;
       } finally {
-        this.inFlight = null;
+        if (epoch === this.writeEpoch) this.inFlight = null;
       }
+      if (epoch !== this.writeEpoch) return;
       if (rev === this.rev) {
         this.setStatus("saved");
       } else {
@@ -287,8 +312,48 @@ export class Autosave {
       }
     };
 
+    this.inflightSince = this.now();
     this.inFlight = run();
     return this.inFlight;
+  }
+
+  /**
+   * 落一笔盘，但**不无限等**：在飞的那一笔超过 `stuckMs` 还不回来就作废它。
+   *
+   * 返回 true = 这一笔挂住了（已经作废并按卡住报了错）；false = 有结果（成功或失败）。
+   */
+  private async saveWithinDeadline(): Promise<boolean> {
+    const settled = await this.settledWithin(this.saveNow(), this.stuckMs);
+    if (settled) return false;
+    this.abandonInFlight();
+    this.setStatus("error", t("autosave.save_stuck", { ms: this.stuckMs }));
+    return true;
+  }
+
+  /** 作废在飞的那一笔：它若在抢救之后才回来，不许再把状态改回去（epoch 守卫）。 */
+  private abandonInFlight(): void {
+    if (this.inFlight === null) return;
+    this.writeEpoch += 1;
+    this.inFlight = null;
+  }
+
+  /** `promise` 在 `ms` 内有没有了结（用注入的计时器，测试里可以拨快）。 */
+  private settledWithin(promise: Promise<void>, ms: number): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const timer = this.schedule(() => {
+        if (settled) return;
+        settled = true;
+        resolve(false);
+      }, ms);
+      const done = (): void => {
+        if (settled) return;
+        settled = true;
+        this.cancel(timer);
+        resolve(true);
+      };
+      promise.then(done, done);
+    });
   }
 
   /** 抢救：手上这份先留快照，再逼着库回到这一版。 */

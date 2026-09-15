@@ -12,6 +12,9 @@ import type { Autosave, AutosaveState } from "./autosave";
 /** 关窗请求的处理结果。 */
 export type ExitOutcome = "allowed" | "blocked";
 
+/** 逼落盘超过了期限（不是"落盘失败"——是它一直没回话）。 */
+class FlushDeadlineError extends Error {}
+
 export interface ExitGateState {
   /** 是否拦住不让走 */
   blocked: boolean;
@@ -36,8 +39,16 @@ export interface ExitGateDeps {
   escapeExport: (node_id: number, body: string) => Promise<string>;
   /** 当前正文（逃生导出用） */
   currentBody: () => string;
+  /** 逼一次落盘最多等多久——超时也要能拦住人、弹对话框（测试里拨短） */
+  flushDeadlineMs?: number;
   onState?: (state: ExitGateState) => void;
 }
+
+/**
+ * 关窗时"逼一次落盘"的期限：一次永不返回的落盘不能把关窗请求本身挂住——
+ * 那样连"存不下去"的对话框都弹不出来，作者看到的是一个没反应的窗口（评审：中等 14）。
+ */
+export const EXIT_FLUSH_DEADLINE_MS = 4000;
 
 /** 只有"已经落盘"才算安全。 */
 export function isSafeToExit(state: AutosaveState): boolean {
@@ -78,18 +89,45 @@ export class ExitGate {
       return this.leave(false);
     }
 
+    let stuck = false;
     try {
-      await autosave.flush(); // 不等防抖，立刻落盘
-    } catch {
-      // 失败原因已经反映在 autosave 的状态里，下面统一判定
+      await this.flushWithinDeadline(autosave); // 不等防抖，立刻落盘（但有期限）
+    } catch (error) {
+      // 失败原因已经反映在 autosave 的状态里，下面统一判定；只有"超时"要单独说清
+      stuck = error instanceof FlushDeadlineError;
     }
 
     if (isSafeToExit(autosave.state())) {
       return this.leave(true);
     }
 
-    this.setState({ blocked: true, busy: false, message: describe(autosave.state()) });
+    this.setState({
+      blocked: true,
+      busy: false,
+      message: stuck ? t("exit.reason_stuck") : describe(autosave.state()),
+    });
     return "blocked";
+  }
+
+  /** 逼一次落盘，最多等 `flushDeadlineMs`：超时就当"卡住"（对话框照样弹得出来）。 */
+  private flushWithinDeadline(autosave: Autosave): Promise<void> {
+    const ms = this.deps.flushDeadlineMs ?? EXIT_FLUSH_DEADLINE_MS;
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new FlushDeadlineError());
+      }, ms);
+      const done = (error?: unknown): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (error === undefined) resolve();
+        else reject(error);
+      };
+      autosave.flush().then(() => done(), (error) => done(error));
+    });
   }
 
   /** 阻塞之后用户点"重试保存"。 */
