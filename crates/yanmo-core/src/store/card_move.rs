@@ -12,14 +12,14 @@
 //!   其中 `trigger` 由调用方给（push / pull / author / system / 模块名），audit 时一眼看得出
 //!   这一步是系统弹的还是作者自己点的。
 
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, OptionalExtension, Transaction};
 use serde_json::{json, Value};
 
 use super::card::KIND_QUESTION;
 use super::Store;
 use crate::error::{codes, Error, Result};
 use crate::gravity::signal_for_action;
-use crate::model::{transition, QuestionState};
+use crate::model::{transition, QuestionCard, QuestionState};
 use crate::time::now_millis;
 
 /// 一条问题卡事件（从 op-log 读回来）。
@@ -59,55 +59,8 @@ impl Store {
     ) -> Result<QuestionState> {
         let card = self.question_card(id)?;
         let from = card.state;
-        let edge = transition(from, to).ok_or_else(|| illegal(from, to))?;
-
-        let now = now_millis();
         let tx = self.conn.transaction()?;
-        let affected = if edge.action == "ask" {
-            // 问出：记下次数**与时刻**——新颖度冷却要靠这两样（次数管多少回、时刻管多久以前）
-            tx.execute(
-                "UPDATE fragments SET status = ?1, used_count = used_count + 1,
-                                      last_asked_at = ?2, updated_at = ?2
-                  WHERE id = ?3 AND frag_kind = ?4 AND deleted_at IS NULL AND status = ?5",
-                params![to.as_str(), now, id, KIND_QUESTION, from.as_str()],
-            )?
-        } else {
-            tx.execute(
-                "UPDATE fragments SET status = ?1, updated_at = ?2
-                  WHERE id = ?3 AND frag_kind = ?4 AND deleted_at IS NULL AND status = ?5",
-                params![to.as_str(), now, id, KIND_QUESTION, from.as_str()],
-            )?
-        };
-        if affected == 0 {
-            // 卡没了，或状态在我们读它与写它之间被人改了——两种都要说清是哪一种
-            let current: Option<String> = tx
-                .query_row(
-                    "SELECT status FROM fragments
-                      WHERE id = ?1 AND frag_kind = ?2 AND deleted_at IS NULL",
-                    params![id, KIND_QUESTION],
-                    |r| r.get(0),
-                )
-                .optional()?;
-            return match current {
-                None => Err(Error::invalid_with(
-                    codes::CARD_NOT_FOUND,
-                    [("card_id", id.to_string())],
-                )),
-                Some(state) => Err(illegal_current(&state, to)),
-            };
-        }
-        Self::record_in(
-            &self.device_id,
-            &tx,
-            "fragments",
-            id,
-            edge.action,
-            json!({ "from": from.as_str(), "to": to.as_str(), "trigger": trigger }),
-        )?;
-        // 处置**就是**教学：动作码折算成偏好信号，喂给同类模板（同一事务，漏不掉）
-        if let Some(signal) = signal_for_action(edge.action) {
-            super::question_weights::learn_in(&tx, &card.template_key, signal, now)?;
-        }
+        move_card_in(&tx, &self.device_id, &card, to, trigger)?;
         tx.commit()?;
         Ok(from)
     }
@@ -136,6 +89,69 @@ impl Store {
         }
         Ok(out)
     }
+}
+
+/// 事务内的迁移：改状态字段 + 留痕 + "处置即教学"。
+///
+/// **调用方负责开事务与提交**——延后（要同时写条件）与重出（要同时标掉那条条件）
+/// 都靠它把"状态"与"跟着它一起该落的东西"放进**同一个事务**，
+/// 不然就会出现"卡改了态、条件没写上"这类半截状态（那正是最难查的一种）。
+pub(super) fn move_card_in(
+    tx: &Transaction<'_>,
+    device_id: &str,
+    card: &QuestionCard,
+    to: QuestionState,
+    trigger: &str,
+) -> Result<()> {
+    let from = card.state;
+    let edge = transition(from, to).ok_or_else(|| illegal(from, to))?;
+    let now = now_millis();
+    let affected = if edge.action == "ask" {
+        // 问出：记下次数**与时刻**——新颖度冷却要靠这两样（次数管多少回、时刻管多久以前）
+        tx.execute(
+            "UPDATE fragments SET status = ?1, used_count = used_count + 1,
+                                  last_asked_at = ?2, updated_at = ?2
+              WHERE id = ?3 AND frag_kind = ?4 AND deleted_at IS NULL AND status = ?5",
+            params![to.as_str(), now, card.id, KIND_QUESTION, from.as_str()],
+        )?
+    } else {
+        tx.execute(
+            "UPDATE fragments SET status = ?1, updated_at = ?2
+              WHERE id = ?3 AND frag_kind = ?4 AND deleted_at IS NULL AND status = ?5",
+            params![to.as_str(), now, card.id, KIND_QUESTION, from.as_str()],
+        )?
+    };
+    if affected == 0 {
+        // 卡没了，或状态在我们读它与写它之间被人改了——两种都要说清是哪一种
+        let current: Option<String> = tx
+            .query_row(
+                "SELECT status FROM fragments
+                  WHERE id = ?1 AND frag_kind = ?2 AND deleted_at IS NULL",
+                params![card.id, KIND_QUESTION],
+                |r| r.get(0),
+            )
+            .optional()?;
+        return match current {
+            None => Err(Error::invalid_with(
+                codes::CARD_NOT_FOUND,
+                [("card_id", card.id.to_string())],
+            )),
+            Some(state) => Err(illegal_current(&state, to)),
+        };
+    }
+    Store::record_in(
+        device_id,
+        tx,
+        "fragments",
+        card.id,
+        edge.action,
+        json!({ "from": from.as_str(), "to": to.as_str(), "trigger": trigger }),
+    )?;
+    // 处置**就是**教学：动作码折算成偏好信号，喂给同类模板（同一事务，漏不掉）
+    if let Some(signal) = signal_for_action(edge.action) {
+        super::question_weights::learn_in(tx, &card.template_key, signal, now)?;
+    }
+    Ok(())
 }
 
 /// 非法边：`from → to` 不在迁移表里。

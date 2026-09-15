@@ -33,6 +33,8 @@ impl Store {
         let params = AttractorParams::default();
         let now = now_millis();
         let cards = self.question_cards(work_id, Some(QuestionState::Pending))?;
+        // 防死循环的账：这张卡被延后过几次（一次分组查询，不做 N+1）
+        let deferred = self.defer_counts(work_id)?;
         let index: HashMap<i64, usize> =
             cards.iter().enumerate().map(|(at, card)| (card.id, at)).collect();
 
@@ -50,6 +52,7 @@ impl Store {
                 used_count: card.used_count,
                 last_asked_at: card.last_asked_at,
                 auto_derived: card.auto_derived,
+                defer_count: deferred.get(&card.id).copied().unwrap_or(0) as usize,
                 template_weight: learned.weight,
                 template_muted: !learned.enabled,
             };

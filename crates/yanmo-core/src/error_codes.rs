@@ -67,6 +67,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     UNKNOWN_WORK_LANGUAGE => "value.unknown_work_language" : "未知的作品语言：{value}" : ["value"],
     UNKNOWN_QUESTION_STATE => "value.unknown_question_state"
         : "未知的问题卡状态：{value}" : ["value"],
+    UNKNOWN_DEFER_KIND => "value.unknown_defer_kind"
+        : "未知的延后条件类型：{value}（只有 time / written / manual）" : ["value"],
     BACKUP_SNAPSHOT_FAILED => "backup.snapshot_failed"
         : "做一致性快照失败（库可能有问题）：{detail}" : ["detail"],
     BACKUP_RESTORE_SOURCE_INVALID => "backup.restore_source_invalid"
@@ -116,6 +118,10 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "自动派生的问题必须说清它是从哪张卡派生的" : [],
     CARD_DERIVATION_TOO_DEEP => "card.derivation_too_deep"
         : "自动派生已经到链深上限（最多 {max} 层）——作者自己顺着灵感再问不受此限" : ["max"],
+    QUESTION_DEFER_NEEDS_ANCHOR => "question.defer_needs_anchor"
+        : "这张卡上找不到可用的章节锚点，「写完这一章再问」这一档用不了：{card_id}" : ["card_id"],
+    QUESTION_DEFER_TIME_NOT_FUTURE => "question.defer_time_not_future"
+        : "延后要指一个还没到的时刻（给的是 {due_at}）——不然点了延后它下一眼又冒出来" : ["due_at"],
     TREE_TOO_DEEP => "tree.too_deep"
         : "节点树超过深度上限（最多 {max} 层），已拒绝继续" : ["max"],
     TREE_CYCLE_SUSPECTED => "tree.cycle_suspected" : "节点树深度异常（疑似成环），已拒绝继续" : [],

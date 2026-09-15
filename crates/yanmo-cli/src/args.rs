@@ -116,7 +116,15 @@ pub const HELP_DEV: &str = "\
   question-praise --id <id> [--trigger <谁触发>]
                             说「这个问题好」：状态不动，只教同类模板
   question-unmute --template <模板键>
-                            解除某一类的静音（静音可撤销，绝不默认开启）";
+                            解除某一类的静音（静音可撤销，绝不默认开启）
+  question-defer --id <id> --preset <档位> [--note <作者填的一句>] [--trigger <谁触发>]
+                 或 --id <id> --kind <time|written|manual> [--after-days <n> | --after-ms <毫秒>]
+                    [--anchor-node <id>] [--note <…>]
+                            带条件地延后一张卡；--preset 的档位见界面字典 question.defer.*
+  question-requeue --work <id> [--now-ms <毫秒>] [--trigger <谁触发>]
+                            把条件已满足的延后放回候选池（不给 --now-ms 就用此刻）
+  question-deferrals --work <id> | --card <id>
+                            还等着的延后（条件是什么、作者填了什么）；给 --card 看某张卡的全部延后史";
 
 /// 这个构建的帮助文本（发布构建只列救援档）。
 pub fn help_text() -> String {

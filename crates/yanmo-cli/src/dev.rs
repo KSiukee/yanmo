@@ -8,6 +8,7 @@
 
 use serde_json::{json, Value};
 use yanmo_core::model::{NewQuestionCard, NodeKind, QuestionState, WorkKind};
+use yanmo_core::question::{DeferCondition, DeferKind, DeferPreset, DAY_MS};
 use yanmo_core::store::{BackupRequest, BackupTarget, SessionReport, Store};
 use yanmo_core::text;
 
@@ -46,6 +47,10 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         "question-weights" => Some(&[]),
         "question-praise" => Some(&["id", "trigger"]),
         "question-unmute" => Some(&["template"]),
+        // 叩问·延后队列：带条件地延后 / 到条件重出 / 看还等着什么
+        "question-defer" => Some(&["id", "preset", "kind", "after-days", "after-ms", "anchor-node", "note", "trigger"]),
+        "question-requeue" => Some(&["work", "now-ms", "trigger"]),
+        "question-deferrals" => Some(&["work", "card"]),
         _ => None,
     }
 }
@@ -291,6 +296,76 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
             let key = args.required("template")?;
             let lifted = store.unmute_template(key)?;
             json!({ "ok": true, "command": "question-unmute", "template_key": key, "learned": lifted })
+        }
+        "question-defer" => {
+            let id = args.required_i64("id")?;
+            let trigger = args.optional("trigger").unwrap_or("cli").to_string();
+            let note = args.optional("note").unwrap_or("").to_string();
+            let deferral_id = match args.optional("preset") {
+                Some(key) => {
+                    let preset = DeferPreset::parse(key).ok_or_else(|| {
+                        Usage::from(
+                            "--preset 只认 after_one_day / after_three_days / after_one_week / \
+                             when_chapter_written / only_when_asked",
+                        )
+                    })?;
+                    store.defer_question_card_by_preset(id, preset, &note, &trigger)?
+                }
+                None => {
+                    let condition = match DeferKind::parse(args.required("kind")?)? {
+                        DeferKind::Time => {
+                            let due_at = match args.optional("after-ms") {
+                                Some(text) => text
+                                    .parse::<i64>()
+                                    .map_err(|_| Usage::from("--after-ms 需要是一个整数（unix 毫秒）"))?,
+                                None => {
+                                    let days: i64 = args
+                                        .optional("after-days")
+                                        .unwrap_or("1")
+                                        .parse()
+                                        .map_err(|_| Usage::from("--after-days 需要是一个整数"))?;
+                                    yanmo_core::time::now_millis() + days * DAY_MS
+                                }
+                            };
+                            DeferCondition::after_ms(due_at)
+                        }
+                        DeferKind::Written => {
+                            DeferCondition::when_written(args.required_i64("anchor-node")?)
+                        }
+                        DeferKind::Manual => DeferCondition::manual(),
+                    };
+                    store.defer_question_card(id, condition, &note, &trigger)?
+                }
+            };
+            json!({ "ok": true, "command": "question-defer", "card_id": id, "deferral_id": deferral_id })
+        }
+        "question-requeue" => {
+            let work = args.required_i64("work")?;
+            let now_ms = match args.optional("now-ms") {
+                Some(text) => text
+                    .parse::<i64>()
+                    .map_err(|_| Usage::from("--now-ms 需要是一个整数（unix 毫秒）"))?,
+                None => yanmo_core::time::now_millis(),
+            };
+            let trigger = args.optional("trigger").unwrap_or("cli").to_string();
+            let cards = store.requeue_due_questions(work, now_ms, &trigger)?;
+            json!({ "ok": true, "command": "question-requeue", "count": cards.len(), "cards": cards })
+        }
+        "question-deferrals" => {
+            // 两种问法：这本书里**还等着**的（默认），或某张卡的**全部历史**
+            if let Some(card) = args.optional("card") {
+                let card_id = card
+                    .parse::<i64>()
+                    .map_err(|_| Usage::from("--card 需要是一个整数（卡 id）"))?;
+                let history = store.card_deferrals(card_id)?;
+                json!({ "ok": true, "command": "question-deferrals", "card_id": card_id,
+                        "count": history.len(), "deferrals": history })
+            } else {
+                let work = args.required_i64("work")?;
+                let open = store.open_deferrals(work)?;
+                json!({ "ok": true, "command": "question-deferrals", "count": open.len(),
+                        "deferrals": open })
+            }
         }
         _ => return Ok(None),
     };

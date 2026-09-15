@@ -588,3 +588,92 @@ fn question_selection_and_preference_are_drivable_from_the_command_line() {
     assert_eq!(back["count"], 1, "解除静音之后又回到候选池");
     assert_eq!(back["questions"][0]["card_id"], second);
 }
+
+/// 叩问的延后队列：命令行能把「带条件延后 → 查队列 → 到条件重出」走一遍。
+///
+/// 盯三件事：延后**离开了候选池**、条件**没到就不回来**、到了才回来并留下可核对的痕迹
+/// （队列记录标掉 + 事件里写清是哪条条件到了）。
+#[test]
+fn question_deferral_queue_is_drivable_from_the_command_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let (work_id, chapter_id) = seed(dir.path(), "novel");
+    let work = work_id.to_string();
+    let anchor = format!("chapter:{chapter_id}");
+
+    let card = ok(
+        dir.path(),
+        "card-new",
+        &[
+            ("work", &work),
+            ("body", "占位"),
+            ("template", "chapter.empty_body"),
+            ("linked", &anchor),
+        ],
+    )["card_id"]
+        .as_i64()
+        .unwrap();
+    ok(dir.path(), "card-move", &[("id", &card.to_string()), ("to", "asked"), ("trigger", "push")]);
+
+    // ① 按预置档延后：界面上作者点的是"什么时候再问我"，不是一堆参数
+    let made = ok(
+        dir.path(),
+        "question-defer",
+        &[
+            ("id", &card.to_string()),
+            ("preset", "when_chapter_written"),
+            ("note", "等写到第二章再说"),
+            ("trigger", "author"),
+        ],
+    );
+    assert!(made["deferral_id"].as_i64().unwrap() > 0, "{made}");
+
+    // ② 队列读得回来；延后之后它不在候选池里
+    let queue = ok(dir.path(), "question-deferrals", &[("work", &work)]);
+    assert_eq!(queue["count"], 1, "{queue}");
+    assert_eq!(queue["deferrals"][0]["kind"], "written");
+    assert_eq!(queue["deferrals"][0]["anchor_node"], chapter_id);
+    assert_eq!(queue["deferrals"][0]["note"], "等写到第二章再说");
+    assert_eq!(ok(dir.path(), "question-select", &[("work", &work)])["count"], 0);
+
+    // ③ 那一章还没写 → 重出扫描什么都不做
+    assert_eq!(
+        ok(dir.path(), "question-requeue", &[("work", &work), ("trigger", "timer")])["count"],
+        0
+    );
+
+    // ④ 写完之后再扫 → 回池子，并留痕（哪条条件到了写得一清二楚）
+    ok(dir.path(), "write", &[("node", &chapter_id.to_string()), ("body", "第二章的正文。")]);
+    let back = ok(dir.path(), "question-requeue", &[("work", &work), ("trigger", "timer")]);
+    assert_eq!(back["count"], 1, "{back}");
+    assert_eq!(back["cards"][0], card);
+    assert_eq!(ok(dir.path(), "card-list", &[("work", &work), ("state", "pending")])["count"], 1);
+    let events = ok(dir.path(), "card-events", &[("id", &card.to_string())]);
+    let last = events["events"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!(last["op"], "requeue");
+    assert_eq!(last["trigger"], "timer:written");
+    assert_eq!(
+        ok(dir.path(), "question-deferrals", &[("work", &work)])["count"],
+        0,
+        "重出之后队列里不该还挂着它"
+    );
+
+    // ⑤ 时间档：给天数的写法也要能用；预置键写错报**用法错**（不是静默当成默认）
+    let second = ok(
+        dir.path(),
+        "card-new",
+        &[("work", &work), ("body", "第二条"), ("template", "chapter.empty_body")],
+    )["card_id"]
+        .as_i64()
+        .unwrap();
+    ok(dir.path(), "card-move", &[("id", &second.to_string()), ("to", "asked"), ("trigger", "push")]);
+    let timed = ok(
+        dir.path(),
+        "question-defer",
+        &[("id", &second.to_string()), ("kind", "time"), ("after-days", "3")],
+    );
+    assert!(timed["deferral_id"].as_i64().unwrap() > 0);
+    assert!(matches!(
+        run(dir.path(), "question-defer", &[("id", &second.to_string()), ("preset", "someday")]),
+        Err(CliError::Usage(_))
+    ));
+}

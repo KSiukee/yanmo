@@ -34,6 +34,10 @@ pub struct AttractorParams {
     pub derived_discount: f64,
     /// 自动派生链的深度上限（作者手动不受此限）
     pub max_derived_depth: usize,
+    /// 延后几次之后开始降权（防死循环）
+    pub max_deferrals: usize,
+    /// 延后降权的下限（**不清零**：作者主动翻还看得见）
+    pub defer_penalty_floor: f64,
     /// 冷却中的卡压到这个权重（不是 0：主动翻仍看得见）
     pub cooled_weight: f64,
 }
@@ -45,6 +49,8 @@ impl Default for AttractorParams {
             levels: StateMachineParams::default(),
             derived_discount: 0.5,
             max_derived_depth: 2,
+            max_deferrals: 3,
+            defer_penalty_floor: 0.1,
             cooled_weight: 0.05,
         }
     }
@@ -62,6 +68,8 @@ pub struct Candidate {
     pub last_asked_at: Option<i64>,
     /// 是不是**系统自动派生**出来的问题（作者手动基于灵感再问的那种不算）
     pub auto_derived: bool,
+    /// 这张卡被延后过几次（防死循环的账：延后多了就往下压）
+    pub defer_count: usize,
     /// 同类模板的学习权重（1.0 = 还没学过）
     pub template_weight: f64,
     /// 这一类模板被永久静音了吗
@@ -77,6 +85,8 @@ pub struct Gravity {
     pub novelty: f64,
     pub derived_discount: f64,
     pub template_weight: f64,
+    /// 延后降权（延后次数多到一定程度就往下压，**不清零**）
+    pub defer_penalty: f64,
     /// 这张卡现在处在哪个冷却档位
     pub level: FragmentLevel,
     /// 是不是在冷却里（排到后面，但仍看得见）
@@ -95,7 +105,9 @@ pub fn gravity(c: &Candidate, now_ms: i64, p: &AttractorParams) -> Gravity {
     let derived_discount = if c.auto_derived { p.derived_discount } else { 1.0 };
     // 静音的模板一头压到 0：候选池那边还会直接滤掉它（双保险，别指望调用方记得）
     let template_weight = if c.template_muted { 0.0 } else { c.template_weight.max(0.0) };
-    let mut total = timeliness * importance * novelty * derived_discount * template_weight;
+    let defer_penalty = defer_penalty(c.defer_count, p);
+    let mut total =
+        timeliness * importance * novelty * derived_discount * template_weight * defer_penalty;
     if cooled {
         total *= p.cooled_weight;
     }
@@ -106,9 +118,23 @@ pub fn gravity(c: &Candidate, now_ms: i64, p: &AttractorParams) -> Gravity {
         novelty,
         derived_discount,
         template_weight,
+        defer_penalty,
         level,
         cooled,
     }
+}
+
+/// **延后降权**（防死循环）：同一问题延后到第 `max_deferrals` 次起，引力每多一次对折一次，
+/// 一直到下限 [`AttractorParams::defer_penalty_floor`]。
+///
+/// 「不硬插队」的另一半：延后过的卡回到池子时排得**后面一点**，而不是被禁掉——
+/// 作者主动翻（pull）照样看得见、答得了。
+pub fn defer_penalty(defer_count: usize, p: &AttractorParams) -> f64 {
+    if defer_count < p.max_deferrals {
+        return 1.0;
+    }
+    let extra = (defer_count - p.max_deferrals) as i32;
+    (0.5_f64.powi(extra + 1)).max(p.defer_penalty_floor)
 }
 
 /// 排序：引力降序；同分按卡 id 升序——**同样的输入永远同样的顺序**（好复核、好写测试）。
@@ -136,6 +162,7 @@ mod tests {
             used_count: used,
             last_asked_at: asked_at,
             auto_derived: false,
+            defer_count: 0,
             template_weight: 1.0,
             template_muted: false,
         }
@@ -166,6 +193,22 @@ mod tests {
         assert_eq!(muted.total, 0.0, "静音的那一类引力为零");
     }
 
+    /// 防死循环：延后到第三次起对折，每多一次再对折，**有下限、不清零**。
+    #[test]
+    fn repeated_deferrals_push_the_card_back_without_killing_it() {
+        let p = AttractorParams::default();
+        assert_eq!(defer_penalty(0, &p), 1.0);
+        assert_eq!(defer_penalty(2, &p), 1.0, "没到次数不罚");
+        assert_eq!(defer_penalty(3, &p), 0.5);
+        assert_eq!(defer_penalty(4, &p), 0.25);
+        assert_eq!(defer_penalty(9, &p), p.defer_penalty_floor, "一路对折也不清零");
+
+        let now = 1_000 * 86_400_000;
+        let g = gravity(&Candidate { defer_count: 3, ..candidate(0, None) }, now, &p);
+        assert_eq!(g.defer_penalty, 0.5);
+        assert!((g.total - 0.5).abs() < 1e-12, "降权落在总引力上：{g:?}");
+    }
+
     #[test]
     fn rank_is_stable_on_ties() {
         let g = Gravity {
@@ -175,6 +218,7 @@ mod tests {
             novelty: 0.5,
             derived_discount: 1.0,
             template_weight: 1.0,
+            defer_penalty: 1.0,
             level: FragmentLevel::Short,
             cooled: false,
         };
