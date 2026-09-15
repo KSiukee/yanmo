@@ -59,10 +59,11 @@ impl Store {
                 },
             )?;
         }
-        tx.commit()?;
-
-        // 留痕：**记这一次导入这件事**（见文件头第 2 条）
-        self.record(
+        // 留痕：**记这一次导入这件事**（见文件头第 2 条）。与建书同一个事务——
+        // 否则留痕失败会把"书已经导进来了"报成失败，作者重试就得到第二本（评审：中等 6）。
+        Self::record_in(
+            &self.device_id,
+            &tx,
             "works",
             work_id,
             "import",
@@ -73,6 +74,7 @@ impl Store {
                 "naming": draft.naming.map(NamingStyle::as_str),
             }),
         )?;
+        tx.commit()?;
 
         let scale = self.imported_scale(work_id)?;
         Ok(ImportReport { work_id, scale, fingerprint: self.draft_fingerprint(work_id)? })

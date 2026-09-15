@@ -64,7 +64,7 @@ pub use writing::WritingDay;
 
 use std::path::Path;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, Transaction};
 
 use crate::db;
 use crate::error::Result;
@@ -134,15 +134,24 @@ impl Store {
         &self.device_id
     }
 
-    /// 追加一条变更日志。`entity` 用表名，`op` 用动词（create / rename / move / delete / write）。
-    pub(crate) fn record(
-        &self,
+    /// 追加一条变更日志：`entity` 用表名，`op` 用动词（create / rename / move / delete / write）。
+    ///
+    /// **留痕必须与它记录的那次写入同一个事务**——提交之后再留痕，一旦留痕失败
+    /// 就会把**已经落库的操作**报成失败，作者据此重试会做出第二本书 / 第二次改名
+    /// （2026-09-15 代码质量评审：中等 6）。所以这里只有一个在事务里留痕的入口。
+    ///
+    /// 它是关联函数而不是方法（不收 `&self`）：调用方正持有 `self.conn` 的事务借用，
+    /// 再借整个 `self` 会冲突——设备标识由调用方按字段借出来即可
+    /// （`&self.device_id` 与 `self.conn` 是不相交的两个字段）。
+    pub(crate) fn record_in(
+        device_id: &str,
+        tx: &Transaction<'_>,
         entity: &str,
         entity_id: i64,
         op: &str,
         payload: serde_json::Value,
     ) -> Result<()> {
-        db::append_op(&self.conn, &self.device_id, entity, entity_id, op, &payload.to_string())?;
+        db::append_op(tx, device_id, entity, entity_id, op, &payload.to_string())?;
         Ok(())
     }
 }

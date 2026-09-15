@@ -113,10 +113,10 @@ impl Store {
              FROM nodes n LEFT JOIN node_contents c ON c.node_id = n.id",
             [],
         )?;
+        // 数一数 + 留痕都在这个事务里（评审：中等 6）：报失败必须意味着"索引真的没重建"
+        let rows: i64 = tx.query_row("SELECT COUNT(*) FROM node_fts", [], |r| r.get(0))?;
+        Self::record_in(&self.device_id, &tx, "node_fts", 0, "reindex", json!({ "rows": rows }))?;
         tx.commit()?;
-
-        let rows: i64 = self.conn.query_row("SELECT COUNT(*) FROM node_fts", [], |r| r.get(0))?;
-        self.record("node_fts", 0, "reindex", json!({ "rows": rows }))?;
         Ok(rows as usize)
     }
 }

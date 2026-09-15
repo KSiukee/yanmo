@@ -190,59 +190,89 @@ impl Store {
         let naming = self.naming_style(work_id)?;
         let tx = self.conn.transaction()?;
         let id = create_node_in(&tx, work_id, parent_id, kind, title, naming)?;
-        tx.commit()?;
-
-        self.record(
+        // 留痕与建节点同一个事务（评审：中等 6）：否则留痕失败会把"章已经建好了"报成失败
+        Self::record_in(
+            &self.device_id,
+            &tx,
             "nodes",
             id,
             "create",
             json!({ "work_id": work_id, "parent_id": parent_id, "kind": kind.as_str() }),
         )?;
+        tx.commit()?;
         Ok(id)
     }
 
 
     /// 改名（标题经触发器同步进检索索引）。
     pub fn rename_node(&mut self, id: i64, title: &str) -> Result<()> {
-        rename_node_in(&self.conn, id, title)?;
-        self.record("nodes", id, "rename", json!({ "title": title.trim() }))
+        let tx = self.conn.transaction()?;
+        rename_node_in(&tx, id, title)?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "nodes",
+            id,
+            "rename",
+            json!({ "title": title.trim() }),
+        )?;
+        tx.commit()?;
+        Ok(())
     }
     /// 写一章的"一句话"（投稿包的大纲要用它）。
     ///
     /// 存的是作者的原话，**一个字的处理都不做**（不 trim、不分句）——作者写了什么就是什么；
     /// 日志里只记字数，不把整段话抄进变更留痕。
     pub fn set_node_summary(&mut self, id: i64, summary: &str) -> Result<()> {
-        let affected = self.conn.execute(
+        let tx = self.conn.transaction()?;
+        let affected = tx.execute(
             "UPDATE nodes SET summary = ?1, updated_at = ?2 WHERE id = ?3 AND deleted_at IS NULL",
             params![summary, now_millis(), id],
         )?;
         if affected == 0 {
             return Err(Error::invalid_with(codes::NODE_GONE, [("node_id", id.to_string())]));
         }
-        self.record("nodes", id, "set_summary", json!({ "chars": summary.chars().count() }))
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "nodes",
+            id,
+            "set_summary",
+            json!({ "chars": summary.chars().count() }),
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// 移动节点到新父级的第 `index` 位（越界会夹到末尾），并把两侧同级重排成密集序号。
     pub fn move_node(&mut self, id: i64, new_parent: Option<i64>, index: usize) -> Result<()> {
         let tx = self.conn.transaction()?;
         move_node_in(&tx, id, new_parent, index)?;
-        tx.commit()?;
-
-        self.record(
+        Self::record_in(
+            &self.device_id,
+            &tx,
             "nodes",
             id,
             "move",
             json!({ "parent_id": new_parent, "index": index }),
-        )
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// 软删除节点**及其整棵子树**，返回受影响的节点数。
     pub fn soft_delete_node(&mut self, id: i64) -> Result<usize> {
         let tx = self.conn.transaction()?;
         let affected = soft_delete_node_in(&tx, id)?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "nodes",
+            id,
+            "delete_subtree",
+            json!({ "affected": affected }),
+        )?;
         tx.commit()?;
-
-        self.record("nodes", id, "delete_subtree", json!({ "affected": affected }))?;
         Ok(affected)
     }
 }

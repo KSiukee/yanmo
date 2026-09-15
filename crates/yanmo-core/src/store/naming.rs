@@ -87,16 +87,20 @@ impl Store {
             node_edit::rename_node_in(&tx, rewrite.node_id, &rewrite.after)?;
             changed += 1;
         }
-        tx.commit()?;
-        // 留痕放在提交之后（与 `create_work` 同一口径）：留痕失败不该把"已经成功"的操作报成失败
+        // 留痕也在这个事务里（评审：中等 6）：报失败必须意味着"一整本真的没换过"。
+        // 原先这里写的是"留痕失败不该把已经成功的操作报成失败"，可把留痕放在提交之后再 `?`
+        // 恰好做成了那件错事——要么原子，要么别报失败。
         for rewrite in rewrites {
-            self.record(
+            Self::record_in(
+                &self.device_id,
+                &tx,
                 "nodes",
                 rewrite.node_id,
                 "rename",
                 json!({ "title": rewrite.after.trim() }),
             )?;
         }
+        tx.commit()?;
         Ok(changed)
     }
 }

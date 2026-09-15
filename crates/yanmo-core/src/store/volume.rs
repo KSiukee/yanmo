@@ -249,15 +249,17 @@ impl Store {
         } else {
             None
         };
-        tx.commit()?;
-
         let moved = tail.len();
-        self.record(
+        // 留痕也在这个事务里（评审：中等 6）：报失败必须意味着"整段卷真的没收"
+        Self::record_in(
+            &self.device_id,
+            &tx,
             "nodes",
             new_volume,
             "close_volume",
             json!({ "after": node_id, "moved": moved, "opened": opened }),
         )?;
+        tx.commit()?;
         Ok(CloseReceipt { volume_id: new_volume, opened_chapter: opened, moved })
     }
 
@@ -286,10 +288,16 @@ impl Store {
         for id in &run {
             node_edit::move_node_in(&tx, *id, Some(new_volume), usize::MAX)?;
         }
-        tx.commit()?;
-
         let moved = run.len();
-        self.record("nodes", new_volume, "close_volume", json!({ "at_root": true, "moved": moved }))?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "nodes",
+            new_volume,
+            "close_volume",
+            json!({ "at_root": true, "moved": moved }),
+        )?;
+        tx.commit()?;
         // 光标不动：他正写的那一章还是同一个节点，只是进了新卷
         Ok(CloseReceipt { volume_id: new_volume, opened_chapter: None, moved })
     }
@@ -331,15 +339,16 @@ impl Store {
         }
         // 软删：进回收站捞得回来——"一键撤销"反悔两次也不丢东西
         let deleted = node_edit::soft_delete_node_in(&tx, volume_id)?;
-        tx.commit()?;
-
         let moved = kids.len();
-        self.record(
+        Self::record_in(
+            &self.device_id,
+            &tx,
             "nodes",
             volume_id,
             "dissolve_volume",
             json!({ "moved": moved, "merged_into": merged_into, "deleted": deleted }),
         )?;
+        tx.commit()?;
         Ok(DissolveReceipt { moved, merged_into })
     }
 }

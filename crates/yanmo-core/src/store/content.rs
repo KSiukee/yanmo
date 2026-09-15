@@ -102,7 +102,7 @@ impl Store {
     /// **不记账**：快照回滚、备份恢复、导入这类"不是作者今天敲出来的字"走这条。
     /// 编辑器落盘走 [`Store::write_body_counted`]。
     pub fn write_body(&mut self, node_id: i64, body: &str) -> Result<ContentStats> {
-        self.write_body_inner(node_id, body, None)
+        self.write_body_inner(node_id, body, None, None)
     }
 
     /// 编辑器落盘：写正文，**并把这笔增减记进「每日码字」**。
@@ -115,14 +115,18 @@ impl Store {
         body: &str,
         tz_offset_minutes: i32,
     ) -> Result<ContentStats> {
-        self.write_body_inner(node_id, body, Some(tz_offset_minutes))
+        self.write_body_inner(node_id, body, Some(tz_offset_minutes), None)
     }
 
-    fn write_body_inner(
+    /// `extra_log`：要与这次写正文**同一个事务**提交的额外留痕（快照回滚用）——
+    /// 回滚报失败必须意味着真的没回滚，否则界面不会把编辑器换成旧正文（评审：中等 6）。
+    /// 内容没变（指纹相同）时整笔跳过，额外留痕也一样不写：那本来就没发生改动。
+    pub(super) fn write_body_inner(
         &mut self,
         node_id: i64,
         body: &str,
         count_tz: Option<i32>,
+        extra_log: Option<(&str, &str, serde_json::Value)>,
     ) -> Result<ContentStats> {
         // 这一章属于哪本书——记账要按书记（日历里可以只看一本书）
         let work_id = self.node_work(node_id)?;
@@ -162,16 +166,23 @@ impl Store {
             };
             super::writing::add_delta(&tx, work_id, &crate::time::local_date(now, tz), &delta)?;
         }
-        tx.commit()?;
-
-        self.record(
+        // 留痕与心跳都收进**同一个事务**：以前是提交之后再写，op-log 或心跳写不进去
+        // （磁盘满最典型）就把"正文其实已经存好了"报成保存失败，作者据此重试
+        // （评审：中等 6）。日志与数据同生共死，也不再有这种中间态。
+        Self::record_in(
+            &self.device_id,
+            &tx,
             "node_contents",
             node_id,
             "write",
             json!({ "char_count": stats.char_count, "word_count": stats.word_count }),
         )?;
+        if let Some((entity, op, payload)) = extra_log {
+            Self::record_in(&self.device_id, &tx, entity, node_id, op, payload)?;
+        }
         // 顺带记心跳与"最后落盘的是哪一章"，**不额外增加界面往返**（崩溃检测靠它）
-        self.note_heartbeat(Some(node_id), Some(&hash))?;
+        Self::note_heartbeat_in(&tx, Some(node_id), Some(&hash))?;
+        tx.commit()?;
         Ok(stats)
     }
 

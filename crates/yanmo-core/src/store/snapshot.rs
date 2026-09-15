@@ -48,8 +48,18 @@ impl Store {
         tz_offset_minutes: i32,
     ) -> Result<ContentStats> {
         self.node_work(node_id)?;
-        self.write_snapshot(node_id, body, reason, false)?;
-        self.record("snapshots", node_id, "emergency", json!({ "reason": reason }))?;
+        // 快照与留痕同一个事务（评审：中等 6）：报失败必须意味着"快照真的没留下"
+        let tx = self.conn.transaction()?;
+        write_snapshot_in(&tx, node_id, body, reason, false)?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "snapshots",
+            node_id,
+            "emergency",
+            json!({ "reason": reason }),
+        )?;
+        tx.commit()?;
         self.write_body_counted(node_id, body, tz_offset_minutes)
     }
 
@@ -60,8 +70,17 @@ impl Store {
         if self.latest_matches(node_id, &body)? {
             return Ok(false);
         }
-        self.write_snapshot(node_id, &body, reason, false)?;
-        self.record("snapshots", node_id, "snapshot", json!({ "reason": reason }))?;
+        let tx = self.conn.transaction()?;
+        write_snapshot_in(&tx, node_id, &body, reason, false)?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "snapshots",
+            node_id,
+            "snapshot",
+            json!({ "reason": reason }),
+        )?;
+        tx.commit()?;
         Ok(true)
     }
 
@@ -102,16 +121,35 @@ impl Store {
         if self.latest_matches(node_id, &body)? {
             return Ok(None);
         }
-        let id = self.write_snapshot(node_id, &body, "keep", true)?;
-        self.record("snapshots", node_id, "keep", json!({ "snapshot_id": id }))?;
+        let tx = self.conn.transaction()?;
+        let id = write_snapshot_in(&tx, node_id, &body, "keep", true)?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "snapshots",
+            node_id,
+            "keep",
+            json!({ "snapshot_id": id }),
+        )?;
+        tx.commit()?;
         Ok(Some(id))
     }
 
     /// 删掉一条快照（作者不要这一版了）。正文一个字都不动。
     pub fn drop_snapshot(&mut self, snapshot_id: i64) -> Result<()> {
         let node_id = self.snapshot_node(snapshot_id)?;
-        self.conn.execute("DELETE FROM snapshots WHERE id = ?1", params![snapshot_id])?;
-        self.record("snapshots", node_id, "drop", json!({ "snapshot_id": snapshot_id }))
+        let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM snapshots WHERE id = ?1", params![snapshot_id])?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "snapshots",
+            node_id,
+            "drop",
+            json!({ "snapshot_id": snapshot_id }),
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// **回滚**到某一条快照：先把当前这一版留底（`before_restore`），再把正文改回去。
@@ -123,21 +161,20 @@ impl Store {
         self.node_work(node_id)?; // 节点已进回收站就别回滚（不往回收站里写东西）
         let body = self.snapshot_body(snapshot_id)?;
         self.snapshot_if_changed(node_id, "before_restore")?;
-        let stats = self.write_body(node_id, &body)?;
-        self.record("snapshots", node_id, "restore", json!({ "snapshot_id": snapshot_id }))?;
+        // 正文写回与"回滚"那一笔留痕**同一个事务**（评审：中等 6）：报失败必须意味着真的没回滚，
+        // 否则界面不会把编辑器换成旧正文，下一次落盘会把旧正文又覆盖掉。
+        let stats = self.write_body_inner(
+            node_id,
+            &body,
+            None,
+            Some(("snapshots", "restore", json!({ "snapshot_id": snapshot_id }))),
+        )?;
         Ok((node_id, body, stats))
     }
 
     /// 滚动保留：清掉该章**多余**的自动快照，只留最近 `keep` 份；手动版本一份不动。
     pub fn prune_snapshots(&self, node_id: i64, keep: i64) -> Result<usize> {
-        Ok(self.conn.execute(
-            "DELETE FROM snapshots
-              WHERE node_id = ?1 AND pinned = 0
-                AND id NOT IN (SELECT id FROM snapshots
-                                WHERE node_id = ?1 AND pinned = 0
-                                ORDER BY id DESC LIMIT ?2)",
-            params![node_id, keep.max(0)],
-        )?)
+        prune_snapshots_in(&self.conn, node_id, keep)
     }
 
     // ── 内部 ────────────────────────────────────────────────────────────
@@ -163,15 +200,37 @@ impl Store {
             .ok_or_else(|| Error::invalid_with(codes::SNAPSHOT_NOT_FOUND, [("snapshot_id", snapshot_id.to_string())]))
     }
 
-    /// 落一条快照，并**顺手做滚动保留**（写快照的入口只有这一个，谁都绕不过裁剪）。
-    fn write_snapshot(&self, node_id: i64, body: &str, reason: &str, pinned: bool) -> Result<i64> {
-        self.conn.execute(
-            "INSERT INTO snapshots(node_id, body, char_count, reason, pinned, created_at)
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
-            params![node_id, body, text::count_chars(body), reason, i64::from(pinned), now_millis()],
-        )?;
-        let id = self.conn.last_insert_rowid();
-        self.prune_snapshots(node_id, AUTO_SNAPSHOTS_KEPT)?;
-        Ok(id)
-    }
+}
+
+/// 落一条快照，并**顺手做滚动保留**（写快照的入口只有这一个，谁都绕不过裁剪）。
+///
+/// 收 `&Connection`（事务也是它）：这样"写快照"能与调用方的其它写入、以及那一笔留痕
+/// 共用一个事务（评审：中等 6）。
+fn write_snapshot_in(
+    tx: &rusqlite::Connection,
+    node_id: i64,
+    body: &str,
+    reason: &str,
+    pinned: bool,
+) -> Result<i64> {
+    tx.execute(
+        "INSERT INTO snapshots(node_id, body, char_count, reason, pinned, created_at)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+        params![node_id, body, text::count_chars(body), reason, i64::from(pinned), now_millis()],
+    )?;
+    let id = tx.last_insert_rowid();
+    prune_snapshots_in(tx, node_id, AUTO_SNAPSHOTS_KEPT)?;
+    Ok(id)
+}
+
+/// 滚动保留：清掉该章**多余**的自动快照，只留最近 `keep` 份；手动版本一份不动。
+fn prune_snapshots_in(tx: &rusqlite::Connection, node_id: i64, keep: i64) -> Result<usize> {
+    Ok(tx.execute(
+        "DELETE FROM snapshots
+          WHERE node_id = ?1 AND pinned = 0
+            AND id NOT IN (SELECT id FROM snapshots
+                            WHERE node_id = ?1 AND pinned = 0
+                            ORDER BY id DESC LIMIT ?2)",
+        params![node_id, keep.max(0)],
+    )?)
 }

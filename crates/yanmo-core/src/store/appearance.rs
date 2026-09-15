@@ -318,8 +318,11 @@ impl Store {
                 stored.chapter_numbering = Some(parsed.as_str().to_string());
             }
         }
-        write_appearance(&self.conn, work_id, &stored)?;
-        self.record(
+        let tx = self.conn.transaction()?;
+        write_appearance(&tx, work_id, &stored)?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
             "settings",
             work_id.unwrap_or(0),
             "set_appearance",
@@ -334,20 +337,27 @@ impl Store {
                 "editor_line_height": patch.editor_line_height,
                 "editor_letter_spacing": patch.editor_letter_spacing,
             }),
-        )
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// 清掉一份偏好，**回到默认**（书的覆盖则是"回到继承全局"）。
     ///
     /// 与"传一个空 patch"不同：空 patch 是"这项不改"，这里是真的把记录抹掉。
     pub fn reset_appearance(&mut self, work_id: Option<i64>) -> Result<()> {
-        write_appearance(&self.conn, work_id, &Appearance::default())?;
-        self.record(
+        let tx = self.conn.transaction()?;
+        write_appearance(&tx, work_id, &Appearance::default())?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
             "settings",
             work_id.unwrap_or(0),
             "reset_appearance",
             serde_json::json!({}),
-        )
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// 读一份（全局或某本书的覆盖）；读不出来当没设过。

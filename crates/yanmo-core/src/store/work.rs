@@ -110,10 +110,25 @@ impl Store {
         // 新书默认中文：研墨的作者以中文写作为主；要写英文/日文，界面上一改就落库
         let work_id = insert_work(&tx, kind, title, WorkLanguage::Zh)?;
         let root_id = super::node_edit::insert_node(&tx, work_id, None, root_kind, &root_title, 0)?;
+        // 留痕与建书同一个事务：否则留痕失败会把"书已经建好了"报成失败，
+        // 作者重试就得到第二本空书（评审：中等 6）。
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "works",
+            work_id,
+            "create",
+            json!({ "kind": kind.as_str(), "title": title }),
+        )?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "nodes",
+            root_id,
+            "create",
+            json!({ "work_id": work_id, "root": true }),
+        )?;
         tx.commit()?;
-
-        self.record("works", work_id, "create", json!({ "kind": kind.as_str(), "title": title }))?;
-        self.record("nodes", root_id, "create", json!({ "work_id": work_id, "root": true }))?;
 
         Ok(Work {
             id: work_id,
@@ -204,14 +219,17 @@ impl Store {
         if title.is_empty() {
             return Err(Error::invalid(codes::WORK_TITLE_EMPTY));
         }
-        let affected = self.conn.execute(
+        let tx = self.conn.transaction()?;
+        let affected = tx.execute(
             "UPDATE works SET title = ?1, updated_at = ?2 WHERE id = ?3 AND deleted_at IS NULL",
             params![title, now_millis(), id],
         )?;
         if affected == 0 {
             return Err(Error::invalid_with(codes::WORK_GONE, [("work_id", id.to_string())]));
         }
-        self.record("works", id, "rename", json!({ "title": title }))
+        Self::record_in(&self.device_id, &tx, "works", id, "rename", json!({ "title": title }))?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// 改作品语言——**字数默认口径跟它走**（中文逐字 / 英文按词 / 日文逐字）。
@@ -219,14 +237,24 @@ impl Store {
     /// 只动 `works.language`：不碰任何正文，也不改已存的字数预聚合
     /// （那是"按词"口径算的固定一格，口径切换是显示层的事）。
     pub fn set_work_language(&mut self, id: i64, language: WorkLanguage) -> Result<()> {
-        let affected = self.conn.execute(
+        let tx = self.conn.transaction()?;
+        let affected = tx.execute(
             "UPDATE works SET language = ?1, updated_at = ?2 WHERE id = ?3 AND deleted_at IS NULL",
             params![language.as_str(), now_millis(), id],
         )?;
         if affected == 0 {
             return Err(Error::invalid_with(codes::WORK_GONE, [("work_id", id.to_string())]));
         }
-        self.record("works", id, "set_language", json!({ "language": language.as_str() }))
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "works",
+            id,
+            "set_language",
+            json!({ "language": language.as_str() }),
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// 写作品简介（投稿包的大纲要用它）。
@@ -234,14 +262,24 @@ impl Store {
     /// 同"每章一句话"一条规矩：**存作者的原话**，不 trim、不改标点；
     /// 日志只记字数，不把整段话抄进变更留痕。
     pub fn set_work_summary(&mut self, id: i64, summary: &str) -> Result<()> {
-        let affected = self.conn.execute(
+        let tx = self.conn.transaction()?;
+        let affected = tx.execute(
             "UPDATE works SET summary = ?1, updated_at = ?2 WHERE id = ?3 AND deleted_at IS NULL",
             params![summary, now_millis(), id],
         )?;
         if affected == 0 {
             return Err(Error::invalid_with(codes::WORK_GONE, [("work_id", id.to_string())]));
         }
-        self.record("works", id, "set_summary", json!({ "chars": summary.chars().count() }))
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "works",
+            id,
+            "set_summary",
+            json!({ "chars": summary.chars().count() }),
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// 记一次"打开"——书架排序只看它，不碰编辑时间。
@@ -258,14 +296,17 @@ impl Store {
 
     /// 软删除：只打时间戳，正文与历史都留着（回收站与误删撤销靠它）。
     pub fn soft_delete_work(&mut self, id: i64) -> Result<()> {
-        let affected = self.conn.execute(
+        let tx = self.conn.transaction()?;
+        let affected = tx.execute(
             "UPDATE works SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2 AND deleted_at IS NULL",
             params![now_millis(), id],
         )?;
         if affected == 0 {
             return Err(Error::invalid_with(codes::WORK_GONE, [("work_id", id.to_string())]));
         }
-        self.record("works", id, "delete", json!({}))
+        Self::record_in(&self.device_id, &tx, "works", id, "delete", json!({}))?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// 每卷目标章数——作者自己定的"大概几章一卷"，**按作品分开记**。
@@ -289,19 +330,28 @@ impl Store {
     pub fn set_volume_target(&mut self, work_id: i64, chapters: Option<i64>) -> Result<()> {
         ensure_alive(&self.conn, work_id)?;
         let key = volume_target_key(work_id);
+        let tx = self.conn.transaction()?;
         match chapters.filter(|n| *n > 0) {
             Some(count) => {
-                self.conn.execute(
+                tx.execute(
                     "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES(?1, ?2, ?3)",
                     params![key, count.to_string(), now_millis()],
                 )?;
             }
             None => {
-                self.conn
-                    .execute("DELETE FROM settings WHERE key = ?1", params![key])?;
+                tx.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
             }
         }
-        self.record("works", work_id, "set_volume_target", json!({ "chapters": chapters }))
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "works",
+            work_id,
+            "set_volume_target",
+            json!({ "chapters": chapters }),
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 }
 

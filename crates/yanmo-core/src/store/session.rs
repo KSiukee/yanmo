@@ -12,7 +12,7 @@
 //! ① 已经落盘的一个字都不少（WAL + 每次写入一个事务）；
 //! ② 关窗 / 失焦 / 切后台前**一定先落盘**，存不下去就不放行。
 
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
 use super::Store;
@@ -58,7 +58,7 @@ impl Store {
     pub fn begin_session(&mut self) -> Result<SessionReport> {
         let report = self.peek_session()?;
         let now = now_millis();
-        self.write_marker(&Marker {
+        Self::write_marker(&self.conn, &Marker {
             pid: std::process::id(),
             started_at: now,
             heartbeat_at: now,
@@ -74,7 +74,7 @@ impl Store {
     /// 界面启动走 [`Store::begin_session`]（启动即登记）；而"只想看一眼"的调用方
     /// （命令行工具、体检脚本）走这条——否则看一眼就把上一轮的状态盖掉了。
     pub fn peek_session(&self) -> Result<SessionReport> {
-        let previous = self.read_marker()?;
+        let previous = Self::read_marker(&self.conn)?;
         Ok(SessionReport {
             unclean: previous.as_ref().map(|m| !m.clean).unwrap_or(false),
             last_node_id: previous.as_ref().and_then(|m| m.node_id),
@@ -106,7 +106,17 @@ impl Store {
     ///
     /// `None` 表示"这一项保持不变"——它由落盘与读回校验顺带调用，不额外增加界面往返。
     pub(super) fn note_heartbeat(&self, node_id: Option<i64>, fingerprint: Option<&str>) -> Result<()> {
-        self.bump(node_id, fingerprint, true)
+        Self::bump(&self.conn, node_id, fingerprint, true)
+    }
+
+    /// 同上，但写进**给定的事务**：落盘时"正文 + 留痕 + 心跳"必须同生共死，
+    /// 否则心跳写不进去会把已经存好的正文报成"保存失败"（评审：中等 6）。
+    pub(super) fn note_heartbeat_in(
+        tx: &Transaction<'_>,
+        node_id: Option<i64>,
+        fingerprint: Option<&str>,
+    ) -> Result<()> {
+        Self::bump(tx, node_id, fingerprint, true)
     }
 
     /// 只推进"我还活着"的时间戳，**不碰干净标记**——读回校验（纯粹是读）走这条。
@@ -115,16 +125,16 @@ impl Store {
     /// 而界面在那之后还可能轮询一次读回校验——以前那次"读"会把 `clean` 标回 false，
     /// 于是下次启动误报"上次没有正常退出"。崩溃提醒是作者唯一的崩溃线索，误报几次就会被忽略。
     pub(super) fn touch(&self) -> Result<()> {
-        self.bump(None, None, false)
+        Self::bump(&self.conn, None, None, false)
     }
 
     fn bump(
-        &self,
+        conn: &Connection,
         node_id: Option<i64>,
         fingerprint: Option<&str>,
         dirty: bool,
     ) -> Result<()> {
-        let Some(mut marker) = self.read_marker()? else {
+        let Some(mut marker) = Self::read_marker(conn)? else {
             return Ok(()); // 没有会话标记（尚未 begin_session）：不凭空造一个
         };
         if let Some(id) = node_id {
@@ -138,23 +148,22 @@ impl Store {
             // 只有**写路径**才把"干净退出"撤掉：读一下不该被算成还没退干净
             marker.clean = false;
         }
-        self.write_marker(&marker)
+        Self::write_marker(conn, &marker)
     }
 
     fn mark_clean(&self) -> Result<()> {
-        let Some(mut marker) = self.read_marker()? else {
+        let Some(mut marker) = Self::read_marker(&self.conn)? else {
             return Ok(());
         };
         marker.clean = true;
         marker.heartbeat_at = now_millis();
-        self.write_marker(&marker)
+        Self::write_marker(&self.conn, &marker)
     }
 
     /// 读标记。读不出来（没写过 / JSON 坏了）时按**未正常退出**处理——
     /// 宁可多提醒一次，也不要漏报一次崩溃。
-    fn read_marker(&self) -> Result<Option<Marker>> {
-        let raw: Option<String> = self
-            .conn
+    fn read_marker(conn: &Connection) -> Result<Option<Marker>> {
+        let raw: Option<String> = conn
             .query_row(
                 "SELECT value FROM settings WHERE key = ?1",
                 params![SESSION_KEY],
@@ -173,9 +182,9 @@ impl Store {
         }))
     }
 
-    fn write_marker(&self, marker: &Marker) -> Result<()> {
+    fn write_marker(conn: &Connection, marker: &Marker) -> Result<()> {
         let json = serde_json::to_string(marker).unwrap_or_default();
-        self.conn.execute(
+        conn.execute(
             "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES(?1, ?2, ?3)",
             params![SESSION_KEY, json, now_millis()],
         )?;

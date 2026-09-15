@@ -159,11 +159,14 @@ impl Store {
         if !self.trashed("works", work_id)? {
             return Err(Error::invalid_with(codes::WORK_NOT_TRASHED, [("work_id", work_id.to_string())]));
         }
-        self.conn.execute(
+        let tx = self.conn.transaction()?;
+        tx.execute(
             "UPDATE works SET deleted_at = NULL WHERE id = ?1",
             params![work_id],
         )?;
-        self.record("works", work_id, "restore", json!({}))?;
+        // 留痕与恢复同一个事务（评审：中等 6）：不留"报失败但其实已经恢复了"的中间态
+        Self::record_in(&self.device_id, &tx, "works", work_id, "restore", json!({}))?;
+        tx.commit()?;
         Ok(1)
     }
 
@@ -249,14 +252,15 @@ impl Store {
         for (id, parent, order) in &anchors {
             super::node_edit::renumber(&tx, work_id, *parent, Some((*id, *order as usize)))?;
         }
-        tx.commit()?;
-
-        self.record(
+        Self::record_in(
+            &self.device_id,
+            &tx,
             "nodes",
             node_id,
             "restore",
             json!({ "with_parents": true, "renamed": rename_to.is_some() }),
         )?;
+        tx.commit()?;
         Ok(restored)
     }
 
@@ -323,7 +327,8 @@ impl Store {
                 [("id", node_id.to_string())],
             ));
         }
-        let removed = self.conn.execute(
+        let tx = self.conn.transaction()?;
+        let removed = tx.execute(
             "WITH RECURSIVE sub(id) AS (
                  SELECT id FROM nodes WHERE id = ?1
                  UNION ALL
@@ -332,7 +337,15 @@ impl Store {
              DELETE FROM nodes WHERE id IN (SELECT id FROM sub)",
             params![node_id],
         )?;
-        self.record("nodes", node_id, "purge", json!({ "removed": removed }))?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "nodes",
+            node_id,
+            "purge",
+            json!({ "removed": removed }),
+        )?;
+        tx.commit()?;
         Ok(removed)
     }
 
@@ -344,15 +357,23 @@ impl Store {
                 [("id", work_id.to_string())],
             ));
         }
-        let nodes: i64 = self.conn.query_row(
+        let tx = self.conn.transaction()?;
+        let nodes: i64 = tx.query_row(
             "SELECT COUNT(*) FROM nodes WHERE work_id = ?1",
             params![work_id],
             |r| r.get(0),
         )?;
         // 节点、正文、快照由外键级联带走（连接打开了 foreign_keys）
-        self.conn
-            .execute("DELETE FROM works WHERE id = ?1", params![work_id])?;
-        self.record("works", work_id, "purge", json!({ "nodes": nodes }))?;
+        tx.execute("DELETE FROM works WHERE id = ?1", params![work_id])?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "works",
+            work_id,
+            "purge",
+            json!({ "nodes": nodes }),
+        )?;
+        tx.commit()?;
         Ok(nodes as usize)
     }
 

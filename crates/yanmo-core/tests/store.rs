@@ -174,6 +174,53 @@ fn unchanged_content_is_a_no_op() {
     assert_eq!(op_log_count(&store), ops + 1, "内容变了才写库、才留痕");
 }
 
+/// 留痕写不进去 = 整笔写入不落库（2026-09-15 代码质量评审：中等 6）。
+///
+/// 以前是"先提交，再 `record(...)?`"：op-log 那一条 INSERT 失败（磁盘满是典型触发条件）
+/// 会让一次**已经成功**的写入报成失败——作者据此重试，导入会得到第二本书、改名会以为没改成。
+/// 现在留痕与数据同一个事务：**报失败必须意味着真的没改**。
+#[test]
+fn op_log_write_failure_rolls_the_data_back() {
+    use rusqlite::params;
+
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Article, "原名").unwrap();
+    let piece = store.list_nodes(work.id).unwrap()[0].id;
+    store.write_body(piece, "原来的正文").unwrap();
+
+    // 造一个必定失败的留痕写入：给 op_log 挂一个 BEFORE INSERT 触发器
+    store
+        .conn()
+        .execute_batch(
+            "CREATE TRIGGER block_oplog BEFORE INSERT ON op_log
+             BEGIN SELECT RAISE(ABORT, 'op-log 测试注入'); END;",
+        )
+        .unwrap();
+
+    // ① 单语句写入（改名）：报失败 ↔ 名字没变
+    assert!(store.rename_work(work.id, "改名后").is_err(), "留痕写不进去必须报失败");
+    let title: String = store
+        .conn()
+        .query_row("SELECT title FROM works WHERE id = ?1", params![work.id], |r| r.get(0))
+        .unwrap();
+    assert_eq!(title, "原名", "报失败必须意味着数据没改");
+
+    // ② 高频写路径（落盘）：报失败 ↔ 正文没变
+    assert!(
+        store.write_body_counted(piece, "留痕失败时不该留下的正文", 480).is_err(),
+        "留痕写不进去必须报失败"
+    );
+    assert_eq!(store.read_body(piece).unwrap(), "原来的正文", "报失败必须意味着正文没改");
+
+    // ③ 建节点：报失败 ↔ 没有多出一个节点
+    let before = store.list_nodes(work.id).unwrap().len();
+    assert!(
+        store.create_node(work.id, None, NodeKind::Chapter, "留痕失败的一章").is_err(),
+        "留痕写不进去必须报失败"
+    );
+    assert_eq!(store.list_nodes(work.id).unwrap().len(), before, "报失败必须意味着树没变");
+}
+
 #[test]
 fn soft_delete_hides_subtree_from_tree_and_search() {
     let (_dir, mut store) = fresh();
