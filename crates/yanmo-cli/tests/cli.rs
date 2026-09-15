@@ -677,3 +677,114 @@ fn question_deferral_queue_is_drivable_from_the_command_line() {
         Err(CliError::Usage(_))
     ));
 }
+
+/// 叩问的处置四件套：命令行能把「舍弃进冷却库 → 捞回 → 静音来源 → 记灵感」走一遍。
+///
+/// 盯的是处置的**语义**：舍弃不等于删除（冷却库读得回来、能捞回、还成了负样本）、
+/// 静音只让那个来源闭嘴（不是把叩问关掉）、记灵感**不动问题的状态**（正交）。
+#[test]
+fn question_disposition_is_drivable_from_the_command_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let (work_id, chapter_id) = seed(dir.path(), "novel");
+    let work = work_id.to_string();
+    let anchor = format!("chapter:{chapter_id}");
+
+    let ours = ok(
+        dir.path(),
+        "card-new",
+        &[("work", &work), ("body", "占位"), ("template", "chapter.empty_body"), ("linked", &anchor)],
+    )["card_id"]
+        .as_i64()
+        .unwrap();
+    let noisy = ok(
+        dir.path(),
+        "card-new",
+        &[
+            ("work", &work),
+            ("body", "来自模块的一条"),
+            ("template", "rhythm.length_swing"),
+            ("source", "module-x"),
+        ],
+    )["card_id"]
+        .as_i64()
+        .unwrap();
+    for id in [ours, noisy] {
+        ok(dir.path(), "card-move", &[("id", &id.to_string()), ("to", "asked"), ("trigger", "push")]);
+    }
+
+    // 舍弃 → 冷却库；它就是这类问题的负样本（同类模板当场降权）
+    ok(dir.path(), "card-move", &[("id", &noisy.to_string()), ("to", "discarded"), ("trigger", "author")]);
+    let cooled = ok(dir.path(), "question-cooled", &[("work", &work)]);
+    assert_eq!(cooled["count"], 1, "{cooled}");
+    assert_eq!(cooled["cooled"][0]["card_id"], noisy);
+    let weights = ok(dir.path(), "question-weights", &[]);
+    let learned = weights["weights"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["template_key"] == "rhythm.length_swing")
+        .expect("舍弃过的模板要留下学习记录");
+    assert!(learned["weight"].as_f64().unwrap() < 1.0, "{learned}");
+
+    // 捞回：回到池子，冷却库里没有它了
+    ok(dir.path(), "question-retrieve", &[("id", &noisy.to_string())]);
+    assert_eq!(ok(dir.path(), "question-cooled", &[("work", &work)])["count"], 0);
+
+    // 按来源静音：只让那个模块闭嘴
+    let muted = ok(dir.path(), "question-mute-source", &[("source", "module-x")]);
+    assert_eq!(muted["muted"][0], "module-x");
+    let picked = ok(dir.path(), "question-select", &[("work", &work)]);
+    assert!(
+        !picked["questions"].as_array().unwrap().iter().any(|q| q["card_id"] == noisy),
+        "静音来源的问题不出现：{picked}"
+    );
+    assert_eq!(ok(dir.path(), "question-sources", &[])["count"], 1);
+    assert_eq!(
+        ok(dir.path(), "question-mute-source", &[("source", "module-x"), ("off", "")])["muted"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+
+    // 记灵感：落一张带溯源的灵感卡，**问题的状态一个字节不动**
+    let idea = ok(
+        dir.path(),
+        "question-inspire",
+        &[("id", &ours.to_string()), ("body", "让他把那封信烧了"), ("source", "typed")],
+    );
+    let idea_id = idea["idea_id"].as_i64().unwrap();
+    let ideas = ok(dir.path(), "question-inspirations", &[("id", &ours.to_string())]);
+    assert_eq!(ideas["count"], 1, "{ideas}");
+    assert_eq!(ideas["inspirations"][0]["id"], idea_id);
+    assert_eq!(ideas["inspirations"][0]["derived_from"], ours);
+    assert_eq!(ideas["inspirations"][0]["body"], "让他把那封信烧了");
+    assert_eq!(
+        ok(dir.path(), "card-list", &[("work", &work), ("state", "asked")])["count"],
+        1,
+        "记灵感不改状态：这张卡还在「已问」上"
+    );
+
+    // 无值开关要真的传得下去（`--auto-derived` 这类：`optional()` 会把空串当成没给）
+    let derived = ok(
+        dir.path(),
+        "card-new",
+        &[
+            ("work", &work),
+            ("body", "由灵感派生的问题"),
+            ("template", "chapter.empty_body"),
+            ("derived-from", &ours.to_string()),
+            ("auto-derived", ""),
+        ],
+    )["card_id"]
+        .as_i64()
+        .unwrap();
+    let listed = ok(dir.path(), "card-list", &[("work", &work), ("state", "pending")]);
+    let row = listed["cards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|card| card["id"] == derived)
+        .expect("派生出来的卡要在列表里");
+    assert_eq!(row["auto_derived"], true, "开关没传下去就成了作者手动派生：{row}");
+}

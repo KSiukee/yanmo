@@ -124,7 +124,19 @@ pub const HELP_DEV: &str = "\
   question-requeue --work <id> [--now-ms <毫秒>] [--trigger <谁触发>]
                             把条件已满足的延后放回候选池（不给 --now-ms 就用此刻）
   question-deferrals --work <id> | --card <id>
-                            还等着的延后（条件是什么、作者填了什么）；给 --card 看某张卡的全部延后史";
+                            还等着的延后（条件是什么、作者填了什么）；给 --card 看某张卡的全部延后史
+  question-cooled --work <id>
+                            冷却库：这本书里舍弃过的卡（最近舍弃的在前）
+  question-retrieve --id <id> [--trigger <谁触发>]
+                            从冷却库捞回一张卡（舍弃不真删）
+  question-sources          已经静音的来源一览
+  question-mute-source --source <来源> [--off]
+                            按来源静音 / 解除静音（某个模块太吵时只让它闭嘴）
+  question-inspire --id <卡 id> --body <文本> | --body-file <路径> [--source typed|voice|mixed]
+                   [--trigger <谁触发>]
+                            记一条灵感：从这张卡勾出来，**不动它的状态**
+  question-inspirations --id <卡 id>
+                            这张卡勾出过哪些灵感";
 
 /// 这个构建的帮助文本（发布构建只列救援档）。
 pub fn help_text() -> String {
@@ -195,6 +207,15 @@ impl Args {
     /// 取一个可选选项。
     pub fn optional(&self, name: &str) -> Option<&str> {
         self.options.get(name).map(String::as_str).filter(|value| !value.is_empty())
+    }
+
+    /// **开关**：只问"给没给"，不看取值。
+    ///
+    /// 专门补的一条：`optional()` 会把空串当成"没给"（那对"取值型"选项是对的），
+    /// 于是 `--off` / `--auto-derived` 这类**无值开关**用它永远读不到——
+    /// 2026-09-15 落地延后队列时当场发现（`--off` 静默失效）。开关一律走这里。
+    pub fn flag(&self, name: &str) -> bool {
+        self.options.contains_key(name)
     }
 }
 

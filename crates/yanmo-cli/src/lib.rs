@@ -21,6 +21,9 @@ pub mod commands;
 /// 开发档命令：只在开发（debug）构建里编译——发布构建的二进制里没有这段代码。
 #[cfg(debug_assertions)]
 mod dev;
+/// 开发档里的叩问命令面（同样只在 debug 构建里）。
+#[cfg(debug_assertions)]
+mod dev_question;
 /// 交互菜单：**不带参数运行就是它**，给作者用的备用导出工具（任何构建都有）。
 pub mod menu;
 /// 从成稿导入（救援档里唯一会写库的那一条：默认干跑，`--yes` 才写）。

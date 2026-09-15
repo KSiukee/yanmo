@@ -27,7 +27,7 @@ use crate::CliError;
 /// 跑一次导入（`--yes` 决定写不写）。返回要打印的 JSON。
 pub(crate) fn run(args: &Args, store: &mut Store) -> Result<Value, CliError> {
     let from = PathBuf::from(args.required("from")?);
-    let write = args.options.contains_key("yes");
+    let write = args.flag("yes");
     let only = args.optional("work").map(str::to_string);
     let fallback = match args.optional("language") {
         None => WorkLanguage::Zh,

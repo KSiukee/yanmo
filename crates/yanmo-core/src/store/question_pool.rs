@@ -12,7 +12,7 @@ use std::collections::HashSet;
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use super::{Store, KIND_QUESTION};
+use super::Store;
 use crate::error::{codes, Error, Result};
 use crate::gravity::allowed_auto_derivation;
 use crate::question::{generate, ChapterFacts, QuestionDraft, RhythmParams, WritingElements};
@@ -20,7 +20,12 @@ use crate::question::{generate, ChapterFacts, QuestionDraft, RhythmParams, Writi
 /// 派生链最多往回追这么多跳——环与手改出来的深链都不许让它转到天荒地老。
 const MAX_DERIVATION_WALK: usize = 16;
 
-/// 一张卡往回追到根有几跳（不是派生出来的 = 0）。
+/// 一张碎片往回追到根有几跳（不是派生出来的 = 0）。
+///
+/// ⚠️ 只沿 `derived_from` 走、**与碎片的种类无关**：链条本来就会穿过灵感卡
+/// （问题 → 作者记的灵感 → 由这条灵感自动派生的问题）。要是只跟"问题卡"这一类走，
+/// 链走到灵感卡就断了，防自激的链深限制形同虚设——这是 2026-09-15 落地"记灵感"时
+/// 当场发现的真 bug（当时的实现只看 `frag_kind = 'question'` 的父级）。
 pub(super) fn derivation_depth(conn: &Connection, card_id: i64) -> Result<usize> {
     let mut depth = 0usize;
     let mut cursor = Some(card_id);
@@ -31,9 +36,8 @@ pub(super) fn derivation_depth(conn: &Connection, card_id: i64) -> Result<usize>
         depth += 1;
         let next: Option<Option<i64>> = conn
             .query_row(
-                "SELECT derived_from FROM fragments
-                  WHERE id = ?1 AND frag_kind = ?2 AND deleted_at IS NULL",
-                params![id, KIND_QUESTION],
+                "SELECT derived_from FROM fragments WHERE id = ?1 AND deleted_at IS NULL",
+                params![id],
                 |r| r.get(0),
             )
             .optional()?;
@@ -45,7 +49,8 @@ pub(super) fn derivation_depth(conn: &Connection, card_id: i64) -> Result<usize>
 /// 派生关系成立吗：
 ///
 /// - **自动派生的必须说清来源**（没来源的"自动"是说不通的）；
-/// - 来源必须是**同一本书**里的一张卡（跨书溯源等于把两本书的因果混在一起）；
+/// - 来源必须是**同一本书**里的一张碎片（问题卡或作者记下的灵感卡都行；跨书溯源
+///   等于把两本书的因果混在一起）；
 /// - **自动派生**不许越过链深上限——作者手动基于灵感再问，不受此限
 ///   （深度限制是为了防问题池自我膨胀，不是为了拦作者）。
 pub(super) fn validate_derivation(
@@ -61,9 +66,8 @@ pub(super) fn validate_derivation(
     let Some(source) = derived_from else { return Ok(()) };
     let owner: Option<i64> = conn
         .query_row(
-            "SELECT work_id FROM fragments
-              WHERE id = ?1 AND frag_kind = ?2 AND deleted_at IS NULL",
-            params![source, KIND_QUESTION],
+            "SELECT work_id FROM fragments WHERE id = ?1 AND deleted_at IS NULL",
+            params![source],
             |r| r.get(0),
         )
         .optional()?;

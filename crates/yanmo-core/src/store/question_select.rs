@@ -32,7 +32,13 @@ impl Store {
     pub fn select_questions(&self, work_id: i64, limit: usize) -> Result<Vec<SelectedQuestion>> {
         let params = AttractorParams::default();
         let now = now_millis();
-        let cards = self.question_cards(work_id, Some(QuestionState::Pending))?;
+        // 被静音的来源整批不摆到作者面前（"这个模块太吵"→只让它闭嘴，不关掉整个叩问）
+        let muted = self.muted_sources()?;
+        let cards: Vec<_> = self
+            .question_cards(work_id, Some(QuestionState::Pending))?
+            .into_iter()
+            .filter(|card| !muted.iter().any(|source| source == &card.source))
+            .collect();
         // 防死循环的账：这张卡被延后过几次（一次分组查询，不做 N+1）
         let deferred = self.defer_counts(work_id)?;
         let index: HashMap<i64, usize> =

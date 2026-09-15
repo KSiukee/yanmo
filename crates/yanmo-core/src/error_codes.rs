@@ -118,6 +118,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "自动派生的问题必须说清它是从哪张卡派生的" : [],
     CARD_DERIVATION_TOO_DEEP => "card.derivation_too_deep"
         : "自动派生已经到链深上限（最多 {max} 层）——作者自己顺着灵感再问不受此限" : ["max"],
+    IDEA_BODY_EMPTY => "idea.body_empty" : "灵感卡的内容不能为空" : [],
+    IDEA_NOT_FOUND => "idea.not_found" : "灵感卡不存在：{idea_id}" : ["idea_id"],
     QUESTION_DEFER_NEEDS_ANCHOR => "question.defer_needs_anchor"
         : "这张卡上找不到可用的章节锚点，「写完这一章再问」这一档用不了：{card_id}" : ["card_id"],
     QUESTION_DEFER_TIME_NOT_FUTURE => "question.defer_time_not_future"

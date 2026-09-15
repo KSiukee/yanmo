@@ -139,8 +139,22 @@ pub fn open_editor_target(data: State<'_, AppData>) -> Result<EditorSnapshot, Ap
         let target = store.ensure_editor_target_preferring(preferred)?;
         // 打开就记下是哪一章：万一还没写一个字就被杀，重开也能回到原位
         store.note_open_node(target.node_id)?;
+        sweep_question_requeues(store, target.work_id);
         snapshot_of(store, target)
     })
+}
+
+/// 顺手把**条件已经满足**的延后放回候选池（打开作品 / 打开一章 / 建完一章时各喊一声）。
+///
+/// 为什么挂在这儿：这三个都是**低频时机**（不是击键那条路），也正是"时机到了"的语义现场——
+/// 开新章意味着"写到某一章"那条条件可能刚刚满足。它失败不该连累开章，但也不许静默：
+/// 记进体检日志（[`crate::diagnose`]），验收时看得到。
+fn sweep_question_requeues(store: &mut Store, work_id: i64) {
+    if let Err(error) = store.requeue_due_questions(work_id, yanmo_core::time::now_millis(), "shell")
+    {
+        // 体检日志（开发者/验收看）：用英文，免得被"界面文案回潮"守卫当成界面文案
+        crate::diagnose::note(&format!("question requeue sweep failed: {error}"));
+    }
 }
 
 /// 切到指定章节：这一章必须**真的能编辑**（不存在 / 已删除 / 不承载正文都会明确报错）。
@@ -151,6 +165,7 @@ pub fn open_chapter(data: State<'_, AppData>, node_id: i64) -> Result<EditorSnap
     data.with_store(|store| {
         let target = store.editor_target(node_id)?;
         store.note_open_node(target.node_id)?;
+        sweep_question_requeues(store, target.work_id);
         snapshot_of(store, target)
     })
 }
@@ -163,6 +178,7 @@ pub fn open_work_target(data: State<'_, AppData>, work_id: i64) -> Result<Editor
     data.with_store(|store| {
         let target = store.work_target(work_id)?;
         store.note_open_node(target.node_id)?;
+        sweep_question_requeues(store, target.work_id);
         snapshot_of(store, target)
     })
 }
@@ -180,6 +196,7 @@ pub fn create_chapter(
         let created = store.add_chapter_after(node_id, yanmo_core::model::NodeKind::Chapter, &title)?;
         let target = store.editor_target(created)?;
         store.note_open_node(target.node_id)?;
+        sweep_question_requeues(store, target.work_id);
         snapshot_of(store, target)
     })
 }

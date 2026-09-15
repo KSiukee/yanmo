@@ -1,171 +1,59 @@
-//! 开发档命令：**只存在于开发（debug）构建**——发布构建里整个模块都不编译。
+//! 开发档里的**叩问命令面**：问题卡 / 选题 / 偏好 / 延后队列 / 处置四件套。
 //!
-//! 它们存在的理由不是"给作者用"，而是"让事故能被复现"：
-//! 起一次会话、写一段字、把进程保持开着、从外面中断它、再重启看结果——
-//! 这几步走界面做不成自动化（界面要人点），所以要有一条命令行能一次走完。
-//!
-//! 发布版把它们剃掉是有意的：**命令面越小，需要被信任的代码就越少**。
+//! 与 [`crate::dev`] 一样**只存在于开发构建**（发布版连解析分支都没有）。
+//! 单独成文件的原因：这一族命令已经长得比"会话与正文"那一族还大，
+//! 而且它的变化理由与它们不同（叩问在长，别把会话命令一起搅进来）。
 
 use serde_json::{json, Value};
-use yanmo_core::model::{NewQuestionCard, NodeKind, QuestionState, WorkKind};
+use yanmo_core::model::{NewQuestionCard, QuestionState};
 use yanmo_core::question::{DeferCondition, DeferKind, DeferPreset, DAY_MS};
-use yanmo_core::store::{BackupRequest, BackupTarget, SessionReport, Store};
-use yanmo_core::text;
+use yanmo_core::store::Store;
 
 use crate::args::{Args, Usage};
-use crate::dev_question;
+use crate::dev::body_of;
 use crate::CliError;
 
-/// 开发档命令允许哪些选项（发布构建里没人会调到这里）。
+/// 叩问这一族命令允许哪些选项。
 pub fn options(command: &str) -> Option<&'static [&'static str]> {
     match command {
-        "begin" | "report" | "abandon" => Some(&[]),
-        "note-open" | "fingerprint" | "end" => Some(&["node"]),
-        "write" => Some(&["node", "body", "body-file", "tz"]),
-        "backup" => Some(&["to", "keep", "tz", "device"]),
-        "new-work" => Some(&["kind", "title"]),
-        "new-node" => Some(&["work", "parent", "kind", "title"]),
-        "hold" => Some(&["node", "seconds"]),
-        // 叩问·问题卡：建卡 / 迁移 / 列卡 / 看迁移史。给外部演练台从命令行驱动 6 态状态机，
-        // 每一条迁移的证据（fragments.status + op-log）都能被外面独立核对。
-        _ => dev_question::options(command),
+        "card-new" => Some(&[
+            "work",
+            "body",
+            "body-file",
+            "source",
+            "template",
+            "importance",
+            "linked",
+            "derived-from",
+            "auto-derived",
+        ]),
+        "card-move" => Some(&["id", "to", "trigger"]),
+        "card-list" => Some(&["work", "state"]),
+        "card-events" => Some(&["id"]),
+        // 叩问·选题与偏好：草稿 / 排序 / 学到了什么 / 说好 / 解除静音
+        "question-draft" => Some(&["work"]),
+        "question-select" => Some(&["work", "limit"]),
+        "question-weights" => Some(&[]),
+        "question-praise" => Some(&["id", "trigger"]),
+        "question-unmute" => Some(&["template"]),
+        // 叩问·延后队列：带条件地延后 / 到条件重出 / 看还等着什么
+        "question-defer" => Some(&["id", "preset", "kind", "after-days", "after-ms", "anchor-node", "note", "trigger"]),
+        "question-requeue" => Some(&["work", "now-ms", "trigger"]),
+        "question-deferrals" => Some(&["work", "card"]),
+        // 叩问·处置：冷却库 / 捞回 / 按来源静音 / 记灵感
+        "question-cooled" => Some(&["work"]),
+        "question-retrieve" => Some(&["id", "trigger"]),
+        "question-sources" => Some(&[]),
+        "question-mute-source" => Some(&["source", "off"]),
+        "question-inspire" => Some(&["id", "body", "body-file", "source", "trigger"]),
+        "question-inspirations" => Some(&["id"]),
+        _ => None,
     }
 }
 
-fn session_json(report: SessionReport) -> Value {
-    json!({
-        "unclean": report.unclean,
-        "last_node_id": report.last_node_id,
-        "last_seen_at": report.last_seen_at,
-    })
-}
-
-/// 执行开发档命令；不是这一档就返回 `None`。
+/// 执行叩问这一族的命令；不是这一族就返回 `None`（交回给 [`crate::dev`]）。
 pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError> {
     let value = match args.command.as_str() {
-        "begin" => {
-            let report = store.begin_session()?;
-            json!({ "ok": true, "command": "begin", "session": session_json(report) })
-        }
-        "report" => {
-            let report = store.peek_session()?;
-            json!({ "ok": true, "command": "report", "session": session_json(report) })
-        }
-        "note-open" => {
-            let node = args.required_i64("node")?;
-            store.note_open_node(node)?;
-            json!({ "ok": true, "command": "note-open", "node_id": node })
-        }
-        "write" => {
-            let node = args.required_i64("node")?;
-            let body = body_of(args)?;
-            // 给了 `--tz <分钟>` 就走**编辑器那条路**（顺带记进「每日码字」账本）；
-            // 不给就只写正文——备份恢复、脚本灌数据这类"不是作者今天敲的字"走这条路。
-            // 时区偏移只有调用方知道（核心不猜作者在哪），东八区是 480。
-            let stats = match args.optional("tz") {
-                None => store.write_body(node, &body)?,
-                Some(text) => {
-                    let tz: i32 = text
-                        .parse()
-                        .map_err(|_| Usage::from("--tz 需要是一个整数（分钟，东八区 480）"))?;
-                    store.write_body_counted(node, &body, tz)?
-                }
-            };
-            json!({
-                "ok": true,
-                "command": "write",
-                "node_id": node,
-                "char_count": stats.char_count,
-                "word_count": stats.word_count,
-                "fingerprint": text::content_hash(&body),
-            })
-        }
-        "fingerprint" => {
-            let node = args.required_i64("node")?;
-            let fingerprint = store.body_fingerprint(node)?;
-            json!({ "ok": true, "command": "fingerprint", "node_id": node, "fingerprint": fingerprint })
-        }
-        "end" => {
-            let node = args.required_i64("node")?;
-            let written = store.end_session(node)?;
-            json!({ "ok": true, "command": "end", "snapshot_written": written })
-        }
-        "abandon" => {
-            store.abandon_session()?;
-            json!({ "ok": true, "command": "abandon" })
-        }
-        "backup" => {
-            // 演练用：把「多处备份」这条链从**外部**驱动起来（备份平时只挂在界面命令上，
-            // 而七层防线里的"备份目标不可写会怎样"必须有人能从外面验）。
-            // 与别的写库命令一样：只在开发构建里存在，发行版连解析分支都没有。
-            let to = std::path::PathBuf::from(args.required("to")?);
-            let keep = match args.optional("keep") {
-                None => 7usize,
-                Some(text) => text
-                    .parse()
-                    .map_err(|_| Usage::from("--keep 需要是一个整数（每个目标留几份）"))?,
-            };
-            let tz: i32 = match args.optional("tz") {
-                None => 0,
-                Some(text) => text
-                    .parse()
-                    .map_err(|_| Usage::from("--tz 需要是一个整数（分钟，东八区 480）"))?,
-            };
-            let request = BackupRequest {
-                data_dir: args.data.clone(),
-                targets: vec![BackupTarget {
-                    path: to.display().to_string(),
-                    // 卷标识由壳从 Windows 卷信息里取；命令行给不出来，留空（只影响"异盘提醒"）
-                    volume_id: String::new(),
-                    volume_label: String::new(),
-                    removable: false,
-                }],
-                keep,
-                tz_offset_minutes: tz,
-                device: args.optional("device").unwrap_or("cli").to_string(),
-            };
-            let report = store.backup_now(&request)?;
-            json!({
-                "ok": true,
-                "command": "backup",
-                "stamp": report.stamp,
-                "succeeded": report.succeeded(),
-                "skipped": report.skipped(),
-                "failed": report.failed(),
-                "outcomes": report.outcomes,
-            })
-        }
-        "new-work" => {
-            let kind = WorkKind::parse(args.required("kind")?)?;
-            let work = store.create_work(kind, args.required("title")?)?;
-            json!({ "ok": true, "command": "new-work", "work_id": work.id })
-        }
-        "new-node" => {
-            let work = args.required_i64("work")?;
-            let parent = match args.optional("parent") {
-                Some(text) => Some(
-                    text.parse::<i64>().map_err(|_| Usage::from("--parent 需要是一个整数"))?,
-                ),
-                None => None,
-            };
-            let kind = NodeKind::parse(args.required("kind")?)?;
-            let id = store.create_node(work, parent, kind, args.optional("title").unwrap_or(""))?;
-            json!({ "ok": true, "command": "new-node", "node_id": id })
-        }
-        "hold" => {
-            let node = args.required_i64("node")?;
-            let seconds = match args.optional("seconds") {
-                Some(text) => {
-                    text.parse::<u64>().map_err(|_| Usage::from("--seconds 需要是一个整数"))?
-                }
-                None => 30,
-            };
-            store.note_open_node(node)?;
-            // 把这次会话**保持开着**：调用方（脚本 / 人）要的就是"运行中"这个状态，
-            // 然后从外面把它中断掉。到时间自然退出也算一次正常结束。
-            std::thread::sleep(std::time::Duration::from_secs(seconds));
-            json!({ "ok": true, "command": "hold", "node_id": node, "seconds": seconds })
-        }
         // ── 叩问·问题卡：把状态机从外面驱动起来 ──────────────────────────
         //
         // 为什么这几条要在命令行上：六个态的可达性要能从**外部**驱动并核对，
@@ -385,15 +273,7 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
                         "deferrals": open })
             }
         }
-        _ => return dev_question::execute(args, store),
+        _ => return Ok(None),
     };
     Ok(Some(value))
-}
-
-/// 正文从哪来：`--body` 直接给，或 `--body-file` 从文件读（长文本用后者）。
-pub(super) fn body_of(args: &Args) -> Result<String, CliError> {
-    if let Some(path) = args.optional("body-file") {
-        return Ok(std::fs::read_to_string(path)?);
-    }
-    Ok(args.required("body")?.to_string())
 }

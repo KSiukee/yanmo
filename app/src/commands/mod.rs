@@ -18,6 +18,8 @@ pub mod compile;
 pub mod editor;
 /// 稿子放哪：位置查询、换位置、打开文件夹。
 pub mod location;
+/// 叩问：问题候选取材、处置四件套与记灵感（**只问不写**）。
+pub mod question;
 /// 从备份恢复：预览、体检、换库。
 pub mod restore;
 /// 每章版本快照：列表、对照、回滚。
