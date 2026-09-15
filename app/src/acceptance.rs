@@ -188,10 +188,11 @@ const SCRATCH_MARKER: &str = ".yanmo-acceptance-scratch";
 /// 就会把作者的真稿库连同里面的备份包一起 `remove_dir_all` 掉——**不可恢复**。
 /// 所以放行的只有两种目录：
 ///
-/// ① 系统临时目录之下的（默认的 `%TEMP%\yanmo-acceptance` 就是这一种：第一次跑时它还不存在）；
+/// ① 系统临时目录之下的**空目录**（自定义落点第一次跑时就是这种：还没东西可删）；
 /// ② 带沙箱记号文件的（验收模式自己造过、并留了记号的目录）。
 ///
 /// 另外，**只要里面有稿库又没记号，一律拒绝**——哪怕它落在临时目录里。
+/// 唯一的例外是那个默认沙箱路径（见 [`is_our_scratch`]）。
 /// 拒绝时一个字节都不动，并且把原因写成报告里的第一步。
 fn wipe_guard(dir: &Path) -> Result<(), String> {
     if !dir.exists() {
@@ -203,19 +204,17 @@ fn wipe_guard(dir: &Path) -> Result<(), String> {
     if real.parent().is_none() {
         return Err(format!("拒绝清理 {}：那是盘根目录。", real.display()));
     }
-    let marked = real.join(SCRATCH_MARKER).is_file();
-    let in_temp = std::env::temp_dir()
-        .canonicalize()
-        .map(|temp| real.starts_with(&temp))
-        .unwrap_or(false);
-    if !marked && !in_temp {
+    let temp = std::env::temp_dir();
+    let temp = temp.canonicalize().unwrap_or(temp);
+    let ours = is_our_scratch(&real, &temp, real.join(SCRATCH_MARKER).is_file());
+    if !ours && !real.starts_with(&temp) {
         return Err(format!(
             "拒绝清理 {}：它既不在系统临时目录下，也没有验收沙箱的记号（{SCRATCH_MARKER}）。\
              验收模式只清自己造的目录——换一个空目录，或者直接用默认的临时目录。",
             real.display()
         ));
     }
-    if !marked && real.join(yanmo_core::paths::DB_FILE).is_file() {
+    if !ours && real.join(yanmo_core::paths::DB_FILE).is_file() {
         return Err(format!(
             "拒绝清理 {}：里面有一份稿库（{}），却不像验收沙箱。\
              验收模式绝不碰真稿库——请换一个空目录。",
@@ -224,6 +223,19 @@ fn wipe_guard(dir: &Path) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// 这个目录算不算"验收自己的沙箱"（纯函数，便于单测）。
+///
+/// 两种算：① 带我们写的记号文件；② **就是那个默认沙箱路径**（`<临时目录>/yanmo-acceptance`）。
+///
+/// 为什么单列第 ② 条：0.50.0 及更早建的默认沙箱里没有记号文件，而"有稿库又无记号"那条规则
+/// 会把老用户的验收工具直接卡死——升级一次版本不该让人连自检都跑不了。默认路径是**我们定义的**
+/// 临时落点，按定义就是我们的（真稿库长在 `%TEMP%\yanmo-acceptance` 的概率可以忽略）。
+///
+/// 这条是**冒烟测试当场抓出来的**：新包跑默认路径返回了拒绝（退出码 4）。
+fn is_our_scratch(real: &Path, temp: &Path, marked: bool) -> bool {
+    marked || real == temp.join("yanmo-acceptance")
 }
 
 /// 造数据 + 量核心操作（**不开窗口**）。返回报告。
@@ -810,6 +822,27 @@ mod tests {
         assert!(
             report.steps.iter().any(|step| step.name == "造数据" && !step.note.is_empty()),
             "拒绝原因要写进报告"
+        );
+    }
+
+    /// **默认沙箱路径按定义就是我们的**：0.50.0 建的它没有记号文件，升级之后也不该被卡死。
+    /// 这条是冒烟测试当场抓出来的——新包跑默认路径返回了拒绝（退出码 4），
+    /// 因为那个目录里还躺着上一次验收留下的库。
+    #[test]
+    fn the_default_scratch_path_is_ours_even_without_a_marker() {
+        let temp = PathBuf::from("tmp-root");
+        assert!(
+            is_our_scratch(&temp.join("yanmo-acceptance"), &temp, false),
+            "默认沙箱路径：没有记号也算我们的"
+        );
+        assert!(is_our_scratch(&temp.join("别处"), &temp, true), "有记号就算我们的");
+        assert!(
+            !is_our_scratch(&temp.join("我的稿子"), &temp, false),
+            "临时目录里别的目录不算我们的（那可能真是稿库落在这儿了）"
+        );
+        assert!(
+            !is_our_scratch(&temp.join("yanmo-acceptance-bak"), &temp, false),
+            "名字像但不是那个路径，不算"
         );
     }
 }
