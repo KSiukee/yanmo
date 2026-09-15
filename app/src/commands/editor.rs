@@ -374,7 +374,8 @@ fn write_escape(
     // 候选至少有一个（数据目录兜底）；"一个都没有"也按"写不进去"报，不 panic
     Err(failure.unwrap_or_else(|| {
         ApiError::with("shell.export_write_failed", [("path", String::new())])
-            .caused_by("逃生导出没有可用的落点")
+            // i18n-allow-next-line: 开发者兜底（候选至少有一站，这一支构造上到不了），不进界面
+            .caused_by("no escape candidate")
     }))
 }
 
