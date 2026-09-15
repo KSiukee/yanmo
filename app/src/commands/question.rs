@@ -31,6 +31,8 @@ pub struct QuestionBoardDto {
     pub cooled: Vec<CooledCard>,
     /// 已经静音的来源（可解除）
     pub muted_sources: Vec<String>,
+    /// 已经静音的**类别**（模板键；界面按字典渲染成"这类别再问"，可解除）
+    pub muted_classes: Vec<String>,
     /// 还在等条件的延后（"有 N 条在等你说的那个时候"）
     pub open_deferrals: Vec<Deferral>,
 }
@@ -53,6 +55,7 @@ fn board(store: &Store, work_id: i64) -> yanmo_core::Result<QuestionBoardDto> {
         selected: store.select_questions(work_id, 5)?,
         cooled: store.cooled_questions(work_id)?,
         muted_sources: store.muted_sources()?,
+        muted_classes: store.muted_templates()?,
         open_deferrals: store.open_deferrals(work_id)?,
     })
 }
@@ -166,6 +169,34 @@ pub fn question_mute_class(
     data.with_store(|store| {
         let work_id = store.question_card(card_id)?.work_id;
         store.move_question_card(card_id, QuestionState::Muted, "author")?;
+        board(store, work_id)
+    })
+}
+
+/// 解除**这一类**的静音：面板上"这类别再问"的回头路（少了它就是个只进不出的开关）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn question_unmute_class(
+    data: State<'_, AppData>,
+    work_id: i64,
+    template_key: String,
+) -> Result<QuestionBoardDto, ApiError> {
+    crate::acceptance::note_command("question_unmute_class");
+    data.with_store(|store| {
+        store.unmute_template(&template_key)?;
+        board(store, work_id)
+    })
+}
+
+/// **别等了**：取消延后、当场回候选池（"我自己想起来再问"那条的回头路）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn question_undefer(
+    data: State<'_, AppData>,
+    card_id: i64,
+) -> Result<QuestionBoardDto, ApiError> {
+    crate::acceptance::note_command("question_undefer");
+    data.with_store(|store| {
+        let work_id = store.question_card(card_id)?.work_id;
+        store.cancel_deferral(card_id, "author")?;
         board(store, work_id)
     })
 }

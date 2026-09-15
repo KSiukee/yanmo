@@ -58,6 +58,19 @@ export function dueLabel(due_at_ms: number | null, now_ms: number): string {
   return t("flow.waiting.due_days", { days });
 }
 
+/**
+ * 一类问题怎么称呼：用它的模板句当名字（`question.template.*`）。
+ *
+ * 字典里没有这条模板（模块自己提的问题）时，`t()` 会**原样返回键**——
+ * 屏幕上出现一个 `some.module.template` 是一眼看得见的错，比空着强。
+ */
+export function classLabel(template_key: string): string {
+  const key = `question.template.${template_key}`;
+  const text = t(key);
+  // 字典里没有这条模板（模块自己提的问题）：露**模板键本身**，别把查找键整个摆出来
+  return text === key ? template_key : text;
+}
+
 /** 来源怎么称呼：核心自带的说人话，模块提交的照它的名字。 */
 export function sourceLabel(source: string): string {
   return source === "core" ? t("flow.source.core") : t("flow.source.module", { name: source });

@@ -129,6 +129,8 @@ pub const HELP_DEV: &str = "\
                             冷却库：这本书里舍弃过的卡（最近舍弃的在前）
   question-retrieve --id <id> [--trigger <谁触发>]
                             从冷却库捞回一张卡（舍弃不真删）
+  question-undefer --id <id> [--trigger <谁触发>]
+                            「别等了」：取消延后、当场回候选池
   question-sources          已经静音的来源一览
   question-mute-source --source <来源> [--off]
                             按来源静音 / 解除静音（某个模块太吵时只让它闭嘴）

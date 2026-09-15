@@ -65,6 +65,8 @@ export interface QuestionBoard {
   selected: SelectedQuestion[];
   cooled: CooledCard[];
   muted_sources: string[];
+  /** 已静音的**类别**（模板键；界面按字典渲染成"这类别再问"） */
+  muted_classes: string[];
   open_deferrals: Deferral[];
 }
 
@@ -125,6 +127,14 @@ export const questionRetrieve = (card_id: number) =>
 /** 记灵感：不动问题状态。 */
 export const questionInspire = (card_id: number, body: string, source: string) =>
   call<Inspiration>(COMMANDS.questionInspire, { card_id, body, source });
+
+/** 解除**这一类**的静音（"这类别再问"的回头路）。 */
+export const questionUnmuteClass = (work_id: number, template_key: string) =>
+  call<QuestionBoard>(COMMANDS.questionUnmuteClass, { work_id, template_key });
+
+/** **别等了**：取消延后、当场回候选池。 */
+export const questionUndefer = (card_id: number) =>
+  call<QuestionBoard>(COMMANDS.questionUndefer, { card_id });
 
 /** 按来源静音 / 解除。 */
 export const questionMuteSource = (work_id: number, source: string) =>

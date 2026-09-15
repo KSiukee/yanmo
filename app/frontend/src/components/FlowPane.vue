@@ -28,11 +28,13 @@ import {
   questionRequeueDue,
   questionRetrieve,
   questionSync,
+  questionUndefer,
+  questionUnmuteClass,
   questionUnmuteSource,
   type QuestionBoard,
   type SelectedQuestion,
 } from "../api/question.ts";
-import { dueLabel, renderDraft, sourceLabel } from "./question.ts";
+import { classLabel, dueLabel, renderDraft, sourceLabel } from "./question.ts";
 import QuestionCard from "./QuestionCard.vue";
 import DeferMenu from "./DeferMenu.vue";
 import InspireBox from "./InspireBox.vue";
@@ -142,6 +144,7 @@ const selected = computed(() => board.value?.selected ?? []);
 const cooled = computed(() => board.value?.cooled ?? []);
 const waiting = computed(() => board.value?.open_deferrals ?? []);
 const mutedSources = computed(() => board.value?.muted_sources ?? []);
+const mutedClasses = computed(() => board.value?.muted_classes ?? []);
 
 onMounted(() => {
   void refresh();
@@ -222,6 +225,9 @@ watch(() => props.workId, () => void refresh());
         <span v-else-if="item.kind === 'written'">{{ t("flow.waiting.written") }}</span>
         <span v-else>{{ t("flow.waiting.manual") }}</span>
         <em v-if="item.note"> · {{ t("flow.waiting.note", { note: item.note }) }}</em>
+        <button class="link" :disabled="busy" @click="dispose(() => questionUndefer(item.card_id))">
+          {{ t("flow.waiting.cancel") }}
+        </button>
       </p>
     </section>
 
@@ -245,6 +251,24 @@ watch(() => props.workId, () => void refresh());
           </button>
         </div>
       </article>
+    </section>
+
+    <!-- 已静音的类别：「这类别再问」的回头路 -->
+    <section v-if="mutedClasses.length > 0">
+      <h3 class="sec">{{ t("flow.muted_classes") }}</h3>
+      <p class="pane__hint">{{ t("flow.muted_classes.hint") }}</p>
+      <div class="row">
+        <span v-for="key in mutedClasses" :key="key" class="chip">
+          {{ classLabel(key) }}
+          <button
+            class="link"
+            :disabled="busy"
+            @click="dispose(() => questionUnmuteClass(props.workId as number, key))"
+          >
+            ✕
+          </button>
+        </span>
+      </div>
     </section>
 
     <!-- 已静音的来源：能一键让它闭嘴，也能解除 -->

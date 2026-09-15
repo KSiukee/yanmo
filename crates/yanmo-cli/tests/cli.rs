@@ -765,6 +765,53 @@ fn question_disposition_is_drivable_from_the_command_line() {
         "记灵感不改状态：这张卡还在「已问」上"
     );
 
+    // 「这类别再问」与它的回头路：静音之后权重表里能看到停用，解除之后又启用
+    ok(dir.path(), "card-move", &[("id", &ours.to_string()), ("to", "muted"), ("trigger", "author")]);
+    let muting = ok(dir.path(), "question-weights", &[]);
+    let row = muting["weights"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["template_key"] == "chapter.empty_body")
+        .expect("静音过的类别要留下记录");
+    assert_eq!(row["enabled"], false, "{row}");
+    ok(dir.path(), "question-unmute", &[("template", "chapter.empty_body")]);
+    let lifted = ok(dir.path(), "question-weights", &[]);
+    let row = lifted["weights"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["template_key"] == "chapter.empty_body")
+        .unwrap();
+    assert_eq!(row["enabled"], true, "解除静音之后又启用：{row}");
+
+    // 「我自己想起来再问」的回头路：别等了 → 当场回候选池、队列里不再挂着它
+    let again = ok(
+        dir.path(),
+        "card-new",
+        &[("work", &work), ("body", "回头再说"), ("template", "review.recent_chapter"), ("linked", &anchor)],
+    )["card_id"]
+        .as_i64()
+        .unwrap();
+    ok(dir.path(), "card-move", &[("id", &again.to_string()), ("to", "asked"), ("trigger", "push")]);
+    ok(
+        dir.path(),
+        "question-defer",
+        &[("id", &again.to_string()), ("preset", "only_when_asked"), ("note", "等我缓过来")],
+    );
+    assert_eq!(ok(dir.path(), "question-deferrals", &[("work", &work)])["count"], 1);
+    ok(dir.path(), "question-undefer", &[("id", &again.to_string())]);
+    assert_eq!(ok(dir.path(), "question-deferrals", &[("work", &work)])["count"], 0, "取消之后队列里没有它");
+    let pending = ok(dir.path(), "card-list", &[("work", &work), ("state", "pending")]);
+    assert!(
+        pending["cards"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|card| card["id"] == again),
+        "取消延后之后它回到待问：{pending}"
+    );
+
     // 无值开关要真的传得下去（`--auto-derived` 这类：`optional()` 会把空串当成没给）
     let derived = ok(
         dir.path(),

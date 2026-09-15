@@ -5,6 +5,7 @@
 //! 记灵感**不动问题状态**、灵感能溯源回问题、问题→灵感→问题 的链深照样卡得住。
 
 use yanmo_core::model::{NewQuestionCard, NodeKind, QuestionState, WorkKind};
+use yanmo_core::question::DeferCondition;
 use yanmo_core::store::Store;
 
 fn fresh() -> (tempfile::TempDir, Store) {
@@ -126,6 +127,47 @@ fn recording_an_inspiration_never_touches_the_question() {
         "idea.body_empty"
     );
     assert_eq!(store.inspiration(9999).unwrap_err().code(), "idea.not_found");
+}
+
+/// 两个**回头路**：静音的类别能解除、延后能取消。
+///
+/// 少了它们，界面里就出现两个只进不出的开关——这个项目最烦的就是"出不去"。
+#[test]
+fn both_new_switches_have_a_way_back() {
+    let (_dir, mut store) = fresh();
+    let work = seeded(&mut store);
+
+    // ① 「这类别再问」→ 类别静音；解除之后同类的问题又回候选池
+    let muted = store.create_question_card(&card(work, "core")).unwrap();
+    store.move_question_card(muted, QuestionState::Muted, "author").unwrap();
+    assert_eq!(store.muted_templates().unwrap(), vec!["chapter.empty_body".to_string()]);
+    let back = store.create_question_card(&card(work, "core")).unwrap();
+    assert!(
+        store.select_questions(work, 10).unwrap().is_empty(),
+        "这一类被静音了，新卡也不该出现"
+    );
+    store.unmute_template("chapter.empty_body").unwrap();
+    assert!(store.muted_templates().unwrap().is_empty(), "解除之后名单里没有它");
+    assert!(
+        store.select_questions(work, 10).unwrap().iter().any(|q| q.card_id == back),
+        "解除之后这一类的问题又回来了"
+    );
+
+    // ② 「我自己想起来再问」→ 延后；取消之后当场回候选池，记录也标掉了
+    store.move_question_card(back, QuestionState::Asked, "push").unwrap();
+    store
+        .defer_question_card(back, DeferCondition::manual(), "回头再说", "author")
+        .unwrap();
+    assert!(store.select_questions(work, 10).unwrap().is_empty(), "延后期间不出现");
+    store.cancel_deferral(back, "author").unwrap();
+    assert_eq!(store.question_card(back).unwrap().state, QuestionState::Pending);
+    assert!(store.open_deferrals(work).unwrap().is_empty(), "那条记录要标掉，不能再挂着");
+    assert_eq!(store.card_deferrals(back).unwrap()[0].note, "回头再说", "作者那句话留着");
+    assert!(store.select_questions(work, 10).unwrap().iter().any(|q| q.card_id == back));
+
+    // 不在延后态的卡不能"取消延后"（状态机当场拒）
+    let err = store.cancel_deferral(back, "author").unwrap_err();
+    assert_eq!(err.code(), "card.illegal_transition");
 }
 
 /// 真 bug 回归（2026-09-15 落地"记灵感"时当场发现）：

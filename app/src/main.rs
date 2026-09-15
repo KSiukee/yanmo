@@ -236,6 +236,8 @@ fn main() {
             commands::question::question_praise,
             commands::question::question_mute_class,
             commands::question::question_retrieve,
+            commands::question::question_unmute_class,
+            commands::question::question_undefer,
             commands::question::question_inspire,
             commands::question::question_mute_source,
             commands::question::question_unmute_source,

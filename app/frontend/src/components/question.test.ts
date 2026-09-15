@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { dueLabel, reasonLines, renderDraft, sourceLabel } from "./question.ts";
+import { classLabel, dueLabel, reasonLines, renderDraft, sourceLabel } from "./question.ts";
 import type { Gravity, QuestionDraft } from "../api/question.ts";
 
 const draft: QuestionDraft = {
@@ -60,6 +60,13 @@ test("等多久：到点了说到了，没到说几天", () => {
   assert.equal(dueLabel(null, now), "不知道什么时候");
   assert.equal(dueLabel(now - 1, now), "到时候了");
   assert.ok(dueLabel(now + 2 * 86_400_000, now).includes("2"));
+});
+
+test("类别称呼：字典里有就用模板句，没有就原样露键", () => {
+  const known = classLabel("chapter.empty_body");
+  assert.notEqual(known, "chapter.empty_body", "字典里有这条模板，不该露出键名");
+  assert.ok(known.length > 0);
+  assert.equal(classLabel("module.own.template"), "module.own.template", "认不出来的键原样露出来（不静默）");
 });
 
 test("来源称呼：核心自带给一句人话", () => {

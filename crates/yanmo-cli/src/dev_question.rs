@@ -43,6 +43,7 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         // 叩问·处置：冷却库 / 捞回 / 按来源静音 / 记灵感
         "question-cooled" => Some(&["work"]),
         "question-retrieve" => Some(&["id", "trigger"]),
+        "question-undefer" => Some(&["id", "trigger"]),
         "question-sources" => Some(&[]),
         "question-mute-source" => Some(&["source", "off"]),
         "question-inspire" => Some(&["id", "body", "body-file", "source", "trigger"]),
@@ -220,6 +221,13 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
             let work = args.required_i64("work")?;
             let cooled = store.cooled_questions(work)?;
             json!({ "ok": true, "command": "question-cooled", "count": cooled.len(), "cooled": cooled })
+        }
+        "question-undefer" => {
+            // 别等了：取消延后、当场回候选池（并把那条还挂着的延后记录标掉）
+            let id = args.required_i64("id")?;
+            let trigger = args.optional("trigger").unwrap_or("cli").to_string();
+            store.cancel_deferral(id, &trigger)?;
+            json!({ "ok": true, "command": "question-undefer", "card_id": id })
         }
         "question-retrieve" => {
             // 从冷却库捞回：状态机那条 discarded → pending 的正规出口

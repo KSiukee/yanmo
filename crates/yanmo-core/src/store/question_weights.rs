@@ -111,6 +111,23 @@ impl Store {
         Ok(out)
     }
 
+    /// 已经静音的**类别**（模板）——界面要能看见它们、也能一键解除。
+    ///
+    /// 与"按来源静音"是两把不同的闸：**信不过这一类问题**（静音模板）vs **这个模块太吵**
+    /// （静音来源）。两者都必须是"看得见的开关"，不然就成了只进不出。
+    pub fn muted_templates(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT template_key FROM question_template_weights
+              WHERE enabled = 0 ORDER BY template_key",
+        )?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
     /// **解除某一类的静音**：重新启用，并把权重放回中性（历史计数留着——那是"教过什么"的记录）。
     ///
     /// 与「某张卡从静音态回到待问」是两件事：那个是**卡的状态**，这个是**这一类的开关**。

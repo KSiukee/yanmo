@@ -97,6 +97,25 @@ impl Store {
         self.defer_question_card(card_id, condition, note, trigger)
     }
 
+    /// **取消延后**（作者说"别等了，现在就问"）：回候选池，并把那条还挂着的记录标掉。
+    ///
+    /// 与"条件满足自动重出"走同一个出口，区别只在于这一条是作者当场决定的——
+    /// 少了它，"我自己想起来再问"就成了界面里出不去的死路（只有命令行能捞）。
+    /// 卡不在延后态时会被状态机拒掉（这条动作只对"在等着的"有意义）。
+    pub fn cancel_deferral(&mut self, card_id: i64, trigger: &str) -> Result<()> {
+        let card = self.question_card(card_id)?;
+        let now = now_millis();
+        let tx = self.conn.transaction()?;
+        move_card_in(&tx, &self.device_id, &card, QuestionState::Pending, trigger)?;
+        tx.execute(
+            "UPDATE question_deferrals SET resolved_at = ?1
+              WHERE card_id = ?2 AND resolved_at IS NULL",
+            params![now, card_id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// 把**条件已经满足**的延后放回候选池：回「待问」+ 标掉那条记录（同一事务）。
     ///
     /// 返回重出的卡 id（按延后先后）。顺手把"卡已经不在延后态了"的旧记录标掉——

@@ -588,6 +588,8 @@ export const COMMANDS = {
   questionPraise: "question_praise",
   questionMuteClass: "question_mute_class",
   questionRetrieve: "question_retrieve",
+  questionUnmuteClass: "question_unmute_class",
+  questionUndefer: "question_undefer",
   questionInspire: "question_inspire",
   questionMuteSource: "question_mute_source",
   questionUnmuteSource: "question_unmute_source",
