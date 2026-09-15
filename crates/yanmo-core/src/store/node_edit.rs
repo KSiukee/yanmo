@@ -186,30 +186,10 @@ impl Store {
         kind: NodeKind,
         title: &str,
     ) -> Result<i64> {
-        super::work::ensure_alive(&self.conn, work_id)?;
-        if let Some(parent) = parent_id {
-            self.ensure_node_in_work(parent, work_id)?;
-            // **入口守门**：新节点会落在父节点的下一层，超过上限就当场拒绝。
-            // 不守的话能造出「写得进、读不了」的树（读路径有同一个上限）。
-            if node_level(&self.conn, parent)? >= MAX_TREE_DEPTH {
-                return Err(too_deep());
-            }
-        }
-        let title = title.trim();
-        let title = if title.is_empty() {
-            // 命名规则由核心落定（作者选过 → 它；没选过 → 作品类型的默认）——只写在一处
-            default_title(kind, self.naming_style(work_id)?)
-        } else {
-            title.to_string()
-        };
+        // 命名规则在**事务外**先问好：事务里已经借着 `self.conn`，不能再借一次 `self`
+        let naming = self.naming_style(work_id)?;
         let tx = self.conn.transaction()?;
-        let next: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM nodes
-             WHERE work_id = ?1 AND parent_id IS ?2 AND deleted_at IS NULL",
-            params![work_id, parent_id],
-            |r| r.get(0),
-        )?;
-        let id = insert_node(&tx, work_id, parent_id, kind, &title, next)?;
+        let id = create_node_in(&tx, work_id, parent_id, kind, title, naming)?;
         tx.commit()?;
 
         self.record(
@@ -244,34 +224,8 @@ impl Store {
 
     /// 移动节点到新父级的第 `index` 位（越界会夹到末尾），并把两侧同级重排成密集序号。
     pub fn move_node(&mut self, id: i64, new_parent: Option<i64>, index: usize) -> Result<()> {
-        let work_id = self.node_work(id)?;
-        let old_parent: Option<i64> = self
-            .conn
-            .query_row("SELECT parent_id FROM nodes WHERE id = ?1", params![id], |r| r.get(0))?;
-
-        if let Some(parent) = new_parent {
-            self.ensure_node_in_work(parent, work_id)?;
-            if parent == id || is_descendant(&self.conn, parent, id)? {
-                return Err(Error::invalid(codes::TREE_MOVE_INTO_DESCENDANT));
-            }
-            // 移动会把**整棵子树**一起带下去：目标位置 + 这棵树的高度不能越过上限，
-            // 只看自己要落地的那一层是不够的（底下还挂着一串）。
-            let landed = node_level(&self.conn, parent)? + 1;
-            if landed + subtree_height(&self.conn, id)? - 1 > MAX_TREE_DEPTH {
-                return Err(too_deep());
-            }
-        }
-
-        let now = now_millis();
         let tx = self.conn.transaction()?;
-        tx.execute(
-            "UPDATE nodes SET parent_id = ?1, updated_at = ?2 WHERE id = ?3",
-            params![new_parent, now, id],
-        )?;
-        renumber(&tx, work_id, new_parent, Some((id, index)))?;
-        if old_parent != new_parent {
-            renumber(&tx, work_id, old_parent, None)?;
-        }
+        move_node_in(&tx, id, new_parent, index)?;
         tx.commit()?;
 
         self.record(
@@ -284,31 +238,8 @@ impl Store {
 
     /// 软删除节点**及其整棵子树**，返回受影响的节点数。
     pub fn soft_delete_node(&mut self, id: i64) -> Result<usize> {
-        // 删之前先问清"它属于哪本书、挂在谁下面"——删完这两样就问不出来了
-        let work_id = self.node_work(id)?;
-        let parent_id: Option<i64> = self
-            .conn
-            .query_row("SELECT parent_id FROM nodes WHERE id = ?1", params![id], |r| r.get(0))
-            .optional()?
-            .flatten();
-
         let tx = self.conn.transaction()?;
-        let affected = tx.execute(
-            "WITH RECURSIVE sub(id) AS (
-                 SELECT id FROM nodes WHERE id = ?1
-                 UNION ALL
-                 SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id
-             )
-             UPDATE nodes SET deleted_at = ?2
-             WHERE id IN (SELECT id FROM sub) AND deleted_at IS NULL",
-            params![id, now_millis()],
-        )?;
-        if affected == 0 {
-            return Err(Error::invalid_with(codes::NODE_GONE, [("node_id", id.to_string())]));
-        }
-        // 同级会留一个洞：**当场收成密集序号**。这样"同级序号是密集的"这条不变量
-        // 在任何时候都成立，恢复时也才有一个稳定的"原来在第几位"可锚。
-        renumber(&tx, work_id, parent_id, None)?;
+        let affected = soft_delete_node_in(&tx, id)?;
         tx.commit()?;
 
         self.record("nodes", id, "delete_subtree", json!({ "affected": affected }))?;
@@ -389,4 +320,108 @@ pub(super) fn rename_node_in(conn: &Connection, id: i64, title: &str) -> Result<
         return Err(Error::invalid_with(codes::NODE_GONE, [("node_id", id.to_string())]));
     }
     Ok(())
+}
+
+/// 建节点时"最终写哪个标题"：空标题按命名规则渲染默认名。
+///
+/// 建节点的入口只此一处（`create_node` 与事务内的 `create_node_in` 都走它）——
+/// "默认名怎么取"只有一份实现，谁调都一致。
+fn resolved_title(kind: NodeKind, title: &str, naming: NamingStyle) -> String {
+    let title = title.trim();
+    if title.is_empty() { default_title(kind, naming) } else { title.to_string() }
+}
+
+/// **事务内建节点**：检查 + 插入，**不带自己的事务、不写留痕**（留给调用方的外层事务）。
+///
+/// 单列出来是为了让"收卷 / 撤卷"这类多步结构操作能整体成功或整体不做
+/// （2026-09-15 代码质量评审：严重 4）。命名规则由调用方在**事务外**先问好传进来
+/// （事务里已经借着连接，不能再借一次 `Store`）。
+pub(super) fn create_node_in(
+    conn: &Connection,
+    work_id: i64,
+    parent_id: Option<i64>,
+    kind: NodeKind,
+    title: &str,
+    naming: NamingStyle,
+) -> Result<i64> {
+    super::work::ensure_alive(conn, work_id)?;
+    if let Some(parent) = parent_id {
+        super::node::node_in_work_in(conn, parent, work_id)?;
+        // **入口守门**：新节点会落在父节点的下一层，超过上限就当场拒绝。
+        // 不守的话能造出「写得进、读不了」的树（读路径有同一个上限）。
+        if node_level(conn, parent)? >= MAX_TREE_DEPTH {
+            return Err(too_deep());
+        }
+    }
+    let title = resolved_title(kind, title, naming);
+    let next: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM nodes
+         WHERE work_id = ?1 AND parent_id IS ?2 AND deleted_at IS NULL",
+        params![work_id, parent_id],
+        |r| r.get(0),
+    )?;
+    insert_node(conn, work_id, parent_id, kind, &title, next)
+}
+
+/// **事务内移动**（越界夹到末尾、两侧同级重排成密集序号），不带自己的事务。
+pub(super) fn move_node_in(
+    conn: &Connection,
+    id: i64,
+    new_parent: Option<i64>,
+    index: usize,
+) -> Result<()> {
+    let work_id = super::node::node_work_in(conn, id)?;
+    let old_parent: Option<i64> =
+        conn.query_row("SELECT parent_id FROM nodes WHERE id = ?1", params![id], |r| r.get(0))?;
+
+    if let Some(parent) = new_parent {
+        super::node::node_in_work_in(conn, parent, work_id)?;
+        if parent == id || is_descendant(conn, parent, id)? {
+            return Err(Error::invalid(codes::TREE_MOVE_INTO_DESCENDANT));
+        }
+        // 移动会把**整棵子树**一起带下去：目标位置 + 这棵树的高度不能越过上限，
+        // 只看自己要落地的那一层是不够的（底下还挂着一串）。
+        let landed = node_level(conn, parent)? + 1;
+        if landed + subtree_height(conn, id)? - 1 > MAX_TREE_DEPTH {
+            return Err(too_deep());
+        }
+    }
+
+    conn.execute(
+        "UPDATE nodes SET parent_id = ?1, updated_at = ?2 WHERE id = ?3",
+        params![new_parent, now_millis(), id],
+    )?;
+    renumber(conn, work_id, new_parent, Some((id, index)))?;
+    if old_parent != new_parent {
+        renumber(conn, work_id, old_parent, None)?;
+    }
+    Ok(())
+}
+
+/// **事务内软删除**（连带整棵子树），返回受影响的节点数；不带自己的事务。
+pub(super) fn soft_delete_node_in(conn: &Connection, id: i64) -> Result<usize> {
+    // 删之前先问清"它属于哪本书、挂在谁下面"——删完这两样就问不出来了
+    let work_id = super::node::node_work_in(conn, id)?;
+    let parent_id: Option<i64> =
+        conn.query_row("SELECT parent_id FROM nodes WHERE id = ?1", params![id], |r| r.get(0))
+            .optional()?
+            .flatten();
+
+    let affected = conn.execute(
+        "WITH RECURSIVE sub(id) AS (
+             SELECT id FROM nodes WHERE id = ?1
+             UNION ALL
+             SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id
+         )
+         UPDATE nodes SET deleted_at = ?2
+         WHERE id IN (SELECT id FROM sub) AND deleted_at IS NULL",
+        params![id, now_millis()],
+    )?;
+    if affected == 0 {
+        return Err(Error::invalid_with(codes::NODE_GONE, [("node_id", id.to_string())]));
+    }
+    // 同级会留一个洞：**当场收成密集序号**。这样"同级序号是密集的"这条不变量
+    // 在任何时候都成立，恢复时也才有一个稳定的"原来在第几位"可锚。
+    renumber(conn, work_id, parent_id, None)?;
+    Ok(affected)
 }

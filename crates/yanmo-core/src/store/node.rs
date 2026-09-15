@@ -4,7 +4,7 @@
 //! - "卷 / 章 / 节 / 单篇 / 场景卡"只是 `node_kind` 的取值，**代码里不得假设层级**；
 //! - 编辑（建 / 改名 / 移动 / 删除）在 [`super::node_edit`]，读写分家免得互相拖累。
 
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use super::{too_deep, Store, MAX_TREE_DEPTH};
 use crate::error::{codes, Error, Result};
@@ -222,30 +222,12 @@ impl Store {
 
     /// 节点所属作品（顺带确认它存在且未删除）。
     pub(super) fn node_work(&self, id: i64) -> Result<i64> {
-        self.conn
-            .query_row(
-                "SELECT work_id FROM nodes WHERE id = ?1 AND deleted_at IS NULL",
-                params![id],
-                |r| r.get(0),
-            )
-            .optional()?
-            .ok_or_else(|| Error::invalid_with(codes::NODE_GONE, [("node_id", id.to_string())]))
+        node_work_in(&self.conn, id)
     }
 
     /// 确认节点属于指定作品——**防跨作品挂错父级**。
     pub(super) fn ensure_node_in_work(&self, node_id: i64, work_id: i64) -> Result<()> {
-        let owner = self.node_work(node_id)?;
-        if owner != work_id {
-            return Err(Error::invalid_with(
-                codes::NODE_FOREIGN_PARENT,
-                [
-                    ("node_id", node_id.to_string()),
-                    ("owner", owner.to_string()),
-                    ("work_id", work_id.to_string()),
-                ],
-            ));
-        }
-        Ok(())
+        node_in_work_in(&self.conn, node_id, work_id)
     }
 
     /// 从**根到该节点父级**的 id 链（不含它自己）——"打开就定位到正在写的那一章"要用。
@@ -396,4 +378,34 @@ impl Store {
         }
         Ok(order)
     }
+}
+
+/// 事务内版本：这个节点属于哪本书（`Store::node_work` 走它）。
+///
+/// 单列出来的原因见 [`super::node_edit::create_node_in`]：收卷 / 撤卷这类多步结构操作
+/// 要在一个事务里完成，事务里不能再借一次 `self`（2026-09-15 代码质量评审：严重 4）。
+pub(super) fn node_work_in(conn: &Connection, id: i64) -> Result<i64> {
+    conn.query_row(
+        "SELECT work_id FROM nodes WHERE id = ?1 AND deleted_at IS NULL",
+        params![id],
+        |r| r.get(0),
+    )
+    .optional()?
+    .ok_or_else(|| Error::invalid_with(codes::NODE_GONE, [("node_id", id.to_string())]))
+}
+
+/// 事务内版本：确认节点属于指定作品——**防跨作品挂错父级**。
+pub(super) fn node_in_work_in(conn: &Connection, node_id: i64, work_id: i64) -> Result<()> {
+    let owner = node_work_in(conn, node_id)?;
+    if owner != work_id {
+        return Err(Error::invalid_with(
+            codes::NODE_FOREIGN_PARENT,
+            [
+                ("node_id", node_id.to_string()),
+                ("owner", owner.to_string()),
+                ("work_id", work_id.to_string()),
+            ],
+        ));
+    }
+    Ok(())
 }

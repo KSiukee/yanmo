@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use rusqlite::{params, OptionalExtension};
 use serde_json::json;
 
-use super::{NodeSummary, Store};
+use super::{node_edit, NodeSummary, Store};
 use crate::error::{codes, Error, Result};
 use crate::model::NodeKind;
 use crate::volume::{self, VolumePlan, VolumeSpot};
@@ -220,22 +220,37 @@ impl Store {
             Error::invalid_with(codes::NODE_GONE, [("node_id", node_id.to_string())])
         })?;
         let tail: Vec<i64> = kids[at + 1..].iter().map(|node| node.id).collect();
-
-        // 新卷紧跟在当前卷后面（兄弟位置）——号按位置渲染，这里只管顺序
-        let new_volume = self.create_node(work_id, up, NodeKind::Volume, title)?;
         let siblings = self.children_of(work_id, up)?;
         let volume_at = siblings.iter().position(|node| node.id == container).unwrap_or(0);
-        self.move_node(new_volume, up, volume_at + 1)?;
+        let naming = self.naming_style(work_id)?;
+
+        // —— 读完了，从这里开始只写：**整段收卷在一个事务里**，中途任何一步失败都不会留下
+        // "新卷建好了、一部分章还在外面"的半成品（2026-09-15 代码质量评审：严重 4）。
+        // 先读后写是安全的：同一个库同时只允许一个研墨在写（单实例锁）。
+        let tx = self.conn.transaction()?;
+        // 新卷紧跟在当前卷后面（兄弟位置）——号按位置渲染，这里只管顺序
+        let new_volume =
+            node_edit::create_node_in(&tx, work_id, up, NodeKind::Volume, title, naming)?;
+        node_edit::move_node_in(&tx, new_volume, up, volume_at + 1)?;
         for chapter in &tail {
-            self.move_node(*chapter, Some(new_volume), usize::MAX)?;
+            node_edit::move_node_in(&tx, *chapter, Some(new_volume), usize::MAX)?;
         }
 
         // 空卷写不了字：顺手起第一章，光标才落得过去（新卷从「第1章」重新起号）
         let opened = if tail.is_empty() {
-            Some(self.create_node(work_id, Some(new_volume), NodeKind::Chapter, "")?)
+            Some(node_edit::create_node_in(
+                &tx,
+                work_id,
+                Some(new_volume),
+                NodeKind::Chapter,
+                "",
+                naming,
+            )?)
         } else {
             None
         };
+        tx.commit()?;
+
         let moved = tail.len();
         self.record(
             "nodes",
@@ -261,12 +276,18 @@ impl Store {
             return Err(Error::invalid(codes::VOLUME_CLOSE_POINT));
         }
         let run: Vec<i64> = roots[start..=at].iter().map(|node| node.id).collect();
+        let naming = self.naming_style(work_id)?;
 
-        let new_volume = self.create_node(work_id, None, NodeKind::Volume, title)?;
-        self.move_node(new_volume, None, start)?;
+        // 同一个事务：要么整段收成一个卷，要么一条都不动（评审：严重 4）
+        let tx = self.conn.transaction()?;
+        let new_volume =
+            node_edit::create_node_in(&tx, work_id, None, NodeKind::Volume, title, naming)?;
+        node_edit::move_node_in(&tx, new_volume, None, start)?;
         for id in &run {
-            self.move_node(*id, Some(new_volume), usize::MAX)?;
+            node_edit::move_node_in(&tx, *id, Some(new_volume), usize::MAX)?;
         }
+        tx.commit()?;
+
         let moved = run.len();
         self.record("nodes", new_volume, "close_volume", json!({ "at_root": true, "moved": moved }))?;
         // 光标不动：他正写的那一章还是同一个节点，只是进了新卷
@@ -293,27 +314,31 @@ impl Store {
             .and_then(|previous| siblings.get(previous))
             .filter(|node| node.kind == NodeKind::Volume)
             .map(|node| node.id);
+        // 同一个事务：搬东西 + 软删这一卷，要么全成要么全不成（评审：严重 4）
+        let tx = self.conn.transaction()?;
         match merged_into {
             Some(target) => {
                 for kid in &kids {
-                    self.move_node(*kid, Some(target), usize::MAX)?;
+                    node_edit::move_node_in(&tx, *kid, Some(target), usize::MAX)?;
                 }
             }
             // 前面没有卷：抬到父层，占据这一卷原来的位置（还原"根层收拢散章"那一步）
             None => {
                 for (offset, kid) in kids.iter().enumerate() {
-                    self.move_node(*kid, parent, at + offset)?;
+                    node_edit::move_node_in(&tx, *kid, parent, at + offset)?;
                 }
             }
         }
-        let moved = kids.len();
         // 软删：进回收站捞得回来——"一键撤销"反悔两次也不丢东西
-        self.soft_delete_node(volume_id)?;
+        let deleted = node_edit::soft_delete_node_in(&tx, volume_id)?;
+        tx.commit()?;
+
+        let moved = kids.len();
         self.record(
             "nodes",
             volume_id,
             "dissolve_volume",
-            json!({ "moved": moved, "merged_into": merged_into }),
+            json!({ "moved": moved, "merged_into": merged_into, "deleted": deleted }),
         )?;
         Ok(DissolveReceipt { moved, merged_into })
     }

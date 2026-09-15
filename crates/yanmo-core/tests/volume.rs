@@ -323,3 +323,59 @@ fn closing_is_refused_where_it_makes_no_sense() {
         "不存在的节点要明确报错"
     );
 }
+
+#[test]
+fn a_close_volume_that_fails_halfway_leaves_no_stray_volume() {
+    // 2026-09-15 代码质量评审：严重 4。收卷以前是"每个 create/move 各自提交"：中途任何一步失败，
+    // 新卷已经建好并挪了位置、一部分章还没进去，作者看到的是一个半成品。
+    //
+    // 这里用"老版本留下的超深子树"制造中途失败（与 tests/deep_tree.rs 同一手法：绕过写入口、
+    // 用原始 SQL 造出写入口不允许的深度——真实来源就是"深度守门加进来之前建的树"）。
+    // 搬那一棵会越限、必然失败；而**新卷在这之前已经建好了**——正是要验证"失败时它也得消失"。
+    let (dir, mut store, work_id, volume, chapters) = volume_novel(3);
+    let close_point = chapters[0];
+    let deep = chapters[1];
+
+    let path = dir.path().join("yanmo.db");
+    let conn = yanmo_core::db::open(&path).unwrap();
+    let mut parent = deep;
+    for level in 0..63 {
+        conn.execute(
+            &format!(
+                "INSERT INTO nodes(work_id, parent_id, node_kind, title, sort_order, created_at, updated_at) \
+                 VALUES({work_id}, {parent}, 'chapter', '很深的一层 {level}', 0, 0, 0)"
+            ),
+            [],
+        )
+        .unwrap();
+        parent = conn.last_insert_rowid();
+    }
+    drop(conn);
+
+    let roots_before: Vec<i64> =
+        store.list_nodes(work_id).unwrap().iter().filter(|n| n.parent_id.is_none()).map(|n| n.id).collect();
+    let under_volume_before: Vec<i64> = store
+        .list_nodes(work_id)
+        .unwrap()
+        .iter()
+        .filter(|n| n.parent_id == Some(volume))
+        .map(|n| n.id)
+        .collect();
+    assert_eq!(under_volume_before.len(), 3, "前提：三章都还在这一卷里");
+
+    let error = store.close_volume(close_point, "第二卷").expect_err("搬一棵 64 层的子树必然越限");
+    assert_eq!(error.code(), codes::TREE_TOO_DEEP, "{error}");
+
+    let roots_after: Vec<i64> =
+        store.list_nodes(work_id).unwrap().iter().filter(|n| n.parent_id.is_none()).map(|n| n.id).collect();
+    let under_volume_after: Vec<i64> = store
+        .list_nodes(work_id)
+        .unwrap()
+        .iter()
+        .filter(|n| n.parent_id == Some(volume))
+        .map(|n| n.id)
+        .collect();
+
+    assert_eq!(roots_after, roots_before, "失败之后不许留下一个建好一半的新卷");
+    assert_eq!(under_volume_after, under_volume_before, "原来的章还得在原处");
+}
