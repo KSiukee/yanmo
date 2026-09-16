@@ -36,9 +36,35 @@ fn new_book_asks_where_to_start() {
         ],
     };
     let drafts = generate(&elements, &RhythmParams::default());
-    assert_eq!(keys(&drafts), vec!["chapter.empty_body"], "只问第一个没动笔的章");
+    assert_eq!(
+        keys(&drafts),
+        vec!["chapter.empty_body", "plan.opening_pov", "plan.opening_scene"],
+        "开头还空着：除了「从哪儿开始」，还要问「谁在看」与「第一场戏在哪儿」"
+    );
     assert_eq!(drafts[0].slots["chapter"], "第一章");
     assert_eq!(drafts[0].anchors, vec!["chapter:1"]);
+    // 开篇两问都锚在**开头那一章**上（不是第二、第三章）
+    for draft in &drafts[1..] {
+        assert_eq!(draft.slots["chapter"], "第一章");
+        assert_eq!(draft.anchors, vec!["chapter:1"]);
+    }
+}
+
+/// 开头一旦落笔，开篇两问就不再出现——视角与第一场戏是**落笔前**要定的事。
+#[test]
+fn opening_questions_stop_once_the_first_chapter_is_written() {
+    let elements = WritingElements {
+        chapters: vec![
+            chapter(1, "第一章", 1800, ""),
+            chapter(2, "第二章", 0, ""),
+        ],
+    };
+    let drafts = generate(&elements, &RhythmParams::default());
+    assert!(
+        !keys(&drafts).iter().any(|key| key.starts_with("plan.opening")),
+        "开头写过了就别再问开篇的事：{:?}",
+        keys(&drafts)
+    );
 }
 
 #[test]

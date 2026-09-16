@@ -523,12 +523,20 @@ fn question_selection_and_preference_are_drivable_from_the_command_line() {
     let work = work_id.to_string();
     let anchor = format!("chapter:{chapter_id}");
 
-    // ① 草稿：这一章还没动笔 → 问「从哪儿开始」
+    // ① 草稿：这一章还没动笔 → 问「从哪儿开始」，外加**开篇两问**（谁在看 / 第一场戏在哪儿）
     let drafts = ok(dir.path(), "question-draft", &[("work", &work)]);
-    assert_eq!(drafts["count"], 1, "{drafts}");
-    assert_eq!(drafts["drafts"][0]["template_key"], "chapter.empty_body");
-    assert_eq!(drafts["drafts"][0]["slots"]["chapter"], "第一章");
-    assert_eq!(drafts["drafts"][0]["anchors"][0], anchor);
+    assert_eq!(drafts["count"], 3, "{drafts}");
+    let keys: Vec<&str> = drafts["drafts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|draft| draft["template_key"].as_str().unwrap())
+        .collect();
+    assert_eq!(keys, vec!["chapter.empty_body", "plan.opening_pov", "plan.opening_scene"]);
+    for draft in drafts["drafts"].as_array().unwrap() {
+        assert_eq!(draft["slots"]["chapter"], "第一章");
+        assert_eq!(draft["anchors"][0], anchor, "开篇两问锚在开头那一章上");
+    }
 
     // ② 落成卡（真实链路里句子由界面按语言渲染；这里给一句占位正文）
     let made = ok(
@@ -543,10 +551,15 @@ fn question_selection_and_preference_are_drivable_from_the_command_line() {
         ],
     );
     let first = made["card_id"].as_i64().unwrap();
-    assert_eq!(
-        ok(dir.path(), "question-draft", &[("work", &work)])["count"],
-        0,
-        "同一个锚点上同一条模板，问过就不该再生成"
+    let after = ok(dir.path(), "question-draft", &[("work", &work)]);
+    assert_eq!(after["count"], 2, "同一个锚点上同一条模板，问过就不该再生成：{after}");
+    assert!(
+        !after["drafts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|draft| draft["template_key"] == "chapter.empty_body"),
+        "问过的那一条不再生成"
     );
 
     // ③ 选题（只读）：候选里有它，且引力是**拆解过的**（将来界面能回答"为什么问这个"）

@@ -98,6 +98,21 @@ pub fn generate(elements: &WritingElements, p: &RhythmParams) -> Vec<QuestionDra
         ));
     }
 
+    // ⑥ 开篇还没落笔（阅读顺序里第一章还空着）：问"谁在看"与"第一场戏在哪儿"。
+    //
+    // 为什么挑第一个承载正文的节点：它才是这本书的开头——卷不承载正文，不会出现在这里
+    // （`writing_elements` 已经把容器滤掉了）。一旦开头写下了第一句，这两问就不再出现：
+    // 视角与第一场戏是**落笔之前**要定的事，写起来了再问就成了马后炮。
+    if let Some(first) = chapters.first().filter(|c| !c.has_body) {
+        for key in ["plan.opening_pov", "plan.opening_scene"] {
+            out.push(draft(
+                key,
+                &[("chapter", first.title.clone())],
+                format!("chapter:{}", first.node_id),
+            ));
+        }
+    }
+
     out
 }
 

@@ -72,6 +72,23 @@ pub const TEMPLATES: &[QuestionTemplate] = &[
         base_urgency: 0.5,
         importance: 0.5,
     },
+    // 开篇两问：**只在开头还没落笔时**才问（见 `generate` 的第 ⑥ 条）。
+    // 一本书刚开、第一章还空着的时候，"这一章从哪儿开始"太空，
+    // 真正要定的是这两件：谁在看、第一场戏在哪儿。
+    QuestionTemplate {
+        key: "plan.opening_pov",
+        element: ElementKind::Plan,
+        slots: &["chapter"],
+        base_urgency: 0.85,
+        importance: 0.7,
+    },
+    QuestionTemplate {
+        key: "plan.opening_scene",
+        element: ElementKind::Plan,
+        slots: &["chapter"],
+        base_urgency: 0.8,
+        importance: 0.7,
+    },
     QuestionTemplate {
         key: "rhythm.length_swing",
         element: ElementKind::Rhythm,

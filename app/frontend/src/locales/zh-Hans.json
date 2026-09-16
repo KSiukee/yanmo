@@ -706,6 +706,8 @@
   "question.defer.only_when_asked": "我自己想起来再问",
   "question.template.chapter.empty_body": "{chapter}还是空的——这一章打算从哪儿开始？",
   "question.template.chapter.missing_summary": "{chapter}写完了，可还没留下一句话——这一章发生了什么？",
+  "question.template.plan.opening_pov": "{chapter}是开头——故事从谁的眼里看出去？",
+  "question.template.plan.opening_scene": "{chapter}这第一场戏，放在哪儿、什么时候？",
   "question.template.rhythm.length_swing": "连着{count}章都在{chars}字上下，读者可能会疲——要不要换个节奏？",
   "question.template.rhythm.chapter_very_long": "{chapter}有{chars}字，比别的章长出一大截——要不要拆成两章？",
   "question.template.review.recent_chapter": "{chapter}刚写完，接下来这一章接着哪条线走？"

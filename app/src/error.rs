@@ -295,6 +295,32 @@ fn placeholders(text: &str) -> Vec<String> {
         }
     }
 
+    /// **问题模板对表**：核心给的每条模板，界面字典里都得有一句，而且要填得上它声明的槽位。
+    ///
+    /// 漏一条的后果不是"少一句文案"：机制新问了一句话，而作者在面板上看到的是
+    /// `question.template.plan.opening_pov`——一个字都读不到。
+    #[test]
+    fn every_question_template_has_a_dictionary_entry() {
+        let dict = dictionary();
+        let mut checked = 0;
+        for template in yanmo_core::question::TEMPLATES {
+            let key = format!("question.template.{}", template.key);
+            let text = dict
+                .get(&key)
+                .unwrap_or_else(|| panic!("模板 {} 在界面字典里查不到（缺 {key}）", template.key));
+            assert!(!text.trim().is_empty(), "字典里的 {key} 是空的");
+            // 槽位对表：模板声明了哪几个槽位，句子里就得正好有哪几个占位符（不多不少）
+            let mut found = placeholders(text);
+            found.sort();
+            let mut declared: Vec<String> =
+                template.slots.iter().map(|slot| (*slot).to_string()).collect();
+            declared.sort();
+            assert_eq!(found, declared, "{key} 的占位符与模板声明的槽位对不上");
+            checked += 1;
+        }
+        assert!(checked >= 5, "模板少得可疑，检查扫描基准");
+    }
+
     /// **排版规则对表**：核心给的每条规则代码，界面字典里都得有名字与说明。
     ///
     /// 漏一条的后果与错误码漏登记同款：界面上那一行只剩一个 `typeset.rule.xxx`，
