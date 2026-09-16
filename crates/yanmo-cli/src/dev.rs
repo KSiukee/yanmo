@@ -12,6 +12,7 @@ use yanmo_core::store::{BackupRequest, BackupTarget, SessionReport, Store};
 use yanmo_core::text;
 
 use crate::args::{Args, Usage};
+use crate::dev_fragment;
 use crate::dev_question;
 use crate::CliError;
 
@@ -25,9 +26,10 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         "new-work" => Some(&["kind", "title"]),
         "new-node" => Some(&["work", "parent", "kind", "title"]),
         "hold" => Some(&["node", "seconds"]),
-        // 叩问那一族（问题卡 / 选题 / 偏好 / 延后 / 处置 / 作答）在 [`crate::dev_question`]：
-        // 它长得比会话与正文这一族还快，而且变化理由不一样，所以单独成文件——这里只是转交。
-        _ => dev_question::options(command),
+        // 叩问那一族（问题卡 / 选题 / 偏好 / 延后 / 处置 / 作答）在 [`crate::dev_question`]，
+        // 创作流那一族（碎片池）在 [`crate::dev_fragment`]：两族都长得比会话与正文这一族快，
+        // 而且变化理由各不相同，所以各自成文件——这里只是转交。
+        _ => dev_question::options(command).or_else(|| dev_fragment::options(command)),
     }
 }
 
@@ -165,7 +167,10 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
             std::thread::sleep(std::time::Duration::from_secs(seconds));
             json!({ "ok": true, "command": "hold", "node_id": node, "seconds": seconds })
         }
-        _ => return dev_question::execute(args, store),
+        _ => match dev_question::execute(args, store)? {
+            Some(value) => value,
+            None => return dev_fragment::execute(args, store),
+        },
     };
     Ok(Some(value))
 }

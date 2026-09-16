@@ -6,28 +6,22 @@
 //! 行的映射在 [`super::card_row`]，选题与偏好分别在 [`super::question_select`] /
 //! [`super::question_weights`]。
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, OptionalExtension};
 use serde_json::json;
 
 use super::card_row::{into_card, missing, read_raw, COLS};
 use super::question_pool::validate_derivation;
-use super::Store;
+use super::{work_alive, Store};
 use crate::error::{codes, Error, Result};
 use crate::gravity::AttractorParams;
-use crate::model::{NewQuestionCard, QuestionCard, QuestionState};
+use crate::model::{FragmentKind, NewQuestionCard, QuestionCard, QuestionState};
 use crate::time::now_millis;
 
 /// 问题卡在碎片统一表里的种类码（写进 `fragments.frag_kind`；**别改**）。
-pub const KIND_QUESTION: &str = "question";
-
-/// 这本书在不在（软删的也算不在）：往一本已经进回收站的书里塞卡没有意义。
-fn work_alive(conn: &Connection, work_id: i64) -> Result<bool> {
-    Ok(conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM works WHERE id = ?1 AND deleted_at IS NULL)",
-        params![work_id],
-        |r| r.get(0),
-    )?)
-}
+///
+/// 取值本身归 [`FragmentKind`] 那一处管（"有哪些种类"只该有一个地方知道）——
+/// 这里留一个名字，是因为全仓都在 [`Self`] 这条线上引用它。
+pub const KIND_QUESTION: &str = FragmentKind::Question.as_str();
 
 impl Store {
     /// 新建一张问题卡：状态从「待问」开始，落库与留痕**同一个事务**。

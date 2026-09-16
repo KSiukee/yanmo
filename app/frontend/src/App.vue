@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // 研墨主布局：三栏骨架。
 //
-// ★ 侧栏位置**现在就预留**：
-//   布局层**预留第二栏（创作流 / 叩问）的位置**——现在放占位，
-//   等引导问答功能落地时直接填充，不用重排布局。
+// ★ 第二栏（右侧那一栏）住着两条线，用上面的页签切：
+//   **叩问**（机制挑问题问你）与**创作流**（你自己记下的碎片）。
+//   两块共用同一张碎片表，但界面各管各的——布局层只负责"现在露哪一块"。
 //
 // 壳层纪律：这里只搭布局与接线，不写业务逻辑（业务在 yanmo-core）。
 import { computed, ref } from "vue";
@@ -15,7 +15,7 @@ import { useQuestionPush } from "./editor/question-push.ts";
 import type { SelectedQuestion } from "./api/question.ts";
 import DirectoryPane from "./components/DirectoryPane.vue";
 import EditorPane from "./components/EditorPane.vue";
-import FlowPane from "./components/FlowPane.vue";
+import AsidePane from "./components/AsidePane.vue";
 import EngineBadge from "./components/EngineBadge.vue";
 import BackupDialog from "./components/BackupDialog.vue";
 import LocationDialog from "./components/LocationDialog.vue";
@@ -46,7 +46,12 @@ const push = useQuestionPush({
 });
 /** 「答一句」点过之后，把那张卡交给右侧面板打开（面板接住后会回报一声，这里清掉） */
 const pushedCard = ref<SelectedQuestion | null>(null);
+// 第二栏现在露哪一块：叩问（默认，作者最常待的地方）还是创作流。
+// 它是"当下这一会儿看哪块"，**不落盘**——与专注模式那类开关同一条规矩。
+const asideTab = ref<"flow" | "creator">("flow");
 function answerPushed() {
+  // 提示条上的「答一句」要落到叩问那一块：先把那一块露出来，再把卡交过去
+  asideTab.value = "flow";
   pushedCard.value = push.take();
 }
 const { chapterTitle, workId } = session;
@@ -172,8 +177,10 @@ const hint = computed(() => {
       </template>
 
       <EditorPane :session="session" />
-      <FlowPane
+      <!-- 第二栏（右侧）：叩问与创作流共用，顶上页签切——整块在 AsidePane 里 -->
+      <AsidePane
         v-if="zenChrome.flow"
+        v-model:tab="asideTab"
         :session="session"
         :work-id="workId"
         :open-question="pushedCard"
@@ -369,6 +376,9 @@ const hint = computed(() => {
   border-color: var(--ym-accent);
   color: var(--ym-accent);
 }
+
+/* 第二栏（叩问 / 创作流）整块搬进了 [`AsidePane`](./components/AsidePane.vue)：
+   布局层这边只剩"露不露它"（专注模式），栏自己的边框、底色与页签都归那边。 */
 
 /* 卡片里塞的是原来那个侧栏组件：去掉"当一列用"时的右边框与底色，让它老实待在卡里 */
 .shell__card :deep(.pane) {

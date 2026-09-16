@@ -25,6 +25,7 @@ mod content;
 mod device;
 mod draft;
 mod export;
+mod fragment;
 mod import;
 mod node;
 mod naming;
@@ -62,6 +63,7 @@ pub use card::KIND_QUESTION;
 pub use card_move::CardEvent;
 pub use content::ContentStats;
 pub use export::{ExportFormat, RenderedFile};
+pub use fragment::{NewFragment, FRAGMENTS_PER_BOARD};
 pub use draft::{parse_work_json, DraftScale, NodeDraft, StampMismatch, WorkDraft};
 pub use import::{find_drafts, manifest_near, ImportReport};
 pub(crate) use export::normalize;
@@ -89,7 +91,7 @@ pub use writing::WritingDay;
 
 use std::path::Path;
 
-use rusqlite::{Connection, Transaction};
+use rusqlite::{params, Connection, Transaction};
 
 use crate::db;
 use crate::error::Result;
@@ -118,6 +120,18 @@ pub(super) fn too_deep() -> crate::error::Error {
         crate::error_codes::codes::TREE_TOO_DEEP,
         [("max", MAX_TREE_DEPTH.to_string())],
     )
+}
+
+/// 这本书在不在（**软删的也算不在**）：往一本已经进回收站的书里塞东西没有意义。
+///
+/// 放在这里而不是某一个领域文件里：问题卡与创作流碎片都要问同一句话，
+/// 两处各判一遍就有两种口径（一个把软删当"在"，一个不当）那天。
+pub(super) fn work_alive(conn: &Connection, work_id: i64) -> Result<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM works WHERE id = ?1 AND deleted_at IS NULL)",
+        params![work_id],
+        |r| r.get(0),
+    )?)
 }
 
 /// 数据句柄：一条连接 + 本机设备标识。

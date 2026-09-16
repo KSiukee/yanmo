@@ -16,6 +16,8 @@ pub mod backup;
 pub mod compile;
 /// 编辑器：打开章节、落盘、光标与检索。
 pub mod editor;
+/// 创作流：碎片池的记 / 看 / 删 / 捞回（**作者自己记下的东西**）。
+pub mod fragment;
 /// 稿子放哪：位置查询、换位置、打开文件夹。
 pub mod location;
 /// 叩问：问题候选取材、处置四件套与记灵感（**只问不写**）。

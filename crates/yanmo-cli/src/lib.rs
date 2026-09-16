@@ -21,6 +21,9 @@ pub mod commands;
 /// 开发档命令：只在开发（debug）构建里编译——发布构建的二进制里没有这段代码。
 #[cfg(debug_assertions)]
 mod dev;
+/// 开发档里的创作流命令面（碎片池：记 / 看 / 删 / 捞回；同样只在 debug 构建里）。
+#[cfg(debug_assertions)]
+mod dev_fragment;
 /// 开发档里的叩问命令面（同样只在 debug 构建里）。
 #[cfg(debug_assertions)]
 mod dev_question;

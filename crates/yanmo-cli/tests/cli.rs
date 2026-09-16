@@ -1140,3 +1140,71 @@ fn question_push_is_drivable_from_the_command_line() {
     let asked = ok(dir.path(), "card-list", &[("work", &work), ("state", "asked")]);
     assert!(asked["count"].as_i64().unwrap() >= 1, "推走的卡要走到「已问」：{asked}");
 }
+
+/// 创作流碎片：**记 / 看 / 删 / 捞回**——界面上"删了能捞回""不该建的建不成"这类事
+/// 要能从命令行反复驱动（界面做不成自动化）。
+#[test]
+fn fragment_pool_is_drivable_from_the_command_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let (work_id, chapter_id) = seed(dir.path(), "novel");
+    let work = work_id.to_string();
+
+    // 记两条：正文两边的空白会被修剪，锚点可以一次给多个（逗号分隔）
+    let idea = ok(
+        dir.path(),
+        "fragment-add",
+        &[
+            ("work", &work),
+            ("kind", "idea"),
+            ("body", "  一个念头  "),
+            ("anchor", &format!("chapter:{chapter_id},chapter:999")),
+        ],
+    );
+    let idea_id = idea["fragment"]["id"].as_i64().unwrap();
+    assert_eq!(idea["fragment"]["body"], "一个念头", "存的是修剪过的那一句");
+    assert_eq!(idea["fragment"]["kind"], "idea");
+    assert_eq!(idea["fragment"]["source"], "typed");
+    assert_eq!(idea["fragment"]["anchors"].as_array().unwrap().len(), 2);
+
+    ok(dir.path(), "fragment-add", &[("work", &work), ("kind", "event"), ("body", "他走进来")]);
+
+    // 面板：新的在前，各档的数字与列表同一口径（没记过的种类也如实回 0）
+    let board = ok(dir.path(), "fragment-board", &[("work", &work)]);
+    assert_eq!(board["fragments"].as_array().unwrap().len(), 2);
+    assert_eq!(board["fragments"][0]["kind"], "event", "最近记的在最前：{board}");
+    let counts = board["counts"].as_array().unwrap();
+    assert!(counts.iter().any(|item| item["kind"] == "idea" && item["count"] == 1));
+    assert!(counts.iter().any(|item| item["kind"] == "dictation" && item["count"] == 0));
+
+    // 问题与答案归叩问那条线：从这儿建**当场被拒**
+    let refused = run(dir.path(), "fragment-add", &[("work", &work), ("kind", "question"), ("body", "不该从这儿建")]);
+    match refused {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "fragment.kind_not_jotted"),
+        other => panic!("问题卡不该从创作流建：{other:?}"),
+    }
+
+    // 认不出的种类、空正文也都拒
+    assert!(run(dir.path(), "fragment-add", &[("work", &work), ("kind", "memo"), ("body", "一句")]).is_err());
+    assert!(run(dir.path(), "fragment-add", &[("work", &work), ("kind", "idea"), ("body", "   ")]).is_err());
+
+    // 删是软删：列表与计数都不算它；捞回就是把时间戳抹掉
+    ok(dir.path(), "fragment-delete", &[("id", &idea_id.to_string())]);
+    let after_delete = ok(dir.path(), "fragment-board", &[("work", &work)]);
+    assert_eq!(after_delete["fragments"].as_array().unwrap().len(), 1);
+    assert!(after_delete["counts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["kind"] == "idea" && item["count"] == 0));
+
+    ok(dir.path(), "fragment-restore", &[("id", &idea_id.to_string())]);
+    let after_restore = ok(dir.path(), "fragment-board", &[("work", &work)]);
+    assert_eq!(after_restore["fragments"].as_array().unwrap().len(), 2, "捞回之后还在：{after_restore}");
+
+    // 删两次 / 删不存在的：如实说「不存在」，不静默当成删成功
+    ok(dir.path(), "fragment-delete", &[("id", &idea_id.to_string())]);
+    match run(dir.path(), "fragment-delete", &[("id", &idea_id.to_string())]) {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "fragment.not_found"),
+        other => panic!("删两次该说「不存在」：{other:?}"),
+    }
+}

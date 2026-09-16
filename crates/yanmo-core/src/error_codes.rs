@@ -120,6 +120,13 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "自动派生已经到链深上限（最多 {max} 层）——作者自己顺着灵感再问不受此限" : ["max"],
     IDEA_BODY_EMPTY => "idea.body_empty" : "灵感卡的内容不能为空" : [],
     IDEA_NOT_FOUND => "idea.not_found" : "灵感卡不存在：{idea_id}" : ["idea_id"],
+    UNKNOWN_FRAGMENT_KIND => "value.unknown_fragment_kind"
+        : "认不出的碎片种类：{value}（只认 question / answer / idea / event / dictation）"
+        : ["value"],
+    FRAGMENT_BODY_EMPTY => "fragment.body_empty" : "这条碎片是空的——写点什么再记" : [],
+    FRAGMENT_NOT_FOUND => "fragment.not_found" : "碎片不存在：{fragment_id}" : ["fragment_id"],
+    FRAGMENT_KIND_NOT_JOTTED => "fragment.kind_not_jotted"
+        : "这一种碎片不由创作流面板记：{value}（问题与答案归叩问那条线）" : ["value"],
     ANSWER_BODY_EMPTY => "answer.body_empty" : "答案内容不能为空" : [],
     ANSWER_NOT_FOUND => "answer.not_found"
         : "这张问题卡还没有答案：{card_id}" : ["card_id"],

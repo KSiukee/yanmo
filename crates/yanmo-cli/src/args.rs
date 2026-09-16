@@ -154,7 +154,17 @@ pub const HELP_DEV: &str = "\
   question-round --work <id> --node <章节 id> --items <JSON 数组>
                             一轮落章（先问后排版）：把一串答案**一次**落进这一章；
                             --items 形如 [{\"card_id\":1,\"body\":\"第一段\"}, …]，顺序即落下顺序
-                            （同样只留痕不写正文：正文那几段字由界面插进编辑会话）";
+                            （同样只留痕不写正文：正文那几段字由界面插进编辑会话）
+  fragment-add --work <id> --kind <idea|event|dictation> --body <文本> | --body-file <路径>
+               [--source typed|voice|mixed] [--anchor <锚点>[,<锚点>…]] [--trigger <谁触发>]
+                            记一条创作流碎片（**作者自己记的东西**，与问题卡、答案同表）；
+                            问题与答案不许从这儿建（它们归叩问那条线）
+  fragment-board --work <id> [--limit <n>]
+                            碎片池：最近记下的那些（新的在前）+ 每种各有几条
+  fragment-delete --id <碎片 id> [--trigger <谁触发>]
+                            删掉一条（**软删**：行还在，fragment-restore 能捞回）
+  fragment-restore --id <碎片 id> [--trigger <谁触发>]
+                            捞回一条删掉的（重复点不算错）";
 
 /// 这个构建的帮助文本（发布构建只列救援档）。
 pub fn help_text() -> String {

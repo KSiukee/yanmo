@@ -23,11 +23,13 @@ use serde_json::json;
 use super::card_move::move_card_in;
 use super::Store;
 use crate::error::{codes, Error, Result};
-use crate::model::{InputSource, QuestionCard, QuestionState};
+use crate::model::{FragmentKind, InputSource, QuestionCard, QuestionState};
 use crate::time::now_millis;
 
 /// 答案卡在碎片统一表里的种类码（写进 `fragments.frag_kind`；**别改**）。
-pub(super) const KIND_ANSWER: &str = "answer";
+///
+/// 取值本身归 [`FragmentKind`] 那一处管；这里留名字给本文件与 [`super::card`] 引用。
+pub(super) const KIND_ANSWER: &str = FragmentKind::Answer.as_str();
 
 /// 一张答案卡（作者对某个问题给出的那一句）。
 #[derive(Debug, Clone, PartialEq, Serialize)]

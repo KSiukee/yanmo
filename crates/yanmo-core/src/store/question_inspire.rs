@@ -16,11 +16,11 @@ use serde::Serialize;
 
 use super::Store;
 use crate::error::{codes, Error, Result};
-use crate::model::{InputSource, QuestionCard};
+use crate::model::{FragmentKind, InputSource, QuestionCard};
 use crate::time::now_millis;
 
 /// 灵感卡在碎片统一表里的种类码（写进 `fragments.frag_kind`；**别改**）。
-const KIND_IDEA: &str = "idea";
+const KIND_IDEA: &str = FragmentKind::Idea.as_str();
 
 /// 一张灵感卡（作者被问题勾起的那一句）。
 #[derive(Debug, Clone, PartialEq, Serialize)]
