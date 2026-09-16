@@ -7,7 +7,7 @@
 use serde_json::{json, Value};
 use yanmo_core::model::{NewQuestionCard, QuestionState};
 use yanmo_core::question::{DeferCondition, DeferKind, DeferPreset, DAY_MS};
-use yanmo_core::store::Store;
+use yanmo_core::store::{RoundItem, Store};
 
 use crate::args::{Args, Usage};
 use crate::dev::body_of;
@@ -52,6 +52,8 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         "question-answer" => Some(&["id", "body", "body-file", "source", "trigger"]),
         "question-answers" => Some(&["id"]),
         "question-land" => Some(&["id", "node", "trigger"]),
+        // 先问后排版：一轮一次落（顺序就是 --items 里的顺序）
+        "question-round" => Some(&["work", "node", "items", "items-file", "trigger"]),
         _ => None,
     }
 }
@@ -301,6 +303,24 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
             let answer_id = store.mark_answer_landed(id, node, &trigger)?;
             json!({ "ok": true, "command": "question-land", "card_id": id,
                     "answer_id": answer_id, "node_id": node })
+        }
+        "question-round" => {
+            // 一轮落章（先问后排版）：把一串答案**一次**落进这一章。--items 给 JSON：
+            // [{"card_id":1,"body":"第一段"}, …]——顺序就是落下去的顺序。
+            // 正文那几段字由界面插进编辑会话，这里同样**不动稿子**，只做账。
+            let work = args.required_i64("work")?;
+            let node = args.required_i64("node")?;
+            let raw = match args.optional("items-file") {
+                Some(path) => std::fs::read_to_string(path)?,
+                None => args.required("items")?.to_string(),
+            };
+            let items: Vec<RoundItem> = serde_json::from_str(&raw).map_err(|_| {
+                Usage::from(r#"--items 需要是一个 JSON 数组，例如 [{"card_id":1,"body":"第一段"}]"#)
+            })?;
+            let trigger = args.optional("trigger").unwrap_or("cli").to_string();
+            let landed = store.apply_answer_round(work, node, &items, &trigger)?;
+            json!({ "ok": true, "command": "question-round", "count": landed.len(),
+                    "answers": landed })
         }
         "question-deferrals" => {
             // 两种问法：这本书里**还等着**的（默认），或某张卡的**全部历史**

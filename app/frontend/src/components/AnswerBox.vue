@@ -20,6 +20,8 @@ const props = defineProps<{
   landToBody: boolean;
   /** 眼下有没有打开着的一章——没有的话落章那两个控件按不了（别放按不动的按钮） */
   canLand: boolean;
+  /** 现在走的是「先问后排版」：这一轮的答案先攒着，一轮问完才落——所以这里不问落点 */
+  collecting: boolean;
 }>();
 const emit = defineEmits<{
   save: [string];
@@ -41,7 +43,9 @@ function toggleLand(event: Event) {
     <textarea v-model="body" class="note" rows="4" :placeholder="t('flow.answer.placeholder')" />
     <p class="hint">{{ t("flow.answer.terminal") }}</p>
 
-    <fieldset class="land" :disabled="props.busy || !props.canLand">
+    <!-- 先问后排版：这一条先攒着，落点要到"一轮问够了"那一步才用得上 -->
+    <p v-if="props.collecting" class="hint">{{ t("flow.round.collect_hint") }}</p>
+    <fieldset v-else class="land" :disabled="props.busy || !props.canLand">
       <label class="land__label">
         <input type="checkbox" :checked="props.landToBody" @change="toggleLand" />
         {{ t("flow.land.toggle") }}

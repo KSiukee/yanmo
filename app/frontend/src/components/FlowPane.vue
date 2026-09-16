@@ -19,6 +19,7 @@ import AskingPane from "./AskingPane.vue";
 import DeferMenu from "./DeferMenu.vue";
 import FlowRecall from "./FlowRecall.vue";
 import InspireBox from "./InspireBox.vue";
+import RoundTray from "./RoundTray.vue";
 
 const props = defineProps<{ workId: number | null; session: EditorSession }>();
 
@@ -32,32 +33,27 @@ const {
   answerFor,
   justSaved,
   followChapter,
-  landAt,
-  landToBody,
+  roundMode,
   canLand,
   selected,
-  cooled,
-  waiting,
-  mutedSources,
-  mutedClasses,
   chapterName,
   forChapter,
-  landableAnswer,
-  landHint,
+  landing,
+  round,
   ask,
   skip,
   openAnswer,
   saveAnswer,
   saveInspiration,
   landLastAnswer,
-  toggleFollow,
+  landRound,
+  toggleWalk,
+  toggleRound,
   openDefer,
   closeDefer,
   openInspire,
   closeInspire,
   closeAnswer,
-  setLandAt,
-  setLandToBody,
   praise,
   discard,
   muteClass,
@@ -78,10 +74,14 @@ const {
     <p v-if="errorCode" class="pane__error">{{ t("flow.error", { code: errorCode }) }}</p>
     <p v-if="busy" class="pane__hint">{{ t("flow.loading") }}</p>
 
-    <!-- 模式 A：跟着这一章走（排序在核心；界面只把当前章报上去） -->
+    <!-- 两种跟章走法（同时只能开一种）：排序在核心，界面只把当前章报上去 -->
     <label class="follow">
-      <input type="checkbox" :checked="followChapter" @change="toggleFollow" />
+      <input type="checkbox" :checked="followChapter && !roundMode" @change="toggleWalk" />
       {{ t("flow.follow.toggle") }}
+    </label>
+    <label class="follow">
+      <input type="checkbox" :checked="roundMode" @change="toggleRound" />
+      {{ t("flow.round.toggle") }}
     </label>
     <p v-if="followChapter" class="pane__hint">
       {{ t("flow.follow.hint", { chapter: chapterName, count: forChapter }) }}
@@ -102,15 +102,33 @@ const {
       @skip="skip"
     />
 
+    <!-- 先问后排版：这一轮攒下的都在这儿（排序 / 删 / 改字，问够了再一起落） -->
+    <RoundTray
+      v-if="roundMode"
+      :items="round.items.value"
+      :busy="busy"
+      :previewing="round.previewing.value"
+      :can-land="canLand"
+      :chapter="chapterName"
+      :land-at="landing.landAt.value"
+      @move="round.move"
+      @remove="round.remove"
+      @amend="round.amend"
+      @finish="round.finish"
+      @back="round.back"
+      @clear="round.clear"
+      @land="landRound"
+    />
+
     <!-- 「记下了」这条回执放在面板上固定一处：作答之后那一张就离开"正在问"了，
          回执留在里面会跟着一起消失（作者会以为没记上） -->
     <section v-if="justSaved" class="receipt">
       <p class="saved">{{ justSaved }}</p>
-      <div v-if="landableAnswer" class="row">
+      <div v-if="landing.landableAnswer.value" class="row">
         <button class="link" :disabled="busy" @click="landLastAnswer">
           {{ t("flow.land.now") }}
         </button>
-        <span class="hint">{{ landHint }}</span>
+        <span class="hint">{{ landing.landHint.value }}</span>
       </div>
     </section>
 
@@ -124,11 +142,12 @@ const {
     <AnswerBox
       v-if="answerFor && active"
       :busy="busy"
-      :land-at="landAt"
-      :land-to-body="landToBody"
+      :land-at="landing.landAt.value"
+      :land-to-body="landing.landToBody.value"
       :can-land="canLand"
-      @update:land-at="setLandAt"
-      @update:land-to-body="setLandToBody"
+      :collecting="roundMode"
+      @update:land-at="landing.setLandAt"
+      @update:land-to-body="landing.setLandToBody"
       @save="saveAnswer"
       @cancel="closeAnswer"
     />
@@ -155,9 +174,9 @@ const {
     <p v-else-if="!busy && board" class="pane__hint">{{ t("flow.empty") }}</p>
 
     <!-- 在等条件的 -->
-    <section v-if="waiting.length > 0">
+    <section v-if="(board?.open_deferrals?.length ?? 0) > 0">
       <h3 class="sec">{{ t("flow.waiting") }}</h3>
-      <p v-for="item in waiting" :key="item.id" class="waiting">
+      <p v-for="item in board?.open_deferrals ?? []" :key="item.id" class="waiting">
         <span v-if="item.kind === 'time'">{{ dueLabel(item.due_at_ms, Date.now()) }}</span>
         <span v-else-if="item.kind === 'written'">{{ t("flow.waiting.written") }}</span>
         <span v-else>{{ t("flow.waiting.manual") }}</span>
@@ -171,9 +190,9 @@ const {
     <!-- 回头路：冷却库（捞回）与两张已静音清单——单独成件，见 `FlowRecall` -->
     <FlowRecall
       :busy="busy"
-      :cooled="cooled"
-      :muted-classes="mutedClasses"
-      :muted-sources="mutedSources"
+      :cooled="board?.cooled ?? []"
+      :muted-classes="board?.muted_classes ?? []"
+      :muted-sources="board?.muted_sources ?? []"
       @retrieve="retrieve"
       @mute-source="muteSource"
       @unmute-class="unmuteClass"

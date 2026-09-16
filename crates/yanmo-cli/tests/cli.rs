@@ -939,3 +939,68 @@ fn question_answering_is_drivable_from_the_command_line() {
         "别的问题照样在列表里，只是排在后面"
     );
 }
+
+/// 一轮落章（先问后排版）：一串答案**一次**落进这一章——顺序按给的来，改过的字回写，
+/// 稿子仍是一个字节不动。
+#[test]
+fn question_round_is_drivable_from_the_command_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let (work_id, chapter_id) = seed(dir.path(), "novel");
+    let work = work_id.to_string();
+    let node = chapter_id.to_string();
+    ok(dir.path(), "write", &[("node", &node), ("body", "正文先摆一句话在这儿。")]);
+    let before = ok(dir.path(), "fingerprint", &[("node", &node)])["fingerprint"].clone();
+
+    // 一轮里答两条
+    let mut cards = Vec::new();
+    for body in ["第一段：他回了家。", "第二段：信还在抽屉里。"] {
+        let card = ok(
+            dir.path(),
+            "card-new",
+            &[("work", &work), ("body", body), ("template", "chapter.empty_body")],
+        )["card_id"]
+            .as_i64()
+            .unwrap();
+        ok(dir.path(), "question-answer", &[("id", &card.to_string()), ("body", body)]);
+        cards.push(card);
+    }
+
+    // 落：顺序倒过来，第二条还改了字
+    let items = format!(
+        r#"[{{"card_id":{},"body":"第二段：信还在抽屉里（改了字）。"}},{{"card_id":{},"body":"第一段：他回了家。"}}]"#,
+        cards[1], cards[0]
+    );
+    let landed = ok(
+        dir.path(),
+        "question-round",
+        &[("work", &work), ("node", &node), ("items", &items)],
+    );
+    assert_eq!(landed["count"], 2, "{landed}");
+
+    // 两条都标成落过；改过的那条以托盘里的字为准
+    let second = ok(dir.path(), "question-answers", &[("id", &cards[1].to_string())]);
+    assert_eq!(second["answers"][0]["status"], "landed");
+    assert_eq!(second["answers"][0]["body"], "第二段：信还在抽屉里（改了字）。", "改过的字回写了答案池");
+
+    // 坏输入整轮拒绝：空数组 / 没答案的卡
+    match run(dir.path(), "question-round", &[("work", &work), ("node", &node), ("items", "[]")]) {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "round.empty"),
+        other => panic!("空轮该被拒：{other:?}"),
+    }
+    let fresh = ok(
+        dir.path(),
+        "card-new",
+        &[("work", &work), ("body", "还没答的一条"), ("template", "chapter.empty_body")],
+    )["card_id"]
+        .as_i64()
+        .unwrap();
+    let bad = format!(r#"[{{"card_id":{},"body":"没答过就落"}}]"#, fresh);
+    match run(dir.path(), "question-round", &[("work", &work), ("node", &node), ("items", &bad)]) {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "answer.not_found"),
+        other => panic!("没答案的卡该被拒：{other:?}"),
+    }
+
+    // 只做账：稿子一个字节不动（正文那几段字由界面插进编辑会话）
+    let after = ok(dir.path(), "fingerprint", &[("node", &node)])["fingerprint"].clone();
+    assert_eq!(before, after, "一轮落章命令自己不写正文");
+}

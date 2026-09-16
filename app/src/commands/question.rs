@@ -20,7 +20,9 @@ use crate::error::ApiError;
 use crate::storage::AppData;
 use yanmo_core::model::QuestionState;
 use yanmo_core::question::{DeferPreset, QuestionDraft};
-use yanmo_core::store::{Answer, CooledCard, Deferral, Inspiration, SelectedQuestion, Store};
+use yanmo_core::store::{
+    Answer, CooledCard, Deferral, Inspiration, RoundItem, SelectedQuestion, Store,
+};
 
 /// 面板一次要的全部数据。
 #[derive(Debug, Serialize)]
@@ -179,6 +181,25 @@ pub fn question_answer(
         let work_id = store.question_card(card_id)?.work_id;
         store.record_question_answer(card_id, &body, &source, "author")?;
         Ok(AnswerReceiptDto { answer: store.answer_of_question(card_id)?, board: board(store, work_id)? })
+    })
+}
+
+/// 一轮落章（先问后排版）：把这一轮攒下的答案**一次**落进这一章。
+///
+/// 与 [`question_land_answer`] 的分工：那条是"答一条落一条"，这条是"一轮问完一次落"。
+/// 正文那几段字由界面**一次**插进编辑会话（同一条编辑路，自动落盘照常）；这里做的是账——
+/// 回写作者改过的字、把每条标成落过、逐条留痕，一个事务。
+#[tauri::command(rename_all = "snake_case")]
+pub fn question_apply_round(
+    data: State<'_, AppData>,
+    work_id: i64,
+    node_id: i64,
+    items: Vec<RoundItem>,
+) -> Result<QuestionBoardDto, ApiError> {
+    crate::acceptance::note_command("question_apply_round");
+    data.with_store(|store| {
+        store.apply_answer_round(work_id, node_id, &items, "author")?;
+        board(store, work_id)
     })
 }
 

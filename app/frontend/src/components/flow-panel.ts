@@ -1,16 +1,15 @@
-// 叩问面板的**状态与命令编排**：挑什么来问、问出之后怎么处置、答案怎么落进正文。
+// 叩问面板的**状态与命令编排**：挑什么来问、问出之后怎么处置、走法怎么切换。
 //
 // 单独成文件的原因（与 `editor/session.ts` 同一条理由）：这一整块是"会发生什么"，
-// 而 `.vue` 那一份是"长什么样"——两者的变化理由不一样，混在一个文件里只会越长越难改。
-// 组件那一层于是**一个 API 都不直接调**：要做什么都从这里拿。
+// 而 `.vue` 那一份是"长什么样"——两者的变化理由不一样。组件那一层于是**一个 API 都不直接调**。
 //
-// 四条纪律（与核心一致）：
-// 1. **点开一张才算"问出"**——那一刻才消耗新颖度；只看列表不算已问；
-// 2. **跟着这一章走**（模式 A）：开着时核心把与当前章有关的问题排最前，答完自动出下一张；
-//    排序规则在核心（选题是机制），界面只把当前章报上去——不在这边重排一遍；
-// 3. 落进正文的永远是**作者自己的字**：界面的活儿是把它插进编辑会话（于是自动落盘、
-//    字数、账本、版本快照全照常），核心只负责记下"这一条用掉了、落到哪一章"；
-// 4. 界面不拼句子：模板句从字典渲染，核心只给键与槽位。
+// 三种走法（面板顶上那两个开关，同时只能开一种）：
+// - **列表**（默认）：按引力排一排，你挑着答；答完就地落（想落的话）——随手用；
+// - **跟着这一章走**（模式 A）：当前章的问题排最前，答完自动出下一张，答一条落一条——边想边写；
+// - **先问后排版**（模式 B）：同样跟着这一章走，但答案**先攒着**，一轮问够了再一起落。
+//
+// 三条纪律（与核心一致）：点开一张才算"问出"；排序在核心（界面只报当前章）；
+// 落进正文的永远是作者自己的字（界面插进编辑会话、核心记账）。
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
 import { t } from "../locales/index.ts";
@@ -23,7 +22,6 @@ import {
   questionDiscard,
   questionDrafts,
   questionInspire,
-  questionLandAnswer,
   questionMuteClass,
   questionMuteSource,
   questionPraise,
@@ -33,12 +31,16 @@ import {
   questionUndefer,
   questionUnmuteClass,
   questionUnmuteSource,
-  type Answer,
   type QuestionBoard,
   type SelectedQuestion,
 } from "../api/question.ts";
 import type { EditorSession } from "../editor/session.ts";
-import { countForChapter, inputLabel, landLabel, renderDraft, type LandAt } from "./question.ts";
+import { countForChapter, inputLabel, renderDraft } from "./question.ts";
+import { useLanding } from "./use-landing.ts";
+import { useRound } from "./use-round.ts";
+
+/** 面板的三种走法（列表 / 跟着这一章走 / 先问后排版）。 */
+export type PanelMode = "list" | "walk" | "round";
 
 /** 面板要的那点外部东西：哪本书，以及编辑会话（落章要用它的正文那条路）。 */
 export interface FlowPanelOptions {
@@ -56,28 +58,17 @@ export function useFlowPanel(props: FlowPanelOptions) {
   const inspireFor = ref(false);
   const answerFor = ref(false);
   const justSaved = ref("");
-  /** 模式 A：跟着这一章走（**不落盘**——它是"当下这一会儿"的写法，不是长期偏好） */
-  const followChapter = ref(false);
-  /** 落点与"要不要落进正文"：作者的选择，这次会话内接着用 */
-  const landAt = ref<LandAt>("cursor");
-  const landToBody = ref(false);
-  /** 刚答下的那一份（回执）：答完没落的话，还能回头落一次 */
-  const lastAnswer = ref<Answer | null>(null);
-  /** 那份答案是在哪一章答下的——切了章就不该再往"现在这一章"落 */
-  const lastAnswerNode = ref<number | null>(null);
+  /** 走法（**不落盘**——它是"当下这一会儿"的写法，不是长期偏好） */
+  const mode = ref<PanelMode>("list");
 
   let timer: number | undefined;
 
-  /** 当前这一章（落章的落点、模式 A 的出题都认它）。 */
+  /** 当前这一章（落章的落点、跟章出题都认它）。 */
   const currentChapter = computed(() => props.session.directory.current.value);
-  /** 有没有打开着的一章：没有的话落章那两个控件按不了 */
+  /** 有没有打开着的一章：没有的话落章那些控件按不了 */
   const canLand = computed(() => currentChapter.value !== null);
 
   const selected = computed(() => board.value?.selected ?? []);
-  const cooled = computed(() => board.value?.cooled ?? []);
-  const waiting = computed(() => board.value?.open_deferrals ?? []);
-  const mutedSources = computed(() => board.value?.muted_sources ?? []);
-  const mutedClasses = computed(() => board.value?.muted_classes ?? []);
   /** 当前这一章叫什么（面板上那句"跟着哪一章走"要说清对象） */
   const chapterName = computed(() => {
     const title = props.session.chapterTitle.value;
@@ -85,15 +76,25 @@ export function useFlowPanel(props: FlowPanelOptions) {
   });
   /** 眼下这份候选里，与当前章有关的有几条 */
   const forChapter = computed(() => countForChapter(selected.value, currentChapter.value));
-  /** 回执里那条答案还能不能落：还没落过、而且就是**这一章**答下的（切了章就不许乱落） */
-  const landableAnswer = computed(
-    () =>
-      canLand.value &&
-      lastAnswer.value !== null &&
-      lastAnswer.value.status !== "landed" &&
-      lastAnswerNode.value === currentChapter.value,
-  );
-  const landHint = computed(() => t("flow.land.undo_hint", { at: landLabel(landAt.value) }));
+
+  const followChapter = computed(() => mode.value !== "list");
+  const roundMode = computed(() => mode.value === "round");
+
+  // 两半落法各自成件：就地落（useLanding）与一轮落（useRound）。它们都要"落完之后换个面板"
+  // 与"按面板口径再读一次"，所以把那两件事传进去。
+  const landing = useLanding({
+    session: props.session,
+    currentNode: () => currentChapter.value,
+    onBoard: (next) => (board.value = next),
+    settle,
+  });
+  const round = useRound({
+    session: props.session,
+    workId: () => props.workId,
+    currentNode: () => currentChapter.value,
+    onBoard: (next) => (board.value = next),
+    settle,
+  });
 
   /** 报错只给码：句子在字典里（界面文案只有一处来源，别在这里另拼中文）。 */
   function report(error: unknown) {
@@ -101,10 +102,10 @@ export function useFlowPanel(props: FlowPanelOptions) {
   }
 
   /**
-   * 收口：模式 A 开着就再按「这一章优先」读一次面板。
+   * 收口：跟着这一章走时再按「这一章优先」读一次面板。
    *
-   * 排序规则在核心（选题是机制），界面只把当前章报上去。关着模式 A、
-   * 或没打开着任何一章时原样返回，省一次往返。
+   * 排序规则在核心（选题是机制），界面只把当前章报上去。不跟章、或没打开着任何一章时
+   * 原样返回，省一次往返。
    */
   async function settle(result: QuestionBoard): Promise<QuestionBoard> {
     const work = props.workId;
@@ -184,7 +185,7 @@ export function useFlowPanel(props: FlowPanelOptions) {
     }
   }
 
-  /** 模式 A 的「下一张」：候选池里最前面那张（刚答下的那张已经不在池子里了）。 */
+  /** 跟着章走时的「下一张」：候选池里最前面那张（刚答下的那张已经不在池子里了）。 */
   async function askNext() {
     const next = selected.value[0];
     if (next) await ask(next);
@@ -208,8 +209,9 @@ export function useFlowPanel(props: FlowPanelOptions) {
    * `source` 现在只有 `typed`（键盘）；口述那条链路落地后，那条路把 `voice` / `mixed`
    * 传进来就行——命令与存储的形状都不变，这正是"文本与输入方式解耦"要的效果。
    *
-   * 勾了「落进正文」的话，落章分两半走：**界面把字插进编辑会话**（于是自动落盘、字数、
-   * 账本、版本快照全照常），**核心记下"这一条用掉了、落到哪一章"**——两边各做各的那一半。
+   * 落不落、怎么落，看当前走法：
+   * - **先问后排版**：攒进这一轮（先不落），一轮问够了再一起落；
+   * - 其余：勾了「落进正文」就**就地落**（答复制里还能补落）。
    */
   async function saveAnswer(body: string) {
     const card = active.value;
@@ -221,20 +223,24 @@ export function useFlowPanel(props: FlowPanelOptions) {
       const source = "typed";
       const receipt = await questionAnswer(card.card_id, body, source);
       const node = currentChapter.value;
-      lastAnswer.value = receipt.answer;
-      lastAnswerNode.value = node;
-      board.value = await settle(receipt.board);
       // 回执照**核心落下的那一份**说（不是照界面自己传的那份）：修剪过的原文、认下的输入方式
       let done = t("flow.answer.saved", {
         kind: inputLabel(receipt.answer.source),
         body: receipt.answer.body,
       });
-      if (landToBody.value && !(await landAnswer(card.card_id, receipt.answer.body, node))) {
-        done = t("flow.answer.land_failed", { body: receipt.answer.body });
+      if (roundMode.value) {
+        round.collect(receipt.answer);
+      } else {
+        landing.noteAnswer(receipt.answer);
+        const missed =
+          landing.landToBody.value &&
+          !(await landing.landOne(card.card_id, receipt.answer.body, node));
+        if (missed) done = t("flow.answer.land_failed", { body: receipt.answer.body });
       }
+      board.value = await settle(receipt.board);
       active.value = null;
       answerFor.value = false;
-      // 模式 A：答完接着问下一张。回执要写在它**后面**——ask 会把上一张的回执清掉
+      // 跟章走：答完接着问下一张。回执要写在它**后面**——ask 会把上一张的回执清掉
       if (followChapter.value) await askNext();
       justSaved.value = done;
     } catch (error) {
@@ -244,34 +250,28 @@ export function useFlowPanel(props: FlowPanelOptions) {
     }
   }
 
-  /**
-   * 把一条答案落进正文：**先插字（作者的正常编辑），再留痕**。
-   *
-   * 顺序是刻意的：插字是作者马上看得见的动作，留痕是账。留痕那一步失败时字已经在稿子里了——
-   * 如实报错比偷偷撤掉更对（撤掉会把作者刚看见的那一段又抽走）。
-   */
-  async function landAnswer(cardId: number, body: string, node: number | null): Promise<boolean> {
-    if (node === null || !props.session.insertText(body, landAt.value)) return false;
-    board.value = await settle(await questionLandAnswer(cardId, node));
-    return true;
-  }
-
   /** 回执里那个「落进本章正文」：答完当时没落，回头还能落一次。 */
   async function landLastAnswer() {
-    const answer = lastAnswer.value;
-    const node = lastAnswerNode.value;
-    if (!answer || node === null || node !== currentChapter.value) return;
     try {
       busy.value = true;
       errorCode.value = "";
-      if (await landAnswer(answer.card_id, answer.body, node)) {
-        lastAnswer.value = { ...answer, status: "landed" };
-        justSaved.value = t("flow.land.done", { body: answer.body });
-      } else {
-        justSaved.value = t("flow.answer.land_failed", { body: answer.body });
-      }
-    } catch (error) {
-      report(error);
+      const outcome = await landing.landLast();
+      if (outcome.errorCode) errorCode.value = outcome.errorCode;
+      else if (outcome.message) justSaved.value = outcome.message;
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  /** 一轮问够了 → 落到这一章（预览见过之后）。 */
+  async function landRound() {
+    const count = round.count.value;
+    try {
+      busy.value = true;
+      errorCode.value = "";
+      const code = await round.landAll(landing.landAt.value);
+      if (code) errorCode.value = code;
+      else justSaved.value = t("flow.round.done", { count });
     } finally {
       busy.value = false;
     }
@@ -296,40 +296,45 @@ export function useFlowPanel(props: FlowPanelOptions) {
     }
   }
 
-  /** 开关模式 A：换一种出题顺序（重新问一次核心；排序不在这边做） */
-  function toggleFollow(event: Event) {
-    followChapter.value = (event.target as HTMLInputElement).checked;
-    // 模式 A 的意思就是"边想边写、答完落进这一章"：打开它时顺手把落章勾上
-    // （作者当然还能自己取消——落不落始终是他定的）
-    if (followChapter.value) landToBody.value = true;
+  /**
+   * 换走法。三种走法共用一个开关位（同时只能有一种）。
+   *
+   * 打开跟章走的那两种时顺手勾上「落进正文」——那两种模式的意思本来就是"答完就落进这一章"
+   * （模式 B 只是把"落"推到一轮之后）；作者当然还能自己取消。
+   */
+  function pickMode(next: PanelMode, on: boolean) {
+    mode.value = on ? next : "list";
+    if (mode.value !== "list") landing.setLandToBody(true);
     void refresh();
   }
+  const toggle = (next: PanelMode) => (event: Event) =>
+    pickMode(next, (event.target as HTMLInputElement).checked);
+  const toggleWalk = toggle("walk");
+  const toggleRound = toggle("round");
 
-  // ── 处置动作：组件只管点，命令全在这儿调（组件那一层一个 API 都不碰） ──────────
+  // ── 处置动作：组件只管点，命令全在这儿调。两条都过一道手——处置的对象永远是
+  // "正在问的那一张"，回头路那几个则要带上"哪本书"（各自判一遍容易漏，漏了就悄悄点不动）。
+  const withActive = (action: (cardId: number) => Promise<QuestionBoard>) =>
+    active.value ? dispose(() => action(active.value!.card_id)) : undefined;
+  const withWork = (action: (workId: number, arg: string) => Promise<QuestionBoard>) => {
+    return (arg: string) =>
+      props.workId ? dispose(() => action(props.workId!, arg)) : undefined;
+  };
   const openDefer = () => (deferFor.value = true);
   const closeDefer = () => (deferFor.value = false);
   const openInspire = () => (inspireFor.value = true);
   const closeInspire = () => (inspireFor.value = false);
   const closeAnswer = () => (answerFor.value = false);
-  const setLandAt = (at: LandAt) => (landAt.value = at);
-  const setLandToBody = (on: boolean) => (landToBody.value = on);
-  const praise = () => (active.value ? dispose(() => questionPraise(active.value!.card_id)) : undefined);
-  const discard = () =>
-    active.value ? dispose(() => questionDiscard(active.value!.card_id)) : undefined;
-  const muteClass = () =>
-    active.value ? dispose(() => questionMuteClass(active.value!.card_id)) : undefined;
+  const praise = () => withActive(questionPraise);
+  const discard = () => withActive(questionDiscard);
+  const muteClass = () => withActive(questionMuteClass);
   const deferCurrent = (preset: string, note: string) =>
-    deferFor.value && active.value
-      ? dispose(() => questionDefer(active.value!.card_id, preset, note))
-      : undefined;
+    deferFor.value ? withActive((cardId) => questionDefer(cardId, preset, note)) : undefined;
   const undefer = (cardId: number) => dispose(() => questionUndefer(cardId));
   const retrieve = (cardId: number) => dispose(() => questionRetrieve(cardId));
-  const muteSource = (source: string) =>
-    props.workId ? dispose(() => questionMuteSource(props.workId!, source)) : undefined;
-  const unmuteClass = (key: string) =>
-    props.workId ? dispose(() => questionUnmuteClass(props.workId!, key)) : undefined;
-  const unmuteSource = (source: string) =>
-    props.workId ? dispose(() => questionUnmuteSource(props.workId!, source)) : undefined;
+  const muteSource = withWork(questionMuteSource);
+  const unmuteClass = withWork(questionUnmuteClass);
+  const unmuteSource = withWork(questionUnmuteSource);
 
   onMounted(() => {
     void refresh();
@@ -340,7 +345,7 @@ export function useFlowPanel(props: FlowPanelOptions) {
     if (timer !== undefined) window.clearInterval(timer);
   });
   watch(() => props.workId, () => void refresh());
-  // 跟着这一章走：作者切了章，出题顺序也跟着换（重新问一次核心）
+  // 跟章走：作者切了章，出题顺序也跟着换（重新问一次核心）
   watch(currentChapter, () => {
     if (followChapter.value) void refresh();
   });
@@ -355,18 +360,14 @@ export function useFlowPanel(props: FlowPanelOptions) {
     answerFor,
     justSaved,
     followChapter,
-    landAt,
-    landToBody,
+    roundMode,
     canLand,
     selected,
-    cooled,
-    waiting,
-    mutedSources,
-    mutedClasses,
     chapterName,
     forChapter,
-    landableAnswer,
-    landHint,
+    // 两半落法（模板直接读它们的 ref / 方法）
+    landing,
+    round,
     refresh,
     ask,
     skip,
@@ -374,14 +375,14 @@ export function useFlowPanel(props: FlowPanelOptions) {
     saveAnswer,
     saveInspiration,
     landLastAnswer,
-    toggleFollow,
+    landRound,
+    toggleWalk,
+    toggleRound,
     openDefer,
     closeDefer,
     openInspire,
     closeInspire,
     closeAnswer,
-    setLandAt,
-    setLandToBody,
     praise,
     discard,
     muteClass,

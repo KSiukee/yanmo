@@ -2,10 +2,12 @@
 //!
 //! 判据全落在可核对的事实上：答案碎片读得回来、卡走到终态、op-log 里有据可查、
 //! 正文一个字节没动、已答之后再答被状态机拒、认不出的输入方式一个字节都写不进去。
+//! 外加**先问后排版**（一轮一次落）那几条：顺序由调用方定、改过的字回写并留痕、
+//! 半轮落不下去时一条都不写。
 
 use yanmo_core::error::codes;
 use yanmo_core::model::{InputSource, NewQuestionCard, NodeKind, QuestionState, WorkKind};
-use yanmo_core::store::Store;
+use yanmo_core::store::{RoundItem, Store};
 
 fn fresh() -> (tempfile::TempDir, Store) {
     let dir = tempfile::tempdir().unwrap();
@@ -281,4 +283,98 @@ fn landing_without_an_answer_says_so() {
 
     let err = store.mark_answer_landed(id, chapter, "author").unwrap_err();
     assert_eq!(err.code(), codes::ANSWER_NOT_FOUND);
+}
+
+/// 一轮落章（先问后排版）：**顺序由调用方定、改过的字回写答案池、正文仍是一个字节不动**。
+#[test]
+fn a_round_lands_in_the_given_order_and_writes_back_edits() {
+    let (_dir, mut store) = fresh();
+    let (work, chapter) = seeded(&mut store);
+    let first = store.create_question_card(&card(work)).unwrap();
+    let second = store.create_question_card(&card(work)).unwrap();
+    store.record_question_answer(first, "第一段", "typed", "author").unwrap();
+    store.record_question_answer(second, "第二段", "typed", "author").unwrap();
+
+    // 作者在托盘里把顺序倒过来了，还顺手改了第二条的字（首尾空白也该修剪掉）
+    let landed = store
+        .apply_answer_round(
+            work,
+            chapter,
+            &[
+                RoundItem { card_id: second, body: "  第二段（改了字）  ".to_string() },
+                RoundItem { card_id: first, body: "第一段".to_string() },
+            ],
+            "author",
+        )
+        .unwrap();
+
+    let edited = store.answer_of_question(second).unwrap();
+    let untouched = store.answer_of_question(first).unwrap();
+    assert_eq!(landed, vec![edited.id, untouched.id], "落下的顺序就是给的那个顺序");
+    assert_eq!(edited.body, "第二段（改了字）", "改过的字回写了答案池");
+    assert_eq!(edited.status, "landed");
+    assert_eq!(untouched.body, "第一段");
+
+    // 留痕：改了的那条 create → amend → land，没改的只有 create → land
+    let ops = |id: i64| -> Vec<String> {
+        store.card_events(id).unwrap().into_iter().map(|event| event.op).collect()
+    };
+    assert_eq!(ops(edited.id), vec!["create", "amend", "land"]);
+    assert_eq!(ops(untouched.id), vec!["create", "land"]);
+    let payload: String = store
+        .conn()
+        .query_row(
+            "SELECT payload FROM op_log WHERE entity = 'fragments' AND entity_id = ?1 AND op = 'amend'",
+            [edited.id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        payload.contains(&format!("\"chars_before\":{}", "第二段".chars().count()))
+            && payload.contains(&format!("\"chars\":{}", "第二段（改了字）".chars().count())),
+        "改前改后各有几个字要留得下来：{payload}"
+    );
+
+    // 只留痕：正文那几段字是界面插进编辑会话的，核心一个字节都不写
+    assert_eq!(store.read_body(chapter).unwrap(), "");
+}
+
+/// 一轮里有一条不对，**整轮都不写**（半轮落下去比整轮不落更难查）。
+#[test]
+fn a_round_with_one_bad_item_writes_nothing_at_all() {
+    let (_dir, mut store) = fresh();
+    let (work, chapter) = seeded(&mut store);
+    let good = store.create_question_card(&card(work)).unwrap();
+    store.record_question_answer(good, "这一条没问题", "typed", "author").unwrap();
+    let unanswered = store.create_question_card(&card(work)).unwrap();
+    let other = store.create_work(WorkKind::Novel, "另一本").unwrap();
+    let stranger = store.create_question_card(&card(other.id)).unwrap();
+    store.record_question_answer(stranger, "别人家的答案", "typed", "author").unwrap();
+    let volume = store.create_node(work, None, NodeKind::Volume, "第一卷").unwrap();
+
+    let one = |card_id: i64, body: &str| vec![RoundItem { card_id, body: body.to_string() }];
+    let cases: [(Vec<RoundItem>, &str, &str); 4] = [
+        (vec![], codes::ROUND_EMPTY, "空轮"),
+        (one(good, "  "), codes::ANSWER_BODY_EMPTY, "空答案"),
+        (one(unanswered, "没答过就落"), codes::ANSWER_NOT_FOUND, "没答案的卡"),
+        (one(stranger, "别人家的答案"), codes::ROUND_CARD_FOREIGN, "别的书的卡"),
+    ];
+    for (items, expected, why) in cases {
+        let err = store.apply_answer_round(work, chapter, &items, "author").unwrap_err();
+        assert_eq!(err.code(), expected, "{why}");
+    }
+    // 落点不是正文节点：同一条码（这一段放不了）
+    let err = store
+        .apply_answer_round(work, volume, &one(good, "好答案"), "author")
+        .unwrap_err();
+    assert_eq!(err.code(), codes::ANSWER_LAND_NODE_INVALID);
+
+    // 一路被拒之后：那条好答案还躺在答案池里，一个字节都没写
+    assert_eq!(store.answer_of_question(good).unwrap().status, "pending");
+    assert_eq!(store.answer_of_question(good).unwrap().body, "这一条没问题");
+    assert_eq!(
+        store.card_events(store.answer_of_question(good).unwrap().id).unwrap().len(),
+        1,
+        "只有建卡那一条痕"
+    );
 }

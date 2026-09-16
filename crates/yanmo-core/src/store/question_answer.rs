@@ -13,10 +13,12 @@
 //!
 //! 答案碎片住在**碎片统一表**（`frag_kind = 'answer'`）里，与问题卡、灵感速记同表，
 //! 于是天生带 `source / created_at / linked / derived_from` 这一套（"答案池同表"）。
-//! 它**不动正文一个字**：把答案落到章里是后续两条落点模式（穿插式 / 先问后排版）的事。
+//! 它**不动正文一个字**：把答案落到章里是两条落点模式的事——
+//! **穿插式**（[`Store::mark_answer_landed`]：答一条落一条，边想边写）
+//! 与**先问后排版**（[`Store::apply_answer_round`]：一轮问完，一次落）。
 
 use rusqlite::{params, OptionalExtension};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::card_move::move_card_in;
@@ -67,6 +69,17 @@ fn into_answer(raw: (i64, Option<i64>, String, String, String, Option<i64>, i64)
         status: raw.4,
         created_at: raw.6,
     }
+}
+
+/// 一轮里的一条：答的是哪张卡、作者最终认定的那段字（"先问后排版"用）。
+///
+/// 作者在这一轮里**可能改过字**（答完当场发现串行了、或者顺手润了一句）——所以这里给的
+/// `body` 是要落下去的那一份，与库里不同就回写答案池（改了什么也留痕，见
+/// [`Store::apply_answer_round`]）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoundItem {
+    pub card_id: i64,
+    pub body: String,
 }
 
 impl Store {
@@ -174,6 +187,98 @@ impl Store {
         )?;
         tx.commit()?;
         Ok(answer.id)
+    }
+
+    /// 把**一轮**答案落进某一章（先问后排版）：回写改动 + 标已落 + 逐条留痕，**一个事务**。
+    ///
+    /// 与单条落章（[`Store::mark_answer_landed`]）的分工：那条是"答一条落一条"，
+    /// 这条是"一轮问完一次落"。两条路的留痕落在同一条链上（都是 fragment 的 op-log），
+    /// 只是这条一次记一串——落下去的顺序**就是这里给的顺序**（作者在托盘里排的那个）。
+    ///
+    /// 正文那几段字**不由核心写**：界面把它们一次插进编辑会话（于是自动落盘、字数、账本、
+    /// 版本快照全照常）。核心在这儿做的是账。
+    ///
+    /// 校验在写之前一次做完：章得是同一本书里承载正文的节点；每条都得真的答过、
+    /// **不属于这本书的卡当场拒绝**——半轮落下去比整轮不落更难查。
+    pub fn apply_answer_round(
+        &mut self,
+        work_id: i64,
+        node_id: i64,
+        items: &[RoundItem],
+        trigger: &str,
+    ) -> Result<Vec<i64>> {
+        if items.is_empty() {
+            return Err(Error::invalid(codes::ROUND_EMPTY));
+        }
+        check_landing_node(self, work_id, node_id)?;
+        // 读侧先做完（要拿每条的现状：有没有答案、字改没改），写侧只开一个事务
+        let mut planned = Vec::new();
+        for item in items {
+            let card: QuestionCard = self.question_card(item.card_id)?;
+            if card.work_id != work_id {
+                return Err(Error::invalid_with(
+                    codes::ROUND_CARD_FOREIGN,
+                    [
+                        ("card_id", item.card_id.to_string()),
+                        ("work_id", work_id.to_string()),
+                    ],
+                ));
+            }
+            let body = item.body.trim();
+            if body.is_empty() {
+                return Err(Error::invalid(codes::ANSWER_BODY_EMPTY));
+            }
+            let answer = self.answer_of_question(item.card_id)?;
+            planned.push((card.id, answer, body.to_string()));
+        }
+
+        let now = now_millis();
+        let tx = self.conn.transaction()?;
+        let mut landed = Vec::new();
+        for (card_id, answer, body) in planned {
+            // 作者改过字：回写答案池，并留下"改了"这一笔（改前改后各有几个字，别只留个 flag）
+            if answer.body != body {
+                tx.execute(
+                    "UPDATE fragments SET body = ?1, updated_at = ?2
+                      WHERE id = ?3 AND frag_kind = ?4 AND deleted_at IS NULL",
+                    params![body, now, answer.id, KIND_ANSWER],
+                )?;
+                Self::record_in(
+                    &self.device_id,
+                    &tx,
+                    "fragments",
+                    answer.id,
+                    "amend",
+                    json!({
+                        "chars_before": answer.body.chars().count(),
+                        "chars": body.chars().count(),
+                        "trigger": trigger,
+                    }),
+                )?;
+            }
+            tx.execute(
+                "UPDATE fragments SET status = 'landed', updated_at = ?1
+                  WHERE id = ?2 AND frag_kind = ?3 AND deleted_at IS NULL",
+                params![now, answer.id, KIND_ANSWER],
+            )?;
+            Self::record_in(
+                &self.device_id,
+                &tx,
+                "fragments",
+                answer.id,
+                "land",
+                json!({
+                    "card_id": card_id,
+                    "node_id": node_id,
+                    "work_id": work_id,
+                    "trigger": trigger,
+                    "round": true,
+                }),
+            )?;
+            landed.push(answer.id);
+        }
+        tx.commit()?;
+        Ok(landed)
     }
 
     /// 取一张问题卡上的答案（已答的卡一定有）。

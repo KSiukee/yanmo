@@ -69,7 +69,7 @@ pub use relocate::{copy_dir, verify_same_scale, Relocation};
 pub use restore::RestorePreview;
 pub use restore_packages::{list_packages, scan_packages, PackageBrief};
 pub use restore_swap::{swap_in, RestoreOutcome, KEEP_FOLDER};
-pub use question_answer::Answer;
+pub use question_answer::{Answer, RoundItem};
 pub use question_defer::Deferral;
 pub use question_dispose::CooledCard;
 pub use question_inspire::Inspiration;

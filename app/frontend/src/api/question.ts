@@ -101,6 +101,13 @@ export interface AnswerReceipt {
   board: QuestionBoard;
 }
 
+/** 一轮里的一条（先问后排版）：答的是哪张卡、作者最终认定的那段字。 */
+export interface RoundItem {
+  card_id: number;
+  /** 作者在托盘里可能改过；与库里不同时核心回写答案池并留痕 */
+  body: string;
+}
+
 /** 界面渲染好的一条候选（核心只认键与槽位，句子是界面按字典填出来的）。 */
 export interface QuestionOffer {
   template_key: string;
@@ -172,6 +179,16 @@ export const questionInspire = (card_id: number, body: string, source: string) =
  */
 export const questionLandAnswer = (card_id: number, node_id: number) =>
   call<QuestionBoard>(COMMANDS.questionLandAnswer, { card_id, node_id });
+
+/**
+ * 一轮落章（先问后排版）：把这一轮攒下的答案**一次**落进这一章。
+ *
+ * 正文那几段字由调用方**一次**插进编辑会话（`session.insertText`，与单条落章同一条路）；
+ * 这里让核心做账：回写作者改过的字、把每条标成落过、逐条留痕（一个事务）。
+ * 顺序就是 `items` 的顺序——作者在托盘里排的那个。
+ */
+export const questionApplyRound = (work_id: number, node_id: number, items: RoundItem[]) =>
+  call<QuestionBoard>(COMMANDS.questionApplyRound, { work_id, node_id, items });
 
 /** 解除**这一类**的静音（"这类别再问"的回头路）。 */
 export const questionUnmuteClass = (work_id: number, template_key: string) =>

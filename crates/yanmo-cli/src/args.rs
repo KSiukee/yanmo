@@ -145,7 +145,11 @@ pub const HELP_DEV: &str = "\
   question-answers --id <卡 id>
                             这张卡上答过什么（答案池里那几条，按答下的先后）
   question-land --id <卡 id> --node <章节 id> [--trigger <谁触发>]
-                            落章：把一条答案标成「落进过正文」——**只留痕，不写正文**";
+                            落章：把一条答案标成「落进过正文」——**只留痕，不写正文**
+  question-round --work <id> --node <章节 id> --items <JSON 数组>
+                            一轮落章（先问后排版）：把一串答案**一次**落进这一章；
+                            --items 形如 [{\"card_id\":1,\"body\":\"第一段\"}, …]，顺序即落下顺序
+                            （同样只留痕不写正文：正文那几段字由界面插进编辑会话）";
 
 /// 这个构建的帮助文本（发布构建只列救援档）。
 pub fn help_text() -> String {
