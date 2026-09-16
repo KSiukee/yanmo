@@ -28,7 +28,7 @@ use crate::error::{codes, Error, Result};
 /// 一条问题卡的生命周期状态。
 ///
 /// 稳定代码写进库（`fragments.status`）——**别改**（改了老库的卡就认不出来了）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum QuestionState {
     /// 待问：进了候选池，还没被问出来。
     Pending,
@@ -42,6 +42,17 @@ pub enum QuestionState {
     Discarded,
     /// 静音：这一类以后都别问了（可撤销）。按卡与按模块静音都落在这个态上。
     Muted,
+}
+
+/// 进 JSON 就用**稳定码本身**。
+///
+/// 为什么不用 `#[serde(rename_all = "snake_case")]`：变体名与稳定码是两件事
+/// （`NoNumber` 的码是 `none`），靠"改蛇形"迟早分家——而且分家时**不报错**，
+/// 只是界面上静默对不上。写死成 `as_str()` 就没有第二份口径。
+impl serde::Serialize for QuestionState {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
 }
 
 impl QuestionState {

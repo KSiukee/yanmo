@@ -12,8 +12,16 @@ import { ref } from "vue";
 import type { EditorSession } from "../editor/session.ts";
 import { formatWhen } from "../editor/display.ts";
 import { t } from "../locales/index.ts";
-import { anchoredToChapter, kindLabel, sourceBadge, WRITABLE_KINDS } from "./creator.ts";
+import {
+  anchoredToChapter,
+  canCarryStoryTime,
+  kindLabel,
+  sourceBadge,
+  storyLabel,
+  WRITABLE_KINDS,
+} from "./creator.ts";
 import { useCreatorPanel } from "./creator-panel.ts";
+import EventEdit from "./EventEdit.vue";
 import OutlineCheck from "./OutlineCheck.vue";
 
 const props = defineProps<{
@@ -30,11 +38,15 @@ const {
   draftKind,
   justSaved,
   lastDeleted,
+  editing,
   options,
   list,
   canJot,
   currentChapter,
   jot,
+  startEdit,
+  cancelEdit,
+  saveEdit,
   remove,
   undo,
 } = useCreatorPanel(props);
@@ -124,19 +136,43 @@ async function save() {
           <span v-if="sourceBadge(item.source)" class="badge">
             {{ sourceBadge(item.source) }}
           </span>
+          <span v-if="storyLabel(item)" class="badge">{{ storyLabel(item) }}</span>
+          <span v-if="item.flashback" class="badge">{{ t("creator.badge.flashback") }}</span>
           <span class="frag__when">{{ formatWhen(item.created_at) }}</span>
+          <button
+            v-if="canCarryStoryTime(item.kind)"
+            class="link"
+            :disabled="busy"
+            @click="startEdit(item)"
+          >
+            {{ t("creator.edit") }}
+          </button>
           <button class="link" :disabled="busy" @click="remove(item.id)">
             {{ t("creator.action.delete") }}
           </button>
         </p>
         <p class="frag__body">{{ item.body }}</p>
+
+        <!-- 事件才有的一小张表单：故事时间 + 倒叙（单独成件，见 EventEdit.vue） -->
+        <EventEdit
+          v-if="editing && editing.id === item.id"
+          :session="session"
+          :editing="editing"
+          :busy="busy"
+          @save="void saveEdit()"
+          @cancel="cancelEdit()"
+        />
       </li>
     </ul>
     <p v-else-if="board && !busy" class="pane__hint">{{ t("creator.empty") }}</p>
 
     <!-- 大纲体检：**只看不说**——对不上的地方列在这儿，改不改由作者；
          点「去设定卡改」把那一屏打开（两块住同一栏，所以不必再开一栏） -->
-    <OutlineCheck :session="session" @open-entities="session.entities.show()" />
+    <OutlineCheck
+      :session="session"
+      @open-entities="session.lore.show('entities')"
+      @open-foreshadows="session.lore.show('foreshadows')"
+    />
   </aside>
 </template>
 
@@ -310,4 +346,5 @@ async function save() {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
 </style>

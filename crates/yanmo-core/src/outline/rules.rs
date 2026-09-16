@@ -9,7 +9,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::issue::{IssueRule, OutlineIssue};
-use crate::model::{EntityCard, SceneFields};
+use crate::model::{EntityCard, Foreshadow, ForeshadowState, Fragment, SceneFields};
+
+/// 伏笔埋了多少章还没收才算"该看看了"（**章的个数**，不是字数）。
+///
+/// 20 章：一部长篇（100 章上下）里，一条线头搁了五分之一本书还没动静，
+/// 作者多半是真忘了——而那正是"伏笔未回收"要提醒的事。
+/// 短篇（十章以内）永远报不出来，这没关系：它本来就不是给短篇用的。
+const UNCOLLECTED_CHAPTERS: i64 = 20;
 
 /// 跑一遍规则要的那点数据（**纯值**：读库在 `store::outline_scan`）。
 pub struct OutlineData<'a> {
@@ -17,6 +24,12 @@ pub struct OutlineData<'a> {
     pub cards: &'a [EntityCard],
     /// 这本书的场景卡：`(节点 id, 名字, 四格)`——按树里的顺序。
     pub scenes: &'a [(i64, String, SceneFields)],
+    /// 这本书的**章**（阅读顺序的节点 id）——"隔了多少章""第几章"都靠它。
+    pub chapters: &'a [i64],
+    /// 这本书的伏笔（软删的不要）。
+    pub foreshadows: &'a [Foreshadow],
+    /// 这本书的事件碎片（只有事件才有故事时间；别的种类由读数据那一层筛掉）。
+    pub events: &'a [Fragment],
 }
 
 /// 跑全部规则，按**规则 → 位置**的稳定顺序给（同一份数据两次扫描结果一模一样）。
@@ -25,7 +38,118 @@ pub fn scan(data: &OutlineData<'_>) -> Vec<OutlineIssue> {
     issues.extend(name_clashes(data.cards));
     issues.extend(attribute_conflicts(data.cards));
     issues.extend(scene_gaps(data.scenes));
+    issues.extend(uncollected_foreshadows(data.foreshadows, data.chapters));
+    issues.extend(out_of_order_events(data.events, data.chapters));
     issues
+}
+
+/// 章的**位置账**：节点 id → 第几章（1 起）。不在书里的（锚点指向别的书 / 已删）就没有。
+fn chapter_positions(chapters: &[i64]) -> BTreeMap<i64, i64> {
+    chapters
+        .iter()
+        .enumerate()
+        .map(|(index, id)| (*id, index as i64 + 1))
+        .collect()
+}
+
+/// 埋了太久还没收的伏笔 → [`IssueRule::ForeshadowUncollected`]。
+///
+/// 只看 `planted`：**"不写了"是正经结局**（作者说过不走了，就不该再念）；
+/// 没记埋在哪一章的也跳过——判不了"隔了多少章"，**绝不猜**。
+fn uncollected_foreshadows(
+    foreshadows: &[Foreshadow],
+    chapters: &[i64],
+) -> Vec<OutlineIssue> {
+    let positions = chapter_positions(chapters);
+    let last = chapters.len() as i64;
+    let mut issues = Vec::new();
+    for item in foreshadows {
+        if item.state != ForeshadowState::Planted {
+            continue;
+        }
+        let Some(planted) = item.planted_node else { continue };
+        let Some(at) = positions.get(&planted) else { continue };
+        let gap = last - at;
+        if gap < UNCOLLECTED_CHAPTERS {
+            continue;
+        }
+        issues.push(OutlineIssue::new(
+            IssueRule::ForeshadowUncollected,
+            vec![format!("foreshadow:{}", item.id)],
+            // 主体就是这一条伏笔（锚点已经指明）；埋在第几章是**状态**，不进身份
+            Vec::new(),
+            [
+                ("body", item.body.clone()),
+                ("planted", at.to_string()),
+                ("chapters", gap.to_string()),
+            ],
+        ));
+    }
+    issues
+}
+
+/// 事件的故事时间与它在书里的位置打架 → [`IssueRule::TimelineOutOfOrder`]。
+///
+/// 判据只有一条：**两边都填了排序值、且都不是倒叙**，后一章的故事时间反而更早。
+/// 填得少就报得少——作者没填数字的那条，这里一个字都不猜。
+/// 逐条与"到目前为止最晚的那一条"比：一次说清它比谁早（比只跟邻居比更有用）。
+fn out_of_order_events(events: &[Fragment], chapters: &[i64]) -> Vec<OutlineIssue> {
+    let positions = chapter_positions(chapters);
+    // 先在章的顺序上排好（同章内按记录顺序），再走一遍
+    let mut dated: Vec<(i64, i64, &Fragment)> = Vec::new();
+    for event in events {
+        let Some(order) = event.story_order else { continue };
+        if event.flashback {
+            continue; // 回忆 / 倒叙：后写的章讲更早的事，本来就对
+        }
+        let Some(at) = event.anchors.iter().find_map(|anchor| {
+            anchor.strip_prefix("chapter:").and_then(|id| id.trim().parse::<i64>().ok())
+        }) else {
+            continue; // 没记在哪一章：说不清先后，不猜
+        };
+        let Some(position) = positions.get(&at) else { continue };
+        dated.push((*position, order, event));
+    }
+    dated.sort_by_key(|(position, _, event)| (*position, event.id));
+
+    let mut issues = Vec::new();
+    let mut latest: Option<(i64, i64, &Fragment)> = None; // (章位置, 故事时间, 事件)
+    for (position, order, event) in dated {
+        if let Some((_, late_order, late_event)) = latest {
+            if order < late_order {
+                issues.push(OutlineIssue::new(
+                    IssueRule::TimelineOutOfOrder,
+                    vec![
+                        chapter_anchor(&event.anchors).unwrap_or_else(|| format!("fragment:{}", event.id)),
+                        chapter_anchor(&late_event.anchors)
+                            .unwrap_or_else(|| format!("fragment:{}", late_event.id)),
+                    ],
+                    // 身份 = 这一条事件（同一条事件以后又倒置了，还是同一条问题）
+                    vec![event.id.to_string()],
+                    [
+                        ("body", event.body.clone()),
+                        ("order", order.to_string()),
+                        ("time", event.story_time.clone()),
+                        ("earlier_body", late_event.body.clone()),
+                        ("earlier_order", late_order.to_string()),
+                        ("earlier_time", late_event.story_time.clone()),
+                    ],
+                ));
+            }
+        }
+        if latest.is_none_or(|(_, late_order, _)| order > late_order) {
+            latest = Some((position, order, event));
+        }
+    }
+    issues
+}
+
+/// 事件锚点里的章节（`chapter:12` → `chapter:12`）；没有就返回 `None`。
+fn chapter_anchor(anchors: &[String]) -> Option<String> {
+    anchors
+        .iter()
+        .find(|anchor| anchor.starts_with("chapter:"))
+        .cloned()
 }
 
 /// 一个称呼（名字或别称）在不同的卡上出现 → [`IssueRule::EntityNameClash`]；

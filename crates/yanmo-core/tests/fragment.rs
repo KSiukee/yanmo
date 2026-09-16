@@ -14,7 +14,7 @@
 
 use yanmo_core::error::codes;
 use yanmo_core::model::{FragmentKind, WorkKind};
-use yanmo_core::store::{NewFragment, Store, FRAGMENTS_PER_BOARD};
+use yanmo_core::store::{FragmentEdit, NewFragment, Store, FRAGMENTS_PER_BOARD};
 
 fn fresh() -> (tempfile::TempDir, Store) {
     let dir = tempfile::tempdir().unwrap();
@@ -287,5 +287,101 @@ fn an_unknown_kind_in_the_db_is_reported_not_guessed() {
     assert_eq!(
         store.fragment(id).unwrap_err().code(),
         codes::UNKNOWN_FRAGMENT_KIND
+    );
+}
+
+/// 事件的故事时间：**只有事件才有**；正文与它一起改，一次给全。
+#[test]
+fn only_events_carry_a_story_time() {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let idea = store
+        .create_fragment(&new_fragment(work.id, FragmentKind::Idea, "一个念头"), "test")
+        .unwrap();
+    let event = store
+        .create_fragment(&new_fragment(work.id, FragmentKind::Event, "他走进来"), "test")
+        .unwrap();
+
+    // 事件：三样都存得下、读得回（正文一起改）
+    let saved = store
+        .update_fragment(
+            &FragmentEdit {
+                id: event,
+                body: "  他走进来（改过）  ".to_string(),
+                story_time: "承平三年·春".to_string(),
+                story_order: Some(12),
+                flashback: true,
+            },
+            "test",
+        )
+        .unwrap();
+    assert_eq!(saved.body, "他走进来（改过）", "正文修剪了首尾空白");
+    assert_eq!(saved.story_time, "承平三年·春");
+    assert_eq!(saved.story_order, Some(12));
+    assert!(saved.flashback);
+
+    // 灵感卡带故事时间：**当场拒**（静默丢掉作者写的东西比报错坏得多）
+    let err = store
+        .update_fragment(
+            &FragmentEdit {
+                id: idea,
+                body: "一个念头".to_string(),
+                story_time: "第三天".to_string(),
+                story_order: None,
+                flashback: false,
+            },
+            "test",
+        )
+        .unwrap_err();
+    assert_eq!(err.code(), codes::FRAGMENT_STORY_TIME_NOT_EVENT);
+
+    // 灵感卡只改正文（不带故事时间）：照样可以
+    let renamed = store
+        .update_fragment(
+            &FragmentEdit {
+                id: idea,
+                body: "一个念头（改过）".to_string(),
+                story_time: String::new(),
+                story_order: None,
+                flashback: false,
+            },
+            "test",
+        )
+        .unwrap();
+    assert_eq!(renamed.body, "一个念头（改过）");
+    assert_eq!(renamed.story_order, None);
+
+    // 正文空着、或改一条不存在的：都拒
+    assert_eq!(
+        store
+            .update_fragment(
+                &FragmentEdit {
+                    id: event,
+                    body: "  ".to_string(),
+                    story_time: String::new(),
+                    story_order: None,
+                    flashback: false,
+                },
+                "test",
+            )
+            .unwrap_err()
+            .code(),
+        codes::FRAGMENT_BODY_EMPTY
+    );
+    assert_eq!(
+        store
+            .update_fragment(
+                &FragmentEdit {
+                    id: 9999,
+                    body: "一句".to_string(),
+                    story_time: String::new(),
+                    story_order: None,
+                    flashback: false,
+                },
+                "test",
+            )
+            .unwrap_err()
+            .code(),
+        codes::FRAGMENT_NOT_FOUND
     );
 }

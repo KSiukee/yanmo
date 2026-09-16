@@ -12,12 +12,23 @@ use crate::error::{codes, Error, Result};
 ///
 /// "没选过"是 `None`（不在这个枚举里）：由作品类型给默认（长篇给号、单篇与文集不编号），
 /// 见 [`crate::model::WorkKind::default_naming`]。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NamingStyle {
     Arabic,
     Chinese,
     Padded,
     NoNumber,
+}
+
+/// 进 JSON 就用**稳定码本身**。
+///
+/// 为什么不用 `#[serde(rename_all = "snake_case")]`：变体名与稳定码是两件事
+/// （`NoNumber` 的码是 `none`），靠"改蛇形"迟早分家——而且分家时**不报错**，
+/// 只是界面上静默对不上。写死成 `as_str()` 就没有第二份口径。
+impl serde::Serialize for NamingStyle {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
 }
 
 impl NamingStyle {
@@ -118,12 +129,23 @@ impl NodeKind {
 /// 两种都是正经写法（网文常见跨卷续数，出版向常每卷重来），所以由作者在设置里选，
 /// **默认跨卷延续**——大多数作者写的是同一本书里的连续故事。
 /// **默认跨卷延续**——大多数作者写的是同一本书里的连续故事。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChapterNumbering {
     /// 跨卷延续：全书按阅读顺序数下去（第1卷 1~10、第2卷 11~20）
     Continue,
     /// 每卷从头数：每一卷各自从 1 开始（第2卷第1章）
     PerVolume,
+}
+
+/// 进 JSON 就用**稳定码本身**。
+///
+/// 为什么不用 `#[serde(rename_all = "snake_case")]`：变体名与稳定码是两件事
+/// （`NoNumber` 的码是 `none`），靠"改蛇形"迟早分家——而且分家时**不报错**，
+/// 只是界面上静默对不上。写死成 `as_str()` 就没有第二份口径。
+impl serde::Serialize for ChapterNumbering {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
 }
 
 impl ChapterNumbering {

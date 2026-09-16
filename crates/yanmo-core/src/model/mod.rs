@@ -11,6 +11,7 @@ mod answer_target;
 mod card;
 mod card_state;
 mod entity_card;
+mod foreshadow;
 mod fragment;
 mod input_source;
 mod node;
@@ -25,6 +26,7 @@ pub use card_state::{transition, QuestionState, Transition, TRANSITIONS};
 pub use entity_card::{Attribute, EntityCard, EntityKind, NewEntityCard};
 // 行映射与「不猜着读」的解析归存储层用：不在公开面上（壳用不到，也不该用）
 pub(crate) use entity_card::{into_entity_card, RawEntityCard};
+pub use foreshadow::{Foreshadow, ForeshadowState, NewForeshadow};
 pub use fragment::{Fragment, FragmentCount, FragmentKind};
 pub use input_source::InputSource;
 pub use node::{ChapterNumbering, NamingStyle, Node, NodeKind};

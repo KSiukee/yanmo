@@ -32,6 +32,15 @@ export function readableParams(issue: OutlineIssue): Record<string, string> {
       .filter((name) => name !== "")
       .join(t("common.list_separator"));
   }
+  // 故事时间那一栏：作者没写自由文本时用排序值顶一句（句子不该出现一个空的「」）
+  for (const [key, orderKey] of [
+    ["time", "order"],
+    ["earlier_time", "earlier_order"],
+  ] as const) {
+    if (params[key] === "" && params[orderKey] !== undefined) {
+      params[key] = t("outline.time_fallback", { order: params[orderKey] });
+    }
+  }
   return params;
 }
 
@@ -82,12 +91,14 @@ export function splitIssues(
   return { open, known };
 }
 
-/** 点开要跳到哪儿（`entity:3` / `scene:9`）；认不出的锚点返回空（界面据此不摆按钮）。 */
-export function anchorTarget(anchors: string[]): { kind: "entity" | "scene" | ""; id: number | null } {
+/** 锚点指向哪儿（`entity:3` / `scene:9` / `foreshadow:5`）；认不出的返回空（界面据此不摆按钮）。 */
+export type AnchorKind = "entity" | "scene" | "foreshadow" | "";
+
+export function anchorTarget(anchors: string[]): { kind: AnchorKind; id: number | null } {
   for (const anchor of anchors) {
     const [kind, raw] = anchor.split(":");
     const id = Number(raw);
-    if ((kind === "entity" || kind === "scene") && Number.isFinite(id)) {
+    if ((kind === "entity" || kind === "scene" || kind === "foreshadow") && Number.isFinite(id)) {
       return { kind, id };
     }
   }

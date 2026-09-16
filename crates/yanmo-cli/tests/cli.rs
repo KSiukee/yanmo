@@ -1296,3 +1296,142 @@ fn outline_cards_and_the_checkup_are_drivable_from_the_command_line() {
         other => panic!("章不该有四格：{other:?}"),
     }
 }
+
+/// 大纲体检第二刀：**伏笔的埋/收 + 事件的故事时间**。
+///
+/// 这一段盯的是"只有结构化记下来才判得动"的两条规则：
+/// 埋久了没收的伏笔、后一章却故事时间更早的事件；以及"不写了"是正经结局、
+/// 非法边与脏锚点都说人话。
+#[test]
+fn foreshadows_and_story_time_drive_the_checkup() {
+    let dir = tempfile::tempdir().unwrap();
+    let work = ok(dir.path(), "new-work", &[("kind", "novel"), ("title", "长夜")]);
+    let work_id = work["work_id"].as_i64().unwrap();
+    let work = work_id.to_string();
+    // 卷是根节点的第一卷；往里塞 25 章（体检的阈值是"隔了 20 章还没收"）
+    let volume = ok(dir.path(), "nodes", &[("work", &work)]).to_string();
+    assert!(!volume.is_empty());
+    let mut chapters: Vec<i64> = Vec::new();
+    for index in 1..=25 {
+        let chapter = ok(
+            dir.path(),
+            "new-node",
+            &[
+                ("work", &work),
+                ("parent", "1"),
+                ("kind", "chapter"),
+                ("title", &format!("第{index}章")),
+            ],
+        );
+        chapters.push(chapter["node_id"].as_i64().unwrap());
+    }
+
+    // 一条伏笔埋在第 1 章：隔了 24 章还没收 → 报
+    let foreshadow = ok(
+        dir.path(),
+        "foreshadow-new",
+        &[("work", &work), ("body", "老张的怀表"), ("node", &chapters[0].to_string())],
+    );
+    let foreshadow_id = foreshadow["item"]["id"].as_i64().unwrap();
+    assert_eq!(foreshadow["item"]["state"], "planted");
+
+    // 两条带故事时间的事件：第 1 章是第 99 天，第 5 章反而是第 12 天 → 报倒置
+    let first = ok(
+        dir.path(),
+        "fragment-add",
+        &[("work", &work), ("kind", "event"), ("body", "开场"), ("anchor", &format!("chapter:{}", chapters[0]))],
+    );
+    let second = ok(
+        dir.path(),
+        "fragment-add",
+        &[("work", &work), ("kind", "event"), ("body", "后面那件"), ("anchor", &format!("chapter:{}", chapters[4]))],
+    );
+    ok(
+        dir.path(),
+        "fragment-edit",
+        &[
+            ("id", &first["fragment"]["id"].as_i64().unwrap().to_string()),
+            ("body", "开场"),
+            ("story-time", "承平三年·春"),
+            ("story-order", "99"),
+        ],
+    );
+    ok(
+        dir.path(),
+        "fragment-edit",
+        &[
+            ("id", &second["fragment"]["id"].as_i64().unwrap().to_string()),
+            ("body", "后面那件"),
+            ("story-order", "12"),
+        ],
+    );
+
+    let board = ok(dir.path(), "outline-scan", &[("work", &work)]);
+    let rules: Vec<&str> = board["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["rule"].as_str().unwrap())
+        .collect();
+    assert!(rules.contains(&"foreshadow.uncollected"), "{board}");
+    assert!(rules.contains(&"timeline.out_of_order"), "{board}");
+
+    // 收了那条伏笔（收在第 20 章）：伏笔那条消失
+    let collected = ok(
+        dir.path(),
+        "foreshadow-move",
+        &[("id", &foreshadow_id.to_string()), ("to", "collected"), ("collected-node", &chapters[19].to_string())],
+    );
+    assert_eq!(collected["item"]["state"], "collected");
+    assert_eq!(collected["item"]["collected_node"].as_i64().unwrap(), chapters[19]);
+    let after = ok(dir.path(), "outline-scan", &[("work", &work)]);
+    assert!(
+        !after["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["rule"] == "foreshadow.uncollected"),
+        "收了的伏笔不该再报：{after}"
+    );
+
+    // 倒叙标记：同一条事件标成回忆之后，倒置那条也不报了（作者自己的写法）
+    ok(
+        dir.path(),
+        "fragment-edit",
+        &[
+            ("id", &second["fragment"]["id"].as_i64().unwrap().to_string()),
+            ("body", "后面那件"),
+            ("story-order", "12"),
+            ("flashback", ""),
+        ],
+    );
+    let flashed = ok(dir.path(), "outline-scan", &[("work", &work)]);
+    assert!(
+        !flashed["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["rule"] == "timeline.out_of_order"),
+        "标成倒叙就不该再报：{flashed}"
+    );
+
+    // 非法边 / 脏锚点：都是**说人话的码**，不是数据库约束失败
+    match run(dir.path(), "foreshadow-move", &[("id", &foreshadow_id.to_string()), ("to", "dropped")]) {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "foreshadow.illegal_transition"),
+        other => panic!("收了之后不能直接跳到「不写了」：{other:?}"),
+    }
+    match run(dir.path(), "foreshadow-new", &[("work", &work), ("body", "挂到不存在的一章"), ("node", "99999")]) {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "foreshadow.anchor_invalid"),
+        other => panic!("脏锚点要如实拒：{other:?}"),
+    }
+    // 灵感卡带故事时间：当场拒（不是事件）
+    let idea = ok(dir.path(), "fragment-add", &[("work", &work), ("kind", "idea"), ("body", "一个念头")]);
+    match run(
+        dir.path(),
+        "fragment-edit",
+        &[("id", &idea["fragment"]["id"].as_i64().unwrap().to_string()), ("body", "一个念头"), ("story-order", "3")],
+    ) {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "fragment.story_time_not_event"),
+        other => panic!("灵感卡不该有故事时间：{other:?}"),
+    }
+}

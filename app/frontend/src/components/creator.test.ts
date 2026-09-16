@@ -7,10 +7,14 @@ import assert from "node:assert/strict";
 
 import {
   anchoredToChapter,
+  canCarryStoryTime,
   filterOptions,
   JOTTED_KINDS,
   kindLabel,
+  parseStoryOrder,
   sourceBadge,
+  storyLabel,
+  storyOrderText,
   totalCount,
   visibleFragments,
   WRITABLE_KINDS,
@@ -27,6 +31,9 @@ function fragment(id: number, kind: Fragment["kind"], body = "一句"): Fragment
     anchors: [],
     derived_from: null,
     created_at: 1_000 + id,
+    story_time: "",
+    story_order: null,
+    flashback: false,
   };
 }
 
@@ -98,4 +105,27 @@ test("能记的种类是随手记那一组的子集（口述不靠键盘记）",
     assert.ok(JOTTED_KINDS.includes(kind), `${kind} 不在随手记那一组里`);
   }
   assert.deepEqual(WRITABLE_KINDS, ["idea", "event"]);
+});
+
+test("故事时间的排序值：文本 → 数字（空着就是没填，写不进数字也当没填）", () => {
+  assert.equal(parseStoryOrder(""), null);
+  assert.equal(parseStoryOrder("   "), null);
+  assert.equal(parseStoryOrder("12"), 12);
+  assert.equal(parseStoryOrder(" 12.7 "), 12, "小数截断（天数是整数）");
+  assert.equal(parseStoryOrder("-3"), -3, "负号也认（作者自己定的口径）");
+  assert.equal(parseStoryOrder("第三天"), null, "写不进数字 = 没填，不猜");
+  assert.equal(storyOrderText(null), "");
+  assert.equal(storyOrderText(12), "12");
+});
+
+test("事件身上那个小标：有自由文本用它，没有就说第 N 天，都没有就不摆", () => {
+  assert.equal(storyLabel({ story_time: "承平三年·春", story_order: 12 }), "承平三年·春");
+  assert.equal(storyLabel({ story_time: "  ", story_order: 12 }), "第 12 天");
+  assert.equal(storyLabel({ story_time: "", story_order: null }), "");
+});
+
+test("只有事件才有故事时间（别的种类不摆那一栏）", () => {
+  assert.equal(canCarryStoryTime("event"), true);
+  assert.equal(canCarryStoryTime("idea"), false);
+  assert.equal(canCarryStoryTime("dictation"), false);
 });

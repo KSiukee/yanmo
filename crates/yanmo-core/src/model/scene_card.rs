@@ -14,7 +14,7 @@
 use crate::error::{codes, Error, Result};
 
 /// 四格里的哪一格（稳定码：界面按它摆输入框，问题清单按它说"缺了哪一格"）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SceneField {
     /// 视角：这一场从谁眼里看出去。
     Pov,
@@ -24,6 +24,17 @@ pub enum SceneField {
     Conflict,
     /// 结果：这一场结束时落到了哪儿（成功 / 失败 / 更糟）。
     Outcome,
+}
+
+/// 进 JSON 就用**稳定码本身**。
+///
+/// 为什么不用 `#[serde(rename_all = "snake_case")]`：变体名与稳定码是两件事
+/// （`NoNumber` 的码是 `none`），靠"改蛇形"迟早分家——而且分家时**不报错**，
+/// 只是界面上静默对不上。写死成 `as_str()` 就没有第二份口径。
+impl serde::Serialize for SceneField {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
 }
 
 impl SceneField {

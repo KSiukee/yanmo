@@ -18,6 +18,8 @@ pub mod compile;
 pub mod editor;
 /// 设定卡：人物与设定（大纲冲突检测的数据源之一）。
 pub mod entity;
+/// 伏笔：埋下的一条线头（埋/收/不写了）。
+pub mod foreshadow;
 /// 创作流：碎片池的记 / 看 / 删 / 捞回（**作者自己记下的东西**）。
 pub mod fragment;
 /// 稿子放哪：位置查询、换位置、打开文件夹。

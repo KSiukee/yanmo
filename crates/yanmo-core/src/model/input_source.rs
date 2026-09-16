@@ -18,7 +18,7 @@
 use crate::error::{codes, Error, Result};
 
 /// 这一段文字是怎么产生的（`fragments.source` 的稳定码）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InputSource {
     /// 键盘敲的（含输入法组字）。
     Typed,
@@ -26,6 +26,17 @@ pub enum InputSource {
     Voice,
     /// 混着来的：口述之后又用键盘改了，或者边打边说。
     Mixed,
+}
+
+/// 进 JSON 就用**稳定码本身**。
+///
+/// 为什么不用 `#[serde(rename_all = "snake_case")]`：变体名与稳定码是两件事
+/// （`NoNumber` 的码是 `none`），靠"改蛇形"迟早分家——而且分家时**不报错**，
+/// 只是界面上静默对不上。写死成 `as_str()` 就没有第二份口径。
+impl serde::Serialize for InputSource {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
 }
 
 impl InputSource {

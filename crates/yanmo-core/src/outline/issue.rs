@@ -17,15 +17,21 @@ pub enum IssueRule {
     EntityAttributeConflict,
     /// 场景卡的四格缺了（视角 / 目标 / 冲突 / 结果）。
     SceneMissingFields,
+    /// 伏笔埋了太久还没收（超过阈值；"不写了"是正经结局，不算）。
+    ForeshadowUncollected,
+    /// 时间线倒置：后一章的事件，故事时间反而更早（倒叙不算——那是作者自己的写法）。
+    TimelineOutOfOrder,
 }
 
 impl IssueRule {
     /// 全部规则（**字典对表测试拿它穷举**：加一条规则就必须补一条文案）。
-    pub const ALL: [IssueRule; 4] = [
+    pub const ALL: [IssueRule; 6] = [
         IssueRule::EntityNameClash,
         IssueRule::EntityNameRepeated,
         IssueRule::EntityAttributeConflict,
         IssueRule::SceneMissingFields,
+        IssueRule::ForeshadowUncollected,
+        IssueRule::TimelineOutOfOrder,
     ];
 
     /// 稳定码（界面字典键是 `outline.issue.<码>`；**别改**）。
@@ -35,6 +41,8 @@ impl IssueRule {
             IssueRule::EntityNameRepeated => "entity.name_repeated",
             IssueRule::EntityAttributeConflict => "entity.attribute_conflict",
             IssueRule::SceneMissingFields => "scene.missing_fields",
+            IssueRule::ForeshadowUncollected => "foreshadow.uncollected",
+            IssueRule::TimelineOutOfOrder => "timeline.out_of_order",
         }
     }
 

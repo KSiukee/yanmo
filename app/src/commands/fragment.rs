@@ -13,7 +13,7 @@ use tauri::State;
 use crate::error::ApiError;
 use crate::storage::AppData;
 use yanmo_core::model::{Fragment, FragmentCount, FragmentKind};
-use yanmo_core::store::{NewFragment, Store, FRAGMENTS_PER_BOARD};
+use yanmo_core::store::{FragmentEdit, NewFragment, Store, FRAGMENTS_PER_BOARD};
 
 /// 创作流面板一次要的全部数据。
 #[derive(Debug, Serialize)]
@@ -63,6 +63,35 @@ pub fn fragment_add(
         )?;
         // 回执给**库里真有的那一条**（修剪过的原文 + 核心认下的输入方式），不是界面自己回显
         store.fragment(id)
+    })
+}
+
+/// 改一条碎片：正文 + **故事时间**（故事时间三样只有事件用得上）。
+///
+/// 一次给全（界面上就是一张小表单）：不是事件却带了故事时间，核心会当场拒——
+/// **静默丢掉作者写的东西**比报错坏得多。
+#[tauri::command(rename_all = "snake_case")]
+pub fn fragment_update(
+    data: State<'_, AppData>,
+    id: i64,
+    body: String,
+    story_time: Option<String>,
+    story_order: Option<i64>,
+    flashback: Option<bool>,
+) -> Result<CreatorBoardDto, ApiError> {
+    crate::acceptance::note_command("fragment_update");
+    data.with_store(|store| {
+        let saved = store.update_fragment(
+            &FragmentEdit {
+                id,
+                body,
+                story_time: story_time.unwrap_or_default(),
+                story_order,
+                flashback: flashback.unwrap_or(false),
+            },
+            "author",
+        )?;
+        board(store, saved.work_id)
     })
 }
 

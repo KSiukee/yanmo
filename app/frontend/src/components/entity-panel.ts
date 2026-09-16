@@ -8,7 +8,7 @@
 // - **名字空着不让交**（核心也会拒，但界面先挡住更省事——这不是"前端校验代替后端"，
 //   后端那道闸照样在）。
 
-import { computed, onMounted, ref, watch, type Ref } from "vue";
+import { computed, ref, watch, type Ref } from "vue";
 
 import { asError } from "../api/errors.ts";
 import {
@@ -38,8 +38,6 @@ export interface EntityPanelOptions {
 
 /** 这一屏给界面用的那一份（组件只读这些，一个 API 都不直接调）。 */
 export interface EntityPanelState {
-  /** 弹窗开着没有 */
-  visible: Ref<boolean>;
   board: Ref<EntityBoard | null>;
   busy: Ref<boolean>;
   /** 失败时那句已经渲染好的话（`CoreError` 走字典渲染） */
@@ -54,9 +52,6 @@ export interface EntityPanelState {
   canSave: Ref<boolean>;
   /** 读一遍这本书的设定卡 */
   load: () => Promise<void>;
-  /** 打开 / 收起弹窗 */
-  show: () => void;
-  hide: () => void;
   /** 开一张新表单 / 改这一张 / 收起表单 */
   startNew: () => void;
   startEdit: (card: EntityCard) => void;
@@ -73,8 +68,6 @@ export function useEntityPanel(deps: EntityPanelOptions): EntityPanelState {
   /** 失败时那句**已经渲染好的**话（`CoreError` 走字典渲染，界面不拼中文也不露码） */
   const errorText = ref("");
   const filter = ref<"all" | "person" | "setting">("all");
-  /** 弹窗开着没有（与书架、回收站那些弹窗同一条口径：可见性是会话状态） */
-  const visible = ref(false);
   /** 正在编的那张（`null` = 没开表单） */
   const draft = ref<EntityDraft | null>(null);
   const justSaved = ref("");
@@ -102,19 +95,6 @@ export function useEntityPanel(deps: EntityPanelOptions): EntityPanelState {
     } finally {
       busy.value = false;
     }
-  }
-
-  /** 打开弹窗（顺手重读一次列表：别拿上次的旧账给作者看）。 */
-  function show() {
-    visible.value = true;
-    justSaved.value = "";
-    void load();
-  }
-
-  /** 收起弹窗（表单也收起——下次进来从列表开始）。 */
-  function hide() {
-    visible.value = false;
-    draft.value = null;
   }
 
   /** 开一张新表单（默认记成人物——最常记的就是人）。 */
@@ -168,15 +148,11 @@ export function useEntityPanel(deps: EntityPanelOptions): EntityPanelState {
     }
   }
 
-  onMounted(() => {
-    // 弹窗没开就不用读（它是"打开才看"的一屏，不是常驻画面）
-    if (visible.value) void load();
-  });
+  // 读的时机由「设定」那个弹窗说了算（它是"打开才看"的一屏）：见 lore.ts 的 show()
   watch(
     () => deps.workId.value,
     () => {
-      // 换书：弹窗收起、表单收起、筛选项与回执都不该跟着新书走（它们说的是上一本的事）
-      visible.value = false;
+      // 换书：表单收起、筛选项与回执都不该跟着新书走（它们说的是上一本的事）
       draft.value = null;
       justSaved.value = "";
       filter.value = "all";
@@ -184,7 +160,6 @@ export function useEntityPanel(deps: EntityPanelOptions): EntityPanelState {
   );
 
   return {
-    visible,
     board,
     busy,
     errorText,
@@ -195,8 +170,6 @@ export function useEntityPanel(deps: EntityPanelOptions): EntityPanelState {
     list,
     canSave,
     load,
-    show,
-    hide,
     startNew,
     startEdit,
     cancelEdit,

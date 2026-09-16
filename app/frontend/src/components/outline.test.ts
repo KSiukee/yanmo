@@ -97,3 +97,20 @@ test("一串名字按字典的顿号摆（核心给的是中性分隔）", () =>
   assert.deepEqual(readableParams(issue).names, "陆文、林昭");
   assert.match(issueText(issue), /陆文、林昭/);
 });
+
+test("伏笔锚点：认得出来（体检那条点得动）", () => {
+  assert.deepEqual(anchorTarget(["foreshadow:5"]), { kind: "foreshadow", id: 5 });
+});
+
+test("故事时间那一栏空着时，用排序值顶一句（句子不该出现一个空的「」）", () => {
+  const issue = {
+    rule: "timeline.out_of_order",
+    params: { body: "他走进来", order: "12", time: "", earlier_body: "开场", earlier_order: "99", earlier_time: "" },
+    anchors: ["chapter:5", "chapter:1"],
+    fingerprint: "fp",
+  };
+  const params = readableParams(issue);
+  assert.equal(params.time, "第 12 天");
+  assert.equal(params.earlier_time, "第 99 天");
+  assert.doesNotMatch(issueText(issue), /（）/, "不留空括号");
+});

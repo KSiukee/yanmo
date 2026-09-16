@@ -12,7 +12,7 @@ import { anchorTarget, issueText, missingLine } from "./outline.ts";
 import { useOutlinePanel } from "./outline-panel.ts";
 
 const props = defineProps<{ session: EditorSession }>();
-const emit = defineEmits<{ openEntities: [] }>();
+const emit = defineEmits<{ openEntities: []; openForeshadows: [] }>();
 
 const { workId, directory } = props.session;
 const { board, busy, errorText, showKnown, open, known, refresh, dismiss, undismiss, clearDismissed } =
@@ -67,6 +67,15 @@ async function goScene(node_id: number) {
               @click="void goScene(target(issue.anchors).id!)"
             >
               {{ t("outline.go_scene") }}
+            </button>
+            <button
+              v-else-if="target(issue.anchors).kind === 'foreshadow'"
+              type="button"
+              class="check__link"
+              :disabled="busy"
+              @click="emit('openForeshadows')"
+            >
+              {{ t("outline.go_foreshadows") }}
             </button>
             <button type="button" class="check__link" :disabled="busy" @click="dismiss(issue)">
               {{ t("outline.dismiss") }}

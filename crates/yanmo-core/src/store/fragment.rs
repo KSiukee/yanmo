@@ -33,6 +33,22 @@ pub struct NewFragment {
     pub anchors: Vec<String>,
 }
 
+/// 改一条碎片时要给的那一份（**一次给全**：界面上就是一张小表单）。
+///
+/// 故事时间三样只有**事件**用得上：不是事件却带了它们，核心当场拒——
+/// 静默丢掉作者写的东西，比报错坏得多。
+#[derive(Debug, Clone)]
+pub struct FragmentEdit {
+    pub id: i64,
+    pub body: String,
+    /// 故事时间（自由文本；空串 = 没填）
+    pub story_time: String,
+    /// 故事时间的排序值（`None` = 没填，不参与顺序检查）
+    pub story_order: Option<i64>,
+    /// 倒叙 / 回忆（顺序检查跳过它）
+    pub flashback: bool,
+}
+
 /// 随手记的碎片落库时的**中性状态**。
 ///
 /// `fragments.status` 这一列是按 `frag_kind` 分家的：问题卡用它走六态生命周期，
@@ -43,11 +59,11 @@ const STATUS_JOTTED: &str = "pending";
 /// 面板一屏最多读回多少条（再多的走筛选项，别一次全灌进界面）。
 pub const FRAGMENTS_PER_BOARD: usize = 200;
 
-const COLS: &str =
-    "id, work_id, frag_kind, body, source, linked, derived_from, created_at";
+pub(super) const COLS: &str = "id, work_id, frag_kind, body, source, linked, derived_from, created_at, \
+                    story_time, story_order, flashback";
 
 /// 库里的一行原样读出来（`frag_kind` 还是字符串，认不认识交给 `into_fragment`）。
-struct RawFragment {
+pub(super) struct RawFragment {
     id: i64,
     work_id: Option<i64>,
     kind: String,
@@ -56,9 +72,12 @@ struct RawFragment {
     linked: String,
     derived_from: Option<i64>,
     created_at: i64,
+    story_time: String,
+    story_order: Option<i64>,
+    flashback: i64,
 }
 
-fn read_raw(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawFragment> {
+pub(super) fn read_raw(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawFragment> {
     Ok(RawFragment {
         id: row.get(0)?,
         work_id: row.get(1)?,
@@ -68,11 +87,14 @@ fn read_raw(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawFragment> {
         linked: row.get(5)?,
         derived_from: row.get(6)?,
         created_at: row.get(7)?,
+        story_time: row.get(8)?,
+        story_order: row.get(9)?,
+        flashback: row.get(10)?,
     })
 }
 
 /// 把一行变成一条碎片：**认不出的种类如实报错**，不猜一个"像那么回事"的。
-fn into_fragment(raw: RawFragment) -> Result<Fragment> {
+pub(super) fn into_fragment(raw: RawFragment) -> Result<Fragment> {
     Ok(Fragment {
         id: raw.id,
         // 与问题卡同一条口径：库里被手改成没有归属的按作品 0 算（如实显示，不假装有主）
@@ -85,6 +107,10 @@ fn into_fragment(raw: RawFragment) -> Result<Fragment> {
         anchors: serde_json::from_str(&raw.linked).unwrap_or_default(),
         derived_from: raw.derived_from,
         created_at: raw.created_at,
+        // 故事时间三列只有事件在用；别的种类读出来就是默认值
+        story_time: raw.story_time,
+        story_order: raw.story_order,
+        flashback: raw.flashback != 0,
     })
 }
 
@@ -271,5 +297,56 @@ impl Store {
         }
         tx.commit()?;
         self.fragment(id)
+    }
+
+    /// 改一条碎片：正文 + 故事时间（写碎片 + 留痕，同一事务）。
+    ///
+    /// 三条校验都在写之前：正文不许空、这条得在、**故事时间只对事件有意义**
+    /// （不是事件却带了故事时间 → 当场拒，不静默丢掉作者写的东西）。
+    pub fn update_fragment(&mut self, edit: &FragmentEdit, trigger: &str) -> Result<Fragment> {
+        let body = edit.body.trim();
+        if body.is_empty() {
+            return Err(Error::invalid(codes::FRAGMENT_BODY_EMPTY));
+        }
+        let before = self.fragment(edit.id)?;
+        let story_time = edit.story_time.trim();
+        let wants_time =
+            !story_time.is_empty() || edit.story_order.is_some() || edit.flashback;
+        if wants_time && before.kind != FragmentKind::Event {
+            return Err(Error::invalid_with(
+                codes::FRAGMENT_STORY_TIME_NOT_EVENT,
+                [("fragment_id", edit.id.to_string())],
+            ));
+        }
+        let now = now_millis();
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "UPDATE fragments
+                SET body = ?1, story_time = ?2, story_order = ?3, flashback = ?4, updated_at = ?5
+              WHERE id = ?6 AND deleted_at IS NULL",
+            params![
+                body,
+                story_time,
+                edit.story_order,
+                i64::from(edit.flashback),
+                now,
+                edit.id
+            ],
+        )?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "fragments",
+            edit.id,
+            "update",
+            json!({
+                "kind": before.kind.as_str(),
+                "story_order": edit.story_order,
+                "flashback": edit.flashback,
+                "trigger": trigger,
+            }),
+        )?;
+        tx.commit()?;
+        self.fragment(edit.id)
     }
 }

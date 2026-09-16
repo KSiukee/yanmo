@@ -343,6 +343,26 @@ impl Store {
 
     /// 全书的阅读顺序：按父节点分组后深度优先展开，只保留承载正文的节点。
     fn reading_order(&self, work_id: i64) -> Result<Vec<ChapterSummary>> {
+        self.reading_order_where(work_id, |node| node.kind.holds_body())
+    }
+
+    /// **只数"正文单位"的阅读顺序**（大纲体检用）：承载正文、且**不是场景卡**。
+    ///
+    /// 为什么不数场景卡：它挂在章下面，是写这一章时的辅助卡，不是读者顺着读下去的那一行。
+    /// 代价说清楚——作者若把整章都写成场景卡，这一条只会**报得更晚**，不会误报。
+    /// "埋了多久没收""故事时间倒序"说的都是章，这里数出来的就是章（单篇 / 节也算一段）。
+    pub fn text_spine(&self, work_id: i64) -> Result<Vec<ChapterSummary>> {
+        self.reading_order_where(work_id, |node| {
+            node.kind.holds_body() && node.kind != NodeKind::Scene
+        })
+    }
+
+    /// 阅读顺序的**同一条走法**：`keep` 决定哪些节点算数（两处的顺序必须一模一样）。
+    fn reading_order_where(
+        &self,
+        work_id: i64,
+        keep: impl Fn(&NodeSummary) -> bool,
+    ) -> Result<Vec<ChapterSummary>> {
         let nodes = self.list_nodes(work_id)?; // 已按（父节点, 顺序）排好
         let mut children: std::collections::HashMap<Option<i64>, Vec<usize>> =
             std::collections::HashMap::new();
@@ -357,7 +377,7 @@ impl Store {
             .unwrap_or_default();
         while let Some(position) = stack.pop() {
             let node = &nodes[position];
-            if node.kind.holds_body() {
+            if keep(node) {
                 order.push(ChapterSummary {
                     id: node.id,
                     // 导航里显示的是**渲染后**的名字（`第{$N}章` → `第3章`）

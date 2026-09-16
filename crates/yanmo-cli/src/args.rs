@@ -176,6 +176,20 @@ pub const HELP_DEV: &str = "\
                             删一张（**软删**：行还在，只是不再列出来）
   scene-field --node <场景卡 id> [--pov <…>] [--goal <…>] [--conflict <…>] [--outcome <…>]
                             存场景卡的四格（整行覆盖；不是场景卡会被拒）
+  foreshadow-new --work <id> --body <文本> | --body-file <路径> [--node <埋在第几章>]
+                 [--note <备注>] [--trigger <谁触发>]
+                            记一条伏笔（状态从「埋着」开始；没有 --node 就判不了「埋了多久」）
+  foreshadow-list --work <id> [--state <planted|collected|dropped>]
+                            这本书的伏笔（埋着的排前面）
+  foreshadow-update --id <伏笔 id> --body <文本> | --body-file <路径> [--node <…>] [--note <…>]
+                            改一条（正文 / 埋点 / 备注；**状态不动**）
+  foreshadow-move --id <伏笔 id> --to <planted|collected|dropped> [--collected-node <收在第几章>]
+                            走一步状态（非法边当场拒；「不写了」是正经结局）
+  foreshadow-delete --id <伏笔 id> [--trigger <谁触发>]
+                            删一条（软删）
+  fragment-edit --id <碎片 id> --body <文本> | --body-file <路径>
+                [--story-time <文本>] [--story-order <第几天>] [--flashback]
+                            改一条碎片：正文 + 故事时间（**只有事件**有故事时间）
   outline-scan --work <id>   大纲体检：把对不上的地方列出来（**只读**，带指纹）
   outline-dismiss --work <id> --fingerprint <指纹> [--trigger <谁触发>]
                             「这一处我知道了」（幂等；指纹来自 outline-scan）

@@ -81,3 +81,38 @@ export function anchoredToChapter(anchors: string[], node_id: number | null): bo
 export function totalCount(board: CreatorBoard | null): number {
   return filterOptions(board)[0].count;
 }
+
+/**
+ * 「故事时间的排序值」那一栏的文本 → 数字（`null` = 没填）。
+ *
+ * 作者自己定的口径（比如"故事开始后第几天"）：写不出数字就当没填——
+ * 界面上那一栏是 number 输入框，手滑写进字母的情况这里再兜一道（不猜、不报错）。
+ */
+export function parseStoryOrder(text: string): number | null {
+  const trimmed = text.trim();
+  if (trimmed === "") return null;
+  const value = Number(trimmed);
+  return Number.isFinite(value) ? Math.trunc(value) : null;
+}
+
+/** 数字 → 那一栏的文本（`null` = 空着）。 */
+export function storyOrderText(value: number | null): string {
+  return value === null ? "" : String(value);
+}
+
+/**
+ * 事件身上那个小标：作者写了自由文本就用它，没写但有排序值就说"第 N 天"。
+ *
+ * 两个都没有 = 没填故事时间，返回空串（界面不摆这一截）。
+ */
+export function storyLabel(fragment: { story_time: string; story_order: number | null }): string {
+  const time = fragment.story_time.trim();
+  if (time !== "") return time;
+  if (fragment.story_order === null) return "";
+  return t("outline.time_fallback", { order: fragment.story_order });
+}
+
+/** 只有事件才有故事时间（界面上只有事件那一行摆"改这条"里那三栏）。 */
+export function canCarryStoryTime(kind: string): boolean {
+  return kind === "event";
+}

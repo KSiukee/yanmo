@@ -15,7 +15,7 @@
 use crate::error::{codes, Error, Result};
 
 /// 一条答案的落点。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AnswerTarget {
     /// 正文段落（默认）。
     Body,
@@ -23,6 +23,13 @@ pub enum AnswerTarget {
     Outline,
     /// 场景卡：这一章下面新建一张。
     Scene,
+}
+
+/// 进 JSON 就用**稳定码本身**（同一个理由见 `FragmentKind`：变体名与码是两件事）。
+impl serde::Serialize for AnswerTarget {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
 }
 
 impl AnswerTarget {

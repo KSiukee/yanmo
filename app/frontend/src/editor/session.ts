@@ -113,6 +113,8 @@ import { useCompile, type CompileState } from "./compile";
 import { useChapterNote, type ChapterNote } from "./note";
 import { useSceneFields, type SceneState } from "./scene";
 import { useEntityPanel, type EntityPanelState } from "../components/entity-panel";
+import { useForeshadowPanel, type ForeshadowPanelState } from "../components/foreshadow-panel";
+import { useLore, type LoreState } from "../components/lore";
 import { useSnapshots, type Snapshots } from "./snapshots";
 import { DEFAULT_QUOTE_STYLE, useTypeset, type TypesetState } from "./typeset";
 import { useLocation, type LocationState } from "./location";
@@ -146,8 +148,12 @@ export interface EditorSession {
   note: ChapterNote;
   /** 打开的是场景卡时的那四格（视角 / 目标 / 冲突 / 结果）：单独存、单独显示 */
   scene: SceneState;
-  /** 设定卡（人物 / 设定）：大纲冲突检测的数据源（弹窗那一屏） */
+  /** 设定卡（人物 / 设定）：大纲冲突检测的数据源之一（「设定」弹窗第一页） */
   entities: EntityPanelState;
+  /** 伏笔：埋下的一条线头（「设定」弹窗第二页） */
+  foreshadows: ForeshadowPanelState;
+  /** 「设定」弹窗的外壳：开着没有、停在哪个页签 */
+  lore: LoreState;
   /** 编译：一份原稿 → 一种成品（投稿版 docx / 分章 txt / 合并 txt） */
   compile: CompileState;
   /** 点「+」之后的编排：先问路标，再照作者意图建章（视图只管"点了哪一行"） */
@@ -922,8 +928,11 @@ export function useEditorSession(): EditorSession {
       },
     });
 
-    // 设定卡（人物 / 设定）：**打开才读**的弹窗那一屏（状态在 components/entity-panel.ts）
+    // 设定卡与伏笔：**打开才读**的两屏（各自的状态在 components/<域>-panel.ts）
     const entities = useEntityPanel({ workId });
+    const foreshadows = useForeshadowPanel({ workId, currentChapter: currentNodeId });
+    // 外壳（可见性 + 页签）单独一件：它同时管两屏，放谁那儿都会让另一边去 import 它
+    const lore = useLore({ entities, foreshadows });
 
     return {
       directory,
@@ -940,6 +949,8 @@ export function useEditorSession(): EditorSession {
       note,
       scene,
       entities,
+      foreshadows,
+      lore,
       compile,
     };
   }
@@ -960,6 +971,8 @@ export function useEditorSession(): EditorSession {
     note,
     scene,
     entities,
+    foreshadows,
+    lore,
     compile,
   } = createParts();
 
@@ -1110,6 +1123,8 @@ export function useEditorSession(): EditorSession {
     note,
     scene,
     entities,
+    foreshadows,
+    lore,
     compile,
     workId,
     switchWork,

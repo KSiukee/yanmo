@@ -9,10 +9,13 @@
 //! 那份清单能直接喂给 `outline-dismiss` 验证"忽略"这条路。
 
 use serde_json::{json, Value};
-use yanmo_core::model::{Attribute, EntityKind, NewEntityCard, SceneFields};
-use yanmo_core::store::Store;
+use yanmo_core::model::{
+    Attribute, EntityKind, ForeshadowState, NewEntityCard, NewForeshadow, SceneFields,
+};
+use yanmo_core::store::{FragmentEdit, Store};
 
-use crate::args::Args;
+use crate::args::{Args, Usage};
+use crate::dev::body_of;
 use crate::CliError;
 
 /// 大纲这一族命令允许哪些选项。
@@ -23,6 +26,12 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         "entity-update" => Some(&["id", "kind", "name", "alias", "attr", "note", "trigger"]),
         "entity-delete" => Some(&["id", "trigger"]),
         "scene-field" => Some(&["node", "pov", "goal", "conflict", "outcome", "trigger"]),
+        "foreshadow-new" => Some(&["work", "body", "body-file", "node", "note", "trigger"]),
+        "foreshadow-list" => Some(&["work", "state"]),
+        "foreshadow-update" => Some(&["id", "body", "body-file", "node", "note", "trigger"]),
+        "foreshadow-move" => Some(&["id", "to", "collected-node", "trigger"]),
+        "foreshadow-delete" => Some(&["id", "trigger"]),
+        "fragment-edit" => Some(&["id", "body", "body-file", "story-time", "story-order", "flashback", "trigger"]),
         "outline-scan" => Some(&["work"]),
         "outline-dismiss" => Some(&["work", "fingerprint", "trigger"]),
         "outline-undismiss" => Some(&["work", "fingerprint", "trigger"]),
@@ -119,6 +128,88 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
             let trigger = args.optional("trigger").unwrap_or("cli").to_string();
             let saved = store.save_scene_fields(&fields_of(args)?, &trigger)?;
             json!({ "ok": true, "command": "scene-field", "fields": saved })
+        }
+        "foreshadow-new" => {
+            let work = args.required_i64("work")?;
+            let trigger = args.optional("trigger").unwrap_or("cli").to_string();
+            let planted = match args.optional("node") {
+                Some(text) => Some(text.parse::<i64>().map_err(|_| Usage::from("--node 需要是一个整数"))?),
+                None => None,
+            };
+            let id = store.create_foreshadow(
+                &NewForeshadow {
+                    work_id: work,
+                    body: body_of(args)?,
+                    planted_node: planted,
+                    note: args.optional("note").unwrap_or("").to_string(),
+                },
+                &trigger,
+            )?;
+            json!({ "ok": true, "command": "foreshadow-new", "item": store.foreshadow(id)? })
+        }
+        "foreshadow-list" => {
+            let work = args.required_i64("work")?;
+            let state = match args.optional("state") {
+                Some(code) => Some(ForeshadowState::parse(code)?),
+                None => None,
+            };
+            let items = store.foreshadows(work, state)?;
+            json!({ "ok": true, "command": "foreshadow-list", "count": items.len(), "items": items })
+        }
+        "foreshadow-update" => {
+            let id = args.required_i64("id")?;
+            let trigger = args.optional("trigger").unwrap_or("cli").to_string();
+            let planted = match args.optional("node") {
+                Some(text) => Some(text.parse::<i64>().map_err(|_| Usage::from("--node 需要是一个整数"))?),
+                None => None,
+            };
+            let item = store.update_foreshadow(
+                id,
+                &body_of(args)?,
+                planted,
+                args.optional("note").unwrap_or(""),
+                &trigger,
+            )?;
+            json!({ "ok": true, "command": "foreshadow-update", "item": item })
+        }
+        "foreshadow-move" => {
+            let id = args.required_i64("id")?;
+            let to = ForeshadowState::parse(args.required("to")?)?;
+            let trigger = args.optional("trigger").unwrap_or("cli").to_string();
+            let collected = match args.optional("collected-node") {
+                Some(text) => {
+                    Some(text.parse::<i64>().map_err(|_| Usage::from("--collected-node 需要是一个整数"))?)
+                }
+                None => None,
+            };
+            let item = store.move_foreshadow(id, to, collected, &trigger)?;
+            json!({ "ok": true, "command": "foreshadow-move", "item": item })
+        }
+        "foreshadow-delete" => {
+            let id = args.required_i64("id")?;
+            let trigger = args.optional("trigger").unwrap_or("cli").to_string();
+            let gone = store.delete_foreshadow(id, &trigger)?;
+            json!({ "ok": true, "command": "foreshadow-delete", "foreshadow_id": gone.id })
+        }
+        "fragment-edit" => {
+            // 正文 + 故事时间（只有事件用得上）：一次给全，与界面那张小表单同形
+            let id = args.required_i64("id")?;
+            let trigger = args.optional("trigger").unwrap_or("cli").to_string();
+            let order = match args.optional("story-order") {
+                Some(text) => Some(text.parse::<i64>().map_err(|_| Usage::from("--story-order 需要是一个整数"))?),
+                None => None,
+            };
+            let saved = store.update_fragment(
+                &FragmentEdit {
+                    id,
+                    body: body_of(args)?,
+                    story_time: args.optional("story-time").unwrap_or("").to_string(),
+                    story_order: order,
+                    flashback: args.flag("flashback"),
+                },
+                &trigger,
+            )?;
+            json!({ "ok": true, "command": "fragment-edit", "fragment": saved })
         }
         "outline-scan" => {
             let work = args.required_i64("work")?;

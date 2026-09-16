@@ -151,6 +151,19 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "这张设定卡的「{field}」存坏了：{value}" : ["field", "value"],
     NODE_NOT_SCENE => "node.not_scene"
         : "这一段不是场景卡，没有那四格：{node_id}" : ["node_id"],
+    UNKNOWN_FORESHADOW_STATE => "value.unknown_foreshadow_state"
+        : "认不出的伏笔状态：{value}（只认 planted / collected / dropped）" : ["value"],
+    FORESHADOW_BODY_EMPTY => "foreshadow.body_empty"
+        : "这条伏笔是空的——写一句它是什么" : [],
+    FORESHADOW_NOT_FOUND => "foreshadow.not_found"
+        : "伏笔不存在：{foreshadow_id}" : ["foreshadow_id"],
+    FORESHADOW_ANCHOR_INVALID => "foreshadow.anchor_invalid"
+        : "这一章不能当伏笔的落点：{node_id}（不存在、已删除，或不在同一本书里）"
+        : ["node_id"],
+    FORESHADOW_ILLEGAL_TRANSITION => "foreshadow.illegal_transition"
+        : "伏笔不能从 {from} 走到 {to}——先回到「埋着」再改" : ["from", "to"],
+    FRAGMENT_STORY_TIME_NOT_EVENT => "fragment.story_time_not_event"
+        : "只有事件才有故事时间：{fragment_id}" : ["fragment_id"],
     INPUT_SOURCE_UNKNOWN => "input.source_unknown"
         : "认不出的输入方式：{value}（只认 typed / voice / mixed）" : ["value"],
     QUESTION_DEFER_NEEDS_ANCHOR => "question.defer_needs_anchor"

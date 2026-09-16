@@ -22,8 +22,7 @@
 use crate::error::{codes, Error, Result};
 
 /// 碎片种类（写进 `fragments.frag_kind` 的稳定码；**别改**——老库认的就是它）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FragmentKind {
     /// 问题卡（叩问那条线产；创作流面板不建）。
     Question,
@@ -38,6 +37,17 @@ pub enum FragmentKind {
     /// 存储先到位，**写入者由口述那条链路带**（这一版只有键盘）——
     /// 与 `InputSource::Voice` 同一条纪律：先把位置留出来，别等落地时再改表。
     Dictation,
+}
+
+/// 进 JSON 就用**稳定码本身**。
+///
+/// 为什么不用 `#[serde(rename_all = "snake_case")]`：变体名与稳定码是两件事
+/// （`NoNumber` 的码是 `none`），靠"改蛇形"迟早分家——而且分家时**不报错**，
+/// 只是界面上静默对不上。写死成 `as_str()` 就没有第二份口径。
+impl serde::Serialize for FragmentKind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
 }
 
 impl FragmentKind {
@@ -108,6 +118,21 @@ pub struct Fragment {
     /// 溯源：从哪张问题卡勾出来的（作者自己随手记的没有）。
     pub derived_from: Option<i64>,
     pub created_at: i64,
+    /// **故事时间**（自由文本：`承平三年·春`、`第三天`……）——只有**事件**用它，给人看。
+    ///
+    /// 与"记下的时刻"（`created_at`）是两回事：那个是作者什么时候想起来记的，
+    /// 这个是故事里什么时候发生的。给作者自己看，核心不认识它的内容。
+    pub story_time: String,
+    /// **故事时间的排序值**（整数；作者自己定的口径，比如"故事开始后第几天"）——只有事件用它。
+    ///
+    /// `None` = 没填：**没填就不参与顺序检查**（绝不猜）。
+    /// 有它才判得动"时间线倒置"——自由文本是排不了序的。
+    pub story_order: Option<i64>,
+    /// 这一条是**倒叙 / 回忆**（顺序检查跳过它）。
+    ///
+    /// 回忆本来就是"后写的章、更早的事"，不勾这一下会被当成倒置误报——
+    /// 那是作者自己的写法，得由他说了算。
+    pub flashback: bool,
 }
 
 /// 一种碎片有多少条（面板上那些筛选项的数字，**只数没删的**）。

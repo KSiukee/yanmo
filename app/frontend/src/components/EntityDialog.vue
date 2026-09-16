@@ -1,16 +1,21 @@
 <script setup lang="ts">
-// 设定卡（人物 / 设定）：**大纲冲突检测的数据源**——记下来，体检才判得动。
+// 「设定」弹窗：**大纲冲突检测的两样数据源**——人物与设定、伏笔。
 //
-// 这个文件只管**长什么样**：会发生什么（列、建、改、删）全在
-// [`useEntityPanel`](./entity-panel.ts) 里；两个纯函数（拆别称、读设定）在 `entity.ts`。
+// 为什么两屏挤一个弹窗：它们都是"作者记下来的结构化东西"，用途也同一个（体检拿它比对）；
+// 而顶栏再多两个按钮就挤了。顶上两片页签切，可见性与页签在 [`useLore`](./lore.ts)。
 //
-// 会话由布局层建一次（这里只把它摊开）——与书架、回收站那些弹窗同一条口径。
+// 这个文件只管**长什么样**：会发生什么（列、建、改、删、走一步）全在两份 panel 里。
 import type { EntityCard } from "../api/entity.ts";
 import type { EditorSession } from "../editor/session.ts";
 import { t } from "../locales/index.ts";
 import { cardHeadline, kindLabel } from "./entity.ts";
+import ForeshadowPane from "./ForeshadowPane.vue";
+
+/** 两片页签的顺序（字典键 `lore.tab.*`）。 */
+const TABS = ["entities", "foreshadows"] as const;
 
 const props = defineProps<{ session: EditorSession }>();
+const { visible, tab, pick, hide } = props.session.lore;
 const {
   board,
   busy,
@@ -21,7 +26,6 @@ const {
   options,
   list,
   canSave,
-  hide,
   startNew,
   startEdit,
   cancelEdit,
@@ -29,6 +33,7 @@ const {
   remove,
 } = props.session.entities;
 const { workId } = props.session;
+const foreshadows = props.session.foreshadows;
 
 /** 删之前问一句（与目录树删章同一个习惯）。 */
 function askRemove(card: EntityCard) {
@@ -40,13 +45,43 @@ function askRemove(card: EntityCard) {
   <div class="entities dialog" @click.self="hide()">
     <section class="entities__box dialog__box">
       <header class="entities__head dialog__head">
-        <h2 class="entities__title dialog__title">{{ t("entity.title") }}</h2>
-        <button type="button" class="dialog__button" :disabled="busy || workId === null" @click="startNew()">
+        <h2 class="entities__title dialog__title">{{ t("lore.tab.entities") }}</h2>
+        <button
+          v-if="tab === 'entities'"
+          type="button"
+          class="dialog__button"
+          :disabled="busy || workId === null"
+          @click="startNew()"
+        >
           {{ t("entity.new") }}
+        </button>
+        <button
+          v-else
+          type="button"
+          class="dialog__button"
+          :disabled="foreshadows.busy.value || workId === null"
+          @click="foreshadows.startNew()"
+        >
+          {{ t("foreshadow.new") }}
         </button>
         <button type="button" class="dialog__button" @click="hide()">{{ t("entity.close") }}</button>
       </header>
 
+      <!-- 顶上两片页签：两屏都是"记下来的结构化东西"，体检拿它们比对 -->
+      <nav class="entities__tabs">
+        <button
+          v-for="item in TABS"
+          :key="item"
+          type="button"
+          class="entities__tab"
+          :class="{ 'entities__tab--on': tab === item }"
+          @click="pick(item)"
+        >
+          {{ t(`lore.tab.${item}`) }}
+        </button>
+      </nav>
+
+      <template v-if="tab === 'entities'">
       <p class="entities__rule">{{ t("entity.rule") }}</p>
       <p v-if="errorText" class="entities__error">{{ errorText }}</p>
       <p v-if="justSaved" class="entities__saved">{{ justSaved }}</p>
@@ -146,6 +181,9 @@ function askRemove(card: EntityCard) {
         </li>
       </ul>
       <p v-else-if="board && !busy" class="entities__hint">{{ t("entity.empty") }}</p>
+      </template>
+
+      <ForeshadowPane v-else :session="session" />
     </section>
   </div>
 </template>

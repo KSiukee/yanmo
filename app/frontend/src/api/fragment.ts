@@ -26,6 +26,12 @@ export interface Fragment {
   /** 从哪张问题卡勾出来的（自己随手记的没有）。 */
   derived_from: number | null;
   created_at: number;
+  /** **故事时间**（自由文本：`承平三年·春`）——只有事件用，给人看 */
+  story_time: string;
+  /** 故事时间的排序值（"故事开始后第几天"）——null = 没填，**不参与顺序检查** */
+  story_order: number | null;
+  /** 倒叙 / 回忆（顺序检查跳过它） */
+  flashback: boolean;
 }
 
 /** 一种碎片有几条（面板上那些筛选项的数字）。 */
@@ -54,6 +60,19 @@ export const fragmentAdd = (
   source: string,
   anchors: string[] = [],
 ) => call<Fragment>(COMMANDS.fragmentAdd, { work_id, kind, body, source, anchors });
+
+/**
+ * 改一条碎片：正文 + **故事时间**（只有事件用得上）。
+ *
+ * 一次给全（界面上就是一张小表单）：不是事件却带了故事时间，核心会当场拒。
+ */
+export const fragmentUpdate = (
+  id: number,
+  body: string,
+  story_time = "",
+  story_order: number | null = null,
+  flashback = false,
+) => call<CreatorBoard>(COMMANDS.fragmentUpdate, { id, body, story_time, story_order, flashback });
 
 /** 看一眼碎片池（不写库）。 */
 export const fragmentBoard = (work_id: number) =>

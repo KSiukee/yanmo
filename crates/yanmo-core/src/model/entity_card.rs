@@ -19,12 +19,26 @@
 use crate::error::{codes, Error, Result};
 
 /// 设定卡是哪一类（`entity_cards.card_kind` 的稳定码）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+///
+/// `rename_all`：**进 JSON 的那一份必须就是稳定码**（界面按稳定码比对；
+/// 漏了它就会序列化成 `Person`，界面上一句"人物"都认不出来）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EntityKind {
     /// 人物。
     Person,
     /// 设定：地点 / 物品 / 组织 / 概念——它们只需要"名字 + 属性"，与人物同一套形状。
     Setting,
+}
+
+/// 进 JSON 就用**稳定码本身**。
+///
+/// 为什么不用 `#[serde(rename_all = "snake_case")]`：变体名与稳定码是两件事
+/// （`NoNumber` 的码是 `none`），靠"改蛇形"迟早分家——而且分家时**不报错**，
+/// 只是界面上静默对不上。写死成 `as_str()` 就没有第二份口径。
+impl serde::Serialize for EntityKind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
 }
 
 impl EntityKind {

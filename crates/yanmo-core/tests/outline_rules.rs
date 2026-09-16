@@ -9,7 +9,8 @@
 use std::collections::BTreeMap;
 
 use yanmo_core::model::{
-    Attribute, EntityKind, NewEntityCard, NodeKind, SceneFields, WorkKind,
+    Attribute, EntityKind, Foreshadow, ForeshadowState, Fragment, FragmentKind, NewEntityCard,
+    NodeKind, SceneFields, WorkKind,
 };
 use yanmo_core::outline::{scan, IssueRule, OutlineData};
 use yanmo_core::store::Store;
@@ -52,8 +53,54 @@ fn scene(node_id: i64, title: &str, pov: &str, goal: &str, conflict: &str, outco
 }
 
 /// 只跑规则那一半（不碰库）。
-fn rules(cards: &[yanmo_core::model::EntityCard], scenes: &[(i64, String, SceneFields)]) -> Vec<yanmo_core::outline::OutlineIssue> {
-    scan(&OutlineData { cards, scenes })
+fn rules(
+    cards: &[yanmo_core::model::EntityCard],
+    scenes: &[(i64, String, SceneFields)],
+) -> Vec<yanmo_core::outline::OutlineIssue> {
+    rules_with(cards, scenes, &[], &[], &[])
+}
+
+/// 六条规则一起跑（要章的账 / 伏笔 / 事件的那两条走这里）。
+fn rules_with(
+    cards: &[yanmo_core::model::EntityCard],
+    scenes: &[(i64, String, SceneFields)],
+    chapters: &[i64],
+    foreshadows: &[Foreshadow],
+    events: &[Fragment],
+) -> Vec<yanmo_core::outline::OutlineIssue> {
+    scan(&OutlineData { cards, scenes, chapters, foreshadows, events })
+}
+
+/// 一条伏笔（默认「埋着」）。
+fn foreshadow(id: i64, planted: Option<i64>, state: ForeshadowState) -> Foreshadow {
+    Foreshadow {
+        id,
+        work_id: 1,
+        body: "老张的怀表".to_string(),
+        planted_node: planted,
+        collected_node: None,
+        state,
+        note: String::new(),
+        created_at: 0,
+        updated_at: 0,
+    }
+}
+
+/// 一条带故事时间的事件（挂在 `chapter` 那一章）。
+fn event(id: i64, chapter: i64, order: Option<i64>, flashback: bool) -> Fragment {
+    Fragment {
+        id,
+        work_id: 1,
+        kind: FragmentKind::Event,
+        body: format!("第 {id} 件事"),
+        source: "typed".to_string(),
+        anchors: vec![format!("chapter:{chapter}")],
+        derived_from: None,
+        created_at: 0,
+        story_time: String::new(),
+        story_order: order,
+        flashback,
+    }
 }
 
 fn param(issue: &yanmo_core::outline::OutlineIssue, key: &str) -> String {
@@ -259,4 +306,104 @@ fn the_values_param_keeps_a_stable_order() {
     let found = rules(&cards, &[]);
     let values: &BTreeMap<String, String> = &found[0].params;
     assert_eq!(values.get("values").map(String::as_str), Some("白 / 黑"), "按值排，不按录入顺序");
+}
+
+/// 伏笔未回收：**埋着**的才算、"不写了"是正经结局、没记埋点的判不了就不猜。
+#[test]
+fn a_foreshadow_left_planted_too_long_is_reported() {
+    let chapters: Vec<i64> = (1..=25).collect();
+    let found = rules_with(
+        &[],
+        &[],
+        &chapters,
+        &[
+            // 第 1 章埋下，全书 25 章：隔了 24 章没动静
+            foreshadow(1, Some(1), ForeshadowState::Planted),
+            // 第 6 章埋下：隔 19 章，还没到线
+            foreshadow(2, Some(6), ForeshadowState::Planted),
+            // 收了 / 不写了：都不报
+            foreshadow(3, Some(1), ForeshadowState::Collected),
+            foreshadow(4, Some(1), ForeshadowState::Dropped),
+            // 没记埋在哪一章：判不了"隔了多少章"，不猜
+            foreshadow(5, None, ForeshadowState::Planted),
+            // 记的那一章不在书里（锚点被删 / 记错了）：同样不猜
+            foreshadow(6, Some(999), ForeshadowState::Planted),
+        ],
+        &[],
+    );
+    assert_eq!(found.len(), 1, "只报那一条真搁久了的：{found:?}");
+    let issue = &found[0];
+    assert_eq!(issue.rule, IssueRule::ForeshadowUncollected);
+    assert_eq!(issue.anchors, vec!["foreshadow:1"]);
+    assert_eq!(param(issue, "planted"), "1");
+    assert_eq!(param(issue, "chapters"), "24");
+    assert_eq!(param(issue, "body"), "老张的怀表");
+    assert!(issue.identity.is_empty(), "主体就是这一条伏笔（锚点已经指明）");
+}
+
+/// 时间线倒置：**两边都填了数字、都不是倒叙**才算；一句说不清就一个字不猜。
+#[test]
+fn timeline_out_of_order_needs_two_dated_events_and_no_flashback() {
+    let chapters: Vec<i64> = (1..=10).collect();
+    let found = rules_with(
+        &[],
+        &[],
+        &chapters,
+        &[],
+        &[
+            // 第 1 章：故事第 99 天
+            event(1, 1, Some(99), false),
+            // 第 5 章：故事第 12 天——比前面那条早，倒置
+            event(2, 5, Some(12), false),
+            // 第 6 章：故事第 30 天（还是不晚于最晚的 99）——也报
+            event(3, 6, Some(30), false),
+            // 第 7 章：倒叙，跳过（后写的章讲更早的事本来就对）
+            event(4, 7, Some(1), true),
+            // 第 8 章：没填数字，不参与
+            event(5, 8, None, false),
+        ],
+    );
+    let reported: Vec<&str> = found
+        .iter()
+        .filter(|issue| issue.rule == IssueRule::TimelineOutOfOrder)
+        .map(|issue| issue.identity[0].as_str())
+        .collect();
+    assert_eq!(reported, vec!["2", "3"], "报的是那两条真的倒置的：{found:?}");
+
+    let first = found
+        .iter()
+        .find(|issue| issue.rule == IssueRule::TimelineOutOfOrder)
+        .unwrap();
+    assert_eq!(first.anchors, vec!["chapter:5", "chapter:1"], "两边锚点都给（点得动）");
+    assert_eq!(param(first, "order"), "12");
+    assert_eq!(param(first, "earlier_order"), "99");
+    assert_eq!(param(first, "earlier_body"), "第 1 件事");
+}
+
+/// 顺序正常 / 相等 / 只有一边有数字：都不报（宁漏勿错）。
+#[test]
+fn a_healthy_timeline_stays_quiet() {
+    let chapters: Vec<i64> = (1..=10).collect();
+    let found = rules_with(
+        &[],
+        &[],
+        &chapters,
+        &[],
+        &[
+            event(1, 1, Some(1), false),
+            event(2, 2, Some(2), false),
+            event(3, 3, Some(2), false), // 同一天：相等不算倒置
+            event(4, 4, None, false),    // 没填
+        ],
+    );
+    assert!(
+        found.iter().all(|issue| issue.rule != IssueRule::TimelineOutOfOrder),
+        "不该报：{found:?}"
+    );
+
+    // 事件没挂在章上（没有 chapter 锚点）：说不清先后，不猜
+    let mut orphan = event(9, 1, Some(5), false);
+    orphan.anchors.clear();
+    let found = rules_with(&[], &[], &chapters, &[], &[event(1, 9, Some(99), false), orphan]);
+    assert!(found.iter().all(|issue| issue.rule != IssueRule::TimelineOutOfOrder));
 }
