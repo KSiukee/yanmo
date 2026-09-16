@@ -13,19 +13,18 @@ import { ref, type Ref } from "vue";
 
 import type { EntityPanelState } from "./entity-panel.ts";
 import type { ForeshadowPanelState } from "./foreshadow-panel.ts";
-import type { ScenePanelState } from "./scene-panel.ts";
 
 /**
  * 「大纲」面板的五个页签（稳定码，界面上的字在字典 `lore.tab.*` 里）。
  *
- * 顺序就是"先有人、再有世界、再有发生了什么"：人物 → 设定 → 事件 → 场景卡 → 伏笔。
+ * 顺序就是"先有人、再有世界、再有发生了什么"：人物 → 设定 → 事件 → 伏笔。
+ * （**场景卡那一页撤了**：它的四格进了「大纲」表——一章一行就地填，见 grid.ts。）
  */
-export type LoreTab = "persons" | "settings" | "events" | "scenes" | "foreshadows";
+export type LoreTab = "persons" | "settings" | "events" | "foreshadows";
 
 export interface LoreOptions {
   entities: EntityPanelState;
   foreshadows: ForeshadowPanelState;
-  scenes: ScenePanelState;
   /** 事件那一页用的是碎片池那一份状态（同一份数据，别读第二遍） */
   refreshEvents: () => Promise<void>;
   /** 切页签时把手上半填的表单放下（两屏共用的入口） */
@@ -50,7 +49,6 @@ export function useLore(options: LoreOptions): LoreState {
   async function openPane(next: LoreTab) {
     if (next === "persons" || next === "settings") await options.entities.load();
     else if (next === "events") await options.refreshEvents();
-    else if (next === "scenes") await options.scenes.load();
     else await options.foreshadows.load();
   }
 

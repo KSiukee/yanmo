@@ -157,15 +157,17 @@ fn two_different_values_for_the_same_attribute_are_a_conflict_but_a_repeat_is_no
     assert!(param(issue, "values").contains('黑') && param(issue, "values").contains('白'));
 }
 
+/// **只报"填了一半"的**：一格没填的不念（那是"还没打算填"，一本没规划的书
+/// 会在体检里刷出一百条）；填全了也不念。
 #[test]
-fn a_scene_reports_exactly_which_fields_are_missing_and_goes_quiet_when_full() {
+fn only_half_filled_four_fields_are_reported() {
     let scenes = vec![
         scene(1, "开场", "林昭", "", "  \n ", ""),
         scene(2, "对峙", "陆文", "问出真相", "他不肯说", "翻了脸"),
         scene(3, "", "", "", "", ""),
     ];
     let found = rules(&[], &scenes);
-    assert_eq!(found.len(), 2, "填全的那一场不该报：{found:?}");
+    assert_eq!(found.len(), 1, "填全的不报、一个字没填的也不报：{found:?}");
     let issue = &found[0];
     assert_eq!(issue.rule, IssueRule::SceneMissingFields);
     assert_eq!(issue.anchors, vec!["scene:1"]);
@@ -173,8 +175,8 @@ fn a_scene_reports_exactly_which_fields_are_missing_and_goes_quiet_when_full() {
     // 只有空白也算没填：goal / conflict / outcome 三格都空着
     assert_eq!(param(issue, "count"), "3");
     assert_eq!(param(issue, "missing"), "goal,conflict,outcome", "缺哪几格说清楚（稳定码）");
-    // 没起名的那些也照报（名字由界面说"这一张还没起名"）
-    assert_eq!(param(&found[1], "count"), "4");
+    // 一个字都没填的那一场：不在这儿报（归大纲表里的筛选项）
+    assert!(found.iter().all(|issue| issue.anchors != vec!["scene:3"]));
 }
 
 #[test]
@@ -208,6 +210,19 @@ fn scanning_the_library_reports_every_rule_and_respects_soft_deletes() {
     let volume = store.list_nodes(work.id).unwrap()[0].id;
     let chapter = store.create_node(work.id, Some(volume), NodeKind::Chapter, "第一章").unwrap();
     let scene = store.create_node(work.id, Some(chapter), NodeKind::Scene, "开场").unwrap();
+    // 填**一格**：这样它才是"填了一半"（四格都没填的不在体检里念，见规则那一层的说明）
+    store
+        .save_scene_fields(
+            &SceneFields {
+                node_id: scene,
+                pov: "陆文".to_string(),
+                goal: String::new(),
+                conflict: String::new(),
+                outcome: String::new(),
+            },
+            "test",
+        )
+        .unwrap();
 
     let mut first = NewEntityCard {
         work_id: work.id,

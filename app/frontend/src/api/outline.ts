@@ -21,6 +21,35 @@ export interface OutlineIssue {
   fingerprint: string;
 }
 
+/** 大纲表里的一行：一个节点（卷 / 章 / 节 / 场景卡）带上该有的列。 */
+export interface OutlineRowDto {
+  node_id: number;
+  /** `volume` / `chapter` / `section` / `piece` / `scene` */
+  kind: string;
+  parent_id: number | null;
+  /** 缩进层级（0 = 卷那一层） */
+  depth: number;
+  /** 渲染后的名字（空串＝还没起名） */
+  title: string;
+  /** 这一章的"一句话"（章纲） */
+  summary: string;
+  word_count: number;
+  has_body: boolean;
+  /** 四格（没填过就是四个空串） */
+  fields: { pov: string; goal: string; conflict: string; outcome: string };
+  /** 这一章埋着还没收的伏笔有几条 */
+  planted_open: number;
+  /** 这一章收掉的伏笔有几条 */
+  collected: number;
+}
+
+/** 伏笔那一列要的两个数（`ForeshadowCount` 只是别名，读起来顺一点）。 */
+export type ForeshadowCount = Pick<OutlineRowDto, "planted_open" | "collected">;
+
+/** 大纲表要读的那一屏（**整棵树铺平**，一次给全）。 */
+export const outlineRows = (work_id: number) =>
+  call<OutlineRowDto[]>(COMMANDS.outlineRows, { work_id });
+
 /** 体检的一整屏。 */
 export interface OutlineBoard {
   issues: OutlineIssue[];

@@ -18,7 +18,9 @@ impl Store {
     /// 两次调用、同一份数据 → 同一个结果（顺序稳定）：界面上的清单不该自己跳。
     pub fn outline_issues(&self, work_id: i64) -> Result<Vec<OutlineIssue>> {
         let cards = self.entity_cards(work_id, None)?;
-        let scenes = self.scene_cards_of_work(work_id)?;
+        // 只取「填过四格」的节点：一个都没填的在这里不念（那是「还没打算填」，
+        // 不是「填漏了」——那一类去大纲表里的筛选项看）
+        let scenes = self.nodes_with_fields(work_id)?;
         // 章的阅读顺序：伏笔"隔了多少章"与事件"在书里的位置"都靠它
         let chapters: Vec<i64> = self.text_spine(work_id)?.into_iter().map(|c| c.id).collect();
         let foreshadows = self.foreshadows(work_id, None)?;

@@ -12,13 +12,12 @@ import { t } from "../locales/index.ts";
 import EntityPane from "./EntityPane.vue";
 import EventPane from "./EventPane.vue";
 import ForeshadowPane from "./ForeshadowPane.vue";
-import ScenePane from "./ScenePane.vue";
 
 const props = defineProps<{ session: EditorSession }>();
 const { tab, pick, hide } = props.session.lore;
 
 /** 五片页签的顺序（字典键 `lore.tab.*`）：先有人、再有世界、再有发生了什么。 */
-const TABS = ["persons", "settings", "events", "scenes", "foreshadows"] as const;
+const TABS = ["persons", "settings", "events", "foreshadows"] as const;
 </script>
 
 <template>
@@ -45,7 +44,6 @@ const TABS = ["persons", "settings", "events", "scenes", "foreshadows"] as const
       <EntityPane v-if="tab === 'persons'" :session="session" kind="person" />
       <EntityPane v-else-if="tab === 'settings'" :session="session" kind="setting" />
       <EventPane v-else-if="tab === 'events'" :session="session" />
-      <ScenePane v-else-if="tab === 'scenes'" :session="session" />
       <ForeshadowPane v-else :session="session" />
     </section>
   </div>

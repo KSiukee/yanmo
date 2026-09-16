@@ -7,12 +7,11 @@ import assert from "node:assert/strict";
 
 import type { EntityPanelState } from "./entity-panel.ts";
 import type { ForeshadowPanelState } from "./foreshadow-panel.ts";
-import type { ScenePanelState } from "./scene-panel.ts";
 import { useLore, type LoreOptions, type LoreTab } from "./lore.ts";
 
 /** 各页的替身：只记"读了几次""表单收了几次"。 */
 function fakePanes() {
-  const loads: Record<string, number> = { entities: 0, foreshadows: 0, scenes: 0, events: 0 };
+  const loads: Record<string, number> = { entities: 0, foreshadows: 0, events: 0 };
   let cancels = 0;
   const entities = {
     load: async () => {
@@ -24,15 +23,9 @@ function fakePanes() {
       loads.foreshadows += 1;
     },
   } as unknown as ForeshadowPanelState;
-  const scenes = {
-    load: async () => {
-      loads.scenes += 1;
-    },
-  } as unknown as ScenePanelState;
   const options: LoreOptions = {
     entities,
     foreshadows,
-    scenes,
     refreshEvents: async () => {
       loads.events += 1;
     },
@@ -59,10 +52,10 @@ test("默认停在「人物」那一页（先有人）", () => {
 });
 
 test("打开就落到要的那一页，只读那一页", async () => {
-  const { lore, panes } = await opened("scenes");
+  const { lore, panes } = await opened("events");
   assert.equal(lore.visible.value, true);
-  assert.equal(lore.tab.value, "scenes");
-  assert.deepEqual(panes.loads, { entities: 0, foreshadows: 0, scenes: 1, events: 0 });
+  assert.equal(lore.tab.value, "events");
+  assert.deepEqual(panes.loads, { entities: 0, foreshadows: 0, events: 1 });
 });
 
 test("人物与设定两页共用同一份名单（读一次就够）", async () => {
@@ -71,19 +64,19 @@ test("人物与设定两页共用同一份名单（读一次就够）", async ()
   lore.pick("persons");
   await Promise.resolve();
   assert.equal(panes.loads.entities, 2, "换页签就重读一次（别拿旧账给作者看）");
-  assert.equal(panes.loads.events + panes.loads.scenes + panes.loads.foreshadows, 0);
+  assert.equal(panes.loads.events + panes.loads.foreshadows, 0);
 });
 
 test("事件那一页读的是碎片池那一份数据（不另开一条路）", async () => {
   const { panes } = await opened("events");
   assert.equal(panes.loads.events, 1);
-  assert.equal(panes.loads.entities + panes.loads.scenes + panes.loads.foreshadows, 0);
+  assert.equal(panes.loads.entities + panes.loads.foreshadows, 0);
 });
 
 test("伏笔那一页只读伏笔", async () => {
   const { panes } = await opened("foreshadows");
   assert.equal(panes.loads.foreshadows, 1);
-  assert.equal(panes.loads.entities + panes.loads.scenes + panes.loads.events, 0);
+  assert.equal(panes.loads.entities + panes.loads.events, 0);
 });
 
 test("换页签与收起：都把手上的表单放下（半填的不该下次冒出来）", async () => {

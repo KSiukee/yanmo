@@ -72,7 +72,7 @@ import {
   compilePreview,
   compileWork,
   setNodeSummary,
-  saveSceneFields,
+  saveNodeFields,
   setWorkSummary,
   treeSetVolumeTarget,
   typesetApply,
@@ -113,9 +113,9 @@ import { useCompile, type CompileState } from "./compile";
 import { useChapterNote, type ChapterNote } from "./note";
 import { useSceneFields, type SceneState } from "./scene";
 import { useLoreParts } from "../components/lore-parts";
+import { useOutlineGrid, type GridPanelState } from "../components/grid-panel";
 import type { EntityPanelState } from "../components/entity-panel";
 import type { ForeshadowPanelState } from "../components/foreshadow-panel";
-import type { ScenePanelState } from "../components/scene-panel";
 import type { CreatorPanelState } from "../components/creator-panel";
 import type { LoreState } from "../components/lore";
 import { useSnapshots, type Snapshots } from "./snapshots";
@@ -155,12 +155,12 @@ export interface EditorSession {
   entities: EntityPanelState;
   /** 伏笔：埋下的一条线头（「大纲」弹窗一页） */
   foreshadows: ForeshadowPanelState;
-  /** 场景卡：全书一眼看，就地补四格（「大纲」弹窗一页） */
-  scenes: ScenePanelState;
   /** 创作流碎片池：灵感 / 事件 / 口述（创作流那一栏与「大纲」的事件页共用同一份） */
   creator: CreatorPanelState;
-  /** 「大纲」弹窗的外壳：开着没有、停在哪个页签 */
+  /** 「资料」弹窗的外壳：开着没有、停在哪个页签 */
   lore: LoreState;
+  /** 「大纲」表：整块主区上的那一张大表（一章一行，要素在格子里填） */
+  grid: GridPanelState;
   /** 编译：一份原稿 → 一种成品（投稿版 docx / 分章 txt / 合并 txt） */
   compile: CompileState;
   /** 点「+」之后的编排：先问路标，再照作者意图建章（视图只管"点了哪一行"） */
@@ -322,7 +322,7 @@ export function useEditorSession(): EditorSession {
     void writing.refreshToday();
     // "一句话"跟着章走：核心给什么就是什么（编辑器里没存的草稿随切章丢掉）
     note.reset(snapshot.summary);
-    // 场景卡的四格跟着节点走（不是场景卡就整块收起来）
+    // 四格跟着节点走（卷没有四格，那一项就是 null）
     scene.reset(snapshot.scene);
     // emitUpdate: false —— 载入内容不算"作者改动"，不触发落盘
     editor.value?.commands.setContent(textToHtml(snapshot.body), { emitUpdate: false });
@@ -417,7 +417,10 @@ export function useEditorSession(): EditorSession {
       writing.visible.value ||
       backup.visible.value ||
       restore.visible.value ||
-      location.visible.value,
+      location.visible.value ||
+      lore.visible.value ||
+      // 大纲表也是"盖在主区上的一屏"：它开着时全局快捷键（含 Esc）一律让给它
+      grid.visible.value,
   );
 
   function whenWindowFocused(): Promise<void> {
@@ -928,7 +931,7 @@ export function useEditorSession(): EditorSession {
 
     // 场景卡的四格：与"一句话"并排、同样单独存（状态机在 editor/scene.ts）
     const scene = useSceneFields({
-      transport: { save: saveSceneFields },
+      transport: { save: saveNodeFields },
       nodeId: currentNodeId,
       onError: (message) => {
         failure.value = t("session.scene_failed", { detail: message });
@@ -937,9 +940,15 @@ export function useEditorSession(): EditorSession {
 
     // 「大纲」那一族（人物与设定 / 事件 / 场景卡 / 伏笔）整块在 lore-parts.ts 里装配：
     // 会话是唯一装配处，这里只留"把这一族接上"这一句（不然每加一页这里就长十行）。
-    const { entities, foreshadows, scenes, creator, lore } = useLoreParts({
+    const { entities, foreshadows, creator, lore } = useLoreParts({
       workId,
       currentChapter: currentNodeId,
+    });
+    // 大纲表：**整块主区**上的那一层（点章名跳正文、表尾能加一章）
+    const grid = useOutlineGrid({
+      workId,
+      openNode: (node_id) => switchChapter(node_id),
+      createChapter: (parent_id) => directory.create(parent_id, "chapter", ""),
     });
 
     return {
@@ -958,9 +967,9 @@ export function useEditorSession(): EditorSession {
       scene,
       entities,
       foreshadows,
-      scenes,
       creator,
       lore,
+      grid,
       compile,
     };
   }
@@ -982,9 +991,9 @@ export function useEditorSession(): EditorSession {
     scene,
     entities,
     foreshadows,
-    scenes,
     creator,
     lore,
+    grid,
     compile,
   } = createParts();
 
@@ -1136,9 +1145,9 @@ export function useEditorSession(): EditorSession {
     scene,
     entities,
     foreshadows,
-    scenes,
     creator,
     lore,
+    grid,
     compile,
     workId,
     switchWork,

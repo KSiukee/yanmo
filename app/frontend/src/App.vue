@@ -18,6 +18,7 @@ import EditorPane from "./components/EditorPane.vue";
 import AsidePane from "./components/AsidePane.vue";
 import TopBar from "./components/TopBar.vue";
 import OutlineDialog from "./components/OutlineDialog.vue";
+import OutlineGrid from "./components/OutlineGrid.vue";
 import BackupDialog from "./components/BackupDialog.vue";
 import LocationDialog from "./components/LocationDialog.vue";
 import RestoreDialog from "./components/RestoreDialog.vue";
@@ -63,8 +64,10 @@ const { visible: snapshotsVisible } = session.snapshots;
 const { visible: typesetVisible } = session.typeset;
 const { visible: compileVisible } = session.compile;
 const { visible: settingsVisible, values: settingsValues, open: openSettings } = session.appearance;
-// 「设定」（人物与设定 / 伏笔）：入口在顶栏；它是大纲体检的数据源，打开才读
+// 「资料」（人物与设定 / 事件 / 伏笔）：入口在顶栏；它是大纲体检的数据源，打开才读
 const { visible: loreVisible, show: showLore } = session.lore;
+// 「大纲」表：整块主区上的一层（Esc 关；它自己管读与存）
+const { visible: gridVisible, toggle: toggleGrid, hide: hideGrid } = session.grid;
 // 专注模式：只改"露哪几块"（判断在 editor/zen.ts），布局层照着渲染，不自己 if
 const { on: zenOn, chrome: zenChrome, toggle: toggleZen } = session.zen;
 // 专注时的悬浮卡片：一次只开一张；卡片里放的是**原来那个目录树组件**，不写第二份
@@ -94,6 +97,7 @@ const hint = computed(() => {
       :hint="hint"
       @shelf="toggleShelf()"
       @zen="toggleZen()"
+      @grid="toggleGrid()"
       @entities="showLore()"
       @backup="void openBackup()"
       @settings="void openSettings()"
@@ -175,6 +179,7 @@ const hint = computed(() => {
     <SettingsDialog v-if="settingsVisible && settingsValues" :session="session" />
     <BackupDialog v-if="backupVisible && backupStatus" :session="session" />
     <OutlineDialog v-if="loreVisible" :session="session" />
+    <OutlineGrid v-if="gridVisible" :session="session" />
     <RestoreDialog v-if="restoreVisible" :session="session" />
     <LocationDialog
       v-if="locationVisible && locationInfo"

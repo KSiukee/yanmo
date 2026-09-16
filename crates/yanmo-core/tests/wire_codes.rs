@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use yanmo_core::model::{
     AnswerTarget, ChapterNumbering, EntityKind, ForeshadowState, FragmentKind, InputSource,
-    NamingStyle, QuestionState, QuestionTone, SceneField, SideTab,
+    NamingStyle, NodeKind, QuestionState, QuestionTone, SceneField, SideTab,
 };
 use yanmo_core::question::{DeferKind, DeferPreset};
 use yanmo_core::text::WordCaliber;
@@ -79,7 +79,17 @@ fn every_wire_enum_serializes_as_its_stable_code() {
         same_code(style, style.as_str());
     }
 
-    // `NodeKind` / `WorkKind` / `WorkLanguage` **不在这一串里**：它们没有实现 `Serialize`
+    // `NodeKind` 上线了（大纲表那一行按类型分行摆）——它没有 `ALL`，逐个列
+    for node in [
+        NodeKind::Volume,
+        NodeKind::Chapter,
+        NodeKind::Section,
+        NodeKind::Piece,
+        NodeKind::Scene,
+    ] {
+        same_code(node, node.as_str());
+    }
+    // `WorkKind` / `WorkLanguage` **仍不在这一串里**：它们没有实现 `Serialize`
     // （进 JSON 时一律由调用方取 `as_str()`），所以不存在"序列化形状跑偏"这回事——
     // 它们的稳定码由各自模块的单测与 DDL / 成稿导出那边的对表钉着。
 }

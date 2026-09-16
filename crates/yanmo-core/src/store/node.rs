@@ -363,6 +363,24 @@ impl Store {
         work_id: i64,
         keep: impl Fn(&NodeSummary) -> bool,
     ) -> Result<Vec<ChapterSummary>> {
+        Ok(self
+            .node_walk(work_id)?
+            .into_iter()
+            .filter(|(node, _depth)| keep(node))
+            .map(|(node, _depth)| ChapterSummary {
+                id: node.id,
+                // 导航里显示的是**渲染后**的名字（`第{$N}章` → `第3章`）
+                title: node.title_rendered.clone(),
+                word_count: node.word_count,
+            })
+            .collect())
+    }
+
+    /// 全书节点按**树序**（父分组 → 深度优先）走一遍，带上**缩进层级**。
+    ///
+    /// 这是全仓**唯一**的树序走法：阅读顺序（导航 / 体检数章）与大纲表都从它出来——
+    /// 三处各写一份 DFS，迟早会在"卷要不要算一层、场景卡排哪儿"上分家。
+    pub fn node_walk(&self, work_id: i64) -> Result<Vec<(NodeSummary, usize)>> {
         let nodes = self.list_nodes(work_id)?; // 已按（父节点, 顺序）排好
         let mut children: std::collections::HashMap<Option<i64>, Vec<usize>> =
             std::collections::HashMap::new();
@@ -371,23 +389,17 @@ impl Store {
         }
 
         let mut order = Vec::new();
-        let mut stack: Vec<usize> = children
+        // (下标, 深度)：栈里带着层级走，不必再回头数祖先
+        let mut stack: Vec<(usize, usize)> = children
             .get(&None)
-            .map(|roots| roots.iter().rev().copied().collect())
+            .map(|roots| roots.iter().rev().map(|&index| (index, 0)).collect())
             .unwrap_or_default();
-        while let Some(position) = stack.pop() {
+        while let Some((position, depth)) = stack.pop() {
             let node = &nodes[position];
-            if keep(node) {
-                order.push(ChapterSummary {
-                    id: node.id,
-                    // 导航里显示的是**渲染后**的名字（`第{$N}章` → `第3章`）
-                    title: node.title_rendered.clone(),
-                    word_count: node.word_count,
-                });
-            }
+            order.push((node.clone(), depth));
             if let Some(kids) = children.get(&Some(node.id)) {
                 for &kid in kids.iter().rev() {
-                    stack.push(kid);
+                    stack.push((kid, depth + 1));
                 }
             }
         }

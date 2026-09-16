@@ -149,8 +149,9 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     ENTITY_NOT_FOUND => "entity.not_found" : "设定卡不存在：{entity_id}" : ["entity_id"],
     ENTITY_BAD_FIELD => "entity.bad_field"
         : "这张设定卡的「{field}」存坏了：{value}" : ["field", "value"],
-    NODE_NOT_SCENE => "node.not_scene"
-        : "这一段不是场景卡，没有那四格：{node_id}" : ["node_id"],
+    NODE_NO_FIELDS => "node.no_fields"
+        : "这一段没有那四格（只有承载正文的章 / 节 / 单篇 / 场景卡才有）：{node_id}"
+        : ["node_id"],
     UNKNOWN_FORESHADOW_STATE => "value.unknown_foreshadow_state"
         : "认不出的伏笔状态：{value}（只认 planted / collected / dropped）" : ["value"],
     FORESHADOW_BODY_EMPTY => "foreshadow.body_empty"

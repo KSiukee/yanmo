@@ -16,7 +16,7 @@ use tauri::State;
 
 use crate::error::ApiError;
 use crate::storage::AppData;
-use yanmo_core::store::Store;
+use yanmo_core::store::{OutlineRow, Store};
 use yanmo_core::outline::OutlineIssue;
 
 /// 一条发现给界面的形状（**带指纹**：忽略标记与"撤销忽略"都认它）。
@@ -58,6 +58,15 @@ fn board(store: &Store, work_id: i64) -> yanmo_core::Result<OutlineBoardDto> {
         issues: store.outline_issues(work_id)?.iter().map(OutlineIssueDto::from).collect(),
         dismissed: store.dismissed_issues(work_id)?,
     })
+}
+
+/// 大纲表要读的那一屏：**整棵树铺平**，一行带上该有的列（四格 / 伏笔账 / 字数）。
+///
+/// 一次给全：界面不必为一屏发四次请求，也不会出现"同一屏里前后对不上"。
+#[tauri::command(rename_all = "snake_case")]
+pub fn outline_rows(data: State<'_, AppData>, work_id: i64) -> Result<Vec<OutlineRow>, ApiError> {
+    crate::acceptance::note_command("outline_rows");
+    data.with_store(|store| store.outline_rows(work_id))
 }
 
 /// 扫一遍这本书的大纲（**只读**）。

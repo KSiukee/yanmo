@@ -9,7 +9,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::issue::{IssueRule, OutlineIssue};
-use crate::model::{EntityCard, Foreshadow, ForeshadowState, Fragment, SceneFields};
+use crate::model::{EntityCard, Foreshadow, ForeshadowState, Fragment, SceneField, SceneFields};
 
 /// 伏笔埋了多少章还没收才算"该看看了"（**章的个数**，不是字数）。
 ///
@@ -267,12 +267,16 @@ fn attribute_conflicts(cards: &[EntityCard]) -> Vec<OutlineIssue> {
     issues
 }
 
-/// 场景卡四格缺项 → [`IssueRule::SceneMissingFields`]（缺哪几格写在参数里）。
+/// 四格缺项 → [`IssueRule::SceneMissingFields`]（缺哪几格写在参数里）。
+///
+/// **只报"填了一半"的**：一格都没填的不念——那是"还没打算填"，不是"填漏了"，
+/// 一本没规划过的书会在体检里刷出一百条，把真正该看的那几条埋掉。
+/// （"哪些章还没填"归大纲表里的筛选项，见 `outline_grid`。）
 fn scene_gaps(scenes: &[(i64, String, SceneFields)]) -> Vec<OutlineIssue> {
     let mut issues = Vec::new();
     for (node_id, title, fields) in scenes {
         let missing = fields.missing();
-        if missing.is_empty() {
+        if missing.is_empty() || missing.len() == SceneField::ALL.len() {
             continue;
         }
         issues.push(OutlineIssue::new(

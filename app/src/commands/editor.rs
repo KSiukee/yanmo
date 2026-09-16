@@ -77,7 +77,8 @@ fn snapshot_of(store: &Store, target: EditorTarget) -> yanmo_core::Result<Editor
     let language = store.get_work(target.work_id)?.language;
     let caliber = store.word_caliber(target.work_id)?;
     // 场景卡才有那四格：先问一句"是不是"（**不用异常当控制流**）
-    let scene = if store.is_scene(target.node_id)? {
+    // 凡承载正文的节点都有四格（章也能直接填）；卷没有
+    let scene = if store.has_fields(target.node_id)? {
         Some(store.scene_fields(target.node_id)?)
     } else {
         None

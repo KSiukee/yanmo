@@ -636,12 +636,12 @@ export const COMMANDS = {
   entityCreate: "entity_create",
   entityUpdate: "entity_update",
   entityDelete: "entity_delete",
+  outlineRows: "outline_rows",
   outlineScan: "outline_scan",
   outlineDismiss: "outline_dismiss",
   outlineUndismiss: "outline_undismiss",
   outlineClearDismissed: "outline_clear_dismissed",
-  saveSceneFields: "save_scene_fields",
-  sceneList: "scene_list",
+  saveNodeFields: "save_node_fields",
   foreshadowList: "foreshadow_list",
   foreshadowCreate: "foreshadow_create",
   foreshadowUpdate: "foreshadow_update",
@@ -996,13 +996,14 @@ export const setNodeSummary = (node_id: number, summary: string) =>
   call<void>(COMMANDS.setNodeSummary, { node_id, summary });
 
 /**
- * 存场景卡的四格（视角 / 目标 / 冲突 / 结果）。
+ * 存一个节点的四格（视角 / 目标 / 冲突 / 结果）。
  *
  * 与"章纲一句话"同一条路：低频手填字段，不参与正文的落盘防抖与指纹校验，
- * 也不动正文一个字节。不是场景卡的节点会被核心当场拒（`node.not_scene`）。
+ * 也不动正文一个字节。**凡承载正文的节点都有这四格**（章也能直接填），
+ * 卷没有——那种会被核心当场拒（`node.no_fields`）。
  */
-export const saveSceneFields = (fields: SceneFields) =>
-  call<SceneFields>(COMMANDS.saveSceneFields, { ...fields });
+export const saveNodeFields = (fields: SceneFields) =>
+  call<SceneFields>(COMMANDS.saveNodeFields, { ...fields });
 
 /** 库里正文的指纹——读回校验用，不搬运正文。 */
 export const bodyFingerprint = (node_id: number) =>

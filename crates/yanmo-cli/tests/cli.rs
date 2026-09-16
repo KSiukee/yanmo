@@ -1224,6 +1224,9 @@ fn outline_cards_and_the_checkup_are_drivable_from_the_command_line() {
         &[("work", &work), ("parent", &chapter_id.to_string()), ("kind", "scene"), ("title", "开场")],
     );
     let scene_id = scene["node_id"].as_i64().unwrap().to_string();
+    // 四格填**一格**：这样它才算"填了一半"（一个字都没填的不在体检里念——
+    // 一本没规划过的书会在清单里刷出一百条，把真正该看的埋掉）
+    ok(dir.path(), "scene-field", &[("node", &scene_id), ("pov", "陆文")]);
 
     // 两张卡撞一个别称；其中一张自己跟自己矛盾（发色两种说法）
     let first = ok(
@@ -1275,7 +1278,7 @@ fn outline_cards_and_the_checkup_are_drivable_from_the_command_line() {
     assert!(!rules.contains(&"entity.name_clash"), "删掉的那张不该再报：{after}");
     assert!(!rules.contains(&"entity.attribute_conflict"), "同一张卡上的属性冲突也一样：{after}");
 
-    // 场景卡填全四格：缺项那条消失
+    // 填全四格：缺项那条消失
     ok(
         dir.path(),
         "scene-field",
@@ -1290,10 +1293,11 @@ fn outline_cards_and_the_checkup_are_drivable_from_the_command_line() {
     let filled = ok(dir.path(), "outline-scan", &[("work", &work)]);
     assert_eq!(filled["count"].as_i64().unwrap(), 0, "{filled}");
 
-    // 章没有那四格：如实拒
-    match run(dir.path(), "scene-field", &[("node", &chapter_id.to_string()), ("pov", "谁")]) {
-        Err(CliError::Core(error)) => assert_eq!(error.code(), "node.not_scene"),
-        other => panic!("章不该有四格：{other:?}"),
+    // **章也有四格**（中文网文的习惯就是一章一行），卷没有——那种如实拒
+    ok(dir.path(), "scene-field", &[("node", &chapter_id.to_string()), ("pov", "陆文")]);
+    match run(dir.path(), "scene-field", &[("node", "1"), ("pov", "谁")]) {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "node.no_fields"),
+        other => panic!("卷不该有四格：{other:?}"),
     }
 }
 

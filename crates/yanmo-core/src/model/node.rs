@@ -78,6 +78,16 @@ pub enum NodeKind {
     Scene,
 }
 
+/// 进 JSON 就用**稳定码本身**（同一个理由见 `FragmentKind`：变体名与码是两件事）。
+///
+/// 它以前只经调用方取 `as_str()` 上线；大纲表那一行直接把 `NodeKind` 给出去
+/// （界面要按类型分行摆），所以在这儿补一个序列化实现。
+impl serde::Serialize for NodeKind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
 impl NodeKind {
     /// 稳定代码（写进库与成稿 JSON；别改）。
     pub const fn as_str(self) -> &'static str {

@@ -1,8 +1,17 @@
-//! 场景卡四格的读写：**视角 / 目标 / 冲突 / 结果**。
+//! **四格**（视角 / 目标 / 冲突 / 结果）的读写。
 //!
 //! 四格住在卫星表 `scene_cards`（`node_id` 主键，理由见 `db::migrations_v11`）：
-//! **没有这一行 = 这张卡还没填过**，读出来就是四个空串——所以"缺项"这件事
+//! **没有这一行 = 还没填过**，读出来就是四个空串——所以"缺项"这件事
 //! 天然是"值为空"，不必再造一个"填过没有"的布尔。
+//!
+//! # 归谁有（2026-09-16 放宽）
+//!
+//! 原来是"场景卡才有"；**现在凡承载正文的节点都有**（章 / 节 / 单篇 / 场景卡）。
+//! 理由：中文网文作者的习惯是**一章一行**（Excel 细纲表那一派），
+//! 非要先建一张场景卡才填得了，等于给日更加了一道工序；
+//! 场景卡仍是"想把一场戏单独拆出来写"时的那个细粒度。
+//! 表名与 `SceneFields` 这个名字**保持不变**（改名要动 schema，而迁移只增不改）——
+//! 这里把它记清楚，别让下一个读者被名字误导。
 //!
 //! 两条分寸：
 //!
@@ -19,11 +28,11 @@ use crate::model::{NodeKind, SceneFields};
 use crate::time::now_millis;
 
 impl Store {
-    /// 这个节点是不是场景卡（**编辑器靠它决定露不露那四格**）。
+    /// 这个节点能不能有四格（**编辑器与大纲表靠它决定露不露那几列**）。
     ///
-    /// 单独给一个谓词，而不是让调用方去 `match` "不是场景卡"那条错误码：
+    /// 单独给一个谓词，而不是让调用方去 `match` 那条错误码：
     /// **用异常当控制流**会把"读坏了"与"本来就没有"混成一条路（前者该报，后者是常态）。
-    pub fn is_scene(&self, node_id: i64) -> Result<bool> {
+    pub fn has_fields(&self, node_id: i64) -> Result<bool> {
         let kind: Option<String> = self
             .conn
             .query_row(
@@ -32,10 +41,11 @@ impl Store {
                 |row| row.get(0),
             )
             .optional()?;
-        Ok(kind.as_deref() == Some(NodeKind::Scene.as_str()))
+        // 认不出的类型当"没有四格"（坏数据不该让整张表读不出来）
+        Ok(kind.as_deref().and_then(|code| NodeKind::parse(code).ok()).is_some_and(|kind| kind.holds_body()))
     }
 
-    /// 取一张场景卡的四格。**不是场景卡就报错**（目录树上任何别的节点都没有这四格）。
+    /// 取一个节点的四格。**不承载正文的节点（卷）没有这四格，如实拒**。
     pub fn scene_fields(&self, node_id: i64) -> Result<SceneFields> {
         let kind: Option<String> = self
             .conn
@@ -48,9 +58,10 @@ impl Store {
         let kind = kind.ok_or_else(|| {
             Error::invalid_with(codes::NODE_GONE, [("node_id", node_id.to_string())])
         })?;
-        if kind != NodeKind::Scene.as_str() {
+        let holds_body = NodeKind::parse(&kind).map(|kind| kind.holds_body()).unwrap_or(false);
+        if !holds_body {
             return Err(Error::invalid_with(
-                codes::NODE_NOT_SCENE,
+                codes::NODE_NO_FIELDS,
                 [("node_id", node_id.to_string())],
             ));
         }
@@ -75,13 +86,13 @@ impl Store {
         })
     }
 
-    /// 存一张场景卡的四格（整行覆盖），返回**库里真有的那一份**。
+    /// 存一个节点的四格（整行覆盖），返回**库里真有的那一份**。
     pub fn save_scene_fields(
         &mut self,
         fields: &SceneFields,
         trigger: &str,
     ) -> Result<SceneFields> {
-        // 先确认它是场景卡（顺带把"节点不在"与"不是场景卡"分开报）
+        // 先确认它承载正文（顺带把"节点不在"与"卷这种没有四格的"分开报）
         let before = self.scene_fields(fields.node_id)?;
         let now = now_millis();
         let tx = self.conn.transaction()?;
@@ -121,21 +132,22 @@ impl Store {
         self.scene_fields(fields.node_id)
     }
 
-    /// 一本书里**所有场景卡**（按树里的顺序），带上它们的四格——冲突检测要用。
+    /// 这本书里**填过四格的节点**（章 / 节 / 单篇 / 场景卡），带上四格——冲突检测要用。
     ///
-    /// 一次 JOIN 拿全：一条条去问会把"这本书有多少场景卡"变成 N 次往返。
-    /// 返回 `(node_id, 名字, 四格)`。
-    pub fn scene_cards_of_work(&self, work_id: i64) -> Result<Vec<(i64, String, SceneFields)>> {
+    /// 只取**有那一行**的：没有这一行＝一个字都没填过，"缺项"在体检里不念
+    /// （一个都没填是"还没打算填"，不是"填漏了"；那一类要看去大纲表里的筛选项）。
+    /// 一次 JOIN 拿全：一条条去问会把"这本书有多少节点"变成 N 次往返。
+    pub fn nodes_with_fields(&self, work_id: i64) -> Result<Vec<(i64, String, SceneFields)>> {
         let mut stmt = self.conn.prepare(
             "SELECT n.id, n.title,
                     COALESCE(s.pov, ''), COALESCE(s.goal, ''),
                     COALESCE(s.conflict, ''), COALESCE(s.outcome, '')
                FROM nodes n
-               LEFT JOIN scene_cards s ON s.node_id = n.id
-              WHERE n.work_id = ?1 AND n.node_kind = ?2 AND n.deleted_at IS NULL
+               JOIN scene_cards s ON s.node_id = n.id
+              WHERE n.work_id = ?1 AND n.deleted_at IS NULL
               ORDER BY n.parent_id, n.sort_order, n.id",
         )?;
-        let rows = stmt.query_map(params![work_id, NodeKind::Scene.as_str()], |row| {
+        let rows = stmt.query_map(params![work_id], |row| {
             let node_id: i64 = row.get(0)?;
             let title: String = row.get(1)?;
             Ok((

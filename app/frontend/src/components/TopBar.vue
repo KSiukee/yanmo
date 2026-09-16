@@ -20,6 +20,7 @@ defineProps<{
 const emit = defineEmits<{
   shelf: [];
   zen: [];
+  grid: [];
   entities: [];
   backup: [];
   settings: [];
@@ -45,6 +46,14 @@ const emit = defineEmits<{
       @click="emit('zen')"
     >
       {{ t("app.zen") }}
+    </button>
+    <button
+      type="button"
+      class="bar__button"
+      :title="t('app.grid_title')"
+      @click="emit('grid')"
+    >
+      {{ t("app.grid") }}
     </button>
     <button
       type="button"
