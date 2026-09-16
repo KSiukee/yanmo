@@ -945,11 +945,11 @@
   "grid.cast.no_cards": "还没有人物卡——先去顶栏「资料 → 人物」加一个。",
   "grid.paste.done": "粘进来 {cells} 格（{rows} 行）",
   "grid.paste.empty": "剪贴板里没有可粘的内容。",
-  "grid.paste.readonly": "这一片粘不下：第 {column} 列（{name}）不是打字填的格子——章名 / 伏笔 / 字数是核心算的，出场人物要点选。",
-  "grid.paste.on_volume": "这一片粘不下：第 {row} 行是卷（分组行），没有可填的格。",
+  "grid.paste.on_volume": "这一片粘不下：第 {row} 行落在卷上（分组行）——从第一个「章」的格子上开始粘，或把选中的区域收窄一点。",
   "grid.paste.no_rows": "这一片粘不下：下面还差 {missing} 行——先加几章，或选小一点的区域。",
   "grid.paste.no_columns": "这一片粘不下：右边还差 {missing} 列——把要落的列勾出来，或选小一点的区域。",
   "error.cast.entity_foreign": "这一张不属于这本书：设定卡 {entity_id} 不在作品 {work_id} 里",
   "error.outline.paste_too_big": "一次粘进来的格子太多（{cells} 格，上限 {max}）——分成几次粘，或先只粘一列",
-  "error.cast.node_no_body": "这一段挂不了出场人物（只有承载正文的章 / 节 / 场景卡才有）：{node_id}"
+  "error.cast.node_no_body": "这一段挂不了出场人物（只有承载正文的章 / 节 / 场景卡才有）：{node_id}",
+  "grid.paste.skipped": "（{columns} 那几列没粘：章名 / 伏笔 / 字数由核心算，出场人物要点选）"
 }

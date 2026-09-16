@@ -57,10 +57,26 @@ test("落格：单列粘贴（Excel 里最常见的那一下）", () => {
   );
 });
 
-test("落格：出场人物那一列粘不了（它是点选的，不是打字的）", () => {
-  const plan = planPaste([["陆文、老张"]], [chapter(1)], ALL, { row: 0, column: 2 });
-  assert.ok("problem" in plan);
-  assert.deepEqual(plan.problem, { kind: "column", column: 1, name: "出场人物" });
+test("落格：不是打字填的列**原地跳过**，别的列不错位", () => {
+  // 从 Excel 迁一整张表时，出场人物那一列几乎一定在选中的区域里——
+  // 为它把整片退回去等于"一键迁入"永远迁不进来
+  const plan = planPaste([["他进城", "陆文、老张", "陆文"]], [chapter(1)], ALL, {
+    row: 0,
+    column: 1,
+  });
+  assert.ok("cells" in plan);
+  assert.deepEqual(plan.skipped, ["cast"]);
+  assert.deepEqual(plan.cells, [
+    { node_id: 1, column: "summary", value: "他进城" },
+    { node_id: 1, column: "pov", value: "陆文" },
+  ]);
+});
+
+test("落格：整片都落在非打字的列上 → 一个字都没写", () => {
+  const plan = planPaste([["陆文"]], [chapter(1)], ALL, { row: 0, column: 2 });
+  assert.ok("cells" in plan);
+  assert.deepEqual(plan.cells, []);
+  assert.deepEqual(plan.skipped, ["cast"]);
 });
 
 test("落格：空格也照粘（迁进来的表要跟原表对得上）", () => {
@@ -81,11 +97,6 @@ test("落格：粘不下时说清是哪一种，不给半片", () => {
   assert.ok("problem" in tooManyColumns);
   assert.deepEqual(tooManyColumns.problem, { kind: "columns", missing: 1 });
 
-  // 落在只读列上（章名那一列）
-  const readonly = planPaste([["第9章"]], rows, ALL, { row: 0, column: 0 });
-  assert.ok("problem" in readonly);
-  assert.deepEqual(readonly.problem, { kind: "column", column: 1, name: "章" });
-
   // 落在卷上（分组行没有可填的格）
   const onVolume = planPaste([["x"]], [{ node_id: 1, kind: "volume" }, chapter(2)], ALL, {
     row: 0,
@@ -103,7 +114,6 @@ test("落格：粘不下时说清是哪一种，不给半片", () => {
 test("粘不下时那句话把数字填进去了（不留 {missing} 这种花括号）", () => {
   for (const text of [
     pasteProblemText({ kind: "empty" }),
-    pasteProblemText({ kind: "column", column: 2, name: "视角" }),
     pasteProblemText({ kind: "row", row: 1 }),
     pasteProblemText({ kind: "rows", missing: 3 }),
     pasteProblemText({ kind: "columns", missing: 2 }),

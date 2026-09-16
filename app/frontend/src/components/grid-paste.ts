@@ -52,7 +52,6 @@ export type PasteProblem =
   /** 剪切板里没有可粘的内容 */
   | { kind: "empty" }
   /** 第 `column` 列（`name`）是核心算的 / 章名那一列，填不了 */
-  | { kind: "column"; column: number; name: string }
   /** 第 `row` 行是卷（分组行），没有可填的格 */
   | { kind: "row"; row: number }
   /** 表尾放不下：还多 `missing` 行 */
@@ -62,6 +61,14 @@ export type PasteProblem =
 
 export interface PastePlan {
   cells: OutlineCellPayload[];
+  /**
+   * 这一片里**没落**的那几列（章名 / 伏笔 / 字数由核心算，出场人物是点选的）。
+   *
+   * 跳过而不是整片拒：作者从 Excel 迁一整张表时，那些列几乎一定在选中的区域里，
+   * 为它们把整片退回去等于"一键迁入"永远迁不进来。按列号原地跳过**不会错位**
+   * （第 4 列的仍旧落在第 4 列），而且回执会把跳过了哪几列如实说出来。
+   */
+  skipped: GridColumn[];
 }
 
 /**
@@ -86,30 +93,30 @@ export function planPaste(
     return { problem: { kind: "columns", missing: anchor.column + width - columns.length } };
   }
 
-  // 先把"这一片要落的那几行 / 几列"整体过一遍：落了卷或者落在只读列上，整片都不粘
+  // 落到了卷上：**整片拒**。那是"这一行在这张表里没有对应的地方"，
+  // 悄悄丢掉一行作者的稿子比拒掉整片坏得多。
   const targetRows = rows.slice(anchor.row, anchor.row + table.length);
-  const targetColumns = columns.slice(anchor.column, anchor.column + width);
   for (const [index, row] of targetRows.entries()) {
     if (row.kind === "volume") return { problem: { kind: "row", row: index + 1 } };
   }
-  for (const [index, column] of targetColumns.entries()) {
-    if (!PASTE_COLUMNS.includes(column)) {
-      return { problem: { kind: "column", column: index + 1, name: t(`grid.col.${column}`) } };
-    }
-  }
 
+  const targetColumns = columns.slice(anchor.column, anchor.column + width);
+  const skipped = targetColumns.filter((column) => !PASTE_COLUMNS.includes(column));
   const cells: OutlineCellPayload[] = [];
   for (const [rowIndex, line] of table.entries()) {
     for (const [columnIndex, value] of line.entries()) {
+      const column = targetColumns[columnIndex];
+      // 不是打字填的列：**原地跳过**（按列号跳，别的列不会错位）
+      if (!PASTE_COLUMNS.includes(column)) continue;
       cells.push({
         node_id: targetRows[rowIndex].node_id,
-        column: targetColumns[columnIndex],
+        column,
         // 空格也照粘：迁进来的表要跟原表一模一样（空着就是空着，不许悄悄留着旧值）
         value,
       });
     }
   }
-  return { cells };
+  return { cells, skipped };
 }
 
 /** 粘不下时那句给人看的话（**一处实现**：界面上两处都调它）。 */
@@ -117,8 +124,6 @@ export function pasteProblemText(problem: PasteProblem): string {
   switch (problem.kind) {
     case "empty":
       return t("grid.paste.empty");
-    case "column":
-      return t("grid.paste.readonly", { column: problem.column, name: problem.name });
     case "row":
       return t("grid.paste.on_volume", { row: problem.row });
     case "rows":

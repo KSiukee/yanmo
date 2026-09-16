@@ -232,12 +232,24 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
       errorText.value = pasteProblemText(plan.problem);
       return;
     }
+    if (plan.cells.length === 0) {
+      // 整片都落在非打字的列上：什么都没写，也别说"粘进来了"
+      errorText.value = pasteProblemText({ kind: "empty" });
+      return;
+    }
     try {
       busy.value = true;
       errorText.value = "";
       rows.value = await outlinePasteCells(work, plan.cells);
       const touched = new Set(plan.cells.map((cell) => cell.node_id)).size;
-      justSaved.value = t("grid.paste.done", { cells: plan.cells.length, rows: touched });
+      const done = t("grid.paste.done", { cells: plan.cells.length, rows: touched });
+      // 跳过了哪几列要说出来（不然作者以为整张表都进来了）
+      const skipped = plan.skipped.length
+        ? " " + t("grid.paste.skipped", {
+            columns: plan.skipped.map((column) => t(`grid.col.${column}`)).join(t("common.list_separator")),
+          })
+        : "";
+      justSaved.value = done + skipped;
     } catch (error) {
       report(error);
     } finally {
