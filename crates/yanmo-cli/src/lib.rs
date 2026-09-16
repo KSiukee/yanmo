@@ -24,6 +24,9 @@ mod dev;
 /// 开发档里的创作流命令面（碎片池：记 / 看 / 删 / 捞回；同样只在 debug 构建里）。
 #[cfg(debug_assertions)]
 mod dev_fragment;
+/// 开发档里的大纲命令面（设定卡 / 场景卡四格 / 大纲体检；同样只在 debug 构建里）。
+#[cfg(debug_assertions)]
+mod dev_outline;
 /// 开发档里的叩问命令面（同样只在 debug 构建里）。
 #[cfg(debug_assertions)]
 mod dev_question;

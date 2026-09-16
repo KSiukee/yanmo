@@ -1208,3 +1208,91 @@ fn fragment_pool_is_drivable_from_the_command_line() {
         other => panic!("删两次该说「不存在」：{other:?}"),
     }
 }
+
+/// 大纲这一条线：**记设定 → 体检 → 忽略 → 数据一变清单跟着变**。
+///
+/// 界面上要点得动的事，这里都要能反复跑：重名会不会报、忽略记没记住、
+/// 软删的那张还报不报、场景卡填全了缺项还在不在。
+#[test]
+fn outline_cards_and_the_checkup_are_drivable_from_the_command_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let (work_id, chapter_id) = seed(dir.path(), "novel");
+    let work = work_id.to_string();
+    let scene = ok(
+        dir.path(),
+        "new-node",
+        &[("work", &work), ("parent", &chapter_id.to_string()), ("kind", "scene"), ("title", "开场")],
+    );
+    let scene_id = scene["node_id"].as_i64().unwrap().to_string();
+
+    // 两张卡撞一个别称；其中一张自己跟自己矛盾（发色两种说法）
+    let first = ok(
+        dir.path(),
+        "entity-new",
+        &[
+            ("work", &work),
+            ("kind", "person"),
+            ("name", "陆文"),
+            ("alias", "阿文,陆大人"),
+            ("attr", "发色=黑,发色=白"),
+        ],
+    );
+    let first_id = first["card"]["id"].as_i64().unwrap();
+    assert_eq!(first["card"]["aliases"].as_array().unwrap().len(), 2);
+    ok(
+        dir.path(),
+        "entity-new",
+        &[("work", &work), ("kind", "person"), ("name", "林昭"), ("alias", "阿文")],
+    );
+
+    // 体检（只读）：三类都在
+    let board = ok(dir.path(), "outline-scan", &[("work", &work)]);
+    assert_eq!(board["count"].as_i64().unwrap(), 3, "{board}");
+    let issues = board["issues"].as_array().unwrap();
+    let rules: Vec<&str> = issues.iter().map(|item| item["rule"].as_str().unwrap()).collect();
+    assert!(rules.contains(&"entity.name_clash"));
+    assert!(rules.contains(&"entity.attribute_conflict"));
+    assert!(rules.contains(&"scene.missing_fields"));
+    let fingerprint = issues[0]["fingerprint"].as_str().unwrap().to_string();
+
+    // 忽略要**记住**，而且是幂等的
+    let dismissed = ok(dir.path(), "outline-dismiss", &[("work", &work), ("fingerprint", &fingerprint)]);
+    assert_eq!(dismissed["dismissed"].as_array().unwrap().len(), 1);
+    let again = ok(dir.path(), "outline-dismiss", &[("work", &work), ("fingerprint", &fingerprint)]);
+    assert_eq!(again["dismissed"].as_array().unwrap().len(), 1, "连点两下不算错");
+    let back = ok(dir.path(), "outline-undismiss", &[("work", &work), ("fingerprint", &fingerprint)]);
+    assert!(back["dismissed"].as_array().unwrap().is_empty(), "回头路要通");
+
+    // 软删那张撞车的卡：重名那条跟着消失
+    ok(dir.path(), "entity-delete", &[("id", &first_id.to_string())]);
+    let after = ok(dir.path(), "outline-scan", &[("work", &work)]);
+    let rules: Vec<&str> = after["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["rule"].as_str().unwrap())
+        .collect();
+    assert!(!rules.contains(&"entity.name_clash"), "删掉的那张不该再报：{after}");
+    assert!(!rules.contains(&"entity.attribute_conflict"), "同一张卡上的属性冲突也一样：{after}");
+
+    // 场景卡填全四格：缺项那条消失
+    ok(
+        dir.path(),
+        "scene-field",
+        &[
+            ("node", &scene_id),
+            ("pov", "陆文"),
+            ("goal", "拿到账本"),
+            ("conflict", "他不肯给"),
+            ("outcome", "抢到了"),
+        ],
+    );
+    let filled = ok(dir.path(), "outline-scan", &[("work", &work)]);
+    assert_eq!(filled["count"].as_i64().unwrap(), 0, "{filled}");
+
+    // 章没有那四格：如实拒
+    match run(dir.path(), "scene-field", &[("node", &chapter_id.to_string()), ("pov", "谁")]) {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "node.not_scene"),
+        other => panic!("章不该有四格：{other:?}"),
+    }
+}

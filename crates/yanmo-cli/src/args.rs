@@ -164,7 +164,25 @@ pub const HELP_DEV: &str = "\
   fragment-delete --id <碎片 id> [--trigger <谁触发>]
                             删掉一条（**软删**：行还在，fragment-restore 能捞回）
   fragment-restore --id <碎片 id> [--trigger <谁触发>]
-                            捞回一条删掉的（重复点不算错）";
+                            捞回一条删掉的（重复点不算错）
+  entity-new --work <id> --kind <person|setting> --name <名字>
+             [--alias <别称[,别称…]>] [--attr <键=值[,键=值…]>] [--note <备注>]
+                            记一张设定卡（名字空着会被拒；空别名/空条目丢掉）
+  entity-list --work <id> [--kind <person|setting>]
+                            这本书的设定卡（按名字排）
+  entity-update --id <卡 id> --kind <person|setting> --name <名字> [--alias <…>] [--attr <…>]
+                            **整卡覆盖**：表单是什么样，改完就是什么样
+  entity-delete --id <卡 id> [--trigger <谁触发>]
+                            删一张（**软删**：行还在，只是不再列出来）
+  scene-field --node <场景卡 id> [--pov <…>] [--goal <…>] [--conflict <…>] [--outcome <…>]
+                            存场景卡的四格（整行覆盖；不是场景卡会被拒）
+  outline-scan --work <id>   大纲体检：把对不上的地方列出来（**只读**，带指纹）
+  outline-dismiss --work <id> --fingerprint <指纹> [--trigger <谁触发>]
+                            「这一处我知道了」（幂等；指纹来自 outline-scan）
+  outline-undismiss --work <id> --fingerprint <指纹> [--trigger <谁触发>]
+                            撤销一次忽略
+  outline-clear-dismissed --work <id> [--trigger <谁触发>]
+                            全部重新看一遍";
 
 /// 这个构建的帮助文本（发布构建只列救援档）。
 pub fn help_text() -> String {

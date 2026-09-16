@@ -12,6 +12,7 @@ use tauri::State;
 
 use crate::error::ApiError;
 use crate::storage::AppData;
+use yanmo_core::model::SceneFields;
 use yanmo_core::store::{EditorCursor, EditorTarget, Store};
 
 /// 打开编辑器时拿到的一章。
@@ -38,6 +39,10 @@ pub struct EditorSnapshot {
     pub cursor: Option<CursorDto>,
     /// 这一章的"一句话"（作者手填，空串＝没写过）：投稿包的大纲要按阅读顺序取它
     pub summary: String,
+    /// 打开的是**场景卡**时的那四格（视角 / 目标 / 冲突 / 结果）；别的节点是 `null`。
+    ///
+    /// 四格随快照一起给：界面上那一小张表单不该为它再跑一趟（与"章纲一句话"同一处出口）。
+    pub scene: Option<SceneFields>,
 }
 
 /// 光标与滚动位置。
@@ -71,11 +76,18 @@ fn snapshot_of(store: &Store, target: EditorTarget) -> yanmo_core::Result<Editor
     // 口径由核心落定（作者选过 → 它；没选过 → 作品语言的默认）：规则只写在核心一处
     let language = store.get_work(target.work_id)?.language;
     let caliber = store.word_caliber(target.work_id)?;
+    // 场景卡才有那四格：先问一句"是不是"（**不用异常当控制流**）
+    let scene = if store.is_scene(target.node_id)? {
+        Some(store.scene_fields(target.node_id)?)
+    } else {
+        None
+    };
     Ok(EditorSnapshot {
         work_id: target.work_id,
         node_id: target.node_id,
         title: target.title,
         summary: store.node_summary(target.node_id)?,
+        scene,
         fingerprint: store.body_fingerprint(target.node_id)?,
         cursor: store.load_cursor(target.node_id)?.map(|c| CursorDto {
             anchor: c.anchor,

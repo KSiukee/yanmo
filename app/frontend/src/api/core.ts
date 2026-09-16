@@ -55,6 +55,21 @@ export interface EditorSnapshot {
   fingerprint: string;
   /** 上次读到哪了（**只有记的正是这一章时才有**） */
   cursor: EditorCursor | null;
+  /** 打开的是场景卡时的那四格；别的节点是 null */
+  scene: SceneFields | null;
+}
+
+/** 场景卡的四格（**只对场景卡有**：别的节点读出来是 null）。 */
+export interface SceneFields {
+  node_id: number;
+  /** 视角：这一场从谁眼里看出去 */
+  pov: string;
+  /** 目标：这一场想要什么 */
+  goal: string;
+  /** 冲突：挡在目标前面的是什么 */
+  conflict: string;
+  /** 结果：这一场结束时落到哪儿 */
+  outcome: string;
 }
 
 /** 光标与滚动位置。 */
@@ -617,6 +632,15 @@ export const COMMANDS = {
   fragmentBoard: "fragment_board",
   fragmentDelete: "fragment_delete",
   fragmentRestore: "fragment_restore",
+  entityList: "entity_list",
+  entityCreate: "entity_create",
+  entityUpdate: "entity_update",
+  entityDelete: "entity_delete",
+  outlineScan: "outline_scan",
+  outlineDismiss: "outline_dismiss",
+  outlineUndismiss: "outline_undismiss",
+  outlineClearDismissed: "outline_clear_dismissed",
+  saveSceneFields: "save_scene_fields",
   writingToday: "writing_today",
   writingOverview: "writing_overview",
   typesetRules: "typeset_rules",
@@ -963,6 +987,15 @@ export const saveBody = (node_id: number, body: string, tz_offset_minutes: numbe
 /** 写当前章的"一句话"（投稿包的大纲要用它）；正文一个字都不动。 */
 export const setNodeSummary = (node_id: number, summary: string) =>
   call<void>(COMMANDS.setNodeSummary, { node_id, summary });
+
+/**
+ * 存场景卡的四格（视角 / 目标 / 冲突 / 结果）。
+ *
+ * 与"章纲一句话"同一条路：低频手填字段，不参与正文的落盘防抖与指纹校验，
+ * 也不动正文一个字节。不是场景卡的节点会被核心当场拒（`node.not_scene`）。
+ */
+export const saveSceneFields = (fields: SceneFields) =>
+  call<SceneFields>(COMMANDS.saveSceneFields, { ...fields });
 
 /** 库里正文的指纹——读回校验用，不搬运正文。 */
 export const bodyFingerprint = (node_id: number) =>

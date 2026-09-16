@@ -9,7 +9,6 @@
 import { computed, ref } from "vue";
 
 import { t } from "./locales/index.ts";
-import { shortcutKeys } from "./editor/shortcuts.ts";
 import { useEditorSession } from "./editor/session";
 import { useAsideTab } from "./editor/aside";
 import { useQuestionPush } from "./editor/question-push.ts";
@@ -17,7 +16,8 @@ import type { SelectedQuestion } from "./api/question.ts";
 import DirectoryPane from "./components/DirectoryPane.vue";
 import EditorPane from "./components/EditorPane.vue";
 import AsidePane from "./components/AsidePane.vue";
-import EngineBadge from "./components/EngineBadge.vue";
+import TopBar from "./components/TopBar.vue";
+import EntityDialog from "./components/EntityDialog.vue";
 import BackupDialog from "./components/BackupDialog.vue";
 import LocationDialog from "./components/LocationDialog.vue";
 import RestoreDialog from "./components/RestoreDialog.vue";
@@ -63,6 +63,8 @@ const { visible: snapshotsVisible } = session.snapshots;
 const { visible: typesetVisible } = session.typeset;
 const { visible: compileVisible } = session.compile;
 const { visible: settingsVisible, values: settingsValues, open: openSettings } = session.appearance;
+// 设定卡（人物 / 设定）：入口在顶栏；它是大纲体检的数据源，打开才读
+const { visible: entitiesVisible, show: showEntities } = session.entities;
 // 专注模式：只改"露哪几块"（判断在 editor/zen.ts），布局层照着渲染，不自己 if
 const { on: zenOn, chrome: zenChrome, toggle: toggleZen } = session.zen;
 // 专注时的悬浮卡片：一次只开一张；卡片里放的是**原来那个目录树组件**，不写第二份
@@ -86,44 +88,16 @@ const hint = computed(() => {
 
 <template>
   <div class="shell">
-    <header v-if="zenChrome.topbar" class="shell__bar">
-      <!-- i18n-allow-next-line: 产品名（品牌），不是界面文案 -->
-      <span class="shell__brand">研墨</span>
-      <button
-        type="button"
-        class="shell__shelf"
-        :title="workId ? t('app.shelf_title_switch') : t('app.shelf_title_open')"
-        @click="toggleShelf()"
-      >
-        {{ t("app.shelf") }}
-      </button>
-      <button
-        type="button"
-        class="shell__settings"
-        :title="t('app.zen_title', { key: shortcutKeys('zen') })"
-        @click="toggleZen()"
-      >
-        {{ t("app.zen") }}
-      </button>
-      <button
-        type="button"
-        class="shell__settings"
-        :title="t('app.settings_title')"
-        @click="void openSettings()"
-      >
-        {{ t("app.settings") }}
-      </button>
-      <button
-        type="button"
-        class="shell__settings"
-        :title="t('app.backup_title')"
-        @click="void openBackup()"
-      >
-        {{ t("app.backup") }}
-      </button>
-      <span class="shell__hint">{{ hint }}</span>
-      <EngineBadge />
-    </header>
+    <TopBar
+      v-if="zenChrome.topbar"
+      :work-id="workId"
+      :hint="hint"
+      @shelf="toggleShelf()"
+      @zen="toggleZen()"
+      @entities="showEntities()"
+      @backup="void openBackup()"
+      @settings="void openSettings()"
+    />
 
     <!-- 提醒**只有这一个出口**：一次只显示一条（软件不该抢自己的话头）。
          叩问的推优先——它跟"当下正在写的东西"直接相关；备份提醒排在后面。 -->
@@ -200,6 +174,7 @@ const hint = computed(() => {
     <CompileDialog v-if="compileVisible" :session="session" />
     <SettingsDialog v-if="settingsVisible && settingsValues" :session="session" />
     <BackupDialog v-if="backupVisible && backupStatus" :session="session" />
+    <EntityDialog v-if="entitiesVisible" :session="session" />
     <RestoreDialog v-if="restoreVisible" :session="session" />
     <LocationDialog
       v-if="locationVisible && locationInfo"
@@ -214,20 +189,6 @@ const hint = computed(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-}
-
-.shell__bar {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--ym-line);
-  background: var(--ym-paper-dim);
-}
-
-.shell__brand {
-  font-weight: 600;
-  letter-spacing: 0.08em;
 }
 
 /* 插盘提醒：**非阻塞**一行小条，点了才打开备份设置，不打断写作 */
@@ -258,29 +219,6 @@ const hint = computed(() => {
 
 .shell__nudge-no {
   color: var(--ym-ink-soft);
-}
-
-.shell__hint {
-  font-size: 12px;
-  color: var(--ym-ink-soft);
-}
-
-.shell__shelf,
-.shell__settings {
-  padding: 1px 10px;
-  border: 1px solid var(--ym-line);
-  border-radius: 4px;
-  background: var(--ym-paper);
-  color: inherit;
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.shell__shelf:hover,
-.shell__settings:hover {
-  border-color: var(--ym-accent);
-  color: var(--ym-accent);
 }
 
 .shell__body {

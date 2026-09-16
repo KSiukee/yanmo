@@ -72,6 +72,7 @@ import {
   compilePreview,
   compileWork,
   setNodeSummary,
+  saveSceneFields,
   setWorkSummary,
   treeSetVolumeTarget,
   typesetApply,
@@ -110,6 +111,8 @@ import { focusPlan } from "./focus";
 import { useShelf, type Shelf } from "./shelf";
 import { useCompile, type CompileState } from "./compile";
 import { useChapterNote, type ChapterNote } from "./note";
+import { useSceneFields, type SceneState } from "./scene";
+import { useEntityPanel, type EntityPanelState } from "../components/entity-panel";
 import { useSnapshots, type Snapshots } from "./snapshots";
 import { DEFAULT_QUOTE_STYLE, useTypeset, type TypesetState } from "./typeset";
 import { useLocation, type LocationState } from "./location";
@@ -141,6 +144,10 @@ export interface EditorSession {
   typeset: TypesetState;
   /** 当前章的"一句话"（投稿包的大纲要用它）：单独存、单独显示 */
   note: ChapterNote;
+  /** 打开的是场景卡时的那四格（视角 / 目标 / 冲突 / 结果）：单独存、单独显示 */
+  scene: SceneState;
+  /** 设定卡（人物 / 设定）：大纲冲突检测的数据源（弹窗那一屏） */
+  entities: EntityPanelState;
   /** 编译：一份原稿 → 一种成品（投稿版 docx / 分章 txt / 合并 txt） */
   compile: CompileState;
   /** 点「+」之后的编排：先问路标，再照作者意图建章（视图只管"点了哪一行"） */
@@ -302,6 +309,8 @@ export function useEditorSession(): EditorSession {
     void writing.refreshToday();
     // "一句话"跟着章走：核心给什么就是什么（编辑器里没存的草稿随切章丢掉）
     note.reset(snapshot.summary);
+    // 场景卡的四格跟着节点走（不是场景卡就整块收起来）
+    scene.reset(snapshot.scene);
     // emitUpdate: false —— 载入内容不算"作者改动"，不触发落盘
     editor.value?.commands.setContent(textToHtml(snapshot.body), { emitUpdate: false });
     applyCursor(snapshot.cursor);
@@ -904,6 +913,18 @@ export function useEditorSession(): EditorSession {
       },
     });
 
+    // 场景卡的四格：与"一句话"并排、同样单独存（状态机在 editor/scene.ts）
+    const scene = useSceneFields({
+      transport: { save: saveSceneFields },
+      nodeId: currentNodeId,
+      onError: (message) => {
+        failure.value = t("session.scene_failed", { detail: message });
+      },
+    });
+
+    // 设定卡（人物 / 设定）：**打开才读**的弹窗那一屏（状态在 components/entity-panel.ts）
+    const entities = useEntityPanel({ workId });
+
     return {
       directory,
       appearance,
@@ -917,6 +938,8 @@ export function useEditorSession(): EditorSession {
       snapshots,
       typeset,
       note,
+      scene,
+      entities,
       compile,
     };
   }
@@ -935,6 +958,8 @@ export function useEditorSession(): EditorSession {
     snapshots,
     typeset,
     note,
+    scene,
+    entities,
     compile,
   } = createParts();
 
@@ -1083,6 +1108,8 @@ export function useEditorSession(): EditorSession {
     snapshots,
     typeset,
     note,
+    scene,
+    entities,
     compile,
     workId,
     switchWork,

@@ -15,7 +15,7 @@ use rusqlite::Connection;
 
 use super::{
     migrations_v1, migrations_v2, migrations_v3, migrations_v4, migrations_v5, migrations_v6,
-    migrations_v7, migrations_v8, migrations_v9, migrations_v10,
+    migrations_v7, migrations_v8, migrations_v9, migrations_v10, migrations_v11,
 };
 use crate::error::{Error, Result};
 use crate::time::now_millis;
@@ -93,6 +93,12 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 10,
         name: "question_deferrals",
         steps: migrations_v10::STEPS,
+        prepare: None,
+    },
+    Migration {
+        version: 11,
+        name: "entity_and_scene_cards",
+        steps: migrations_v11::STEPS,
         prepare: None,
     },
 ];

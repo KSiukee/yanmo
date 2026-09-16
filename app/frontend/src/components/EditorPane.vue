@@ -19,6 +19,7 @@ import { shortcutKeys } from "../editor/shortcuts.ts";
 import type { EditorSession } from "../editor/session";
 import type { AutosaveState } from "../editor/autosave";
 import ExitDialog from "./ExitDialog.vue";
+import SceneFields from "./SceneFields.vue";
 import { looksLikeFirstRun } from "../editor/shelf";
 
 const props = defineProps<{ session: EditorSession }>();
@@ -272,6 +273,9 @@ function statusText(status: AutosaveState["status"]): string {
     >
       <span class="editor__note-label">{{ t("editor.note_label") }}</span>{{ noteValue }}
     </p>
+
+    <!-- 场景卡才有的一小张表单：与"一句话"并排，同样单独存（不是场景卡就整块不出现） -->
+    <SceneFields :session="session" />
 
     <EditorContent
       v-if="editor"

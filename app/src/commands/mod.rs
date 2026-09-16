@@ -16,16 +16,22 @@ pub mod backup;
 pub mod compile;
 /// 编辑器：打开章节、落盘、光标与检索。
 pub mod editor;
+/// 设定卡：人物与设定（大纲冲突检测的数据源之一）。
+pub mod entity;
 /// 创作流：碎片池的记 / 看 / 删 / 捞回（**作者自己记下的东西**）。
 pub mod fragment;
 /// 稿子放哪：位置查询、换位置、打开文件夹。
 pub mod location;
+/// 大纲体检：把对不上的地方列出来（只报告，不改稿）。
+pub mod outline;
 /// 叩问：问题候选取材、处置四件套与记灵感（**只问不写**）。
 pub mod question;
 /// 叩问的「推」：什么时候主动开口（配额 / 冷却 / 时机），**与面板那一族分开**。
 pub mod question_push;
 /// 从备份恢复：预览、体检、换库。
 pub mod restore;
+/// 场景卡：四格（视角 / 目标 / 冲突 / 结果）的读写。
+pub mod scene;
 /// 每章版本快照：列表、对照、回滚。
 pub mod snapshot;
 /// 系统信息：版本、数据目录、验收与诊断。

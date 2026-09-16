@@ -28,6 +28,8 @@ pub mod location;
 pub mod model;
 /// 标题里的自动编号宏：号 = 位置的函数。
 pub mod numbering;
+/// 大纲冲突检测：只报告、不自动改稿（纯逻辑规则 + 零文案的问题清单）。
+pub mod outline;
 /// 系统约定的路径（「文档」在哪、数据文件夹叫什么）。
 pub mod paths;
 /// 叩问的机制侧：问题模板池与「从已有数据生候选草稿」（核心零文案）。

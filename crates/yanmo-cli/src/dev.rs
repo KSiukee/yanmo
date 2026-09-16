@@ -13,6 +13,7 @@ use yanmo_core::text;
 
 use crate::args::{Args, Usage};
 use crate::dev_fragment;
+use crate::dev_outline;
 use crate::dev_question;
 use crate::CliError;
 
@@ -29,7 +30,11 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         // 叩问那一族（问题卡 / 选题 / 偏好 / 延后 / 处置 / 作答）在 [`crate::dev_question`]，
         // 创作流那一族（碎片池）在 [`crate::dev_fragment`]：两族都长得比会话与正文这一族快，
         // 而且变化理由各不相同，所以各自成文件——这里只是转交。
-        _ => dev_question::options(command).or_else(|| dev_fragment::options(command)),
+        _ => {
+            dev_question::options(command)
+                .or_else(|| dev_fragment::options(command))
+                .or_else(|| dev_outline::options(command))
+        }
     }
 }
 
@@ -169,7 +174,10 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
         }
         _ => match dev_question::execute(args, store)? {
             Some(value) => value,
-            None => return dev_fragment::execute(args, store),
+            None => match dev_fragment::execute(args, store)? {
+                Some(value) => value,
+                None => return dev_outline::execute(args, store),
+            },
         },
     };
     Ok(Some(value))

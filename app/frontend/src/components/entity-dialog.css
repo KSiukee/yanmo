@@ -1,0 +1,170 @@
+/* 设定卡弹窗自己的东西：列表、表单、筛选项。
+   公共壳（遮罩 / 盒子 / 标题 / 按钮）在 `dialog.css` 里，靠 scoped src 叠加。 */
+
+.entities__box {
+  width: min(640px, 100%);
+}
+
+.entities__rule {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0.75;
+}
+
+.entities__error {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--ym-danger, #c0392b);
+}
+
+.entities__saved {
+  margin: 0 0 8px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.entities__hint {
+  margin: 8px 0;
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0.7;
+}
+
+/* ── 表单 ─────────────────────────────────────────────── */
+.entities__form {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 10px;
+  border: 1px solid var(--ym-line);
+  border-radius: 6px;
+  background: var(--ym-paper-dim);
+}
+
+.entities__field {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.entities__label {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.entities__input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+}
+
+.entities__input--area {
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.entities__actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* ── 筛选项 ───────────────────────────────────────────── */
+.entities__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 8px;
+}
+
+.entities__chip {
+  padding: 2px 8px;
+  border: 1px solid var(--ym-line);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.entities__chip--on {
+  border-color: var(--ym-accent);
+  color: var(--ym-accent);
+}
+
+.entities__n {
+  margin-left: 4px;
+  opacity: 0.7;
+}
+
+/* ── 列表 ─────────────────────────────────────────────── */
+.entities__list {
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.entities__card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--ym-line);
+}
+
+.entities__main {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.entities__kind {
+  padding: 0 4px;
+  border: 1px solid var(--ym-line);
+  border-radius: 3px;
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.entities__name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.entities__aliases {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.entities__meta {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.entities__note {
+  overflow: hidden;
+  max-width: 100%;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.6;
+}
+
+.entities__row-actions {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}

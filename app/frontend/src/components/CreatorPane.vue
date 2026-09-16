@@ -14,6 +14,7 @@ import { formatWhen } from "../editor/display.ts";
 import { t } from "../locales/index.ts";
 import { anchoredToChapter, kindLabel, sourceBadge, WRITABLE_KINDS } from "./creator.ts";
 import { useCreatorPanel } from "./creator-panel.ts";
+import OutlineCheck from "./OutlineCheck.vue";
 
 const props = defineProps<{
   workId: number | null;
@@ -132,6 +133,10 @@ async function save() {
       </li>
     </ul>
     <p v-else-if="board && !busy" class="pane__hint">{{ t("creator.empty") }}</p>
+
+    <!-- 大纲体检：**只看不说**——对不上的地方列在这儿，改不改由作者；
+         点「去设定卡改」把那一屏打开（两块住同一栏，所以不必再开一栏） -->
+    <OutlineCheck :session="session" @open-entities="session.entities.show()" />
   </aside>
 </template>
 

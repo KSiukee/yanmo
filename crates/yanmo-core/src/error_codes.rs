@@ -141,6 +141,16 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "认不出的问话语气：{value}（只认 warm / neutral / direct）" : ["value"],
     UNKNOWN_ASIDE_TAB => "value.unknown_aside_tab"
         : "认不出的第二栏分区：{value}（只认 flow / creator）" : ["value"],
+    UNKNOWN_ENTITY_KIND => "value.unknown_entity_kind"
+        : "认不出的设定卡类型：{value}（只认 person / setting）" : ["value"],
+    UNKNOWN_SCENE_FIELD => "value.unknown_scene_field"
+        : "认不出的场景卡栏目：{value}（只认 pov / goal / conflict / outcome）" : ["value"],
+    ENTITY_NAME_EMPTY => "entity.name_empty" : "名字不能空着——先给它起个名字" : [],
+    ENTITY_NOT_FOUND => "entity.not_found" : "设定卡不存在：{entity_id}" : ["entity_id"],
+    ENTITY_BAD_FIELD => "entity.bad_field"
+        : "这张设定卡的「{field}」存坏了：{value}" : ["field", "value"],
+    NODE_NOT_SCENE => "node.not_scene"
+        : "这一段不是场景卡，没有那四格：{node_id}" : ["node_id"],
     INPUT_SOURCE_UNKNOWN => "input.source_unknown"
         : "认不出的输入方式：{value}（只认 typed / voice / mixed）" : ["value"],
     QUESTION_DEFER_NEEDS_ANCHOR => "question.defer_needs_anchor"
