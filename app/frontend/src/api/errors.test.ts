@@ -12,6 +12,7 @@ import {
   CoreError,
   CoreUnavailableError,
   dropLoneSurrogates,
+  findRefArgs,
   healText,
 } from "./errors.ts";
 
@@ -79,4 +80,23 @@ test("既不是字符串也没有码：也按核心不可达处理", () => {
   assert.ok(asError({ detail: "没有码" }) instanceof CoreUnavailableError);
   assert.ok(asError(null) instanceof CoreUnavailableError);
   assert.ok(asError(undefined) instanceof CoreUnavailableError);
+});
+
+test("已经整好的错误原样交回（再包一层会把真原因吃掉——0.68.1 就是这么把报错变成天书的）", () => {
+  const wrapped = asError("ipc 断了");
+  assert.equal(asError(wrapped), wrapped, "同一个对象交回去，句子一个字都不变");
+  assert.ok(asError(wrapped).message.includes("ipc 断了"), "底层那句话必须还在");
+
+  const coded = asError({ code: "work.title_empty", params: {} });
+  assert.equal(asError(coded), coded);
+  assert.equal(asError(coded).message, "作品标题不能为空");
+});
+
+test("参数里混进 ref（忘了 .value）要认得出来：这是 .vue 里没人做类型检查的那一类错", () => {
+  // 真跑起来长什么样：Vue 的 ref 对象
+  const fake = { value: 2, __v_isRef: true };
+  assert.equal(findRefArgs({ work_id: fake }), "work_id");
+  assert.equal(findRefArgs({ cells: [{ node_id: fake }] }), "cells.0.node_id", "数组里也走一遍");
+  assert.equal(findRefArgs({ work_id: 2, text: "好" }), null);
+  assert.equal(findRefArgs({ nested: { deep: { ref: fake } } }), "nested.deep.ref");
 });

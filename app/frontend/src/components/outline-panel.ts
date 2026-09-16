@@ -8,7 +8,7 @@
 // - **忽略要记住**：记的是"这条问题的身份"（指纹），所以下一次打开它还在忽略里；
 // - **回头路**：忽略过的能列出来、能捡回来、能全部重看（忽略不是销毁）。
 
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch, type Ref } from "vue";
 
 import { asError } from "../api/errors.ts";
 import {
@@ -22,7 +22,15 @@ import {
 import { splitIssues } from "./outline.ts";
 
 export interface OutlinePanelOptions {
-  workId: number | null;
+  /**
+   * 当前作品（换书＝换一张清单）。
+   *
+   * **收 Ref 而不是收值**：会话里那个 `workId` 本来就是 Ref，别的面板
+   * （entity / foreshadow / creator / grid）也都收 Ref。这里原来写的是 `number | null`，
+   * 于是调用处把 Ref 直接递了进来——`if (!work)` 判过、参数却是个对象，
+   * 每次扫描都在 IPC 那一层炸掉（0.68.1 真机看见的就是它）。
+   */
+  workId: Ref<number | null>;
 }
 
 export function useOutlinePanel(props: OutlinePanelOptions) {
@@ -43,9 +51,14 @@ export function useOutlinePanel(props: OutlinePanelOptions) {
     errorText.value = asError(error).message;
   }
 
+  /** 现在这本书的 id（没有书就什么都不做——面板在没书时是空的）。 */
+  function currentWork(): number | null {
+    return props.workId.value;
+  }
+
   /** 扫一遍（**只读**）。 */
   async function refresh() {
-    const work = props.workId;
+    const work = currentWork();
     if (!work) {
       board.value = null;
       return;
@@ -74,16 +87,22 @@ export function useOutlinePanel(props: OutlinePanelOptions) {
     }
   }
 
-  const dismiss = (issue: OutlineIssue) =>
-    props.workId ? act(() => outlineDismiss(props.workId!, issue.fingerprint)) : undefined;
-  const undismiss = (issue: OutlineIssue) =>
-    props.workId ? act(() => outlineUndismiss(props.workId!, issue.fingerprint)) : undefined;
-  const clearDismissed = () =>
-    props.workId ? act(() => outlineClearDismissed(props.workId!)) : undefined;
+  const dismiss = (issue: OutlineIssue) => {
+    const work = currentWork();
+    return work ? act(() => outlineDismiss(work, issue.fingerprint)) : undefined;
+  };
+  const undismiss = (issue: OutlineIssue) => {
+    const work = currentWork();
+    return work ? act(() => outlineUndismiss(work, issue.fingerprint)) : undefined;
+  };
+  const clearDismissed = () => {
+    const work = currentWork();
+    return work ? act(() => outlineClearDismissed(work)) : undefined;
+  };
 
   onMounted(() => void refresh());
   watch(
-    () => props.workId,
+    () => props.workId.value,
     () => {
       showKnown.value = false;
       void refresh();

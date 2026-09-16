@@ -2,6 +2,8 @@
 
 .story {
   display: flex;
+  /* 占满「大纲」那一屏剩下的高度：写总纲要的是面积 */
+  flex: 1;
   flex-direction: column;
   gap: 6px;
   min-height: 0;
@@ -23,8 +25,9 @@
 .story__box {
   box-sizing: border-box;
   width: 100%;
-  /* 写总纲是在"想清楚"，行距松一点、框大一点 */
-  min-height: 15rem;
+  /* 写总纲是在"想清楚"，行距松一点、框大一点（能拉高，也随屏幕长） */
+  flex: 1;
+  min-height: 12rem;
   padding: 8px 10px;
   border: 1px solid var(--ym-line);
   border-radius: 6px;

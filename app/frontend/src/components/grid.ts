@@ -5,6 +5,21 @@
 
 import { t } from "../locales/index.ts";
 
+/**
+ * 「大纲」这一屏的两片页签（稳定码；名字在字典 `grid.tab.*` 里）。
+ *
+ * - `storyline`：**整本书讲什么**（一段自由文本）——**默认落这一页**；
+ * - `chapters`：现在那张大表（一章一行），也就是"章纲"。
+ *
+ * 为什么总纲在这儿而不是在「资料」弹窗里（0.68.1 按真机反馈挪的）：作者点「大纲」时
+ * 想看的是"这本书的架子"——总纲是那副架子的第一层，藏进「资料」等于把最该先看的东西
+ * 放到第三个入口后面。
+ */
+export type GridPane = "storyline" | "chapters";
+
+/** 打开「大纲」默认落在哪一页。 */
+export const DEFAULT_PANE: GridPane = "storyline";
+
 /** 表里的一列（稳定键；列名在字典 `grid.col.*` 里）。 */
 export type GridColumn =
   | "title"

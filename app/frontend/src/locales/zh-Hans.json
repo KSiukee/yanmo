@@ -952,13 +952,14 @@
   "error.outline.paste_too_big": "一次粘进来的格子太多（{cells} 格，上限 {max}）——分成几次粘，或先只粘一列",
   "error.cast.node_no_body": "这一段挂不了出场人物（只有承载正文的章 / 节 / 场景卡才有）：{node_id}",
   "grid.paste.skipped": "（{columns} 那几列没粘：章名 / 伏笔 / 字数由核心算，出场人物要点选）",
-  "lore.tab.storyline": "总纲",
   "storyline.title": "故事总纲",
   "storyline.rule": "先想清楚这一本书讲什么：题材与风格、主线、卖点、主角想要什么、结局往哪儿走。想到哪写到哪，点别处就存下了。",
   "storyline.placeholder": "题材：……\n主线：……\n卖点：……\n主角想要什么：……\n结局往哪儿走：……",
   "storyline.empty_hint": "这一格还空着——上面那几行只是提示，删掉按你自己的写法写也行。",
-  "storyline.edit_hint": "改完点别处就存下了（投稿包里它是「故事总纲」那一节）。",
+  "storyline.edit_hint": "改完点别处就存下了；投稿包里它是「故事总纲」那一节。",
   "storyline.saved": "存下了",
-  "grid.col.storyline": "总纲",
-  "grid.storyline_empty": "还没写——点这里写整本书讲什么"
+  "grid.tab.storyline": "总纲",
+  "grid.tab.chapters": "章纲",
+  "ipc.ref_arg": "界面把该给值的东西当成引用传了（{arg} 忘了 .value）——命令 {command}",
+  "ipc.ref_arg_root": "界面把该给值的东西当成引用传了（参数本身忘了 .value）——命令 {command}"
 }

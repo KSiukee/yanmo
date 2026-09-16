@@ -952,9 +952,8 @@ export function useEditorSession(): EditorSession {
       workId,
       openNode: (node_id) => switchChapter(node_id),
       createChapter: (parent_id) => directory.create(parent_id, "chapter", ""),
-      // 表头那一行总纲：表收起来、跳到「资料 → 总纲」去写（表自己管收尾，见 grid-panel）
-      storyline: storyline.text,
-      openStoryline: () => lore.show("storyline"),
+      // 「大纲」第一页那片总纲：切页 / 关屏时存一次（它自己管失焦即存，见 storyline-panel）
+      saveStoryline: () => storyline.save(),
     });
 
     return {

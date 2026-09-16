@@ -1,0 +1,189 @@
+/* 「章纲」那一页自己的东西：录入手感说明、工具栏、表格本体、拖行落点、人物格。
+   公共壳在 dialog.css 里，人物多选卡在 outline-cast.css 里。 */
+
+.grid__rule {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0.75;
+}
+
+.grid__error {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--ym-danger, #c0392b);
+}
+
+.grid__hint,
+.grid__cell-text {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.grid__toggle,
+.grid__column {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 12px;
+}
+
+/* 工具栏里"只看没补的"推到右边、按钮跟它一队 */
+.grid__toggle--push {
+  margin-left: auto;
+}
+
+/* 列开关那一排 */
+.grid__columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 0 0 6px;
+}
+
+/* 表本体：外面一层滚动，表头钉住 */
+.grid__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--ym-line);
+  border-radius: 6px;
+}
+
+.grid__table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.grid__table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--ym-line);
+  background: var(--ym-paper-dim);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: left;
+  opacity: 0.8;
+}
+
+.grid__table td {
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--ym-line);
+  vertical-align: middle;
+}
+
+/* 卷：分组行 */
+.grid__group td {
+  background: var(--ym-paper-dim);
+}
+
+.grid__group-title {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.grid__fold {
+  margin-right: 4px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+/* 要管一下的行：左边一条细线（不刷底色——整行染色会看不清字） */
+.grid__row--todo td:first-child {
+  box-shadow: inset 2px 0 0 var(--ym-accent);
+}
+
+.grid__cell {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+}
+
+.grid__cell:hover {
+  border-color: var(--ym-line);
+}
+
+.grid__cell:focus {
+  border-color: var(--ym-accent);
+  background: var(--ym-paper);
+  outline: none;
+}
+
+.grid__open {
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.grid__open:hover {
+  color: var(--ym-accent);
+}
+
+/* 章名那一格是**拖行的抓手**：按住它整行跟着走 */
+.grid__open[draggable="true"] {
+  cursor: grab;
+}
+
+/* ── 出场人物那一格：空着时是一个"选人"的提示，点开是一张多选卡 ── */
+.grid__cast {
+  position: relative;
+}
+
+.grid__cast-open {
+  max-width: 100%;
+  padding: 2px 4px;
+  overflow: hidden;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.grid__cast-open:hover {
+  background: var(--ym-paper-dim);
+}
+
+/* 一个都还没选：灰一点，一眼看得出"这一格还没填" */
+.grid__cast-open--empty {
+  opacity: 0.55;
+}
+
+/* ── 拖行落点：上 / 中 / 下三段各自一条线或一层罩 ── */
+.grid__drop--before td {
+  box-shadow: inset 0 2px 0 var(--ym-accent);
+}
+
+.grid__drop--after td {
+  box-shadow: inset 0 -2px 0 var(--ym-accent);
+}
+
+.grid__drop--inside td {
+  background: color-mix(in srgb, var(--ym-accent) 12%, transparent);
+}

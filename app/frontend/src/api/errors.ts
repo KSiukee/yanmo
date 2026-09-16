@@ -46,6 +46,25 @@ export function dropLoneSurrogates(text: string): string {
   );
 }
 
+/**
+ * 参数里有没有混进 Vue 的 ref（`{ __v_isRef: true }`）——**忘了 `.value` 的典型症状**。
+ *
+ * 为什么要专门认它：`.vue` 的 `<script setup>` 段**没人做类型检查**（纯 `tsc` 进不去 SFC），
+ * 所以把会话里的 ref 直接当值递出去，编译器一声不吭；到了 IPC 那一层只会回一句
+ * 英文反序列化错误，作者与开发者都得猜半天（0.68.1 的体检面板就是这么坏的）。
+ * 这里把它翻译成一句能直接照着改的话。
+ */
+export function findRefArgs(value: unknown, path = "", depth = 0): string | null {
+  if (value === null || typeof value !== "object" || depth > 8) return null;
+  // 最外层自己就是 ref 时给空串（调用方据此换一句话说）
+  if ((value as { __v_isRef?: unknown }).__v_isRef === true) return path;
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    const found = findRefArgs(item, path ? `${path}.${key}` : key, depth + 1);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
 /** 递归修掉参数里的半个字符（只走数组与**朴素对象**，别把别的对象克隆坏了）。 */
 export function healText<T>(value: T, depth = 0): T {
   if (typeof value === "string") {
@@ -76,6 +95,12 @@ export function healText<T>(value: T, depth = 0): T {
  * 后者是"程序出了问题"，处置方式不一样。
  */
 export function asError(e: unknown): CoreError | CoreUnavailableError {
+  // 已经是界面自己整好的错误：**原样交回去**。
+  //
+  // 再包一层会把 `CoreUnavailableError` 的码（`ipc.unavailable`）当成核心给的码去查字典，
+  // 于是屏幕上只剩一个查不到的 `error.ipc.unavailable`，而**真正的原因被这层包装吃掉了**
+  // （0.68.1 真机就是这样：体检面板一直报错，报的却是个说不出所以然的键）。
+  if (e instanceof CoreError || e instanceof CoreUnavailableError) return e;
   if (e !== null && typeof e === "object" && typeof (e as { code?: unknown }).code === "string") {
     const raw = (e as { code: string; params?: unknown }).params;
     const params: Record<string, string> = {};

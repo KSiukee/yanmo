@@ -20,7 +20,15 @@ import { t } from "../locales/index.ts";
 import { dropPlan, type DropZone } from "./drop-plan.ts";
 import { useGridCast } from "./grid-cast.ts";
 import { parsePasteTable, pasteProblemText, planPaste } from "./grid-paste.ts";
-import { COLUMNS, DEFAULT_COLUMNS, visibleRows, type ColumnSpec, type GridColumn } from "./grid.ts";
+import {
+  COLUMNS,
+  DEFAULT_COLUMNS,
+  DEFAULT_PANE,
+  visibleRows,
+  type ColumnSpec,
+  type GridColumn,
+  type GridPane,
+} from "./grid.ts";
 
 export interface GridPanelOptions {
   /** 当前作品（换书＝换一张表） */
@@ -29,15 +37,17 @@ export interface GridPanelOptions {
   openNode: (node_id: number) => Promise<void>;
   /** 在某个分组下面新建一章（表尾那个「+」）；返回新节点的 id */
   createChapter: (parent_id: number | null) => Promise<number | null>;
-  /** 故事总纲那一段（表头摆它的摘要；表管逐章，总纲是整本书那一层） */
-  storyline: Ref<string>;
-  /** 点表头那一行：收起表、跳到「资料 → 总纲」 */
-  openStoryline: () => void;
+  /** 切到别的页 / 关上这一屏时，把总纲存一次（那一段长文没有"提交"那一刻） */
+  saveStoryline: () => Promise<void> | void;
 }
 
 export interface GridPanelState {
   /** 这一屏开着没有（它是**整块主区**上的一层，不是小弹窗） */
   visible: Ref<boolean>;
+  /** 现在停在哪一页（总纲 / 章纲）——打开时默认落在总纲 */
+  pane: Ref<GridPane>;
+  /** 切页（切到章纲才读那张表；离开总纲时把它存一次） */
+  pickPane: (pane: GridPane) => void;
   rows: Ref<OutlineRowDto[]>;
   /** 表里此刻真摆着的行（折叠与筛选之后）——粘贴按它算落点 */
   shown: ComputedRef<OutlineRowDto[]>;
@@ -60,8 +70,6 @@ export interface GridPanelState {
   castFor: Ref<number | null>;
   /** 这本书的人物卡（选人卡打开时读的） */
   castCards: Ref<import("../api/entity.ts").EntityCard[]>;
-  /** 故事总纲那一段（只读；改它去「资料 → 总纲」） */
-  storyline: Ref<string>;
   show: () => void;
   hide: () => void;
   toggle: () => void;
@@ -86,14 +94,13 @@ export interface GridPanelState {
   toggleCast: (node_id: number, entity_id: number) => Promise<void>;
   /** 跳到这一章（顺手把表收起来） */
   open: (node_id: number) => Promise<void>;
-  /** 跳到「资料 → 总纲」（表头那一行点一下） */
-  openStoryline: () => void;
   /** 在这个分组下面加一章 */
   addChapter: (parent_id: number | null) => Promise<void>;
 }
 
 export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
   const visible = ref(false);
+  const pane = ref<GridPane>(DEFAULT_PANE);
   const rows = ref<OutlineRowDto[]>([]);
   const busy = ref(false);
   const errorText = ref("");
@@ -220,10 +227,15 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
     await deps.openNode(node_id);
   }
 
-  /** 点表头那一行总纲：**先把表收干净**（选人卡、回执都放下），再交给会话去开那一页。 */
-  function openStoryline() {
-    hide();
-    deps.openStoryline();
+  /**
+   * 切页：**切到章纲才读那张表**（打开看一眼不该把整棵树拉两遍）；
+   * 离开总纲时把它存一次（它是"一边写一边想"的一段长文，切页就是离开它）。
+   */
+  function pickPane(next: GridPane) {
+    if (pane.value === next) return;
+    if (pane.value === "storyline") void deps.saveStoryline();
+    pane.value = next;
+    if (next === "chapters") void load();
   }
 
   /**
@@ -318,20 +330,24 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
     },
   );
 
-  /** 收起这一整屏：回执与半开的选人卡都放下（**收尾只此一处**，show/toggle/跳总纲都走它）。 */
+  /** 收起这一整屏：回执与半开的选人卡都放下，总纲存一次（**收尾只此一处**）。 */
   function hide() {
     visible.value = false;
     justSaved.value = "";
     cast.reset();
+    if (pane.value === "storyline") void deps.saveStoryline();
   }
 
+  /** 打开：**默认落在总纲**（要逐章填，点第二页「章纲」）。 */
   function show() {
+    pane.value = DEFAULT_PANE;
     visible.value = true;
-    void load();
   }
 
   return {
     visible,
+    pane,
+    pickPane,
     rows,
     shown,
     dropRows,
@@ -344,7 +360,6 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
     justSaved,
     castFor: cast.openFor,
     castCards: cast.cards,
-    storyline: deps.storyline,
     show,
     hide,
     toggle: () => {
@@ -362,7 +377,6 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
     closeCast: cast.close,
     toggleCast: cast.toggle,
     open,
-    openStoryline,
     addChapter,
   };
 }

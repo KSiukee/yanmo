@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 
 import {
   castText,
+  DEFAULT_PANE,
   cellEditable,
   cellValue,
   COLUMNS,
@@ -37,6 +38,10 @@ function row(over: Partial<Record<string, unknown>> = {}) {
 }
 
 const spec = (key: string) => COLUMNS.find((item) => item.key === key)!;
+
+test("「大纲」打开默认落在总纲那一页（章纲是第二页）", () => {
+  assert.equal(DEFAULT_PANE, "storyline");
+});
 
 test("列：默认露章名 + 一句话 + 出场人物 + 四格；伏笔与字数按需勾", () => {
   assert.deepEqual(DEFAULT_COLUMNS, [

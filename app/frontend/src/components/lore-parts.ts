@@ -1,4 +1,4 @@
-// 「资料」这一族（总纲 / 人物与设定 / 事件 / 伏笔）的**一处装配**。
+// 「资料」这一族（人物与设定 / 事件 / 伏笔）+ 总纲的**一处装配**。
 //
 // 为什么单独成件：它们几页是一个整体（面板把几份状态摆到几片页签上），
 // 而"每加一页就在会话的装配函数里多写十行"会让那个本来就很长的函数继续长
@@ -40,7 +40,6 @@ export function useLoreParts(deps: LorePartsOptions): LoreParts {
   const foreshadows = useForeshadowPanel({ workId: deps.workId, currentChapter: deps.currentChapter });
   const creator = useCreatorPanel({ workId: deps.workId, currentChapter: deps.currentChapter });
   const lore = useLore({
-    storyline,
     entities,
     foreshadows,
     refreshEvents: async () => {
