@@ -37,6 +37,10 @@ pub struct QuestionBoardDto {
     pub muted_classes: Vec<String>,
     /// 还在等条件的延后（"有 N 条在等你说的那个时候"）
     pub open_deferrals: Vec<Deferral>,
+    /// 候选池里**没摆上来**的还有多少条（一屏只摆得下几条，同类更是先只摆一条）。
+    ///
+    /// 界面拿它说"底下还有 N 条在排着"——不然作者会以为"能问的就这一条"。
+    pub more: usize,
 }
 
 /// 界面渲染好的一条候选：**句子在这时才成形**（核心只认键与槽位）。
@@ -66,8 +70,10 @@ fn board_at(
         Some(node) => store.select_questions_for_chapter(work_id, node, 5)?,
         None => store.select_questions(work_id, 5)?,
     };
+    let more = store.count_pending_questions(work_id)?.saturating_sub(selected.len());
     Ok(QuestionBoardDto {
         selected,
+        more,
         cooled: store.cooled_questions(work_id)?,
         muted_sources: store.muted_sources()?,
         muted_classes: store.muted_templates()?,

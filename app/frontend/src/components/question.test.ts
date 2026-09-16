@@ -13,6 +13,7 @@ import {
   dueLabel,
   inputLabel,
   landLabel,
+  levelWord,
   reasonLines,
   renderDraft,
   sourceLabel,
@@ -46,15 +47,27 @@ const gravity: Gravity = {
   cooled: false,
 };
 
-test("引力拆解只列真正起作用的乘数", () => {
+test("引力拆解讲人话：说清是什么意思，不摆裸数字", () => {
   const lines = reasonLines(gravity);
-  const labels = lines.map((line) => line.label).join("|");
-  assert.ok(labels.includes("这一类学到的权重"), labels);
-  assert.ok(labels.includes("延后降权"), labels);
-  assert.ok(!labels.includes("派生折扣"), `×1 的项不该出现：${labels}`);
-  const values = lines.map((line) => line.value);
-  assert.ok(values.includes("×0.50"), values.join(","));
-  assert.ok(values.includes("0.35"), "总引力要给出来");
+  const text = lines.map((line) => `${line.label}：${line.value}`).join("|");
+  // 三档说法（gravity 里时机 0.8 / 分量 0.7 / 新颖度 1.0）
+  assert.ok(text.includes("正是该问的时候"), text);
+  assert.ok(text.includes("一般要紧"), text);
+  assert.ok(text.includes("还没问过"), text);
+  // 真起作用的乘数用话说，而不是 `×1.5`
+  assert.ok(text.includes("你说过这类问题好"), text);
+  assert.ok(text.includes("你延后过它"), text);
+  // ×1 的那几项不说
+  assert.ok(!text.includes("从你记的灵感"), `没起作用就别提：${text}`);
+  // **一个裸数字都不许出现**——那几个数字作者看不懂
+  assert.ok(!/[0-9]/.test(text), `面板上不该有裸数字：${text}`);
+});
+
+test("档位的边界钉在这一处", () => {
+  assert.equal(levelWord("flow.level.novelty", 0.75), "还没问过");
+  assert.equal(levelWord("flow.level.novelty", 0.74), "问过一两回");
+  assert.equal(levelWord("flow.level.novelty", 0.4), "问过一两回");
+  assert.equal(levelWord("flow.level.novelty", 0.39), "问过好几回了");
 });
 
 test("在冷却里要单独说一句", () => {

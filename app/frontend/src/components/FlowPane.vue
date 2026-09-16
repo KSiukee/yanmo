@@ -173,6 +173,9 @@ const {
       />
     </section>
     <p v-else-if="!busy && board" class="pane__hint">{{ t("flow.empty") }}</p>
+    <p v-if="(board?.more ?? 0) > 0" class="pane__hint">
+      {{ t("flow.more", { count: board?.more ?? 0 }) }}
+    </p>
 
     <!-- 在等条件的 -->
     <section v-if="(board?.open_deferrals?.length ?? 0) > 0">

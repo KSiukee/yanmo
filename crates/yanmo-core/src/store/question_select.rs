@@ -14,7 +14,7 @@ use serde::Serialize;
 use super::{question_weights, Store};
 use crate::error::Result;
 use crate::gravity::{gravity, rank, AttractorParams, Candidate, Gravity};
-use crate::model::QuestionState;
+use crate::model::{QuestionCard, QuestionState};
 use crate::question::{anchors_of, urgency_of};
 use crate::time::now_millis;
 
@@ -107,7 +107,10 @@ impl Store {
             }
             None => ranked,
         };
-        Ok(ordered
+        // 同类不扎堆（见 [`PER_TEMPLATE_IN_SCREEN`]）：同类里靠后的几条排到别的类后面去，
+        // **一条都不丢**——只是这一屏先不摆它们
+        let spread = spread_by_template(&ordered, &cards, &index);
+        Ok(spread
             .into_iter()
             .take(limit)
             .map(|(card_id, gravity)| {
@@ -122,4 +125,52 @@ impl Store {
             })
             .collect())
     }
+
+    /// 候选池里还有多少条（**同一套口径**：待问的卡，且不是被静音的来源）——不限条数。
+    ///
+    /// 界面拿它说"池子里还有 N 条在排着"：一屏只摆得下几条，作者得知道**底下还有**，
+    /// 而不是以为"能问的就这一条"。
+    pub fn count_pending_questions(&self, work_id: i64) -> Result<usize> {
+        let muted = self.muted_sources()?;
+        Ok(self
+            .question_cards(work_id, Some(QuestionState::Pending))?
+            .into_iter()
+            .filter(|card| !muted.iter().any(|source| source == &card.source))
+            .count())
+    }
+}
+
+/// 一屏里**同一类（模板）最多摆几条**。
+///
+/// 为什么不摆满：一个状态会在书里重复出现——比如十来个空章，"这一章从哪儿开始"就会产出十来条
+/// 一模一样的问题，只差章名。一屏全是同一件事，作者会以为机制只会问这一句。
+/// 同类先摆一条，其余排到别的类后面（不是丢掉：一屏之外还排着，答完一条下一条就浮上来）。
+///
+/// 不设成 0：同类里最靠前的那条仍然该摆出来——它可能就是此刻最该问的那一条。
+const PER_TEMPLATE_IN_SCREEN: usize = 1;
+
+/// 同类不扎堆：稳定地重排一遍（前段每类最多 `PER_TEMPLATE_IN_SCREEN` 条，其余按原序接在后面）。
+///
+/// 作者自己写的卡与模块提交的卡 `template_key` 是空串——它们**不进这个帽子**
+/// （空串不是"一类"，把它们挤成一条就成了另一种假象）。
+fn spread_by_template(
+    ordered: &[(i64, Gravity)],
+    cards: &[QuestionCard],
+    index: &HashMap<i64, usize>,
+) -> Vec<(i64, Gravity)> {
+    let mut head = Vec::new();
+    let mut rest = Vec::new();
+    let mut taken: HashMap<&str, usize> = HashMap::new();
+    for (card_id, gravity) in ordered {
+        let key = cards[index[card_id]].template_key.as_str();
+        let slot = taken.entry(key).or_insert(0);
+        if key.is_empty() || *slot < PER_TEMPLATE_IN_SCREEN {
+            *slot += 1;
+            head.push((*card_id, gravity.clone()));
+        } else {
+            rest.push((*card_id, gravity.clone()));
+        }
+    }
+    head.extend(rest);
+    head
 }

@@ -19,32 +19,47 @@ export function renderDraft(draft: QuestionDraft): string {
   return t(`question.template.${draft.template_key}`, draft.slots);
 }
 
-/** 引力拆解里的一行。 */
+/** 引力拆解里的一行：**说清"这意味着什么"**，不摆裸数字。 */
 export interface ReasonLine {
   label: string;
   value: string;
 }
 
 /**
+ * 把 0~1 的一个乘数说成**三档人话**（阈值只定在这一处，别处不许再判一遍）。
+ *
+ * 数字对作者没有意义：`时机紧迫度 0.50` 看不出是早还是晚，而 `正是该问的时候` 一眼就懂。
+ * 档位写死在这里，是因为它们是**机制的档位**、不是可调文案——改档位要连着测试一起改。
+ */
+export function levelWord(key: string, value: number): string {
+  if (value >= 0.75) return t(`${key}.high`);
+  if (value >= 0.4) return t(`${key}.mid`);
+  return t(`${key}.low`);
+}
+
+/**
  * 引力拆解讲成人话。
  *
- * 只列**真正在起作用的**乘数：×1 的那几项不列（免得四行 `×1.00` 把真正的原因埋掉）；
+ * 只列**真正在起作用的**乘数：不抬高也不压低的那几项不说（免得几行废话把真正的原因埋掉）；
  * "在冷却里"另外说一句——那是"为什么它排在后面"最常见的原因。
  */
 export function reasonLines(gravity: Gravity): ReasonLine[] {
-  const num = (value: number) => value.toFixed(2);
   const lines: ReasonLine[] = [
-    { label: t("flow.factor.timeliness"), value: num(gravity.timeliness) },
-    { label: t("flow.factor.importance"), value: num(gravity.importance) },
-    { label: t("flow.factor.novelty"), value: num(gravity.novelty) },
+    { label: t("flow.factor.timeliness"), value: levelWord("flow.level.timeliness", gravity.timeliness) },
+    { label: t("flow.factor.importance"), value: levelWord("flow.level.importance", gravity.importance) },
+    { label: t("flow.factor.novelty"), value: levelWord("flow.level.novelty", gravity.novelty) },
   ];
-  const times = (label: string, factor: number) => {
-    if (Math.abs(factor - 1) > 1e-9) lines.push({ label, value: `×${num(factor)}` });
-  };
-  times(t("flow.factor.derived"), gravity.derived_discount);
-  times(t("flow.factor.weight"), gravity.template_weight);
-  times(t("flow.factor.defer"), gravity.defer_penalty);
-  lines.push({ label: t("flow.factor.total"), value: num(gravity.total) });
+  if (gravity.derived_discount < 1) {
+    lines.push({ label: t("flow.factor.derived"), value: t("flow.factor.derived.why") });
+  }
+  if (gravity.template_weight > 1) {
+    lines.push({ label: t("flow.factor.weight"), value: t("flow.factor.weight.up") });
+  } else if (gravity.template_weight > 0 && gravity.template_weight < 1) {
+    lines.push({ label: t("flow.factor.weight"), value: t("flow.factor.weight.down") });
+  }
+  if (gravity.defer_penalty < 1) {
+    lines.push({ label: t("flow.factor.defer"), value: t("flow.factor.defer.why") });
+  }
   if (gravity.cooled) lines.push({ label: t("flow.factor.cooled"), value: t("flow.state.cooled") });
   return lines;
 }

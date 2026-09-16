@@ -70,6 +70,8 @@ export interface QuestionBoard {
   /** 已静音的**类别**（模板键；界面按字典渲染成"这类别再问"） */
   muted_classes: string[];
   open_deferrals: Deferral[];
+  /** 候选池里没摆上来的还有多少条（一屏只摆得下几条，同类更是先只摆一条） */
+  more: number;
 }
 
 /** 记下的那张灵感卡（带溯源：它从哪张问题卡来）。 */

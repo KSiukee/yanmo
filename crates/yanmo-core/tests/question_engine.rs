@@ -384,3 +384,40 @@ fn following_a_chapter_lifts_just_its_own_questions_to_the_front() {
     let untouched = store.select_questions_for_chapter(work, 999, 10).unwrap();
     assert_eq!(untouched, plain);
 }
+
+/// 同类不扎堆：一屏里同一类（模板）只摆一条，其余排到别的类后面——**一条都不丢**。
+///
+/// 这条是为"书里状态重复"准备的：十来个空章会产出十来条只差章名的问题，
+/// 一屏全是同一件事，作者会以为机制只会问这一句。
+#[test]
+fn one_screen_does_not_pile_up_the_same_kind_of_question() {
+    let (_dir, mut store) = fresh();
+    let (work, _empty) = seeded_book(&mut store);
+    // 五条同一模板（只差锚点），两条别的模板
+    for chapter in 1..=5 {
+        store
+            .create_question_card(&card(work, "chapter.empty_body", &[&format!("chapter:{chapter}")]))
+            .unwrap();
+    }
+    let other_a = store.create_question_card(&card(work, "review.recent_chapter", &["chapter:1"])).unwrap();
+    let other_b = store.create_question_card(&card(work, "rhythm.length_swing", &[])).unwrap();
+
+    let picked = store.select_questions(work, 3).unwrap();
+    assert_eq!(picked.len(), 3);
+    assert_eq!(
+        picked.iter().filter(|q| q.template_key == "chapter.empty_body").count(),
+        1,
+        "同一类只摆一条：{:?}",
+        picked.iter().map(|q| q.template_key.as_str()).collect::<Vec<_>>()
+    );
+    assert!(
+        picked.iter().any(|q| q.card_id == other_a) && picked.iter().any(|q| q.card_id == other_b),
+        "别的类不该被同类挤掉"
+    );
+
+    // 一条都不丢：要得多的时候，同类的其余几条照样排得出来（只是排在后面）
+    let all = store.select_questions(work, 10).unwrap();
+    assert_eq!(all.len(), 7, "七条都在池子里");
+    assert_eq!(all.iter().filter(|q| q.template_key == "chapter.empty_body").count(), 5);
+    assert_eq!(store.count_pending_questions(work).unwrap(), 7, "池子里的总数不受一屏上限影响");
+}
