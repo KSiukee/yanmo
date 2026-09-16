@@ -45,7 +45,7 @@ function askRemove(card: EntityCard) {
   <div class="entities dialog" @click.self="hide()">
     <section class="entities__box dialog__box">
       <header class="entities__head dialog__head">
-        <h2 class="entities__title dialog__title">{{ t("lore.tab.entities") }}</h2>
+        <h2 class="entities__title dialog__title">{{ t("lore.title") }}</h2>
         <button
           v-if="tab === 'entities'"
           type="button"
@@ -128,6 +128,7 @@ function askRemove(card: EntityCard) {
           <span class="entities__label">{{ t("entity.note") }}</span>
           <input v-model="draft.note" class="entities__input" :disabled="busy" />
         </label>
+        <p class="entities__hint">{{ t("entity.form_hint") }}</p>
         <div class="entities__actions">
           <button type="submit" class="dialog__button" :disabled="busy || !canSave">
             {{ t("entity.save") }}
@@ -188,4 +189,5 @@ function askRemove(card: EntityCard) {
   </div>
 </template>
 
+<style scoped src="./dialog.css"></style>
 <style scoped src="./entity-dialog.css"></style>

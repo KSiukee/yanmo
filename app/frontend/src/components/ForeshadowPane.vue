@@ -87,6 +87,7 @@ const NEXT: Record<ForeshadowState, ForeshadowState[]> = {
         <span class="fores__label">{{ t("foreshadow.note") }}</span>
         <input v-model="draft.note" class="fores__input" :disabled="busy" />
       </label>
+      <p class="fores__hint">{{ t("foreshadow.form_hint") }}</p>
       <div class="fores__actions">
         <button type="submit" class="fores__button" :disabled="busy || !canSave">
           {{ t("foreshadow.save") }}

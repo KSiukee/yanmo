@@ -56,3 +56,14 @@ test("查不到的键原样返回键名（一眼看得见，而不是空白）",
   assert.equal(has("nothing.here"), false);
   assert.equal(has("display.today"), true);
 });
+
+/**
+ * 界面文案里**不许出现 markdown 标记**。
+ *
+ * 弹窗里用 `{{ t(...) }}` 插值，是**纯文本**——`**加粗**` 与反引号会原样显示给作者看
+ * （屏幕上一堆星号，看着就像坏了）。要强调就换措辞，或者用「」。
+ */
+test("字典里不许出现 markdown 标记（那是纯文本插值，会原样显示）", () => {
+  const bad = keys().filter((key) => t(key).includes("**") || t(key).includes("`"));
+  assert.deepEqual(bad, [], `这些键的文案里带了 markdown 标记：${bad.join("、")}`);
+});

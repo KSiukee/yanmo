@@ -453,3 +453,33 @@ fn reading_source_survives_a_crlf_checkout() {
     assert!(rule_block_optional(&text, ".editor__status").is_some());
     fs::remove_dir_all(&dir).ok();
 }
+
+/// 弹窗的**公共壳**必须真的引进来：用了 `.dialog` / `.dialog__*` 的组件，
+/// 就得有一行 `<style scoped src="./dialog.css">`。
+///
+/// 为什么钉这一条：漏引**不报错**——`.dialog` 的 `position: fixed; inset: 0` 不生效，
+/// 那个弹窗就掉到页面底下变成一坨裸文本（真机上就是"太丑了、看不懂怎么用"，
+/// 而不是任何一条红）。这一条读源文件就能判，成本几乎为零。
+#[test]
+fn every_dialog_pulls_in_the_shared_shell_css() {
+    let components = package_root().join("frontend/src/components");
+    let mut dialogs = 0;
+    for path in source_files(&components, &["vue"]) {
+        let text = read(&path);
+        // 只认"自己就是**那个遮罩**"的组件：`dialog` 得是一个**独立的类**
+        // （`class="书架 dialog"` / `class="dialog 别的"`）。
+        // 里面那些 `dialog__box` / `dialog__title` 是**壳里的零件**——
+        // 设置面板里的小页（AboutSettings 这种）用它们，但自己不是遮罩，不必引。
+        let owns_overlay = text.contains(" dialog\"") || text.contains(" dialog ");
+        if !owns_overlay {
+            continue;
+        }
+        dialogs += 1;
+        assert!(
+            text.contains("src=\"./dialog.css\""),
+            "{} 用了弹窗公共壳却漏引 dialog.css——它会掉到页面底下变成一坨裸文本",
+            path.display()
+        );
+    }
+    assert!(dialogs >= 8, "只扫到 {dialogs} 个弹窗，守卫会假绿——检查扫描目录");
+}
