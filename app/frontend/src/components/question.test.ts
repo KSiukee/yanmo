@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  asTone,
   asksThisChapter,
   classLabel,
   countForChapter,
@@ -19,6 +20,7 @@ import {
   renderDraft,
   sourceLabel,
   targetLabel,
+  toneLabel,
 } from "./question.ts";
 import type { Gravity, QuestionDraft } from "../api/question.ts";
 
@@ -143,4 +145,44 @@ test("落点称呼：三档各有各的说法", () => {
   for (const target of ["body", "outline", "scene"] as const) {
     assert.ok(!targetLabel(target).startsWith("flow."), `字典里缺 flow.target.${target}`);
   }
+});
+
+test("语气三档：句子的三版挑得对，缺一版就退回中性", () => {
+  const draft: QuestionDraft = {
+    template_key: "plan.opening_pov",
+    element: "plan",
+    slots: { chapter: "第1章" },
+    anchors: ["chapter:1"],
+    importance: 0.7,
+  };
+  const warm = renderDraft(draft, "warm");
+  const neutral = renderDraft(draft, "neutral");
+  const direct = renderDraft(draft, "direct");
+  assert.ok(warm.includes("第1章") && neutral.includes("第1章") && direct.includes("第1章"));
+  assert.notEqual(warm, neutral);
+  assert.notEqual(direct, neutral);
+  // 三版都不许把键名漏到屏幕上（字典缺哪版会原样返回键）
+  for (const text of [warm, neutral, direct]) {
+    assert.ok(!text.startsWith("question.template."), text);
+    assert.ok(!text.includes("{"), `槽位没填干净：${text}`);
+  }
+  // 缺温柔那一版就退回中性（语气是锦上添花，不该让作者看到键名）
+  const missing: QuestionDraft = {
+    ...draft,
+    template_key: "some.module.template",
+    slots: {},
+  };
+  assert.equal(renderDraft(missing, "warm"), renderDraft(missing, "neutral"));
+});
+
+test("语气码：认得的是三档，认不出的当「中性」（库里手改坏也不崩）", () => {
+  assert.equal(asTone("warm"), "warm");
+  assert.equal(asTone("direct"), "direct");
+  assert.equal(asTone("neutral"), "neutral");
+  assert.equal(asTone("shouty"), "neutral");
+  assert.equal(asTone(null), "neutral");
+  assert.equal(asTone(undefined), "neutral");
+  assert.equal(toneLabel("warm"), "温柔");
+  assert.equal(toneLabel("neutral"), "中性");
+  assert.equal(toneLabel("direct"), "直接");
 });

@@ -230,6 +230,7 @@ fn main() {
             commands::question::question_drafts,
             commands::question::question_sync,
             commands::question::question_board,
+            commands::question_push::question_push,
             commands::question::question_ask,
             commands::question::question_answer,
             commands::question::question_land_answer,

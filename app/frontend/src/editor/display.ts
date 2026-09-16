@@ -46,6 +46,16 @@ export function localDaysBetween(earlier: number, later: number): number {
   return Math.round((dayB - dayA) / 86_400_000);
 }
 
+/**
+ * 作者**本地那一天**，`YYYYMMDD` 的整数（`2026-09-16` → `20260916`）。
+ *
+ * 给"按天记账"的机制用（叩问主动问的配额就按它重置）：用整数是因为它要进库、要比较，
+ * 也因为它一眼看得懂。**按本地时区算**——写作是过日子，不是按 UTC 过。
+ */
+export function localDay(now: Date = new Date()): number {
+  return now.getFullYear() * 10_000 + (now.getMonth() + 1) * 100 + now.getDate();
+}
+
 /** 最近打开时间给人看：今天 / 昨天 / N 天前 / 具体日期；从没打开过就直说。 */
 export function formatWhen(ms: number | null, now: number = Date.now()): string {
   if (ms === null) return t("display.never_opened");

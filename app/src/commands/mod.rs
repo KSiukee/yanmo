@@ -20,6 +20,8 @@ pub mod editor;
 pub mod location;
 /// 叩问：问题候选取材、处置四件套与记灵感（**只问不写**）。
 pub mod question;
+/// 叩问的「推」：什么时候主动开口（配额 / 冷却 / 时机），**与面板那一族分开**。
+pub mod question_push;
 /// 从备份恢复：预览、体检、换库。
 pub mod restore;
 /// 每章版本快照：列表、对照、回滚。

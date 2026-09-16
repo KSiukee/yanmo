@@ -130,6 +130,12 @@ export interface Appearance {
   editor_font_size: number | null;
   editor_line_height: number | null;
   editor_letter_spacing: number | null;
+  /** 叩问问话的语气（warm / neutral / direct）；neutral 就是"不加语气"＝把这层关掉 */
+  question_tone: string;
+  /** 写的时候最多主动问几次（0 = 不打扰）；**只限"推"**，面板随时能开 */
+  question_push_per_day: number;
+  /** 两次主动问之间的冷却（分钟） */
+  question_push_cooldown_minutes: number;
 }
 
 /** 要改的偏好项：**只写传进来的**，没传的保持原样。 */
@@ -147,6 +153,11 @@ export interface AppearancePatch {
   editor_font_size?: number;
   editor_line_height?: number;
   editor_letter_spacing?: number;
+  /** warm / neutral / direct；传 "auto" 就是**清掉这一层**（回默认：温柔） */
+  question_tone?: string;
+  /** 主动问的次数（0 = 不打扰）与冷却分钟；传负数 = 清掉这一层（回默认） */
+  question_push_per_day?: number;
+  question_push_cooldown_minutes?: number;
 }
 
 /** 某一天的字数（三个口径都给，界面按当前口径显示）。 */
@@ -582,6 +593,7 @@ export const COMMANDS = {
   questionDrafts: "question_drafts",
   questionSync: "question_sync",
   questionBoard: "question_board",
+  questionPush: "question_push",
   questionAsk: "question_ask",
   questionAnswer: "question_answer",
   questionLandAnswer: "question_land_answer",

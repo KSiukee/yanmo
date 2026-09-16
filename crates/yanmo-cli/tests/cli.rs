@@ -1081,3 +1081,62 @@ fn answers_land_in_the_three_places_from_the_command_line() {
         other => panic!("认不出的落点该被拒：{other:?}"),
     }
 }
+
+/// 主动问一句（推）：**过了门槛才开口，开口就算问过**——配额只限推，面板不受它管。
+#[test]
+fn question_push_is_drivable_from_the_command_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let (work_id, chapter_id) = seed(dir.path(), "novel");
+    let work = work_id.to_string();
+    let node = chapter_id.to_string();
+    ok(
+        dir.path(),
+        "card-new",
+        &[("work", &work), ("body", "推这一条"), ("template", "chapter.empty_body")],
+    );
+
+    // 一天最多两次、无冷却：前两次问得出去，第三次被配额挡住
+    let mut seen = Vec::new();
+    for _ in 0..2 {
+        ok(
+            dir.path(),
+            "card-new",
+            &[("work", &work), ("body", "再来一条"), ("template", "review.recent_chapter")],
+        );
+        let pushed = ok(
+            dir.path(),
+            "question-push",
+            &[("work", &work), ("node", &node), ("per-day", "2"), ("cooldown", "0"), ("today", "20260916")],
+        );
+        assert_eq!(pushed["code"], "push.asked", "{pushed}");
+        seen.push(pushed["question"]["card_id"].as_i64().unwrap());
+    }
+    assert_ne!(seen[0], seen[1], "推走的两条不是同一张");
+
+    let blocked = ok(
+        dir.path(),
+        "question-push",
+        &[("work", &work), ("node", &node), ("per-day", "2"), ("cooldown", "0"), ("today", "20260916")],
+    );
+    assert_eq!(blocked["code"], "push.quota_used", "{blocked}");
+
+    // 第二天：配额重新开始
+    let tomorrow = ok(
+        dir.path(),
+        "question-push",
+        &[("work", &work), ("node", &node), ("per-day", "2"), ("cooldown", "0"), ("today", "20260917")],
+    );
+    assert_eq!(tomorrow["code"], "push.asked", "跨天重置：{tomorrow}");
+
+    // 0 次 = 不打扰：一次都不问
+    let quiet = ok(
+        dir.path(),
+        "question-push",
+        &[("work", &work), ("node", &node), ("per-day", "0"), ("cooldown", "0"), ("today", "20260917")],
+    );
+    assert_eq!(quiet["code"], "push.quota_used", "{quiet}");
+
+    // 推过的算「已问」：面板那份池子里不再有它（而配额只管推）
+    let asked = ok(dir.path(), "card-list", &[("work", &work), ("state", "asked")]);
+    assert!(asked["count"].as_i64().unwrap() >= 1, "推走的卡要走到「已问」：{asked}");
+}

@@ -14,7 +14,6 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { t } from "../locales/index.ts";
 import { asError } from "../api/errors.ts";
 import {
-  questionAnswer,
   questionAsk,
   questionBoard,
   questionDefer,
@@ -35,7 +34,8 @@ import {
   type SelectedQuestion,
 } from "../api/question.ts";
 import type { EditorSession } from "../editor/session.ts";
-import { countForChapter, defaultTarget, inputLabel, renderDraft } from "./question.ts";
+import { asTone, countForChapter, renderDraft } from "./question.ts";
+import { useAnswerFlow } from "./use-answer-flow.ts";
 import { useLanding } from "./use-landing.ts";
 import { useRound } from "./use-round.ts";
 
@@ -46,9 +46,11 @@ export type PanelMode = "list" | "walk" | "round";
 export interface FlowPanelOptions {
   workId: number | null;
   session: EditorSession;
+  /** 推过来的那张卡（作者点了提示条上的「答一句」）：直接在「正在问」区打开 */
+  openQuestion?: SelectedQuestion | null;
 }
 
-export function useFlowPanel(props: FlowPanelOptions) {
+export function useFlowPanel(props: FlowPanelOptions, hooks: { onPushedOpened?: () => void } = {}) {
   const board = ref<QuestionBoard | null>(null);
   /** 正在问的那一张（点开之后）：它已经离开候选池，面板留着它把处置做完 */
   const active = ref<SelectedQuestion | null>(null);
@@ -77,6 +79,14 @@ export function useFlowPanel(props: FlowPanelOptions) {
   /** 眼下这份候选里，与当前章有关的有几条 */
   const forChapter = computed(() => countForChapter(selected.value, currentChapter.value));
 
+  /** 现在生效的语气（跟书走；没打开书就用全局那份）——句子的三版按它挑 */
+  const tone = computed(() =>
+    asTone(
+      (props.session.appearance.workValues.value ?? props.session.appearance.values.value)
+        ?.question_tone,
+    ),
+  );
+
   const followChapter = computed(() => mode.value !== "list");
   const roundMode = computed(() => mode.value === "round");
 
@@ -103,6 +113,25 @@ export function useFlowPanel(props: FlowPanelOptions) {
     onBoard: (next) => (board.value = next),
     settle,
     onLanded,
+  });
+
+  // 答一条之后的整条链路（存 → 攒或落 → 回执 → 下一张）单独成件，见 use-answer-flow.ts
+  const { saveAnswer } = useAnswerFlow({
+    session: props.session,
+    active,
+    busy,
+    errorCode,
+    justSaved,
+    answerFor,
+    roundMode,
+    followChapter,
+    currentChapter,
+    landing,
+    round,
+    setBoard: (next) => (board.value = next),
+    settle,
+    askNext,
+    report,
   });
 
   /** 报错只给码：句子在字典里（界面文案只有一处来源）。 */
@@ -137,7 +166,7 @@ export function useFlowPanel(props: FlowPanelOptions) {
           work,
           drafts.map((draft) => ({
             template_key: draft.template_key,
-            body: renderDraft(draft),
+            body: renderDraft(draft, tone.value),
             anchors: draft.anchors,
             importance: draft.importance,
           })),
@@ -206,54 +235,6 @@ export function useFlowPanel(props: FlowPanelOptions) {
   function openAnswer() {
     answerFor.value = true;
     justSaved.value = "";
-  }
-
-  /**
-   * 作答：答案进答案池，问题卡就此走到终态。
-   *
-   * `source` 现在只有 `typed`（键盘）；口述那条链路落地后，那条路把 `voice` / `mixed`
-   * 传进来就行——命令与存储的形状都不变，这正是"文本与输入方式解耦"要的效果。
-   *
-   * 落不落、怎么落，看当前走法：
-   * - **先问后排版**：攒进这一轮（先不落），一轮问够了再一起落；
-   * - 其余：勾了「落进正文」就**就地落**（答复制里还能补落）。
-   */
-  async function saveAnswer(body: string) {
-    const card = active.value;
-    if (!card || !body.trim()) return;
-    try {
-      busy.value = true;
-      errorCode.value = "";
-      // 这一版只有键盘这一条通道；口述那条链路落地后，这里换成 voice / mixed 就行
-      const source = "typed";
-      const receipt = await questionAnswer(card.card_id, body, source);
-      const node = currentChapter.value;
-      // 回执照**核心落下的那一份**说（不是照界面自己传的那份）：修剪过的原文、认下的输入方式
-      let done = t("flow.answer.saved", {
-        kind: inputLabel(receipt.answer.source),
-        body: receipt.answer.body,
-      });
-      if (roundMode.value) {
-        // 默认落点按要素类型分（plan 那一类答的就是章纲，其余落正文）；托盘里逐条还能改
-        round.collect(receipt.answer, defaultTarget(card.element));
-      } else {
-        landing.noteAnswer(receipt.answer);
-        const missed =
-          landing.landOnAnswer.value &&
-          !(await landing.landOne(card.card_id, receipt.answer.body, node));
-        if (missed) done = t("flow.answer.land_failed", { body: receipt.answer.body });
-      }
-      board.value = await settle(receipt.board);
-      active.value = null;
-      answerFor.value = false;
-      // 跟章走：答完接着问下一张。回执要写在它**后面**——ask 会把上一张的回执清掉
-      if (followChapter.value) await askNext();
-      justSaved.value = done;
-    } catch (error) {
-      report(error);
-    } finally {
-      busy.value = false;
-    }
   }
 
   /** 回执里那个「落进本章正文」：答完当时没落，回头还能落一次。 */
@@ -345,6 +326,18 @@ export function useFlowPanel(props: FlowPanelOptions) {
     if (timer !== undefined) window.clearInterval(timer);
   });
   watch(() => props.workId, () => void refresh());
+  // 推过来的那张卡：直接在「正在问」区打开（它已经被核心算过"已问"了，
+  // 这里只是把它摆出来；打开之后回报一声，父层把那次交接清掉）
+  watch(
+    () => props.openQuestion,
+    (card) => {
+      if (!card) return;
+      active.value = card;
+      answerFor.value = false;
+      justSaved.value = "";
+      hooks.onPushedOpened?.();
+    },
+  );
   // 跟章走：作者切了章，出题顺序也跟着换（重新问一次核心）
   watch(currentChapter, () => {
     if (followChapter.value) void refresh();

@@ -7,7 +7,8 @@
 use serde_json::{json, Value};
 use yanmo_core::model::{NewQuestionCard, QuestionState};
 use yanmo_core::question::{DeferCondition, DeferKind, DeferPreset, DAY_MS};
-use yanmo_core::store::{RoundItem, Store};
+use yanmo_core::question::PushQuota;
+use yanmo_core::store::{PushOutcome, RoundItem, Store};
 
 use crate::args::{Args, Usage};
 use crate::dev::body_of;
@@ -54,6 +55,8 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         "question-land" => Some(&["id", "node", "target", "title", "trigger"]),
         // 先问后排版：一轮一次落（顺序就是 --items 里的顺序）
         "question-round" => Some(&["work", "node", "items", "items-file", "trigger"]),
+        // 主动问一句（推）：门槛（每天几次 / 冷却）从命令行给，账按 --today 那一天算
+        "question-push" => Some(&["work", "node", "per-day", "cooldown", "today", "tz", "reason"]),
         _ => None,
     }
 }
@@ -306,6 +309,54 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
             json!({ "ok": true, "command": "question-land", "card_id": id, "node_id": node,
                     "target": target, "answer_ids": done.answer_ids,
                     "scene_ids": done.scene_ids, "outline": done.outline })
+        }
+        "question-push" => {
+            // 主动问一句（推）：**过了门槛才开口**，开口就算"问过"（消耗新颖度）。
+            // 配额按作者本地那一天记账：--today 直接给 YYYYMMDD，或给 --tz <分钟> 让这里算。
+            let work = args.required_i64("work")?;
+            let node = match args.optional("node") {
+                Some(text) => Some(
+                    text.parse::<i64>()
+                        .map_err(|_| Usage::from("--node 需要是一个整数（章节节点 id）"))?,
+                ),
+                None => None,
+            };
+            let per_day = args
+                .optional("per-day")
+                .unwrap_or("3")
+                .parse::<i64>()
+                .map_err(|_| Usage::from("--per-day 需要是一个整数"))?;
+            let cooldown = args
+                .optional("cooldown")
+                .unwrap_or("60")
+                .parse::<i64>()
+                .map_err(|_| Usage::from("--cooldown 需要是一个整数（分钟）"))?;
+            let today = match args.optional("today") {
+                Some(text) => text
+                    .parse::<i64>()
+                    .map_err(|_| Usage::from("--today 需要是 YYYYMMDD 这样的整数"))?,
+                None => {
+                    let tz = args
+                        .optional("tz")
+                        .unwrap_or("480")
+                        .parse::<i32>()
+                        .map_err(|_| Usage::from("--tz 需要是一个整数（相对 UTC 的分钟偏移）"))?;
+                    let date = yanmo_core::time::local_date(yanmo_core::time::now_millis(), tz);
+                    date.replace('-', "")
+                        .parse::<i64>()
+                        .map_err(|_| Usage::from("算不出今天是哪一天，请直接给 --today"))?
+                }
+            };
+            let reason = args.optional("reason").unwrap_or("cli").to_string();
+            let outcome =
+                store.push_question(work, node, PushQuota { per_day, cooldown_minutes: cooldown }, today, &reason)?;
+            let code = outcome.as_str().to_string();
+            let question = match outcome {
+                PushOutcome::Pushed { question } => Some(question),
+                _ => None,
+            };
+            json!({ "ok": true, "command": "question-push", "code": code,
+                    "today": today, "question": question })
         }
         "question-round" => {
             // 一轮落章（先问后排版）：把一串答案**一次**落进这一章。--items 给 JSON：

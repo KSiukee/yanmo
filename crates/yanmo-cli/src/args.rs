@@ -147,6 +147,10 @@ pub const HELP_DEV: &str = "\
   question-land --id <卡 id> --node <章节 id> [--target body|outline|scene] [--title <场景卡名>]
                             落章：正文段落 / 章纲（这一章的一句话）/ 场景卡（这一章下面新建一张）；
                             正文那一段字由界面插进编辑会话，核心一个字节都不写正文
+  question-push --work <id> [--node <章节 id>] [--per-day <n>] [--cooldown <分钟>]
+                [--today <YYYYMMDD> | --tz <分钟>] [--reason <时机>]
+                            主动问一句（推）：过了门槛才开口，开口就算「问过」；
+                            --reason 写清是哪条时机（new_chapter / idle / chapter_done）
   question-round --work <id> --node <章节 id> --items <JSON 数组>
                             一轮落章（先问后排版）：把一串答案**一次**落进这一章；
                             --items 形如 [{\"card_id\":1,\"body\":\"第一段\"}, …]，顺序即落下顺序

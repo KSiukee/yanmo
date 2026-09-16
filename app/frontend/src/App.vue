@@ -6,11 +6,13 @@
 //   等引导问答功能落地时直接填充，不用重排布局。
 //
 // 壳层纪律：这里只搭布局与接线，不写业务逻辑（业务在 yanmo-core）。
-import { computed } from "vue";
+import { computed, ref } from "vue";
 
 import { t } from "./locales/index.ts";
 import { shortcutKeys } from "./editor/shortcuts.ts";
 import { useEditorSession } from "./editor/session";
+import { useQuestionPush } from "./editor/question-push.ts";
+import type { SelectedQuestion } from "./api/question.ts";
 import DirectoryPane from "./components/DirectoryPane.vue";
 import EditorPane from "./components/EditorPane.vue";
 import FlowPane from "./components/FlowPane.vue";
@@ -29,6 +31,24 @@ import WritingDialog from "./components/WritingDialog.vue";
 
 // 会话在布局层建**一次**：目录树、书架与正文编辑器说的必须是同一本书、同一章
 const session = useEditorSession();
+
+// 叩问的「推」：门槛（每天几次 / 冷却）在核心算，这里只管三个时机——
+// 开新章 / 卡住一会儿 / 刚写完一章（判据见 editor/question-push.ts）。
+// 它读的是会话现成的状态（当前章 + 字数），不与打字那条快路耦合。
+const push = useQuestionPush({
+  session,
+  quota: () => ({
+    perDay: session.appearance.workValues.value?.question_push_per_day ?? 3,
+    cooldownMinutes: session.appearance.workValues.value?.question_push_cooldown_minutes ?? 60,
+  }),
+  // 错过的推是静默的（配额用完 / 冷却没到 / 没得问）：不报错、不打扰写作
+  onError: () => undefined,
+});
+/** 「答一句」点过之后，把那张卡交给右侧面板打开（面板接住后会回报一声，这里清掉） */
+const pushedCard = ref<SelectedQuestion | null>(null);
+function answerPushed() {
+  pushedCard.value = push.take();
+}
 const { chapterTitle, workId } = session;
 const { visible: shelfVisible, toggle: toggleShelf, form: workForm, closeForm } = session.shelf;
 const { visible: trashVisible } = session.trash;
@@ -98,7 +118,18 @@ const hint = computed(() => {
       <EngineBadge />
     </header>
 
-    <p v-if="backupStatus?.should_nudge" class="shell__nudge">
+    <!-- 提醒**只有这一个出口**：一次只显示一条（软件不该抢自己的话头）。
+         叩问的推优先——它跟"当下正在写的东西"直接相关；备份提醒排在后面。 -->
+    <p v-if="push.tip.value" class="shell__nudge">
+      <span>{{ t("flow.push.tip", { body: push.tip.value.body }) }}</span>
+      <button type="button" class="shell__nudge-go" @click="answerPushed()">
+        {{ t("flow.push.answer") }}
+      </button>
+      <button type="button" class="shell__nudge-no" @click="push.dismiss()">
+        {{ t("flow.push.later") }}
+      </button>
+    </p>
+    <p v-else-if="backupStatus?.should_nudge" class="shell__nudge">
       <span>{{ t("backup.tip") }}</span>
       <button type="button" class="shell__nudge-go" @click="void openBackup()">
         {{ t("backup.tip_open") }}
@@ -141,7 +172,13 @@ const hint = computed(() => {
       </template>
 
       <EditorPane :session="session" />
-      <FlowPane v-if="zenChrome.flow" :session="session" :work-id="workId" />
+      <FlowPane
+        v-if="zenChrome.flow"
+        :session="session"
+        :work-id="workId"
+        :open-question="pushedCard"
+        @opened="pushedCard = null"
+      />
     </main>
 
     <ShelfDialog v-if="shelfVisible" :session="session" />

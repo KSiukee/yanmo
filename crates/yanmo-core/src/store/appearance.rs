@@ -19,13 +19,28 @@ use serde::{Deserialize, Serialize};
 
 use super::Store;
 use crate::error::Result;
-use crate::model::{ChapterNumbering, NamingStyle};
+use crate::model::{ChapterNumbering, NamingStyle, QuestionTone};
 use crate::text::WordCaliber;
 use crate::time::now_millis;
 use crate::typeset::QuoteStyle;
 
 /// 每日目标的上限：手滑多打几个零的兜底（一天 100 万字已远超任何人的手速）。
 const MAX_DAILY_GOAL: i64 = 1_000_000;
+
+/// 主动问一句的默认配额与冷却（与 `question::push` 的口径一致：稀缺才好）。
+const DEFAULT_PUSH_PER_DAY: i64 = 3;
+const DEFAULT_PUSH_COOLDOWN_MINUTES: i64 = 60;
+/// 手滑兜底：一天最多问 20 次、冷却最长一天（再多就不叫"稀缺"了）。
+const MAX_PUSH_PER_DAY: i64 = 20;
+const MAX_PUSH_COOLDOWN_MINUTES: i64 = 24 * 60;
+
+/// 次数类偏好的夹取：没设过用默认；设了就夹进 `0..=max`（0 是正经取值＝关掉那件事）。
+fn clamp_count(value: Option<i64>, fallback: i64, max: i64) -> i64 {
+    match value {
+        None => fallback,
+        Some(v) => v.clamp(0, max),
+    }
+}
 
 /// 作者改过的项（`None` = 没改过，用默认）。
 ///
@@ -74,6 +89,19 @@ pub struct Appearance {
     /// 正文字距（em 的百分之几：5 = 0.05em；`None` = 没改过）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editor_letter_spacing: Option<i64>,
+    /// 叩问问话的语气（`QuestionTone` 的稳定代码：warm / neutral / direct）。
+    ///
+    /// `None` = 没改过 → **温柔**那档。（`neutral` 就是"不加语气"，也就是把这层关掉。）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question_tone: Option<String>,
+    /// 写的时候最多主动问几次（**0 = 不打扰**）。
+    ///
+    /// 它**只限"推"**：用完了，面板照样能开、问题照样能翻——作者主动要看的不受配额管。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question_push_per_day: Option<i64>,
+    /// 两次主动问之间至少隔多少分钟（冷却：刚问过就别再冒头）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question_push_cooldown_minutes: Option<i64>,
 }
 
 /// 正文排版的**可读范围**：超出就夹住（手滑打 1000 号字不该把版面炸了，也不该报错挡人）。
@@ -100,6 +128,9 @@ impl Appearance {
             && self.editor_font_size.is_none()
             && self.editor_line_height.is_none()
             && self.editor_letter_spacing.is_none()
+            && self.question_tone.is_none()
+            && self.question_push_per_day.is_none()
+            && self.question_push_cooldown_minutes.is_none()
     }
 
     /// 把 `over`（书的覆盖）盖在 `self`（全局）上：**只覆盖它真设过的项**。
@@ -121,6 +152,11 @@ impl Appearance {
             editor_font_size: over.editor_font_size.or(self.editor_font_size),
             editor_line_height: over.editor_line_height.or(self.editor_line_height),
             editor_letter_spacing: over.editor_letter_spacing.or(self.editor_letter_spacing),
+            question_tone: over.question_tone.clone().or_else(|| self.question_tone.clone()),
+            question_push_per_day: over.question_push_per_day.or(self.question_push_per_day),
+            question_push_cooldown_minutes: over
+                .question_push_cooldown_minutes
+                .or(self.question_push_cooldown_minutes),
         }
     }
 }
@@ -145,6 +181,12 @@ pub struct ResolvedAppearance {
     pub editor_font_size: Option<i64>,
     pub editor_line_height: Option<i64>,
     pub editor_letter_spacing: Option<i64>,
+    /// 叩问问话的语气（没改过就是温柔那档；`neutral` = 不加语气）。
+    pub question_tone: QuestionTone,
+    /// 写的时候最多主动问几次（0 = 不打扰）；只限"推"。
+    pub question_push_per_day: i64,
+    /// 两次主动问之间的冷却（分钟）。
+    pub question_push_cooldown_minutes: i64,
 }
 
 impl Default for ResolvedAppearance {
@@ -161,6 +203,11 @@ impl Default for ResolvedAppearance {
             editor_font_size: None,
             editor_line_height: None,
             editor_letter_spacing: None,
+            // 叩问：默认温柔（贴心那档）、一天最多 3 次、两次之间隔 60 分钟
+            // ——"主动开口"必须稀缺，写作最怕被打断
+            question_tone: QuestionTone::default(),
+            question_push_per_day: DEFAULT_PUSH_PER_DAY,
+            question_push_cooldown_minutes: DEFAULT_PUSH_COOLDOWN_MINUTES,
         }
     }
 }
@@ -211,6 +258,23 @@ impl Store {
             editor_letter_spacing: merged
                 .editor_letter_spacing
                 .and_then(|value| typography_value(value, LETTER_SPACING_RANGE)),
+            // 语气：认不出来的代码当没设过（与口径 / 引号同一条规矩），回"温柔"
+            question_tone: merged
+                .question_tone
+                .as_deref()
+                .and_then(|code| QuestionTone::parse(code).ok())
+                .unwrap_or_default(),
+            // 配额与冷却：手滑输入离谱数就夹进可接受范围（0 是正经取值 = 不打扰）
+            question_push_per_day: clamp_count(
+                merged.question_push_per_day,
+                DEFAULT_PUSH_PER_DAY,
+                MAX_PUSH_PER_DAY,
+            ),
+            question_push_cooldown_minutes: clamp_count(
+                merged.question_push_cooldown_minutes,
+                DEFAULT_PUSH_COOLDOWN_MINUTES,
+                MAX_PUSH_COOLDOWN_MINUTES,
+            ),
         })
     }
 
@@ -318,6 +382,29 @@ impl Store {
                 stored.chapter_numbering = Some(parsed.as_str().to_string());
             }
         }
+        if let Some(value) = patch.question_tone.as_deref() {
+            // `"auto"` = 清掉这一层（回默认"温柔"）——与命名规则同一条路
+            if value == "auto" {
+                stored.question_tone = None;
+            } else {
+                let parsed = QuestionTone::parse(value).map_err(|_| {
+                    crate::error::Error::invalid_with(
+                        crate::error::codes::UNKNOWN_QUESTION_TONE,
+                        [("value", value.to_string())],
+                    )
+                })?;
+                stored.question_tone = Some(parsed.as_str().to_string());
+            }
+        }
+        // 打扰度两项：**负数 = 清掉这一层**（回默认）；`0` 是正经取值（＝不打扰），
+        // 所以不能像排版那样拿"≤0"当清掉——那会把"别打扰我"变成一个改不掉的空档
+        if let Some(value) = patch.question_push_per_day {
+            stored.question_push_per_day = (value >= 0).then(|| value.min(MAX_PUSH_PER_DAY));
+        }
+        if let Some(value) = patch.question_push_cooldown_minutes {
+            stored.question_push_cooldown_minutes =
+                (value >= 0).then(|| value.min(MAX_PUSH_COOLDOWN_MINUTES));
+        }
         let tx = self.conn.transaction()?;
         write_appearance(&tx, work_id, &stored)?;
         Self::record_in(
@@ -333,6 +420,9 @@ impl Store {
                 "daily_goal": patch.daily_goal,
                 "naming": patch.naming,
                 "chapter_numbering": patch.chapter_numbering,
+                "question_tone": patch.question_tone,
+                "question_push_per_day": patch.question_push_per_day,
+                "question_push_cooldown_minutes": patch.question_push_cooldown_minutes,
                 "editor_font_size": patch.editor_font_size,
                 "editor_line_height": patch.editor_line_height,
                 "editor_letter_spacing": patch.editor_letter_spacing,

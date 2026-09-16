@@ -21,6 +21,7 @@ export interface SettingsSection {
  */
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "writing", labelKey: "settings.nav_writing" },
+  { id: "asking", labelKey: "settings.nav_asking" },
   { id: "typography", labelKey: "settings.nav_typography" },
   { id: "naming", labelKey: "settings.nav_naming" },
   { id: "location", labelKey: "settings.nav_location" },

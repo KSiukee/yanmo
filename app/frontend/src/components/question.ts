@@ -8,15 +8,39 @@ import type { AnswerTarget, Gravity, QuestionDraft } from "../api/question.ts";
 
 const DAY_MS = 86_400_000;
 
+/** 问话语气（与核心 `QuestionTone` 的稳定码一致）；`neutral` 就是"不加语气"。 */
+export type QuestionTone = "warm" | "neutral" | "direct";
+
 /**
- * 一条候选渲染成句子：模板键查字典、槽位填进去。
+ * 一条候选渲染成句子：模板键查字典、槽位填进去，**按当前语气挑那一版**。
  *
- * 字典里缺键时 `t()` 会**原样返回键**（屏幕上出现 `question.template.xxx`，
- * 一眼看得见），缺槽位时 `fill()` 会把 `{槽位}` 留着并在控制台喊一声——
- * 都不静默，这两种都得当场发现。
+ * 三版的关系：`question.template.<键>`（中性，也是兜底那版）/
+ * `.<键>.warm`（温柔）/ `.<键>.direct`（直接）。**缺哪一版就退回中性**——
+ * 语气是锦上添花，不该因为少写一句就让作者看到 `question.template.xxx`。
+ * 缺「中性」那版才是真问题：`t()` 原样返回键，屏幕上一眼看得见。
+ *
+ * 语气只改"怎么问"：三版说的是同一件事（槽位也一样），绝不引入新信息、更不说教。
  */
-export function renderDraft(draft: QuestionDraft): string {
-  return t(`question.template.${draft.template_key}`, draft.slots);
+export function renderDraft(draft: QuestionDraft, tone: QuestionTone = "neutral"): string {
+  const base = `question.template.${draft.template_key}`;
+  if (tone !== "neutral") {
+    const key = `${base}.${tone}`;
+    const text = t(key, draft.slots);
+    if (text !== key) return text;
+  }
+  return t(base, draft.slots);
+}
+
+/** 语气怎么称呼（设置里那三档）。 */
+export function toneLabel(tone: QuestionTone): string {
+  if (tone === "warm") return t("settings.tone.warm");
+  if (tone === "direct") return t("settings.tone.direct");
+  return t("settings.tone.neutral");
+}
+
+/** 认不出的语气码当"中性"（库里被手改坏也不该让面板崩）。 */
+export function asTone(code: string | null | undefined): QuestionTone {
+  return code === "warm" || code === "direct" ? code : "neutral";
 }
 
 /** 引力拆解里的一行：**说清"这意味着什么"**，不摆裸数字。 */

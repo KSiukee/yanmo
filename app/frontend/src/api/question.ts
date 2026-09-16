@@ -128,6 +128,13 @@ export interface LandReceipt {
   outline: string | null;
 }
 
+/** 主动问一次的结果：问出去了才有那张卡；`code` 说明为什么没问（错过一次推是静默的）。 */
+export interface PushDone {
+  /** `push.asked` / `push.quota_used` / `push.too_soon` / `push.nothing_to_ask` */
+  code: string;
+  question: SelectedQuestion | null;
+}
+
 /** 落章回执：账 + 落完之后的最新面板。 */
 export interface LandDone {
   landed: LandReceipt;
@@ -233,6 +240,22 @@ export const questionMuteSource = (work_id: number, source: string) =>
   call<QuestionBoard>(COMMANDS.questionMuteSource, { work_id, source });
 export const questionUnmuteSource = (work_id: number, source: string) =>
   call<QuestionBoard>(COMMANDS.questionUnmuteSource, { work_id, source });
+
+/**
+ * 主动问一句（推）：**门槛由核心算**（每天几次 / 冷却多久），过了才把卡问出来。
+ *
+ * `today` 是作者本地那一天（`YYYYMMDD`）；`reason` 是为什么现在开口
+ * （`new_chapter` / `idle` / `chapter_done`），它进留痕的 trigger。
+ * 显示即算"已问"（新颖度消耗掉）——那是实话：他看见过。
+ */
+export const questionPush = (
+  work_id: number,
+  node_id: number | null,
+  per_day: number,
+  cooldown_minutes: number,
+  today: number,
+  reason: string,
+) => call<PushDone>(COMMANDS.questionPush, { work_id, node_id, per_day, cooldown_minutes, today, reason });
 
 /** 把条件已满足的延后放回候选池（低频：打开面板 / 每几分钟）。 */
 export const questionRequeueDue = (work_id: number) =>

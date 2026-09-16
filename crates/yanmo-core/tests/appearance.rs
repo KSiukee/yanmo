@@ -378,3 +378,56 @@ fn typography_is_remembered_per_item_and_never_touches_the_text() {
     assert_eq!(resolved.editor_font_size, Some(24), "坏值当没设过 → 回全局那份");
     assert_eq!(resolved.editor_line_height, None);
 }
+
+/// 叩问那三项偏好：默认（温柔 / 3 次 / 60 分钟）、"0 = 不打扰"与"负数 = 清掉这一层"分得清。
+#[test]
+fn asking_preferences_default_and_clear_on_their_own_terms() {
+    let (_dir, mut store) = fresh();
+    let defaults = store.appearance(None).unwrap();
+    assert_eq!(defaults.question_tone, yanmo_core::model::QuestionTone::Warm, "默认温柔");
+    assert_eq!(defaults.question_push_per_day, 3, "默认一天 3 次");
+    assert_eq!(defaults.question_push_cooldown_minutes, 60, "默认冷却 60 分钟");
+
+    // 0 是**正经取值**（＝不打扰），不是"清掉"——这条最容易写错
+    store
+        .set_appearance(
+            None,
+            &Appearance {
+                question_push_per_day: Some(0),
+                question_tone: Some("direct".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let quiet = store.appearance(None).unwrap();
+    assert_eq!(quiet.question_push_per_day, 0, "0 要原样存下来");
+    assert_eq!(quiet.question_tone, yanmo_core::model::QuestionTone::Direct);
+
+    // 负数 = 清掉这一层（回默认）；语气认不出的代码当场拒
+    store
+        .set_appearance(
+            None,
+            &Appearance {
+                question_push_per_day: Some(-1),
+                question_push_cooldown_minutes: Some(-1),
+                question_tone: Some("auto".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let cleared = store.appearance(None).unwrap();
+    assert_eq!(
+        (cleared.question_push_per_day, cleared.question_push_cooldown_minutes),
+        (3, 60),
+        "负数 = 回默认"
+    );
+    assert_eq!(cleared.question_tone, yanmo_core::model::QuestionTone::Warm);
+
+    let err = store
+        .set_appearance(
+            None,
+            &Appearance { question_tone: Some("shouty".to_string()), ..Default::default() },
+        )
+        .unwrap_err();
+    assert_eq!(err.code(), "value.unknown_question_tone");
+}

@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { formatBytes, formatWhen, formatWords, localDaysBetween } from "./display.ts";
+import { formatBytes, formatWhen, formatWords, localDay, localDaysBetween } from "./display.ts";
 import { nextWorkAfterDelete, shelfKindLabel, shelfLabel } from "./shelf.ts";
 import type { ShelfEntry } from "../api/core.ts";
 
@@ -109,4 +109,14 @@ test("容量给人看：KB / MB / GB 换算对，不出现「几十 GB 显示成
   assert.equal(formatBytes(1024 ** 3 * 102), "102 GB");
   // 量纲错一位是这类显示最常见的 bug：50 GB 绝不该显示成 MB 级的小数
   assert.match(formatBytes(50 * 1024 ** 3), /GB$/);
+});
+
+test("本地那一天：按作者本地的年月日算，不是 UTC", () => {
+  // 本地时间 2026-09-16 早上八点：按月日算就是 20260916
+  assert.equal(localDay(new Date(2026, 8, 16, 8, 0, 0)), 20260916);
+  // 跨零点前后是两天（按天重置的账靠的就是它）
+  assert.equal(localDay(new Date(2026, 8, 16, 23, 59, 59)), 20260916);
+  assert.equal(localDay(new Date(2026, 8, 17, 0, 0, 1)), 20260917);
+  // 月与日都要补零到两位，拼出来才是同一个格式
+  assert.equal(localDay(new Date(2026, 0, 5, 12, 0, 0)), 20260105);
 });

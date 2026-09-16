@@ -316,6 +316,20 @@ fn placeholders(text: &str) -> Vec<String> {
                 template.slots.iter().map(|slot| (*slot).to_string()).collect();
             declared.sort();
             assert_eq!(found, declared, "{key} 的占位符与模板声明的槽位对不上");
+            // 语气两版（温柔 / 直接）：三版说的是**同一件事**——槽位必须一模一样，
+            // 少一版还能退回中性，但槽位对不上就是"换了件事"（那是改需求，不是换语气）
+            for tone in ["warm", "direct"] {
+                let variant = format!("{key}.{tone}");
+                let text = dict
+                    .get(&variant)
+                    .unwrap_or_else(|| panic!("模板 {} 缺 {tone} 那一版（缺 {variant}）", template.key));
+                let mut variant_placeholders = placeholders(text);
+                variant_placeholders.sort();
+                assert_eq!(
+                    variant_placeholders, declared,
+                    "{variant} 的占位符与中性那版对不上——语气只该换说法，不该换问的事"
+                );
+            }
             checked += 1;
         }
         assert!(checked >= 5, "模板少得可疑，检查扫描基准");

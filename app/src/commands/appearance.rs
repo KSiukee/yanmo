@@ -28,6 +28,12 @@ pub struct AppearanceDto {
     pub editor_font_size: Option<i64>,
     pub editor_line_height: Option<i64>,
     pub editor_letter_spacing: Option<i64>,
+    /// 叩问问话的语气（`warm` / `neutral` / `direct`；`neutral` 就是"不加语气"）
+    pub question_tone: String,
+    /// 写的时候最多主动问几次（0 = 不打扰）；**只限"推"**，面板随时能开
+    pub question_push_per_day: i64,
+    /// 两次主动问之间的冷却（分钟）
+    pub question_push_cooldown_minutes: i64,
 }
 
 impl From<ResolvedAppearance> for AppearanceDto {
@@ -42,6 +48,9 @@ impl From<ResolvedAppearance> for AppearanceDto {
             editor_font_size: value.editor_font_size,
             editor_line_height: value.editor_line_height,
             editor_letter_spacing: value.editor_letter_spacing,
+            question_tone: value.question_tone.as_str().to_string(),
+            question_push_per_day: value.question_push_per_day,
+            question_push_cooldown_minutes: value.question_push_cooldown_minutes,
         }
     }
 }
@@ -63,6 +72,11 @@ pub struct AppearancePatch {
     pub editor_font_size: Option<i64>,
     pub editor_line_height: Option<i64>,
     pub editor_letter_spacing: Option<i64>,
+    /// 叩问语气：`warm` / `neutral` / `direct`；传 `"auto"` = 清掉这一层（回默认：温柔）
+    pub question_tone: Option<String>,
+    /// 主动问的次数（0 = 不打扰）与冷却分钟；传负数 = 清掉这一层（回默认）
+    pub question_push_per_day: Option<i64>,
+    pub question_push_cooldown_minutes: Option<i64>,
 }
 
 impl From<AppearancePatch> for Appearance {
@@ -77,6 +91,9 @@ impl From<AppearancePatch> for Appearance {
             editor_font_size: patch.editor_font_size,
             editor_line_height: patch.editor_line_height,
             editor_letter_spacing: patch.editor_letter_spacing,
+            question_tone: patch.question_tone,
+            question_push_per_day: patch.question_push_per_day,
+            question_push_cooldown_minutes: patch.question_push_cooldown_minutes,
         }
     }
 }

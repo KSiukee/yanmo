@@ -52,6 +52,18 @@ export interface AppearanceState {
   setJumpToEnd: (value: boolean) => Promise<void>;
   /** 引号用哪一套（排版清理里选的，选一次就记住） */
   setQuoteStyle: (value: string) => Promise<void>;
+  /**
+   * 叩问问话的语气（`warm` / `neutral` / `direct`；传 `"auto"` = 清掉这一层，回默认"温柔"）。
+   *
+   * 只写**全局默认**（与排版三项同一条口径：每书覆盖的机制留着，第一版界面不暴露）。
+   */
+  setQuestionTone: (value: string) => Promise<void>;
+  /**
+   * 主动问一句的打扰度：每天最多几次（**0 = 不打扰**）+ 冷却多少分钟。
+   *
+   * 传 `null` = 把这一层清掉、回默认（3 次 / 60 分钟）。同样只写全局默认。
+   */
+  setQuestionPush: (perDay: number | null, cooldownMinutes: number | null) => Promise<void>;
   /** 回到默认（核心的默认值） */
   resetToDefault: () => Promise<void>;
   /** 跟当前作品重读一次（打开章节、换书时用） */
@@ -159,6 +171,19 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
     setJumpToEnd: (value) =>
       act(() => options.transport.write(null, { jump_to_end_on_latest: value })),
     setQuoteStyle: (value) => act(() => options.transport.write(null, { quote_style: value })),
+    setQuestionTone: (value) =>
+      act(() =>
+        // "auto" 在核心那边就是"清掉这一层"（回默认温柔）；别的取值核心会校验
+        options.transport.write(null, { question_tone: value }),
+      ),
+    setQuestionPush: (perDay, cooldownMinutes) =>
+      act(() =>
+        options.transport.write(null, {
+          // null（＝没给）与负数在核心那边都表示"清掉这一层"；这里统一用 -1 表示清
+          question_push_per_day: perDay === null ? -1 : perDay,
+          question_push_cooldown_minutes: cooldownMinutes === null ? -1 : cooldownMinutes,
+        }),
+      ),
     loadWork: async () => {
       const work_id = options.workId.value;
       if (work_id === null) {

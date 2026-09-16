@@ -11,12 +11,14 @@
 pub mod defer;
 pub mod defer_preset;
 pub mod elements;
+pub mod push;
 pub mod generate;
 pub mod template;
 
 pub use defer::{anchors_of, chapter_anchor, DeferCondition, DeferKind, DAY_MS};
 pub use defer_preset::DeferPreset;
 pub use elements::{ChapterFacts, RhythmParams, WritingElements};
+pub use push::{advanced, decide, PushDecision, PushQuota, PushState};
 pub use generate::{generate, QuestionDraft};
 pub use template::{
     template, urgency_of, ElementKind, QuestionTemplate, DEFAULT_URGENCY, TEMPLATES,

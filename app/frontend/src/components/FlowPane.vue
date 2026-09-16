@@ -11,6 +11,7 @@
 // 记灵感在 `InspireBox`、作答在 `AnswerBox`、回头路在 `FlowRecall`——各有各的变化理由。
 import { t } from "../locales/index.ts";
 import type { EditorSession } from "../editor/session.ts";
+import type { SelectedQuestion } from "../api/question.ts";
 import { dueLabel } from "./question.ts";
 import { useFlowPanel } from "./flow-panel.ts";
 import QuestionCard from "./QuestionCard.vue";
@@ -21,7 +22,13 @@ import FlowRecall from "./FlowRecall.vue";
 import InspireBox from "./InspireBox.vue";
 import RoundTray from "./RoundTray.vue";
 
-const props = defineProps<{ workId: number | null; session: EditorSession }>();
+const props = defineProps<{
+  workId: number | null;
+  session: EditorSession;
+  /** 推过来的那张卡（作者点了提示条上的「答一句」） */
+  openQuestion?: SelectedQuestion | null;
+}>();
+const emit = defineEmits<{ opened: [] }>();
 
 const {
   board,
@@ -63,7 +70,7 @@ const {
   muteSource,
   unmuteClass,
   unmuteSource,
-} = useFlowPanel(props);
+} = useFlowPanel(props, { onPushedOpened: () => emit("opened") });
 </script>
 
 <template>
