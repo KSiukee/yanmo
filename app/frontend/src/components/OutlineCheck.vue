@@ -12,7 +12,10 @@ import { anchorTarget, issueText, missingLine } from "./outline.ts";
 import { useOutlinePanel } from "./outline-panel.ts";
 
 const props = defineProps<{ session: EditorSession }>();
-const emit = defineEmits<{ openEntities: []; openForeshadows: [] }>();
+const emit = defineEmits<{
+  openEntities: ["persons" | "settings"];
+  openForeshadows: [];
+}>();
 
 const { workId, directory } = props.session;
 const { board, busy, errorText, showKnown, open, known, refresh, dismiss, undismiss, clearDismissed } =
@@ -21,6 +24,16 @@ const { board, busy, errorText, showKnown, open, known, refresh, dismiss, undism
 /** 这一条的锚点指向哪儿（决定摆哪个按钮：去设定卡 / 跳到这一场）。 */
 function target(anchors: string[]) {
   return anchorTarget(anchors);
+}
+
+/**
+ * 这条实体问题该打开「大纲」的哪一页。
+ *
+ * 核心在参数里给了卡的类型（`kind`）：人物那条就开人物页、设定那条就开设定页——
+ * 不然作者点「去大纲里改」还得自己再找一遍。
+ */
+function entityTab(issue: { params: Record<string, string> }): "persons" | "settings" {
+  return issue.params.kind === "setting" ? "settings" : "persons";
 }
 
 /** 跳到这一场：先在树上把它露出来（卷可能是收着的），再切过去。 */
@@ -55,7 +68,7 @@ async function goScene(node_id: number) {
               type="button"
               class="check__link"
               :disabled="busy"
-              @click="emit('openEntities')"
+              @click="emit('openEntities', entityTab(issue))"
             >
               {{ t("outline.go_entities") }}
             </button>

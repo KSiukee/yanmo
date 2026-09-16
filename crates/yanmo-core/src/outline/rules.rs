@@ -174,7 +174,10 @@ fn name_clashes(cards: &[EntityCard]) -> Vec<OutlineIssue> {
                     IssueRule::EntityNameRepeated,
                     vec![entity_anchor(card.id)],
                     vec![token.to_string()],
-                    [("name", token.to_string())],
+                    [
+                        ("name", token.to_string()),
+                        ("kind", card.kind.as_str().to_string()),
+                    ],
                 ));
                 continue;
             }
@@ -197,6 +200,17 @@ fn name_clashes(cards: &[EntityCard]) -> Vec<OutlineIssue> {
                 ("name", token),
                 ("count", ids.len().to_string()),
                 // 界面上要说"哪两张"，所以带**名字**（id 在锚点里已经有了，不重复给）
+                // 带上**卡的类型**：界面据此把作者带到"人物"或"设定"那一页
+                // （这不是文案，是取值；句子仍然全在界面字典里）
+                (
+                    "kind",
+                    ids.iter()
+                        .filter_map(|id| cards.iter().find(|card| card.id == *id))
+                        .map(|card| card.kind.as_str())
+                        .next()
+                        .unwrap_or("")
+                        .to_string(),
+                ),
                 (
                     // 名字按 `,` 拼（**中性分隔**）：顿号是界面按字典拼的——
                     // 核心不许出现界面文案（这一行的判据是"零文案"，不是"少写几个字"）
@@ -240,6 +254,7 @@ fn attribute_conflicts(cards: &[EntityCard]) -> Vec<OutlineIssue> {
                 vec![key.clone()],
                 [
                     ("name", card.name.clone()),
+                    ("kind", card.kind.as_str().to_string()),
                     ("key", key),
                     (
                         "values",

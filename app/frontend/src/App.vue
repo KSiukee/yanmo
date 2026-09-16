@@ -17,7 +17,7 @@ import DirectoryPane from "./components/DirectoryPane.vue";
 import EditorPane from "./components/EditorPane.vue";
 import AsidePane from "./components/AsidePane.vue";
 import TopBar from "./components/TopBar.vue";
-import EntityDialog from "./components/EntityDialog.vue";
+import OutlineDialog from "./components/OutlineDialog.vue";
 import BackupDialog from "./components/BackupDialog.vue";
 import LocationDialog from "./components/LocationDialog.vue";
 import RestoreDialog from "./components/RestoreDialog.vue";
@@ -174,7 +174,7 @@ const hint = computed(() => {
     <CompileDialog v-if="compileVisible" :session="session" />
     <SettingsDialog v-if="settingsVisible && settingsValues" :session="session" />
     <BackupDialog v-if="backupVisible && backupStatus" :session="session" />
-    <EntityDialog v-if="loreVisible" :session="session" />
+    <OutlineDialog v-if="loreVisible" :session="session" />
     <RestoreDialog v-if="restoreVisible" :session="session" />
     <LocationDialog
       v-if="locationVisible && locationInfo"

@@ -8,23 +8,7 @@
 // - **只有键没值的那条留着**（"还没填"是作者的状态）。
 
 import { t } from "../locales/index.ts";
-import type {
-  Attribute,
-  EntityBoard,
-  EntityCard,
-  EntityCardForm,
-  EntityKind,
-} from "../api/entity.ts";
-
-/** 两种类型（界面上那两个筛选项的顺序）。 */
-export const ENTITY_KINDS: EntityKind[] = ["person", "setting"];
-
-/** 类型怎么称呼；字典里没有就照原样露出来（比静默说成别的强）。 */
-export function kindLabel(kind: string): string {
-  const key = `entity.kind.${kind}`;
-  const text = t(key);
-  return text === key ? kind : text;
-}
+import type { Attribute, EntityCard, EntityCardForm, EntityKind } from "../api/entity.ts";
 
 /**
  * 别称那一栏的文本 → 一串别称。
@@ -71,22 +55,6 @@ export function formatAttributes(attributes: Attribute[]): string {
   return attributes.map((attr) => t("entity.attribute_line", { key: attr.key, value: attr.value })).join("\n");
 }
 
-/** 一个筛选项：`all` 是"全部"，其余是某一类。 */
-export interface EntityFilterOption {
-  kind: EntityKind | "all";
-  count: number;
-}
-
-/** 面板上的筛选项：**全部**在最前，跟着两种类型（一条都没有的也留着，好知道是 0）。 */
-export function filterOptions(board: EntityBoard | null): EntityFilterOption[] {
-  if (!board) return [{ kind: "all", count: 0 }];
-  return [
-    { kind: "all", count: board.cards.length },
-    { kind: "person", count: board.persons },
-    { kind: "setting", count: board.settings },
-  ];
-}
-
 /** 按筛选项挑出要摆的那几张（`all` 原样返回）。 */
 export function visibleCards(cards: EntityCard[], filter: EntityKind | "all"): EntityCard[] {
   if (filter === "all") return cards;
@@ -106,10 +74,6 @@ export function cardHeadline(card: EntityCard): string {
   });
 }
 
-/** 一张卡上有几条设定（列表上那个小数字）。 */
-export function attributeCount(card: EntityCard): number {
-  return card.attributes.length;
-}
 
 /** 表单里那一份（**别名与设定是文本框里的原文**，存的时候才解析）。 */
 export interface EntityDraft {

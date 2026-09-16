@@ -20,15 +20,13 @@ import {
   type EntityCard,
 } from "../api/entity.ts";
 import { t } from "../locales/index.ts";
+import type { EntityKind } from "../api/entity.ts";
 import {
   blankDraft,
   draftOf,
   draftReady,
-  filterOptions,
   formOf,
-  visibleCards,
   type EntityDraft,
-  type EntityFilterOption,
 } from "./entity.ts";
 
 export interface EntityPanelOptions {
@@ -42,18 +40,16 @@ export interface EntityPanelState {
   busy: Ref<boolean>;
   /** 失败时那句已经渲染好的话（`CoreError` 走字典渲染） */
   errorText: Ref<string>;
-  /** 眼下看哪一项（`all` = 全部） */
-  filter: Ref<"all" | "person" | "setting">;
   /** 正在编的那张（`null` = 没开表单） */
   draft: Ref<EntityDraft | null>;
   justSaved: Ref<string>;
-  options: Ref<EntityFilterOption[]>;
+  /** 这本书全部设定卡（各页自己按类型挑——页签就是筛子） */
   list: Ref<EntityCard[]>;
   canSave: Ref<boolean>;
   /** 读一遍这本书的设定卡 */
   load: () => Promise<void>;
-  /** 开一张新表单 / 改这一张 / 收起表单 */
-  startNew: () => void;
+  /** 开一张新表单（给哪一档就记成哪一档）/ 改这一张 / 收起表单 */
+  startNew: (kind?: EntityKind) => void;
   startEdit: (card: EntityCard) => void;
   cancelEdit: () => void;
   /** 存下这张（新建或整卡覆盖） */
@@ -67,13 +63,12 @@ export function useEntityPanel(deps: EntityPanelOptions): EntityPanelState {
   const busy = ref(false);
   /** 失败时那句**已经渲染好的**话（`CoreError` 走字典渲染，界面不拼中文也不露码） */
   const errorText = ref("");
-  const filter = ref<"all" | "person" | "setting">("all");
   /** 正在编的那张（`null` = 没开表单） */
   const draft = ref<EntityDraft | null>(null);
   const justSaved = ref("");
 
-  const options = computed(() => filterOptions(board.value));
-  const list = computed(() => visibleCards(board.value?.cards ?? [], filter.value));
+  // 名单一次给全：哪一页摆哪一档由页面自己挑（页签就是筛子）
+  const list = computed(() => board.value?.cards ?? []);
   const canSave = computed(() => draft.value !== null && draftReady(draft.value));
 
   function report(error: unknown) {
@@ -97,10 +92,10 @@ export function useEntityPanel(deps: EntityPanelOptions): EntityPanelState {
     }
   }
 
-  /** 开一张新表单（默认记成人物——最常记的就是人）。 */
-  function startNew() {
+  /** 开一张新表单：**记成哪一档由调用方给**（大纲面板上人物与设定是两页）。 */
+  function startNew(kind: EntityKind = "person") {
     justSaved.value = "";
-    draft.value = blankDraft();
+    draft.value = blankDraft(kind);
   }
 
   /** 改这一张（摊成表单）。 */
@@ -155,7 +150,6 @@ export function useEntityPanel(deps: EntityPanelOptions): EntityPanelState {
       // 换书：表单收起、筛选项与回执都不该跟着新书走（它们说的是上一本的事）
       draft.value = null;
       justSaved.value = "";
-      filter.value = "all";
     },
   );
 
@@ -163,10 +157,8 @@ export function useEntityPanel(deps: EntityPanelOptions): EntityPanelState {
     board,
     busy,
     errorText,
-    filter,
     draft,
     justSaved,
-    options,
     list,
     canSave,
     load,

@@ -641,6 +641,7 @@ export const COMMANDS = {
   outlineUndismiss: "outline_undismiss",
   outlineClearDismissed: "outline_clear_dismissed",
   saveSceneFields: "save_scene_fields",
+  sceneList: "scene_list",
   foreshadowList: "foreshadow_list",
   foreshadowCreate: "foreshadow_create",
   foreshadowUpdate: "foreshadow_update",

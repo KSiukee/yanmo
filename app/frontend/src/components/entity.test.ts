@@ -6,21 +6,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  attributeCount,
   blankDraft,
   cardHeadline,
   draftOf,
   draftReady,
-  filterOptions,
   formOf,
   formatAliases,
   formatAttributes,
-  kindLabel,
   parseAliases,
   parseAttributes,
   visibleCards,
 } from "./entity.ts";
-import type { EntityBoard, EntityCard } from "../api/entity.ts";
+import type { EntityCard } from "../api/entity.ts";
 
 function card(id: number, kind: EntityCard["kind"], name: string, aliases: string[] = []): EntityCard {
   return {
@@ -87,30 +84,16 @@ test("名字空着不让交（名字是身份）", () => {
   assert.equal(draftReady({ ...blankDraft(), name: " 陆文 " }), true);
 });
 
-test("筛选项与筛选：全部 + 两类，数字来自核心", () => {
-  const board: EntityBoard = {
-    cards: [card(1, "person", "陆文"), card(2, "setting", "藏书阁"), card(3, "person", "林昭")],
-    persons: 2,
-    settings: 1,
-  };
-  assert.deepEqual(filterOptions(board), [
-    { kind: "all", count: 3 },
-    { kind: "person", count: 2 },
-    { kind: "setting", count: 1 },
-  ]);
-  assert.deepEqual(filterOptions(null), [{ kind: "all", count: 0 }]);
-
-  assert.equal(visibleCards(board.cards, "all").length, 3);
-  assert.deepEqual(visibleCards(board.cards, "person").map((item) => item.id), [1, 3]);
-  assert.deepEqual(visibleCards(board.cards, "setting").map((item) => item.id), [2]);
+test("筛选：页签就是筛子——按类型挑，all 原样", () => {
+  const cards = [card(1, "person", "陆文"), card(2, "setting", "藏书阁"), card(3, "person", "林昭")];
+  assert.equal(visibleCards(cards, "all").length, 3);
+  assert.deepEqual(visibleCards(cards, "person").map((item) => item.id), [1, 3]);
+  assert.deepEqual(visibleCards(cards, "setting").map((item) => item.id), [2]);
 });
 
-test("列表那一行与类型称呼", () => {
+test("列表那一行：名字 +（有的话）别称，别称只摆前两个", () => {
   const withAliases = card(1, "person", "陆文", ["阿文", "陆大人", "小陆"]);
-  assert.equal(cardHeadline(withAliases), "陆文（阿文、陆大人）", "别称只摆前两个");
+  assert.equal(cardHeadline(withAliases), "陆文（阿文、陆大人）");
+  // 设定不摆别称：名字是什么就显示什么
   assert.equal(cardHeadline(card(2, "setting", "藏书阁")), "藏书阁");
-  assert.equal(kindLabel("person"), "人物");
-  assert.equal(kindLabel("setting"), "设定");
-  assert.equal(kindLabel("creature"), "creature", "字典里没有的照原样露出来");
-  assert.equal(attributeCount(withAliases), 0);
 });

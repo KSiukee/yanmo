@@ -264,6 +264,7 @@ fn main() {
             commands::foreshadow::foreshadow_move,
             commands::foreshadow::foreshadow_delete,
             commands::fragment::fragment_update,
+            commands::scene::scene_list,
             commands::scene::save_scene_fields,
             commands::writing::writing_today,
             commands::writing::writing_overview,

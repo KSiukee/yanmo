@@ -112,9 +112,12 @@ import { useShelf, type Shelf } from "./shelf";
 import { useCompile, type CompileState } from "./compile";
 import { useChapterNote, type ChapterNote } from "./note";
 import { useSceneFields, type SceneState } from "./scene";
-import { useEntityPanel, type EntityPanelState } from "../components/entity-panel";
-import { useForeshadowPanel, type ForeshadowPanelState } from "../components/foreshadow-panel";
-import { useLore, type LoreState } from "../components/lore";
+import { useLoreParts } from "../components/lore-parts";
+import type { EntityPanelState } from "../components/entity-panel";
+import type { ForeshadowPanelState } from "../components/foreshadow-panel";
+import type { ScenePanelState } from "../components/scene-panel";
+import type { CreatorPanelState } from "../components/creator-panel";
+import type { LoreState } from "../components/lore";
 import { useSnapshots, type Snapshots } from "./snapshots";
 import { DEFAULT_QUOTE_STYLE, useTypeset, type TypesetState } from "./typeset";
 import { useLocation, type LocationState } from "./location";
@@ -150,9 +153,13 @@ export interface EditorSession {
   scene: SceneState;
   /** 设定卡（人物 / 设定）：大纲冲突检测的数据源之一（「设定」弹窗第一页） */
   entities: EntityPanelState;
-  /** 伏笔：埋下的一条线头（「设定」弹窗第二页） */
+  /** 伏笔：埋下的一条线头（「大纲」弹窗一页） */
   foreshadows: ForeshadowPanelState;
-  /** 「设定」弹窗的外壳：开着没有、停在哪个页签 */
+  /** 场景卡：全书一眼看，就地补四格（「大纲」弹窗一页） */
+  scenes: ScenePanelState;
+  /** 创作流碎片池：灵感 / 事件 / 口述（创作流那一栏与「大纲」的事件页共用同一份） */
+  creator: CreatorPanelState;
+  /** 「大纲」弹窗的外壳：开着没有、停在哪个页签 */
   lore: LoreState;
   /** 编译：一份原稿 → 一种成品（投稿版 docx / 分章 txt / 合并 txt） */
   compile: CompileState;
@@ -928,11 +935,12 @@ export function useEditorSession(): EditorSession {
       },
     });
 
-    // 设定卡与伏笔：**打开才读**的两屏（各自的状态在 components/<域>-panel.ts）
-    const entities = useEntityPanel({ workId });
-    const foreshadows = useForeshadowPanel({ workId, currentChapter: currentNodeId });
-    // 外壳（可见性 + 页签）单独一件：它同时管两屏，放谁那儿都会让另一边去 import 它
-    const lore = useLore({ entities, foreshadows });
+    // 「大纲」那一族（人物与设定 / 事件 / 场景卡 / 伏笔）整块在 lore-parts.ts 里装配：
+    // 会话是唯一装配处，这里只留"把这一族接上"这一句（不然每加一页这里就长十行）。
+    const { entities, foreshadows, scenes, creator, lore } = useLoreParts({
+      workId,
+      currentChapter: currentNodeId,
+    });
 
     return {
       directory,
@@ -950,6 +958,8 @@ export function useEditorSession(): EditorSession {
       scene,
       entities,
       foreshadows,
+      scenes,
+      creator,
       lore,
       compile,
     };
@@ -972,6 +982,8 @@ export function useEditorSession(): EditorSession {
     scene,
     entities,
     foreshadows,
+    scenes,
+    creator,
     lore,
     compile,
   } = createParts();
@@ -1124,6 +1136,8 @@ export function useEditorSession(): EditorSession {
     scene,
     entities,
     foreshadows,
+    scenes,
+    creator,
     lore,
     compile,
     workId,

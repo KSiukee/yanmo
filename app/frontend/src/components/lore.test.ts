@@ -1,85 +1,106 @@
-// 「设定」弹窗外壳的接线验收：**打开才读、点哪条开哪页、收起时放下表单**。
+// 「大纲」弹窗外壳的接线验收：**打开才读、点哪页读哪页、切页/收起时放下表单**。
 //
-// 两屏自己的规则在核心与各自的 panel 里；这里只盯"外壳做对了没有"。
+// 五页各自的规则在核心与各自的 panel 里；这里只盯"外壳做对了没有"。
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ref } from "vue";
 
 import type { EntityPanelState } from "./entity-panel.ts";
 import type { ForeshadowPanelState } from "./foreshadow-panel.ts";
-import { useLore } from "./lore.ts";
+import type { ScenePanelState } from "./scene-panel.ts";
+import { useLore, type LoreOptions, type LoreTab } from "./lore.ts";
 
-/** 两屏的替身：只记"读了几次""表单收了几次"。 */
+/** 各页的替身：只记"读了几次""表单收了几次"。 */
 function fakePanes() {
-  const loads = { entities: 0, foreshadows: 0 };
-  const cancels = { entities: 0, foreshadows: 0 };
+  const loads: Record<string, number> = { entities: 0, foreshadows: 0, scenes: 0, events: 0 };
+  let cancels = 0;
   const entities = {
     load: async () => {
       loads.entities += 1;
-    },
-    cancelEdit: () => {
-      cancels.entities += 1;
     },
   } as unknown as EntityPanelState;
   const foreshadows = {
     load: async () => {
       loads.foreshadows += 1;
     },
-    cancelEdit: () => {
-      cancels.foreshadows += 1;
-    },
   } as unknown as ForeshadowPanelState;
-  return { loads, cancels, entities, foreshadows };
+  const scenes = {
+    load: async () => {
+      loads.scenes += 1;
+    },
+  } as unknown as ScenePanelState;
+  const options: LoreOptions = {
+    entities,
+    foreshadows,
+    scenes,
+    refreshEvents: async () => {
+      loads.events += 1;
+    },
+    cancelForms: () => {
+      cancels += 1;
+    },
+  };
+  return { loads, options, cancels: () => cancels };
 }
 
-test("一打开就落到要的那一页，并读那一片（不是两片一起读）", async () => {
+async function opened(tab?: LoreTab) {
   const panes = fakePanes();
-  const lore = useLore({ entities: panes.entities, foreshadows: panes.foreshadows });
-
-  assert.equal(lore.visible.value, false);
-  lore.show("foreshadows");
+  const lore = useLore(panes.options);
+  lore.show(tab);
   await Promise.resolve();
+  return { lore, panes };
+}
+
+test("默认停在「人物」那一页（先有人）", () => {
+  const panes = fakePanes();
+  const lore = useLore(panes.options);
+  assert.equal(lore.visible.value, false);
+  assert.equal(lore.tab.value, "persons");
+});
+
+test("打开就落到要的那一页，只读那一页", async () => {
+  const { lore, panes } = await opened("scenes");
   assert.equal(lore.visible.value, true);
-  assert.equal(lore.tab.value, "foreshadows");
-  assert.deepEqual(panes.loads, { entities: 0, foreshadows: 1 });
+  assert.equal(lore.tab.value, "scenes");
+  assert.deepEqual(panes.loads, { entities: 0, foreshadows: 0, scenes: 1, events: 0 });
+});
+
+test("人物与设定两页共用同一份名单（读一次就够）", async () => {
+  const { lore, panes } = await opened("settings");
+  assert.equal(panes.loads.entities, 1);
+  lore.pick("persons");
+  await Promise.resolve();
+  assert.equal(panes.loads.entities, 2, "换页签就重读一次（别拿旧账给作者看）");
+  assert.equal(panes.loads.events + panes.loads.scenes + panes.loads.foreshadows, 0);
+});
+
+test("事件那一页读的是碎片池那一份数据（不另开一条路）", async () => {
+  const { panes } = await opened("events");
+  assert.equal(panes.loads.events, 1);
+  assert.equal(panes.loads.entities + panes.loads.scenes + panes.loads.foreshadows, 0);
+});
+
+test("伏笔那一页只读伏笔", async () => {
+  const { panes } = await opened("foreshadows");
+  assert.equal(panes.loads.foreshadows, 1);
+  assert.equal(panes.loads.entities + panes.loads.scenes + panes.loads.events, 0);
+});
+
+test("换页签与收起：都把手上的表单放下（半填的不该下次冒出来）", async () => {
+  const { lore, panes } = await opened("persons");
+  assert.equal(panes.cancels(), 0);
+  lore.pick("settings");
+  assert.equal(panes.cancels(), 1);
+  lore.hide();
+  assert.equal(panes.cancels(), 2);
+  assert.equal(lore.visible.value, false);
 });
 
 test("不给页签就停在上一页（顶栏那个入口是这么用的）", async () => {
-  const panes = fakePanes();
-  const lore = useLore({ entities: panes.entities, foreshadows: panes.foreshadows });
-
-  lore.show("foreshadows");
+  const { lore, panes } = await opened("foreshadows");
   lore.hide();
   lore.show();
-  await Promise.resolve();
-  assert.equal(lore.tab.value, "foreshadows", "停在上一页");
-  assert.equal(panes.loads.foreshadows, 2);
-});
-
-test("换页签：读新那一页", async () => {
-  const panes = fakePanes();
-  const lore = useLore({ entities: panes.entities, foreshadows: panes.foreshadows });
-  lore.show("entities");
-  await Promise.resolve();
-  lore.pick("foreshadows");
   await Promise.resolve();
   assert.equal(lore.tab.value, "foreshadows");
-  assert.deepEqual(panes.loads, { entities: 1, foreshadows: 1 });
-});
-
-test("收起：两屏手上的表单都放下（半填的不该下次冒出来）", () => {
-  const panes = fakePanes();
-  const lore = useLore({ entities: panes.entities, foreshadows: panes.foreshadows });
-  lore.show();
-  lore.hide();
-  assert.equal(lore.visible.value, false);
-  assert.deepEqual(panes.cancels, { entities: 1, foreshadows: 1 });
-});
-
-test("ref 由外壳拿着（组件据此渲染）", () => {
-  const panes = fakePanes();
-  const lore = useLore({ entities: panes.entities, foreshadows: panes.foreshadows });
-  assert.equal(typeof lore.visible.value, "boolean");
-  assert.ok(ref(lore.tab.value));
+  assert.equal(panes.loads.foreshadows, 2);
 });

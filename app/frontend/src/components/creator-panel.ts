@@ -7,7 +7,7 @@
 // - **记下来不打断**：写一条碎片没有别的副作用（不动正文、不动叩问的问题状态）；
 // - **删是软删**：所以"撤销"当场就能兑现（捞回就是把时间戳抹掉）。
 
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch, type Ref } from "vue";
 
 import { asError } from "../api/errors.ts";
 import {
@@ -20,7 +20,6 @@ import {
   type Fragment,
   type FragmentKind,
 } from "../api/fragment.ts";
-import type { EditorSession } from "../editor/session.ts";
 import { t } from "../locales/index.ts";
 import {
   canCarryStoryTime,
@@ -30,10 +29,33 @@ import {
   visibleFragments,
 } from "./creator.ts";
 
-/** 面板要的那点外部东西：哪本书，以及编辑会话（拿"当前这一章"做关联锚点）。 */
+/** 面板要的那点外部东西：哪本书，以及"当前这一章"（记一条时做关联锚点）。 */
 export interface CreatorPanelOptions {
-  workId: number | null;
-  session: EditorSession;
+  workId: Ref<number | null>;
+  /** 当前这一章（没有就是空）：记一条时把"是在这一章写的"记成锚点 */
+  currentChapter: Ref<number | null>;
+}
+
+/** 这一屏给界面用的那一份（创作流那一栏与「大纲」的事件页共用它）。 */
+export interface CreatorPanelState {
+  board: Ref<CreatorBoard | null>;
+  busy: Ref<boolean>;
+  errorText: Ref<string>;
+  filter: Ref<FragmentKind | "all">;
+  draftKind: Ref<FragmentKind>;
+  justSaved: Ref<string>;
+  lastDeleted: Ref<number | null>;
+  editing: Ref<FragmentDraft | null>;
+  options: Ref<{ kind: FragmentKind | "all"; count: number }[]>;
+  list: Ref<Fragment[]>;
+  canJot: Ref<boolean>;
+  refresh: () => Promise<void>;
+  jot: (body: string, kind?: FragmentKind) => Promise<boolean>;
+  startEdit: (item: Fragment) => void;
+  cancelEdit: () => void;
+  saveEdit: () => Promise<boolean>;
+  remove: (id: number) => Promise<void>;
+  undo: () => Promise<void>;
 }
 
 /** 改一条事件时手上那一份（**数字那一栏是文本框里的原文**，存的时候才解析）。 */
@@ -48,7 +70,7 @@ export interface FragmentDraft {
   flashback: boolean;
 }
 
-export function useCreatorPanel(props: CreatorPanelOptions) {
+export function useCreatorPanel(deps: CreatorPanelOptions): CreatorPanelState {
   const board = ref<CreatorBoard | null>(null);
   const busy = ref(false);
   /** 失败时那句**已经渲染好的**话（`CoreError` 走字典渲染，界面不拼中文也不露码）。 */
@@ -64,10 +86,10 @@ export function useCreatorPanel(props: CreatorPanelOptions) {
   const editing = ref<FragmentDraft | null>(null);
 
   /** 当前这一章：记一条时把"是在这一章写的"记成锚点 */
-  const currentChapter = computed(() => props.session.directory.current.value);
+  const currentChapter = computed(() => deps.currentChapter.value);
   const options = computed(() => filterOptions(board.value));
   const list = computed(() => visibleFragments(board.value?.fragments ?? [], filter.value));
-  const canJot = computed(() => props.workId !== null);
+  const canJot = computed(() => deps.workId.value !== null);
 
   /** 报错：把 `CoreError` 渲染好的那一句直接摆出来（它本来就是按字典拼的）。 */
   function report(error: unknown) {
@@ -75,7 +97,7 @@ export function useCreatorPanel(props: CreatorPanelOptions) {
   }
 
   async function refresh() {
-    const work = props.workId;
+    const work = deps.workId.value;
     if (!work) {
       board.value = null;
       return;
@@ -97,15 +119,16 @@ export function useCreatorPanel(props: CreatorPanelOptions) {
    * 锚点由界面给（核心只存不懂）：开着某一章就记成 `chapter:<章 id>`，
    * 于是"这条是写这一章时想起来的"永远查得到（将来按章找回来也认它）。
    */
-  async function jot(body: string): Promise<boolean> {
-    const work = props.workId;
+  async function jot(body: string, kind?: FragmentKind): Promise<boolean> {
+    const work = deps.workId.value;
     if (!work || !body.trim()) return false;
     const node = currentChapter.value;
     const anchors = node === null ? [] : [`chapter:${node}`];
     try {
       busy.value = true;
       errorText.value = "";
-      const saved = await fragmentAdd(work, draftKind.value, body, "typed", anchors);
+      // 不带 kind 就用"记成"里选的那一档；带了就用它（大纲面板那一页只用事件）
+      const saved = await fragmentAdd(work, kind ?? draftKind.value, body, "typed", anchors);
       justSaved.value = t("creator.jot.done", {
         kind: kindLabel(saved.kind),
         body: saved.body,
@@ -143,7 +166,7 @@ export function useCreatorPanel(props: CreatorPanelOptions) {
 
   /** 存下这一条（正文 + 故事时间一次给全）。 */
   async function saveEdit() {
-    const work = props.workId;
+    const work = deps.workId.value;
     const current = editing.value;
     if (!work || !current || !current.body.trim()) return false;
     try {
@@ -199,7 +222,7 @@ export function useCreatorPanel(props: CreatorPanelOptions) {
   }
 
   onMounted(() => void refresh());
-  watch(() => props.workId, () => {
+  watch(() => deps.workId.value, () => {
     // 换书：筛选项、回执与编辑框都不该跟着新书走（它们说的是上一本的事）
     filter.value = "all";
     justSaved.value = "";
@@ -220,7 +243,6 @@ export function useCreatorPanel(props: CreatorPanelOptions) {
     options,
     list,
     canJot,
-    currentChapter,
     refresh,
     jot,
     startEdit,

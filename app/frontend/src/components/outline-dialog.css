@@ -1,0 +1,38 @@
+/* 「大纲」弹窗自己的东西：盒子宽度 + 顶上那五片页签。
+   公共壳（遮罩 / 卡片 / 标题 / 按钮）在 dialog.css 里，靠 scoped src 叠加。 */
+
+.all__box {
+  width: min(760px, 100%);
+}
+
+.all__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 10px;
+  border-bottom: 1px solid var(--ym-line);
+}
+
+.all__tab {
+  padding: 3px 12px;
+  border: 1px solid var(--ym-line);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--ym-ink-soft);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.all__tab--on {
+  background: var(--ym-paper);
+  border-color: var(--ym-accent);
+  color: var(--ym-accent);
+}
+
+/* 每一页都自己滚：弹窗高度封顶，别把整页撑开 */
+.all__box :deep(section) {
+  min-height: 0;
+  overflow: auto;
+}

@@ -13,13 +13,23 @@ import { ref, type Ref } from "vue";
 
 import type { EntityPanelState } from "./entity-panel.ts";
 import type { ForeshadowPanelState } from "./foreshadow-panel.ts";
+import type { ScenePanelState } from "./scene-panel.ts";
 
-/** 面板的两个页签（稳定码，界面上的字在字典 `lore.tab.*` 里）。 */
-export type LoreTab = "entities" | "foreshadows";
+/**
+ * 「大纲」面板的五个页签（稳定码，界面上的字在字典 `lore.tab.*` 里）。
+ *
+ * 顺序就是"先有人、再有世界、再有发生了什么"：人物 → 设定 → 事件 → 场景卡 → 伏笔。
+ */
+export type LoreTab = "persons" | "settings" | "events" | "scenes" | "foreshadows";
 
 export interface LoreOptions {
   entities: EntityPanelState;
   foreshadows: ForeshadowPanelState;
+  scenes: ScenePanelState;
+  /** 事件那一页用的是碎片池那一份状态（同一份数据，别读第二遍） */
+  refreshEvents: () => Promise<void>;
+  /** 切页签时把手上半填的表单放下（两屏共用的入口） */
+  cancelForms: () => void;
 }
 
 export interface LoreState {
@@ -34,10 +44,13 @@ export interface LoreState {
 
 export function useLore(options: LoreOptions): LoreState {
   const visible = ref(false);
-  const tab = ref<LoreTab>("entities");
+  const tab = ref<LoreTab>("persons");
 
+  /** 打开某一页就读那一页（不是五页一起读）。 */
   async function openPane(next: LoreTab) {
-    if (next === "entities") await options.entities.load();
+    if (next === "persons" || next === "settings") await options.entities.load();
+    else if (next === "events") await options.refreshEvents();
+    else if (next === "scenes") await options.scenes.load();
     else await options.foreshadows.load();
   }
 
@@ -51,11 +64,11 @@ export function useLore(options: LoreOptions): LoreState {
     },
     hide: () => {
       visible.value = false;
-      options.entities.cancelEdit();
-      options.foreshadows.cancelEdit();
+      options.cancelForms();
     },
     pick: (next) => {
       tab.value = next;
+      options.cancelForms();
       void openPane(next);
     },
   };

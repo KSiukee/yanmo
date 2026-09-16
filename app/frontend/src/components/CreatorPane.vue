@@ -20,7 +20,6 @@ import {
   storyLabel,
   WRITABLE_KINDS,
 } from "./creator.ts";
-import { useCreatorPanel } from "./creator-panel.ts";
 import EventEdit from "./EventEdit.vue";
 import OutlineCheck from "./OutlineCheck.vue";
 
@@ -49,7 +48,7 @@ const {
   saveEdit,
   remove,
   undo,
-} = useCreatorPanel(props);
+} = props.session.creator;
 
 const draft = ref("");
 
@@ -170,7 +169,7 @@ async function save() {
          点「去设定卡改」把那一屏打开（两块住同一栏，所以不必再开一栏） -->
     <OutlineCheck
       :session="session"
-      @open-entities="session.lore.show('entities')"
+      @open-entities="(tab) => session.lore.show(tab)"
       @open-foreshadows="session.lore.show('foreshadows')"
     />
   </aside>
