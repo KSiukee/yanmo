@@ -39,6 +39,7 @@ const {
   visible,
   rows,
   shown,
+  dropRows,
   busy,
   errorText,
   columns,
@@ -132,6 +133,19 @@ function toggleCastCard(node_id: number) {
   else void openCast(node_id);
 }
 
+/**
+ * 点在表里别处：**把选人卡收起来**。
+ *
+ * 点在这一格里面（勾人 / 收起按钮）不动它——不然勾一下卡片就没了，
+ * 连选几个人这件事根本做不成。
+ */
+function onTableClick(event: MouseEvent) {
+  if (castFor.value === null) return;
+  const target = event.target as HTMLElement | null;
+  if (target?.closest(".grid__cast")) return;
+  closeCast();
+}
+
 // ── 拖行：上三分之一排前面、下三分之一排后面、中间放进卷里 ──────────────
 const dragging = ref<number | null>(null);
 const dropOn = ref<number | null>(null);
@@ -158,14 +172,7 @@ function onDragOver(row: OutlineRowDto, event: DragEvent) {
   // 只有卷收得下东西；别的行中间那一段退成"排在前后"，别画一个骗人的落点
   if (zone === "inside" && row.kind !== "volume") zone = ratio < 0.5 ? "before" : "after";
   // 会成环（拖进自己那一支）就整个不画落点
-  if (
-    dropPlan(
-      rows.value.map((item) => ({ id: item.node_id, parent_id: item.parent_id })),
-      id,
-      row.node_id,
-      zone,
-    ) === null
-  ) {
+  if (dropPlan(dropRows.value, id, row.node_id, zone) === null) {
     dropOn.value = null;
     return;
   }
@@ -242,7 +249,7 @@ watch(visible, async (on) => {
       </nav>
 
       <div v-if="shown.length > 0" class="grid__scroll">
-        <table class="grid__table">
+        <table class="grid__table" @click="onTableClick">
           <thead>
             <tr>
               <th
@@ -327,6 +334,7 @@ watch(visible, async (on) => {
                         <input
                           type="checkbox"
                           :checked="row.cast.some((member) => member.entity_id === card.id)"
+                          :disabled="busy"
                           @change="void toggleCast(row.node_id, card.id)"
                         />
                         <span>{{ card.name }}</span>

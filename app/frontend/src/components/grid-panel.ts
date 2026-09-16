@@ -35,8 +35,10 @@ export interface GridPanelState {
   /** 这一屏开着没有（它是**整块主区**上的一层，不是小弹窗） */
   visible: Ref<boolean>;
   rows: Ref<OutlineRowDto[]>;
-  /** 表里此刻真摆着的行（折叠与筛选之后）——粘贴与拖动都按它算落点 */
+  /** 表里此刻真摆着的行（折叠与筛选之后）——粘贴按它算落点 */
   shown: ComputedRef<OutlineRowDto[]>;
+  /** 整张表的行（`{id, parent_id}`，拖动落点用；拖动中每帧都要读，所以先算好） */
+  dropRows: ComputedRef<{ id: number; parent_id: number | null }[]>;
   busy: Ref<boolean>;
   /** 失败时那句已经渲染好的话（`CoreError` 走字典渲染） */
   errorText: Ref<string>;
@@ -110,6 +112,15 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
   );
   /** 露出来的列（保持 COLUMNS 的固定顺序）。 */
   const shownColumns = computed(() => COLUMNS.filter((spec) => columns.value.includes(spec.key)));
+  /**
+   * 拖动落点算法要的那点行信息（`{id, parent_id}`），**先算好**。
+   *
+   * 放在这儿算一次，而不是每次 `dragover` 现从 `rows` 摊一遍：拖动时那个事件每秒要响几十次，
+   * 几百章的书上等于每帧重建一张表（白发热）。
+   */
+  const dropRows = computed(() =>
+    rows.value.map((row) => ({ id: row.node_id, parent_id: row.parent_id })),
+  );
 
   const cast = useGridCast({ workId: deps.workId, replace, rowOf, report, busy });
 
@@ -241,12 +252,7 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
    * （只挪手上那一行的话，界面上会留着一份"看起来挪过了"的假象）。
    */
   async function drop(dragged_id: number, target_id: number, zone: DropZone) {
-    const landing = dropPlan(
-      rows.value.map((row) => ({ id: row.node_id, parent_id: row.parent_id })),
-      dragged_id,
-      target_id,
-      zone,
-    );
+    const landing = dropPlan(dropRows.value, dragged_id, target_id, zone);
     if (landing === null) return;
     try {
       busy.value = true;
@@ -290,6 +296,7 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
     visible,
     rows,
     shown,
+    dropRows,
     busy,
     errorText,
     columns,
