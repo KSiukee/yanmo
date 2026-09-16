@@ -1,6 +1,6 @@
-// 「设定」面板的**外壳状态**：开着没有、停在哪个页签。
+// 「资料」面板的**外壳状态**：开着没有、停在哪个页签。
 //
-// 单独成文件的原因：它**同时管两屏**（人物与设定 / 伏笔）——
+// 单独成文件的原因：它**同时管好几屏**（总纲 / 人物与设定 / 事件 / 伏笔）——
 // 可见性与页签不属于其中任何一屏，放在任何一边都会让另一边去 import 它。
 //
 // 三条分寸：
@@ -13,21 +13,24 @@ import { ref, type Ref } from "vue";
 
 import type { EntityPanelState } from "./entity-panel.ts";
 import type { ForeshadowPanelState } from "./foreshadow-panel.ts";
+import type { StorylinePanelState } from "./storyline-panel.ts";
 
 /**
- * 「大纲」面板的五个页签（稳定码，界面上的字在字典 `lore.tab.*` 里）。
+ * 「资料」面板的五片页签（稳定码，界面上的字在字典 `lore.tab.*` 里）。
  *
- * 顺序就是"先有人、再有世界、再有发生了什么"：人物 → 设定 → 事件 → 伏笔。
+ * 顺序就是"先说这本书讲什么，再有人、再有世界、再有发生了什么"：
+ * 总纲 → 人物 → 设定 → 事件 → 伏笔。
  * （**场景卡那一页撤了**：它的四格进了「大纲」表——一章一行就地填，见 grid.ts。）
  */
-export type LoreTab = "persons" | "settings" | "events" | "foreshadows";
+export type LoreTab = "storyline" | "persons" | "settings" | "events" | "foreshadows";
 
 export interface LoreOptions {
+  storyline: StorylinePanelState;
   entities: EntityPanelState;
   foreshadows: ForeshadowPanelState;
   /** 事件那一页用的是碎片池那一份状态（同一份数据，别读第二遍） */
   refreshEvents: () => Promise<void>;
-  /** 切页签时把手上半填的表单放下（两屏共用的入口） */
+  /** 切页签时把手上半填的表单放下（几屏共用的入口） */
   cancelForms: () => void;
 }
 
@@ -47,7 +50,8 @@ export function useLore(options: LoreOptions): LoreState {
 
   /** 打开某一页就读那一页（不是五页一起读）。 */
   async function openPane(next: LoreTab) {
-    if (next === "persons" || next === "settings") await options.entities.load();
+    if (next === "storyline") await options.storyline.load();
+    else if (next === "persons" || next === "settings") await options.entities.load();
     else if (next === "events") await options.refreshEvents();
     else await options.foreshadows.load();
   }
@@ -63,10 +67,13 @@ export function useLore(options: LoreOptions): LoreState {
     hide: () => {
       visible.value = false;
       options.cancelForms();
+      // 总纲是"一边写一边想"的一段长文：收起面板时把它存下（与失焦即存同一条手感）
+      void options.storyline.save();
     },
     pick: (next) => {
       tab.value = next;
       options.cancelForms();
+      void options.storyline.save();
       void openPane(next);
     },
   };

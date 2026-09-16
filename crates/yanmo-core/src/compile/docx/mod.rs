@@ -1,7 +1,8 @@
 //! 投稿版 docx：**正文（可限字数）+ 大纲**，按阅读顺序排，最后打成一个 ZIP 包。
 //!
-//! 三件事说清楚：
+//! 四件事说清楚：
 //! - **正文上限**按段落累加（逐字含标点口径），不把一个自然段切成两半；
+//! - **故事总纲**（作者写了才有）在大纲前面单独一节——整本书讲什么，编辑先看这一段；
 //! - **大纲**照阅读顺序列卷/章标题与每章那句话（没写就不补占位）；
 //! - **能确定怎么排的都排完再打包**：同一次编译渲染两遍必须逐字节一样（导出幂等铁律）。
 
@@ -47,6 +48,15 @@ pub(crate) fn render(work: &Work, items: &[Item], options: &CompileOptions) -> R
     }
 
     if options.with_outline {
+        // 故事总纲：整本书那几段（作者没写就整节不出现——绝不补占位句子）
+        if !work.storyline.trim().is_empty() {
+            body.push_str(&x::paragraph(Some("YanmoTitle"), x::STORYLINE_HEADING));
+            for line in work.storyline.split('\n') {
+                if !line.trim().is_empty() {
+                    body.push_str(&x::paragraph(Some("YanmoPlain"), line.trim()));
+                }
+            }
+        }
         body.push_str(&x::paragraph(Some("YanmoTitle"), x::OUTLINE_HEADING));
         for item in items {
             if let Some(line) = item.outline_line() {

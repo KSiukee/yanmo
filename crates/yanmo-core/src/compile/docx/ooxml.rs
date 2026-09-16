@@ -24,6 +24,12 @@
 /// 投稿包里大纲那一节的标题（**写进文件的内容**，跟稿子走，不随界面语言变）。
 pub(crate) const OUTLINE_HEADING: &str = "大纲";
 
+/// 投稿包里故事总纲那一节的标题（同上：写进文件的内容）。
+///
+/// 与「大纲」分开两节：大纲是**逐章清单**（一章一行），总纲是**整本书那几段**——
+/// 编辑读稿时先看总纲知道这本书要干什么，再顺着大纲看每章怎么落。
+pub(crate) const STORYLINE_HEADING: &str = "故事总纲";
+
 /// 一个段落：可选样式 + 转义后的文字。
 pub(crate) fn paragraph(style: Option<&str>, text: &str) -> String {
     let props = match style {
@@ -50,7 +56,7 @@ pub(crate) fn escape(text: &str) -> String {
     out
 }
 
-/// 正文（document.xml）：书名 → 简介 → 正文 → 大纲。
+/// 正文（document.xml）：书名 → 简介 → 正文 →（故事总纲）→ 大纲。
 pub(crate) fn document(body: &str) -> String {
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n\

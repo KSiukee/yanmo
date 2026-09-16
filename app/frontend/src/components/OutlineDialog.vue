@@ -1,9 +1,12 @@
 <script setup lang="ts">
-// 「大纲」弹窗：**大纲本体的一处收口**——人物 / 设定 / 事件 / 场景卡 / 伏笔。
+// 「资料」弹窗：**大纲本体的那一处收口**——总纲 / 人物 / 设定 / 事件 / 伏笔。
 //
 // 为什么收在一处：这些东西本来散在三个地方（人物与伏笔在弹窗里、事件在创作流的碎片池、
 // 场景卡四格要打开那一章才填得到），作者得先记住"什么在哪儿"才用得起来——
 // 真机反馈就是"缺事件、冲突、结果这些要素"。现在顶上五片页签，一样一页。
+//
+// 与「大纲」表的（行 × 列）大表分工：**表管"逐章往下填"，这里管"这本书里有什么"**；
+// 总纲那一页是"整本书讲什么"（它不逐章，所以不在表里）。
 //
 // 这个文件只管**外壳**（遮罩 + 卡片 + 页签 + 现在露哪一页）：
 // 每一页的字段与动作在各自的组件里；读哪一页由 [`useLore`](./lore.ts) 说了算。
@@ -12,12 +15,13 @@ import { t } from "../locales/index.ts";
 import EntityPane from "./EntityPane.vue";
 import EventPane from "./EventPane.vue";
 import ForeshadowPane from "./ForeshadowPane.vue";
+import StorylinePane from "./StorylinePane.vue";
 
 const props = defineProps<{ session: EditorSession }>();
 const { tab, pick, hide } = props.session.lore;
 
-/** 五片页签的顺序（字典键 `lore.tab.*`）：先有人、再有世界、再有发生了什么。 */
-const TABS = ["persons", "settings", "events", "foreshadows"] as const;
+/** 五片页签的顺序（字典键 `lore.tab.*`）：先说这本书讲什么，再有人、再有世界、再有发生了什么。 */
+const TABS = ["storyline", "persons", "settings", "events", "foreshadows"] as const;
 </script>
 
 <template>
@@ -41,7 +45,8 @@ const TABS = ["persons", "settings", "events", "foreshadows"] as const;
         </button>
       </nav>
 
-      <EntityPane v-if="tab === 'persons'" :session="session" kind="person" />
+      <StorylinePane v-if="tab === 'storyline'" :session="session" />
+      <EntityPane v-else-if="tab === 'persons'" :session="session" kind="person" />
       <EntityPane v-else-if="tab === 'settings'" :session="session" kind="setting" />
       <EventPane v-else-if="tab === 'events'" :session="session" />
       <ForeshadowPane v-else :session="session" />

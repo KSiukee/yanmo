@@ -115,6 +115,7 @@ import { useSceneFields, type SceneState } from "./scene";
 import { useLoreParts } from "../components/lore-parts";
 import { useOutlineGrid, type GridPanelState } from "../components/grid-panel";
 import type { EntityPanelState } from "../components/entity-panel";
+import type { StorylinePanelState } from "../components/storyline-panel";
 import type { ForeshadowPanelState } from "../components/foreshadow-panel";
 import type { CreatorPanelState } from "../components/creator-panel";
 import type { LoreState } from "../components/lore";
@@ -151,7 +152,9 @@ export interface EditorSession {
   note: ChapterNote;
   /** 打开的是场景卡时的那四格（视角 / 目标 / 冲突 / 结果）：单独存、单独显示 */
   scene: SceneState;
-  /** 设定卡（人物 / 设定）：大纲冲突检测的数据源之一（「设定」弹窗第一页） */
+  /** 故事总纲：整本书讲什么（「资料」弹窗第一页；大纲表表头摆它的摘要） */
+  storyline: StorylinePanelState;
+  /** 设定卡（人物 / 设定）：大纲冲突检测的数据源之一（「资料」弹窗一页） */
   entities: EntityPanelState;
   /** 伏笔：埋下的一条线头（「大纲」弹窗一页） */
   foreshadows: ForeshadowPanelState;
@@ -940,7 +943,7 @@ export function useEditorSession(): EditorSession {
 
     // 「大纲」那一族（人物与设定 / 事件 / 场景卡 / 伏笔）整块在 lore-parts.ts 里装配：
     // 会话是唯一装配处，这里只留"把这一族接上"这一句（不然每加一页这里就长十行）。
-    const { entities, foreshadows, creator, lore } = useLoreParts({
+    const { storyline, entities, foreshadows, creator, lore } = useLoreParts({
       workId,
       currentChapter: currentNodeId,
     });
@@ -949,6 +952,9 @@ export function useEditorSession(): EditorSession {
       workId,
       openNode: (node_id) => switchChapter(node_id),
       createChapter: (parent_id) => directory.create(parent_id, "chapter", ""),
+      // 表头那一行总纲：表收起来、跳到「资料 → 总纲」去写（表自己管收尾，见 grid-panel）
+      storyline: storyline.text,
+      openStoryline: () => lore.show("storyline"),
     });
 
     return {
@@ -965,6 +971,7 @@ export function useEditorSession(): EditorSession {
       typeset,
       note,
       scene,
+      storyline,
       entities,
       foreshadows,
       creator,
@@ -989,6 +996,7 @@ export function useEditorSession(): EditorSession {
     typeset,
     note,
     scene,
+    storyline,
     entities,
     foreshadows,
     creator,
@@ -1143,6 +1151,7 @@ export function useEditorSession(): EditorSession {
     typeset,
     note,
     scene,
+    storyline,
     entities,
     foreshadows,
     creator,

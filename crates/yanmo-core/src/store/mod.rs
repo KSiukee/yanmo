@@ -59,6 +59,7 @@ mod snapshot;
 mod trash;
 mod volume;
 mod work;
+mod work_text;
 mod writing;
 
 pub use appearance::{Appearance, ResolvedAppearance};

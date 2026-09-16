@@ -283,6 +283,8 @@ fn main() {
             commands::work::rename_work,
             commands::work::set_work_language,
             commands::work::set_work_summary,
+            commands::work::work_storyline,
+            commands::work::work_set_storyline,
             commands::work::naming_rewrite_preview,
             commands::work::naming_rewrite_apply,
             commands::backup::backup_status,

@@ -141,6 +141,25 @@ pub fn set_work_summary(
     data.with_store(|store: &mut Store| store.set_work_summary(work_id, &summary))
 }
 
+/// 读 / 写故事总纲（**整本书讲什么**：立意 / 主线 / 卖点）。
+///
+/// 与作品简介分开两格：简介是给编辑看的（投稿 docx 里摆在书名下），总纲是给自己看的
+/// （投稿包里在大纲前面单独一节）。两处都**存作者的原话**：不 trim、不改标点、不动换行。
+#[tauri::command(rename_all = "snake_case")]
+pub fn work_storyline(data: State<'_, AppData>, work_id: i64) -> Result<String, ApiError> {
+    data.with_store(|store: &mut Store| store.work_storyline(work_id))
+}
+
+/// 写故事总纲，回**库里真有的那一份**（界面显示的永远是库里的值）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn work_set_storyline(
+    data: State<'_, AppData>,
+    work_id: i64,
+    text: String,
+) -> Result<String, ApiError> {
+    data.with_store(|store: &mut Store| store.set_work_storyline(work_id, &text))
+}
+
 /// 把一本书导出成 `txt`（分章，结构用目录表达）或 `json`（单文件，结构与正文都在里面）。
 ///
 /// 落在"文档 / 研墨导出 / 书名"下；同样的内容不会重复写，旧文件会被清掉——

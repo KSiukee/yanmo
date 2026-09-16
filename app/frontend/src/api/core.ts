@@ -692,6 +692,8 @@ export const COMMANDS = {
   emptyTrash: "empty_trash",
   exportWork: "export_work",
   setWorkSummary: "set_work_summary",
+  workStoryline: "work_storyline",
+  workSetStoryline: "work_set_storyline",
   namingRewritePreview: "naming_rewrite_preview",
   namingRewriteApply: "naming_rewrite_apply",
   compilePresets: "compile_presets",

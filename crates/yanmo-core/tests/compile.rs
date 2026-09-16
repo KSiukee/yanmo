@@ -22,10 +22,13 @@ fn fresh() -> (tempfile::TempDir, Store) {
     (dir, store)
 }
 
-/// 一本书：一个卷 + 两章（各有正文与"一句话"）+ 作品简介。
+/// 一本书：一个卷 + 两章（各有正文与"一句话"）+ 作品简介 + 故事总纲。
 fn book(store: &mut Store) -> i64 {
     let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
     store.set_work_summary(work.id, "一个关于等待的故事。").unwrap();
+    store
+        .set_work_storyline(work.id, "主线：他要把那盏灯等的那个人找回来。\n卖点：灯下坐的是谁，没人知道。")
+        .unwrap();
     let volume = store.list_nodes(work.id).unwrap()[0].id;
     store.rename_node(volume, "第一卷 夜行").unwrap();
 
@@ -125,6 +128,15 @@ fn submission_docx_is_a_real_zip_with_the_parts_word_expects() {
     assert!(document.contains("长夜"));
     assert!(document.contains("一个关于等待的故事。"), "作品简介要进投稿包");
     assert!(document.contains("大纲"));
+    // 故事总纲：**在大纲前面单独一节**，整本书那几段（编辑先看这一段）
+    assert!(document.contains("故事总纲"), "投稿包要有总纲那一节：{document}");
+    assert!(document.contains("他要把那盏灯等的那个人找回来。"), "总纲的原文要进投稿包");
+    let storyline_at = document.find("故事总纲").unwrap();
+    assert!(
+        document[..storyline_at].contains("茶还温着"),
+        "正文在总纲之前（与简介同一段排法）"
+    );
+    assert!(storyline_at < document.find("大纲").unwrap(), "总纲在大纲前面");
     assert!(document.contains("第一卷 夜行"));
     assert!(document.contains("第一章 门 —— 他推开门，屋里没有人。"), "大纲里要有每章那句话");
     let outline_at = document.find("大纲").unwrap();

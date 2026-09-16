@@ -29,6 +29,10 @@ export interface GridPanelOptions {
   openNode: (node_id: number) => Promise<void>;
   /** 在某个分组下面新建一章（表尾那个「+」）；返回新节点的 id */
   createChapter: (parent_id: number | null) => Promise<number | null>;
+  /** 故事总纲那一段（表头摆它的摘要；表管逐章，总纲是整本书那一层） */
+  storyline: Ref<string>;
+  /** 点表头那一行：收起表、跳到「资料 → 总纲」 */
+  openStoryline: () => void;
 }
 
 export interface GridPanelState {
@@ -56,6 +60,8 @@ export interface GridPanelState {
   castFor: Ref<number | null>;
   /** 这本书的人物卡（选人卡打开时读的） */
   castCards: Ref<import("../api/entity.ts").EntityCard[]>;
+  /** 故事总纲那一段（只读；改它去「资料 → 总纲」） */
+  storyline: Ref<string>;
   show: () => void;
   hide: () => void;
   toggle: () => void;
@@ -80,6 +86,8 @@ export interface GridPanelState {
   toggleCast: (node_id: number, entity_id: number) => Promise<void>;
   /** 跳到这一章（顺手把表收起来） */
   open: (node_id: number) => Promise<void>;
+  /** 跳到「资料 → 总纲」（表头那一行点一下） */
+  openStoryline: () => void;
   /** 在这个分组下面加一章 */
   addChapter: (parent_id: number | null) => Promise<void>;
 }
@@ -212,6 +220,12 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
     await deps.openNode(node_id);
   }
 
+  /** 点表头那一行总纲：**先把表收干净**（选人卡、回执都放下），再交给会话去开那一页。 */
+  function openStoryline() {
+    hide();
+    deps.openStoryline();
+  }
+
   /**
    * 整片粘贴：**锚点就是作者点下去的那一格**，往右往下铺。
    *
@@ -304,6 +318,18 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
     },
   );
 
+  /** 收起这一整屏：回执与半开的选人卡都放下（**收尾只此一处**，show/toggle/跳总纲都走它）。 */
+  function hide() {
+    visible.value = false;
+    justSaved.value = "";
+    cast.reset();
+  }
+
+  function show() {
+    visible.value = true;
+    void load();
+  }
+
   return {
     visible,
     rows,
@@ -318,24 +344,12 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
     justSaved,
     castFor: cast.openFor,
     castCards: cast.cards,
-    show: () => {
-      visible.value = true;
-      void load();
-    },
-    hide: () => {
-      visible.value = false;
-      justSaved.value = "";
-      cast.reset();
-    },
+    storyline: deps.storyline,
+    show,
+    hide,
     toggle: () => {
-      if (visible.value) {
-        visible.value = false;
-        justSaved.value = "";
-        cast.reset();
-      } else {
-        visible.value = true;
-        void load();
-      }
+      if (visible.value) hide();
+      else show();
     },
     load,
     toggleColumn,
@@ -348,6 +362,7 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
     closeCast: cast.close,
     toggleCast: cast.toggle,
     open,
+    openStoryline,
     addChapter,
   };
 }

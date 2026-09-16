@@ -114,6 +114,11 @@ pub struct Work {
     pub target_words: Option<i64>,
     /// 作品简介（v6 起；作者手填，空串＝没写过）。投稿包的大纲要用它。
     pub summary: String,
+    /// 故事总纲（v14 起；作者手填，空串＝没写过）：这本书的立意 / 主线 / 卖点。
+    ///
+    /// 与 [`Work::summary`] 分开的理由见 `db::migrations_v14`：简介是给别人看的，
+    /// 总纲是给自己看的。
+    pub storyline: String,
     /// 创建时间（unix 毫秒）。
     pub created_at: i64,
     /// 最近编辑时间。

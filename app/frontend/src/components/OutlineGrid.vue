@@ -15,11 +15,16 @@
 // - **整片粘贴**：从 Excel / WPS 粘进来按 Tab 与换行拆格，锚点就是点下去的那一格；
 // - **按住章名那一格拖动**：调到别的卷里 / 换个位置（落点分上中下三段）；
 // - 表尾 `+ 加一章`，卷可以收起。
+//
+// 表头另有一行**故事总纲**（整本书讲什么）：表管逐章，总纲是这本书那一层，
+// 所以它不在格子里，而是点一下跳进「资料 → 总纲」去写（见 `storyline.ts`）。
 import { nextTick, ref, watch } from "vue";
 
 import type { EditorSession } from "../editor/session.ts";
 import { t } from "../locales/index.ts";
 import { dropPlan, type DropZone } from "./drop-plan.ts";
+import OutlineCastPicker from "./OutlineCastPicker.vue";
+import { storylineEmpty, storylineExcerpt } from "./storyline.ts";
 import {
   castText,
   cellEditable,
@@ -60,6 +65,7 @@ const {
   closeCast,
   toggleCast,
   open,
+  openStoryline,
   addChapter,
 } = props.session.grid;
 
@@ -231,6 +237,17 @@ watch(visible, async (on) => {
         <button type="button" class="dialog__button" @click="hide()">{{ t("common.close") }}</button>
       </header>
 
+      <!-- 故事总纲：这一行是"这本书讲什么"，点一下去写（表管逐章，它不逐章） -->
+      <button type="button" class="grid__storyline" @click="openStoryline()">
+        <span class="grid__storyline-label">{{ t("grid.col.storyline") }}</span>
+        <span
+          class="grid__storyline-text"
+          :class="{ 'grid__storyline-text--empty': storylineEmpty(storyline) }"
+        >
+          {{ storylineExcerpt(storyline) }}
+        </span>
+      </button>
+
       <p class="grid__rule">{{ t("grid.rule") }}</p>
       <p v-if="errorText" class="grid__error">{{ errorText }}</p>
       <p v-if="workId === null" class="grid__hint">{{ t("grid.no_work") }}</p>
@@ -326,23 +343,14 @@ watch(visible, async (on) => {
                     >
                       {{ row.cast.length === 0 ? t("grid.cast.pick") : castText(row) }}
                     </button>
-                    <div v-if="castFor === row.node_id" class="grid__cast-pop">
-                      <p class="grid__cast-hint">
-                        {{ castCards.length === 0 ? t("grid.cast.no_cards") : t("grid.cast.hint") }}
-                      </p>
-                      <label v-for="card in castCards" :key="card.id" class="grid__cast-item">
-                        <input
-                          type="checkbox"
-                          :checked="row.cast.some((member) => member.entity_id === card.id)"
-                          :disabled="busy"
-                          @change="void toggleCast(row.node_id, card.id)"
-                        />
-                        <span>{{ card.name }}</span>
-                      </label>
-                      <button type="button" class="grid__cast-done" @click="closeCast()">
-                        {{ t("common.close") }}
-                      </button>
-                    </div>
+                    <OutlineCastPicker
+                      v-if="castFor === row.node_id"
+                      :cards="castCards"
+                      :selected="row.cast"
+                      :busy="busy"
+                      @toggle="(entity_id) => void toggleCast(row.node_id, entity_id)"
+                      @close="closeCast()"
+                    />
                   </div>
 
                   <!-- 伏笔 / 字数：核心算的，只读 -->
