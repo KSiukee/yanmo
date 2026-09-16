@@ -740,6 +740,7 @@
   "error.answer.land_node_invalid": "不能把答案落到这一段：{node_id} 不在这一章所属的书里，或不承载正文",
   "error.input.source_unknown": "认不出的输入方式：{value}（只认键盘 / 口述 / 混用）",
   "error.value.unknown_question_tone": "认不出的问话语气：{value}（只认温柔 / 中性 / 直接）",
+  "error.value.unknown_aside_tab": "认不出的第二栏分区：{value}（只认叩问 / 创作流）",
   "error.round.empty": "这一轮一条答案都没有，没什么可落的",
   "error.round.card_foreign": "这一条不属于这本书（卡 {card_id} 不在作品 {work_id} 里）",
   "error.answer.target_unknown": "认不出的落点：{value}（只认正文 / 章纲 / 场景卡）",

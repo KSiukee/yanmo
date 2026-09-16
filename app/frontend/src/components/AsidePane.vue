@@ -11,6 +11,7 @@
 //
 // 页签是**受控**的（`tab` 由布局层给）：提示条上那个「答一句」要能把叩问那一块露出来，
 // 那个动作在布局层，所以"现在露哪一块"得由它说了算。
+import type { AsideTab } from "../editor/appearance.ts";
 import { t } from "../locales/index.ts";
 import type { SelectedQuestion } from "../api/question.ts";
 import type { EditorSession } from "../editor/session.ts";
@@ -20,13 +21,13 @@ import FlowPane from "./FlowPane.vue";
 defineProps<{
   session: EditorSession;
   workId: number | null;
-  tab: "flow" | "creator";
+  tab: AsideTab;
   /** 推过来的那张卡（作者点了提示条上的「答一句」） */
   openQuestion?: SelectedQuestion | null;
 }>();
 
 const emit = defineEmits<{
-  "update:tab": ["flow" | "creator"];
+  "update:tab": [AsideTab];
   opened: [];
 }>();
 </script>

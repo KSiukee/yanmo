@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use super::Store;
 use crate::error::Result;
-use crate::model::{ChapterNumbering, NamingStyle, QuestionTone};
+use crate::model::{ChapterNumbering, NamingStyle, QuestionTone, SideTab};
 use crate::text::WordCaliber;
 use crate::time::now_millis;
 use crate::typeset::QuoteStyle;
@@ -102,6 +102,11 @@ pub struct Appearance {
     /// 两次主动问之间至少隔多少分钟（冷却：刚问过就别再冒头）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub question_push_cooldown_minutes: Option<i64>,
+    /// 右侧第二栏现在露哪一块（`SideTab` 的稳定码：`flow` / `creator`）。
+    ///
+    /// "记住上次"这一类偏好：它只决定**那一栏先露哪一块**，不影响任何数据。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aside_tab: Option<String>,
 }
 
 /// 正文排版的**可读范围**：超出就夹住（手滑打 1000 号字不该把版面炸了，也不该报错挡人）。
@@ -131,6 +136,7 @@ impl Appearance {
             && self.question_tone.is_none()
             && self.question_push_per_day.is_none()
             && self.question_push_cooldown_minutes.is_none()
+            && self.aside_tab.is_none()
     }
 
     /// 把 `over`（书的覆盖）盖在 `self`（全局）上：**只覆盖它真设过的项**。
@@ -157,6 +163,7 @@ impl Appearance {
             question_push_cooldown_minutes: over
                 .question_push_cooldown_minutes
                 .or(self.question_push_cooldown_minutes),
+            aside_tab: over.aside_tab.clone().or_else(|| self.aside_tab.clone()),
         }
     }
 }
@@ -187,6 +194,8 @@ pub struct ResolvedAppearance {
     pub question_push_per_day: i64,
     /// 两次主动问之间的冷却（分钟）。
     pub question_push_cooldown_minutes: i64,
+    /// 右侧第二栏先露哪一块——"记住上次"的就是它。
+    pub aside_tab: SideTab,
 }
 
 impl Default for ResolvedAppearance {
@@ -208,6 +217,7 @@ impl Default for ResolvedAppearance {
             question_tone: QuestionTone::default(),
             question_push_per_day: DEFAULT_PUSH_PER_DAY,
             question_push_cooldown_minutes: DEFAULT_PUSH_COOLDOWN_MINUTES,
+            aside_tab: SideTab::default(),
         }
     }
 }
@@ -275,6 +285,12 @@ impl Store {
                 DEFAULT_PUSH_COOLDOWN_MINUTES,
                 MAX_PUSH_COOLDOWN_MINUTES,
             ),
+            // 第二栏：认不出来的码当没设过（与口径 / 引号 / 语气同一条规矩），回"叩问"
+            aside_tab: merged
+                .aside_tab
+                .as_deref()
+                .and_then(|code| SideTab::parse(code).ok())
+                .unwrap_or_default(),
         })
     }
 
@@ -405,6 +421,16 @@ impl Store {
             stored.question_push_cooldown_minutes =
                 (value >= 0).then(|| value.min(MAX_PUSH_COOLDOWN_MINUTES));
         }
+        if let Some(value) = patch.aside_tab.as_deref() {
+            // `"auto"` = 清掉这一层（回默认"叩问"）——与命名规则、语气同一条路；
+            // 别的取值只认那两个分区码（写进来不认识的会变成一个"不知道露哪块"的空档）
+            if value == "auto" {
+                stored.aside_tab = None;
+            } else {
+                let parsed = SideTab::parse(value)?;
+                stored.aside_tab = Some(parsed.as_str().to_string());
+            }
+        }
         let tx = self.conn.transaction()?;
         write_appearance(&tx, work_id, &stored)?;
         Self::record_in(
@@ -423,6 +449,7 @@ impl Store {
                 "question_tone": patch.question_tone,
                 "question_push_per_day": patch.question_push_per_day,
                 "question_push_cooldown_minutes": patch.question_push_cooldown_minutes,
+                "aside_tab": patch.aside_tab,
                 "editor_font_size": patch.editor_font_size,
                 "editor_line_height": patch.editor_line_height,
                 "editor_letter_spacing": patch.editor_letter_spacing,

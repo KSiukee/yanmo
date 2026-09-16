@@ -130,3 +130,20 @@ test("设正文排版：只写这一项（别的项不受影响），传 0 就�
   assert.deepEqual(core.writes[1], { work_id: null, patch: { editor_line_height: 0 } },
     "0 = 清掉这一项（核心当没设过）");
 });
+
+test("第二栏露哪一块：只写全局那一层，换过就记住", async () => {
+  const core = fakeCore();
+  const state = useAppearance({
+    transport: core.transport,
+    workId: ref<number | null>(7),
+    onError: () => {},
+  });
+
+  await state.setAsideTab("creator");
+  assert.deepEqual(core.writes[0], { work_id: null, patch: { aside_tab: "creator" } },
+    "写全局那一层（跟人不跟书），且只带这一项");
+
+  // "auto" 是"清掉这一层"（回默认叩问），原样交给核心判
+  await state.setAsideTab("auto");
+  assert.deepEqual(core.writes[1], { work_id: null, patch: { aside_tab: "auto" } });
+});

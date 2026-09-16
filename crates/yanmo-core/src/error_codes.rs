@@ -139,6 +139,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "这一条不属于这本书：卡 {card_id} 不在作品 {work_id} 里" : ["card_id", "work_id"],
     UNKNOWN_QUESTION_TONE => "value.unknown_question_tone"
         : "认不出的问话语气：{value}（只认 warm / neutral / direct）" : ["value"],
+    UNKNOWN_ASIDE_TAB => "value.unknown_aside_tab"
+        : "认不出的第二栏分区：{value}（只认 flow / creator）" : ["value"],
     INPUT_SOURCE_UNKNOWN => "input.source_unknown"
         : "认不出的输入方式：{value}（只认 typed / voice / mixed）" : ["value"],
     QUESTION_DEFER_NEEDS_ANCHOR => "question.defer_needs_anchor"

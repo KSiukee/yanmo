@@ -6,7 +6,7 @@
 //! 3. 书的覆盖 **只覆盖它真设过的项**，其余继承全局；
 //! 4. 坏 JSON 不报错、当没设过——界面不该被一条坏记录卡住。
 
-use yanmo_core::model::{NodeKind, WorkKind};
+use yanmo_core::model::{NodeKind, SideTab, WorkKind};
 use yanmo_core::store::{Appearance, Store};
 use yanmo_core::text::WordCaliber;
 use yanmo_core::typeset::QuoteStyle;
@@ -430,4 +430,43 @@ fn asking_preferences_default_and_clear_on_their_own_terms() {
         )
         .unwrap_err();
     assert_eq!(err.code(), "value.unknown_question_tone");
+}
+
+/// 第二栏露哪一块：**默认叩问、换过就记住、认不出的码当没设过**。
+///
+/// 它只决定那一栏先露哪一块，不进导出、不动正文——所以规矩跟语气 / 口径同一套：
+/// 写进来不认识的当场拒，库里已有的坏码当没设过（回默认那一块）。
+#[test]
+fn the_second_column_remembers_which_block_was_showing() {
+    let (_dir, mut store) = fresh();
+
+    // 没设过 → 叩问（作者最常待的地方）
+    assert_eq!(store.appearance(None).unwrap().aside_tab, SideTab::Flow);
+
+    // 换到创作流：记住
+    store
+        .set_appearance(None, &Appearance { aside_tab: Some("creator".into()), ..Default::default() })
+        .unwrap();
+    assert_eq!(store.appearance(None).unwrap().aside_tab, SideTab::Creator);
+
+    // "auto" = 清掉这一层（回默认）；别的取值一律当场拒，且不落库
+    store
+        .set_appearance(None, &Appearance { aside_tab: Some("auto".into()), ..Default::default() })
+        .unwrap();
+    assert_eq!(store.appearance(None).unwrap().aside_tab, SideTab::Flow);
+    let err = store
+        .set_appearance(None, &Appearance { aside_tab: Some("timeline".into()), ..Default::default() })
+        .unwrap_err();
+    assert_eq!(err.code(), "value.unknown_aside_tab");
+
+    // 库里已有的坏码当没设过（跟坏 JSON、坏口径一条规矩）
+    store
+        .conn()
+        .execute(
+            "INSERT OR REPLACE INTO settings(key, value, updated_at)
+             VALUES('appearance', '{\"aside_tab\":\"timeline\"}', 0)",
+            [],
+        )
+        .unwrap();
+    assert_eq!(store.appearance(None).unwrap().aside_tab, SideTab::Flow);
 }

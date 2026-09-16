@@ -13,6 +13,7 @@ mod fragment;
 mod input_source;
 mod node;
 mod question_tone;
+mod side_tab;
 mod work;
 
 pub use answer_target::AnswerTarget;
@@ -22,4 +23,5 @@ pub use fragment::{Fragment, FragmentCount, FragmentKind};
 pub use input_source::InputSource;
 pub use node::{ChapterNumbering, NamingStyle, Node, NodeKind};
 pub use question_tone::QuestionTone;
+pub use side_tab::SideTab;
 pub use work::{Work, WorkKind, WorkLanguage};

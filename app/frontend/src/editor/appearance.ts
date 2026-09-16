@@ -14,6 +14,9 @@ import { ref, watch, type Ref } from "vue";
 import type { Appearance, AppearancePatch, NamingRewrite } from "../api/core";
 import type { TypographyField } from "./typography";
 
+/** 右侧第二栏露哪一块（与核心 `ASIDE_TABS` 的稳定码一致）。 */
+export type AsideTab = "flow" | "creator";
+
 /** 偏好要用的几个动作（会话层注入真命令，测试注入替身）。 */
 export interface AppearanceTransport {
   read: (work_id: number | null) => Promise<Appearance>;
@@ -64,6 +67,13 @@ export interface AppearanceState {
    * 传 `null` = 把这一层清掉、回默认（3 次 / 60 分钟）。同样只写全局默认。
    */
   setQuestionPush: (perDay: number | null, cooldownMinutes: number | null) => Promise<void>;
+  /**
+   * 右侧第二栏露哪一块（`flow` = 叩问 / `creator` = 创作流）——**记住上次**。
+   *
+   * 只写全局那一层（与排版三项、叩问语气同一条口径：每书覆盖的机制留着，界面不暴露）。
+   * 它只决定那一栏先露哪一块，不影响任何数据。
+   */
+  setAsideTab: (value: string) => Promise<void>;
   /** 回到默认（核心的默认值） */
   resetToDefault: () => Promise<void>;
   /** 跟当前作品重读一次（打开章节、换书时用） */
@@ -183,6 +193,11 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
           question_push_per_day: perDay === null ? -1 : perDay,
           question_push_cooldown_minutes: cooldownMinutes === null ? -1 : cooldownMinutes,
         }),
+      ),
+    setAsideTab: (value) =>
+      act(() =>
+        // "auto" 在核心那边就是"清掉这一层"（回默认叩问）；别的取值核心会校验
+        options.transport.write(null, { aside_tab: value }),
       ),
     loadWork: async () => {
       const work_id = options.workId.value;

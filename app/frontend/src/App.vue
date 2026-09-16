@@ -11,6 +11,7 @@ import { computed, ref } from "vue";
 import { t } from "./locales/index.ts";
 import { shortcutKeys } from "./editor/shortcuts.ts";
 import { useEditorSession } from "./editor/session";
+import { useAsideTab } from "./editor/aside";
 import { useQuestionPush } from "./editor/question-push.ts";
 import type { SelectedQuestion } from "./api/question.ts";
 import DirectoryPane from "./components/DirectoryPane.vue";
@@ -46,12 +47,13 @@ const push = useQuestionPush({
 });
 /** 「答一句」点过之后，把那张卡交给右侧面板打开（面板接住后会回报一声，这里清掉） */
 const pushedCard = ref<SelectedQuestion | null>(null);
-// 第二栏现在露哪一块：叩问（默认，作者最常待的地方）还是创作流。
-// 它是"当下这一会儿看哪块"，**不落盘**——与专注模式那类开关同一条规矩。
-const asideTab = ref<"flow" | "creator">("flow");
+
+// 第二栏现在露哪一块：叩问还是创作流。**记住上次**（存偏好，跟人不跟书）——
+// 取与存都在 editor/aside.ts，布局层只拿"现在露哪块"和"换一块"。
+const { tab: asideTab, pick: pickAside } = useAsideTab(session.appearance);
 function answerPushed() {
   // 提示条上的「答一句」要落到叩问那一块：先把那一块露出来，再把卡交过去
-  asideTab.value = "flow";
+  pickAside("flow");
   pushedCard.value = push.take();
 }
 const { chapterTitle, workId } = session;
@@ -180,10 +182,11 @@ const hint = computed(() => {
       <!-- 第二栏（右侧）：叩问与创作流共用，顶上页签切——整块在 AsidePane 里 -->
       <AsidePane
         v-if="zenChrome.flow"
-        v-model:tab="asideTab"
+        :tab="asideTab"
         :session="session"
         :work-id="workId"
         :open-question="pushedCard"
+        @update:tab="pickAside"
         @opened="pushedCard = null"
       />
     </main>
