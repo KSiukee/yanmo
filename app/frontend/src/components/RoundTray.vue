@@ -4,8 +4,8 @@
 // 单独成件的原因：它是**这一轮**的托盘（与"挑哪些问题来问"、"面板长什么样"都不同），
 // 而且只在一种走法下出现。它**纯展示**：动作交回面板那一层（那边才碰核心）。
 import { t } from "../locales/index.ts";
-import type { RoundItem } from "../api/question.ts";
-import { landLabel, type LandAt } from "./question.ts";
+import type { AnswerTarget, RoundItem } from "../api/question.ts";
+import { ANSWER_TARGETS, landLabel, targetLabel, type LandAt } from "./question.ts";
 
 const props = defineProps<{
   items: RoundItem[];
@@ -23,6 +23,8 @@ const emit = defineEmits<{
   move: [number, number];
   remove: [number];
   amend: [number, string];
+  retarget: [number, AnswerTarget];
+  title: [number, string];
   finish: [];
   back: [];
   clear: [];
@@ -33,6 +35,16 @@ const emit = defineEmits<{
 /** 改字：失焦或回车之后才回写（击键级同步不跨进程，这里也不必每个字都往上报） */
 function amend(index: number, event: Event) {
   emit("amend", index, (event.target as HTMLTextAreaElement).value);
+}
+
+/** 这一条落到哪儿（面板给的默认值就在这一栏里，作者随时能改） */
+function retarget(index: number, event: Event) {
+  emit("retarget", index, (event.target as HTMLSelectElement).value as AnswerTarget);
+}
+
+/** 场景卡的名字（只对"场景卡"有意义） */
+function title(index: number, event: Event) {
+  emit("title", index, (event.target as HTMLInputElement).value);
 }
 </script>
 
@@ -45,6 +57,19 @@ function amend(index: number, event: Event) {
     <article v-for="(item, index) in props.items" :key="item.card_id" class="item">
       <textarea class="note" rows="2" :value="item.body" @change="amend(index, $event)" />
       <div class="row">
+        <select class="pick" :value="item.target || 'body'" @change="retarget(index, $event)">
+          <option v-for="option in ANSWER_TARGETS" :key="option" :value="option">
+            {{ targetLabel(option) }}
+          </option>
+        </select>
+        <input
+          v-if="item.target === 'scene'"
+          class="pick"
+          type="text"
+          :value="item.title"
+          :placeholder="t('flow.target.scene_title')"
+          @change="title(index, $event)"
+        />
         <button class="link" :disabled="props.busy || index === 0" @click="emit('move', index, -1)">
           ↑
         </button>
@@ -171,6 +196,13 @@ function amend(index: number, event: Event) {
   display: inline-flex;
   gap: 4px;
   align-items: center;
+}
+.pick {
+  padding: 1px 4px;
+  font: inherit;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: var(--ym-paper);
 }
 .act,
 .link {

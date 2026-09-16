@@ -144,8 +144,9 @@ pub const HELP_DEV: &str = "\
                             作答：答案进答案池，卡走到「已答」终态（**不动正文一个字**）
   question-answers --id <卡 id>
                             这张卡上答过什么（答案池里那几条，按答下的先后）
-  question-land --id <卡 id> --node <章节 id> [--trigger <谁触发>]
-                            落章：把一条答案标成「落进过正文」——**只留痕，不写正文**
+  question-land --id <卡 id> --node <章节 id> [--target body|outline|scene] [--title <场景卡名>]
+                            落章：正文段落 / 章纲（这一章的一句话）/ 场景卡（这一章下面新建一张）；
+                            正文那一段字由界面插进编辑会话，核心一个字节都不写正文
   question-round --work <id> --node <章节 id> --items <JSON 数组>
                             一轮落章（先问后排版）：把一串答案**一次**落进这一章；
                             --items 形如 [{\"card_id\":1,\"body\":\"第一段\"}, …]，顺序即落下顺序

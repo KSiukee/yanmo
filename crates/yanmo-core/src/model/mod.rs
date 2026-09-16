@@ -5,12 +5,14 @@
 //! 问题卡同理：它的**数据字段**（`card`）与**生命周期状态机**（`card_state`）
 //! 分成两个文件——两者的变化理由不一样（加一列 vs 加一条迁移）。
 
+mod answer_target;
 mod card;
 mod card_state;
 mod input_source;
 mod node;
 mod work;
 
+pub use answer_target::AnswerTarget;
 pub use card::{NewQuestionCard, QuestionCard};
 pub use card_state::{transition, QuestionState, Transition, TRANSITIONS};
 pub use input_source::InputSource;

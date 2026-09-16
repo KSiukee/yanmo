@@ -15,7 +15,7 @@ use super::{question_weights, Store};
 use crate::error::Result;
 use crate::gravity::{gravity, rank, AttractorParams, Candidate, Gravity};
 use crate::model::{QuestionCard, QuestionState};
-use crate::question::{anchors_of, urgency_of};
+use crate::question::{anchors_of, template, urgency_of, ElementKind};
 use crate::time::now_millis;
 
 /// 选出来的一条问题：卡 + **引力拆解**（将来界面能回答"为什么先问这个"）。
@@ -23,6 +23,10 @@ use crate::time::now_millis;
 pub struct SelectedQuestion {
     pub card_id: i64,
     pub template_key: String,
+    /// 这条问题属于哪一类要素（`plan` 那一类答的就是"章纲"——界面按它给默认落点）。
+    ///
+    /// 作者自己写的卡与模块提交的卡没有模板键，按最中性的 `chapter` 算（"从哪儿开始"那一类）。
+    pub element: ElementKind,
     pub body: String,
     /// 卡上的关联锚点（`chapter:12` 这种）：界面靠它认"这条问的是不是这一章"
     pub anchors: Vec<String>,
@@ -118,6 +122,9 @@ impl Store {
                 SelectedQuestion {
                     card_id,
                     template_key: card.template_key.clone(),
+                    element: template(&card.template_key)
+                        .map(|spec| spec.element)
+                        .unwrap_or(ElementKind::Chapter),
                     body: card.body.clone(),
                     anchors: anchors_of(&card.linked),
                     gravity,

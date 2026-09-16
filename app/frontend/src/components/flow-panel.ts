@@ -1,12 +1,11 @@
 // 叩问面板的**状态与命令编排**：挑什么来问、问出之后怎么处置、走法怎么切换。
 //
 // 单独成文件的原因（与 `editor/session.ts` 同一条理由）：这一整块是"会发生什么"，
-// 而 `.vue` 那一份是"长什么样"——两者的变化理由不一样。组件那一层于是**一个 API 都不直接调**。
+// 而 `.vue` 那一份是"长什么样"；组件那一层于是**一个 API 都不直接调**。
 //
-// 三种走法（面板顶上那两个开关，同时只能开一种）：
-// - **列表**（默认）：按引力排一排，你挑着答；答完就地落（想落的话）——随手用；
-// - **跟着这一章走**（模式 A）：当前章的问题排最前，答完自动出下一张，答一条落一条——边想边写；
-// - **先问后排版**（模式 B）：同样跟着这一章走，但答案**先攒着**，一轮问够了再一起落。
+// 三种走法（面板顶上那两个开关，同时只能开一种）：**列表**（默认，随手答）/
+// **跟着这一章走**（模式 A：答完自动出下一张，答一条落一条）/ **先问后排版**
+// （模式 B：答案先攒在托盘里，问够了一起落）。
 //
 // 三条纪律（与核心一致）：点开一张才算"问出"；排序在核心（界面只报当前章）；
 // 落进正文的永远是作者自己的字（界面插进编辑会话、核心记账）。
@@ -31,11 +30,12 @@ import {
   questionUndefer,
   questionUnmuteClass,
   questionUnmuteSource,
+  type LandReceipt,
   type QuestionBoard,
   type SelectedQuestion,
 } from "../api/question.ts";
 import type { EditorSession } from "../editor/session.ts";
-import { countForChapter, inputLabel, renderDraft } from "./question.ts";
+import { countForChapter, defaultTarget, inputLabel, renderDraft } from "./question.ts";
 import { useLanding } from "./use-landing.ts";
 import { useRound } from "./use-round.ts";
 
@@ -80,13 +80,21 @@ export function useFlowPanel(props: FlowPanelOptions) {
   const followChapter = computed(() => mode.value !== "list");
   const roundMode = computed(() => mode.value === "round");
 
+  /** 核心记下的账回到界面（更新的是**库里的真值**，不是界面自己猜的）：
+   * 章纲落了就把"一句话"换成核心给的那一行；新建了场景卡就重拉目录树（新卡要看得见）。 */
+  function onLanded(landed: LandReceipt) {
+    if (landed.outline !== null) props.session.note.reset(landed.outline);
+    if (landed.scene_ids.length > 0) void props.session.directory.refresh();
+  }
+
   // 两半落法各自成件：就地落（useLanding）与一轮落（useRound）。它们都要"落完之后换个面板"
-  // 与"按面板口径再读一次"，所以把那两件事传进去。
+  // 与"按面板口径再读一次"，所以把那几件事传进去。
   const landing = useLanding({
     session: props.session,
     currentNode: () => currentChapter.value,
     onBoard: (next) => (board.value = next),
     settle,
+    onLanded,
   });
   const round = useRound({
     session: props.session,
@@ -94,19 +102,16 @@ export function useFlowPanel(props: FlowPanelOptions) {
     currentNode: () => currentChapter.value,
     onBoard: (next) => (board.value = next),
     settle,
+    onLanded,
   });
 
-  /** 报错只给码：句子在字典里（界面文案只有一处来源，别在这里另拼中文）。 */
+  /** 报错只给码：句子在字典里（界面文案只有一处来源）。 */
   function report(error: unknown) {
     errorCode.value = asError(error).code;
   }
 
-  /**
-   * 收口：跟着这一章走时再按「这一章优先」读一次面板。
-   *
-   * 排序规则在核心（选题是机制），界面只把当前章报上去。不跟章、或没打开着任何一章时
-   * 原样返回，省一次往返。
-   */
+  /** 收口：跟着这一章走时再按「这一章优先」读一次面板（排序规则在核心，界面只报当前章）。
+   * 不跟章、或没打开着任何一章时原样返回，省一次往返。 */
   async function settle(result: QuestionBoard): Promise<QuestionBoard> {
     const work = props.workId;
     const node = currentChapter.value;
@@ -229,11 +234,12 @@ export function useFlowPanel(props: FlowPanelOptions) {
         body: receipt.answer.body,
       });
       if (roundMode.value) {
-        round.collect(receipt.answer);
+        // 默认落点按要素类型分（plan 那一类答的就是章纲，其余落正文）；托盘里逐条还能改
+        round.collect(receipt.answer, defaultTarget(card.element));
       } else {
         landing.noteAnswer(receipt.answer);
         const missed =
-          landing.landToBody.value &&
+          landing.landOnAnswer.value &&
           !(await landing.landOne(card.card_id, receipt.answer.body, node));
         if (missed) done = t("flow.answer.land_failed", { body: receipt.answer.body });
       }

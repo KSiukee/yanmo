@@ -1017,3 +1017,67 @@ fn question_round_is_drivable_from_the_command_line() {
     let after = ok(dir.path(), "fingerprint", &[("node", &node)])["fingerprint"].clone();
     assert_eq!(before, after, "一轮落章命令自己不写正文");
 }
+
+/// 落点三档：章纲（合并成一行）、场景卡（新建一张）、正文（核心一个字节都不写）。
+#[test]
+fn answers_land_in_the_three_places_from_the_command_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let (work_id, chapter_id) = seed(dir.path(), "novel");
+    let work = work_id.to_string();
+    let node = chapter_id.to_string();
+    ok(dir.path(), "write", &[("node", &node), ("body", "正文先摆一句话在这儿。")]);
+    let before = ok(dir.path(), "fingerprint", &[("node", &node)])["fingerprint"].clone();
+
+    let mut cards = Vec::new();
+    for body in ["第三人称，跟着林望", "雨夜，码头", "他站在门口，没敢敲门。"] {
+        let card = ok(
+            dir.path(),
+            "card-new",
+            &[("work", &work), ("body", body), ("template", "chapter.empty_body")],
+        )["card_id"]
+            .as_i64()
+            .unwrap();
+        ok(dir.path(), "question-answer", &[("id", &card.to_string()), ("body", body)]);
+        cards.push(card);
+    }
+
+    // ① 章纲：写进这一章的"一句话"
+    let first = ok(
+        dir.path(),
+        "question-land",
+        &[("id", &cards[0].to_string()), ("node", &node), ("target", "outline")],
+    );
+    assert_eq!(first["outline"], "第三人称，跟着林望", "{first}");
+
+    // ② 场景卡：这一章下面新建一张，名字是作者起的
+    let second = ok(
+        dir.path(),
+        "question-land",
+        &[
+            ("id", &cards[1].to_string()),
+            ("node", &node),
+            ("target", "scene"),
+            ("title", "码头"),
+        ],
+    );
+    let scene_id = second["scene_ids"][0].as_i64().unwrap();
+    let chased = ok(dir.path(), "fingerprint", &[("node", &scene_id.to_string())]);
+    assert!(chased["fingerprint"].is_string(), "场景卡是一张真的节点：{chased}");
+
+    // ③ 正文：核心不写（正文由界面插进编辑会话）
+    ok(dir.path(), "question-land", &[("id", &cards[2].to_string()), ("node", &node)]);
+
+    // 三条都标成落过；稿子（这一章正文）一个字节没动
+    for card in &cards {
+        let answers = ok(dir.path(), "question-answers", &[("id", &card.to_string())]);
+        assert_eq!(answers["answers"][0]["status"], "landed", "{answers}");
+    }
+    let after = ok(dir.path(), "fingerprint", &[("node", &node)])["fingerprint"].clone();
+    assert_eq!(before, after, "落章命令自己不写这一章的正文");
+
+    // 认不出的落点当场拒
+    match run(dir.path(), "question-land", &[("id", &cards[0].to_string()), ("node", &node), ("target", "telepathy")]) {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "answer.target_unknown"),
+        other => panic!("认不出的落点该被拒：{other:?}"),
+    }
+}

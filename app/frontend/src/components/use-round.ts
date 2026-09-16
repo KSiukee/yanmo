@@ -9,11 +9,17 @@
 import { computed, ref } from "vue";
 
 import { asError } from "../api/errors.ts";
-import { questionApplyRound, type Answer, type QuestionBoard } from "../api/question.ts";
+import {
+  questionApplyRound,
+  type Answer,
+  type AnswerTarget,
+  type LandReceipt,
+  type QuestionBoard,
+  type RoundItem,
+} from "../api/question.ts";
 import type { EditorSession } from "../editor/session.ts";
 import type { LandAt } from "./question.ts";
-import type { RoundItem } from "../api/question.ts";
-import { amendAt, appendRound, moveAt, removeAt, roundHasText, roundText } from "./round.ts";
+import { amendAt, appendRound, moveAt, removeAt, roundHasBody, roundHasText, roundText } from "./round.ts";
 
 export interface RoundOptions {
   session: EditorSession;
@@ -22,6 +28,8 @@ export interface RoundOptions {
   currentNode: () => number | null;
   /** 落完之后的新面板，交回面板那一层 */
   onBoard: (board: QuestionBoard) => void;
+  /** 核心记下的账（章纲成了什么 / 新建了哪些场景卡）：界面按它更新"一句话"与目录树 */
+  onLanded?: (landed: LandReceipt) => void;
   /** 模式 A 的口径：要不要按「这一章优先」再读一次（由面板那一层定） */
   settle: (board: QuestionBoard) => Promise<QuestionBoard>;
 }
@@ -35,12 +43,21 @@ export function useRound(options: RoundOptions) {
   const count = computed(() => items.value.length);
   const hasText = computed(() => roundHasText(items.value));
 
-  /** 答下一条：攒进这一轮（先不落） */
-  function collect(answer: Answer) {
-    items.value = appendRound(items.value, { card_id: answer.card_id, body: answer.body });
+  /** 答下一条：攒进这一轮（先不落）；`target` 是面板按要素类型给的默认落点，托盘里还能改 */
+  function collect(answer: Answer, target: AnswerTarget = "body") {
+    items.value = appendRound(items.value, {
+      card_id: answer.card_id,
+      body: answer.body,
+      target,
+      title: "",
+    });
   }
 
   const remove = (index: number) => (items.value = removeAt(items.value, index));
+  const retarget = (index: number, target: AnswerTarget) =>
+    (items.value = items.value.map((item, at) => (at === index ? { ...item, target } : item)));
+  const title = (index: number, text: string) =>
+    (items.value = items.value.map((item, at) => (at === index ? { ...item, title: text } : item)));
   const move = (index: number, delta: number) => (items.value = moveAt(items.value, index, delta));
   const amend = (index: number, body: string) => (items.value = amendAt(items.value, index, body));
 
@@ -66,9 +83,14 @@ export function useRound(options: RoundOptions) {
     const work = options.workId();
     if (node === null || work === null) return "answer.land_node_invalid";
     if (!hasText.value) return "round.empty";
-    if (!options.session.insertText(roundText(items.value), at)) return "answer.land_node_invalid";
+    // 只有"落正文"的那几条进编辑器；章纲与场景卡由核心写（见 core 那边的落章）
+    if (roundHasBody(items.value) && !options.session.insertText(roundText(items.value), at)) {
+      return "answer.land_node_invalid";
+    }
     try {
-      options.onBoard(await options.settle(await questionApplyRound(work, node, items.value)));
+      const done = await questionApplyRound(work, node, items.value);
+      options.onBoard(await options.settle(done.board));
+      options.onLanded?.(done.landed);
       clear();
       return "";
     } catch (error) {
@@ -83,6 +105,8 @@ export function useRound(options: RoundOptions) {
     hasText,
     collect,
     remove,
+    retarget,
+    title,
     move,
     amend,
     clear,

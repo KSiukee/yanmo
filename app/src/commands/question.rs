@@ -21,7 +21,7 @@ use crate::storage::AppData;
 use yanmo_core::model::QuestionState;
 use yanmo_core::question::{DeferPreset, QuestionDraft};
 use yanmo_core::store::{
-    Answer, CooledCard, Deferral, Inspiration, RoundItem, SelectedQuestion, Store,
+    Answer, CooledCard, Deferral, Inspiration, LandReceipt, RoundItem, SelectedQuestion, Store,
 };
 
 /// 面板一次要的全部数据。
@@ -130,22 +130,36 @@ pub fn question_board(
     data.with_store(|store| board_at(store, work_id, node_id))
 }
 
-/// 落章：把一条答案标成「落进过正文」——**只留痕，不写正文**。
+/// 落章的回执：**核心记下的账** + 落完之后的最新面板。
 ///
-/// 正文那一段字由界面插进编辑会话（于是自动落盘、字数、账本、版本快照全照常走）：
-/// 击键级的正文写入必须留在壳内的编辑会话里，核心直接改正文会让两边分家。
-/// 这里做的是另一半——记下"这一条用掉了、落到哪一章"。
+/// 界面拿 `landed` 里的东西更新界面，而不是自己猜：章纲最后成了什么（`outline`）、
+/// 新建了哪些场景卡（`scene_ids`，目录树要重拉才看得见）。
+#[derive(Debug, Serialize)]
+pub struct LandDoneDto {
+    pub landed: LandReceipt,
+    pub board: QuestionBoardDto,
+}
+
+/// 落一条答案：正文 / 章纲 / 场景卡三种都由核心记账。
+///
+/// - `target`：`body`（正文段落，**核心一个字都不写**——界面把它插进编辑会话，
+///   于是自动落盘、字数、账本、版本快照全照常走；击键级的正文写入必须留在壳内的编辑会话里）、
+///   `outline`（章纲：写进这一章的一句话，多条合并成一行）、
+///   `scene`（场景卡：这一章下面新建一张，`title` 是它的名字）；
+/// - 三种落点与"标已落 + 留痕"**同一个事务**，不会有半截状态。
 #[tauri::command(rename_all = "snake_case")]
 pub fn question_land_answer(
     data: State<'_, AppData>,
     card_id: i64,
     node_id: i64,
-) -> Result<QuestionBoardDto, ApiError> {
+    target: String,
+    title: String,
+) -> Result<LandDoneDto, ApiError> {
     crate::acceptance::note_command("question_land_answer");
     data.with_store(|store| {
         let work_id = store.question_card(card_id)?.work_id;
-        store.mark_answer_landed(card_id, node_id, "author")?;
-        board(store, work_id)
+        let landed = store.mark_answer_landed(card_id, node_id, &target, &title, "author")?;
+        Ok(LandDoneDto { landed, board: board(store, work_id)? })
     })
 }
 
@@ -201,11 +215,11 @@ pub fn question_apply_round(
     work_id: i64,
     node_id: i64,
     items: Vec<RoundItem>,
-) -> Result<QuestionBoardDto, ApiError> {
+) -> Result<LandDoneDto, ApiError> {
     crate::acceptance::note_command("question_apply_round");
     data.with_store(|store| {
-        store.apply_answer_round(work_id, node_id, &items, "author")?;
-        board(store, work_id)
+        let landed = store.apply_answer_round(work_id, node_id, &items, "author")?;
+        Ok(LandDoneDto { landed, board: board(store, work_id)? })
     })
 }
 

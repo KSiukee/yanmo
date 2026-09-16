@@ -35,6 +35,8 @@ export interface Gravity {
 export interface SelectedQuestion {
   card_id: number;
   template_key: string;
+  /** 哪一类要素（`plan` 那一类的答案默认落"章纲"） */
+  element: string;
   body: string;
   /** 卡上的关联锚点（`chapter:12` 这种）：界面靠它认"这条问的是不是这一章" */
   anchors: string[];
@@ -103,11 +105,33 @@ export interface AnswerReceipt {
   board: QuestionBoard;
 }
 
-/** 一轮里的一条（先问后排版）：答的是哪张卡、作者最终认定的那段字。 */
+/** 一条答案落到哪儿：正文段落 / 章纲（这一章的一句话）/ 场景卡（这一章下面新建一张）。 */
+export type AnswerTarget = "body" | "outline" | "scene";
+
+/** 一轮里的一条（先问后排版）：答的是哪张卡、作者最终认定的那段字、落到哪儿。 */
 export interface RoundItem {
   card_id: number;
   /** 作者在托盘里可能改过；与库里不同时核心回写答案池并留痕 */
   body: string;
+  /** 空串＝正文（老调用不带这一栏）；认不出的核心当场拒 */
+  target: AnswerTarget | "";
+  /** 场景卡的名字；空着留给作者在树上起名 */
+  title: string;
+}
+
+/** 一次落章的结果（核心记下的账）。 */
+export interface LandReceipt {
+  answer_ids: number[];
+  /** 新建的场景卡 id（目录树要重拉才看得见） */
+  scene_ids: number[];
+  /** 章纲最后成了什么（没落章纲就是 null）——拿它更新"一句话"那一栏 */
+  outline: string | null;
+}
+
+/** 落章回执：账 + 落完之后的最新面板。 */
+export interface LandDone {
+  landed: LandReceipt;
+  board: QuestionBoard;
 }
 
 /** 界面渲染好的一条候选（核心只认键与槽位，句子是界面按字典填出来的）。 */
@@ -179,8 +203,12 @@ export const questionInspire = (card_id: number, body: string, source: string) =
  * 正文那一段字由调用方插进编辑会话（`session.insertText`）——那是作者的一次正常编辑，
  * 自动落盘、字数、账本、版本快照全照常。这里只记下"这一条用掉了、落到哪一章"。
  */
-export const questionLandAnswer = (card_id: number, node_id: number) =>
-  call<QuestionBoard>(COMMANDS.questionLandAnswer, { card_id, node_id });
+export const questionLandAnswer = (
+  card_id: number,
+  node_id: number,
+  target: AnswerTarget | "" = "body",
+  title = "",
+) => call<LandDone>(COMMANDS.questionLandAnswer, { card_id, node_id, target, title });
 
 /**
  * 一轮落章（先问后排版）：把这一轮攒下的答案**一次**落进这一章。
@@ -190,7 +218,7 @@ export const questionLandAnswer = (card_id: number, node_id: number) =>
  * 顺序就是 `items` 的顺序——作者在托盘里排的那个。
  */
 export const questionApplyRound = (work_id: number, node_id: number, items: RoundItem[]) =>
-  call<QuestionBoard>(COMMANDS.questionApplyRound, { work_id, node_id, items });
+  call<LandDone>(COMMANDS.questionApplyRound, { work_id, node_id, items });
 
 /** 解除**这一类**的静音（"这类别再问"的回头路）。 */
 export const questionUnmuteClass = (work_id: number, template_key: string) =>

@@ -6,10 +6,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { amendAt, appendRound, moveAt, removeAt, roundHasText, roundText } from "./round.ts";
-import type { RoundItem } from "../api/question.ts";
+import { amendAt, appendRound, moveAt, removeAt, roundHasBody, roundHasText, roundText } from "./round.ts";
+import type { AnswerTarget, RoundItem } from "../api/question.ts";
 
-const item = (card_id: number, body: string): RoundItem => ({ card_id, body });
+const item = (card_id: number, body: string, target: AnswerTarget | "" = ""): RoundItem => ({
+  card_id,
+  body,
+  target,
+  title: "",
+});
 
 test("加一条：进末尾；同一张卡再来一次是替换，不是攒两条", () => {
   let items: RoundItem[] = [];
@@ -45,4 +50,12 @@ test("拼成一段：按顺序、段间空一行、空条目丢掉", () => {
   assert.equal(roundHasText([]), false);
   assert.equal(roundHasText([item(1, "   ")]), false, "全是空白等于没有");
   assert.equal(roundHasText([item(1, "一句")]), true);
+});
+
+test("只有落正文的那几条进正文：章纲与场景卡不混进来", () => {
+  const mixed = [item(1, "这一段进正文"), item(2, "这一句进章纲", "outline"), item(3, "这一张是场景卡", "scene")];
+  assert.equal(roundText(mixed), "这一段进正文", "章纲与场景卡不进正文");
+  assert.equal(roundHasBody(mixed), true);
+  assert.equal(roundHasBody([item(1, "只投章纲", "outline")]), false, "全是章纲就别去动编辑器");
+  assert.equal(roundText([item(1, "落正文", "body")]), "落正文", "写明白 body 的也算");
 });

@@ -10,7 +10,13 @@ import { computed, ref } from "vue";
 
 import { t } from "../locales/index.ts";
 import { asError } from "../api/errors.ts";
-import { questionLandAnswer, type Answer, type QuestionBoard } from "../api/question.ts";
+import {
+  questionLandAnswer,
+  type Answer,
+  type AnswerTarget,
+  type LandReceipt,
+  type QuestionBoard,
+} from "../api/question.ts";
 import type { EditorSession } from "../editor/session.ts";
 import { landLabel, type LandAt } from "./question.ts";
 
@@ -21,12 +27,18 @@ export interface LandingOptions {
   onBoard: (board: QuestionBoard) => void;
   /** 落完之后按面板那套口径再读一次（模式 A 会带上"这一章优先"） */
   settle: (board: QuestionBoard) => Promise<QuestionBoard>;
+  /** 核心记下的账：界面按它更新正文上方那句"一句话"与目录树 */
+  onLanded?: (landed: LandReceipt) => void;
 }
 
 export function useLanding(options: LandingOptions) {
   /** 落点与"要不要落进正文"：作者的选择，这次会话内接着用 */
   const landAt = ref<LandAt>("cursor");
-  const landToBody = ref(false);
+  const landOnAnswer = ref(false);
+  /** 落到哪儿：正文段落 / 章纲 / 场景卡（默认正文；面板按要素类型给默认值） */
+  const landTarget = ref<AnswerTarget>("body");
+  /** 场景卡的名字（只对"场景卡"有意义） */
+  const sceneTitle = ref("");
   /** 刚答下的那一份（回执）：答完没落的话，还能回头落一次 */
   const lastAnswer = ref<Answer | null>(null);
   /** 那份答案是在哪一章答下的——切了章就不该再往"现在这一章"落 */
@@ -43,14 +55,16 @@ export function useLanding(options: LandingOptions) {
   );
 
   const setLandAt = (at: LandAt) => (landAt.value = at);
-  const setLandToBody = (on: boolean) => (landToBody.value = on);
+  const setLandOnAnswer = (on: boolean) => (landOnAnswer.value = on);
+  const setLandTarget = (target: AnswerTarget) => (landTarget.value = target);
+  const setSceneTitle = (text: string) => (sceneTitle.value = text);
 
   /**
    * 进"跟章走"那两种模式时的落法默认：勾上落进正文；给了 `at` 就顺手把落点也挪过去
    * （进「先问后排版」时给章末——那一章通常还是空的，段自然接在后面）。
    */
   function preferLanding(at?: LandAt) {
-    landToBody.value = true;
+    landOnAnswer.value = true;
     if (at) landAt.value = at;
   }
 
@@ -61,14 +75,19 @@ export function useLanding(options: LandingOptions) {
   }
 
   /**
-   * 落一条：**先插字（作者的正常编辑），再留痕**。
+   * 落一条。
    *
-   * 顺序是刻意的：插字是作者马上看得见的动作，留痕是账。留痕那一步失败时字已经在稿子里了——
-   * 如实报错比偷偷撤掉更对（撤掉会把作者刚看见的那一段又抽走）。
+   * 落到**正文**时：**先插字（作者的正常编辑），再留痕**——顺序是刻意的：插字是作者马上
+   * 看得见的动作，留痕是账；留痕失败时字已经在稿子里了，如实报错比偷偷撤掉更对。
+   * 落到**章纲 / 场景卡**时不动编辑器：那是低频的结构改动，由核心一个事务写完
+   * （章纲写进这一章的一句话、场景卡在节点树里新建一张）。
    */
   async function landOne(cardId: number, body: string, node: number | null): Promise<boolean> {
-    if (node === null || !options.session.insertText(body, landAt.value)) return false;
-    options.onBoard(await options.settle(await questionLandAnswer(cardId, node)));
+    if (node === null) return false;
+    if (landTarget.value === "body" && !options.session.insertText(body, landAt.value)) return false;
+    const done = await questionLandAnswer(cardId, node, landTarget.value, sceneTitle.value);
+    options.onBoard(await options.settle(done.board));
+    options.onLanded?.(done.landed);
     return true;
   }
 
@@ -90,12 +109,16 @@ export function useLanding(options: LandingOptions) {
 
   return {
     landAt,
-    landToBody,
+    landOnAnswer,
+    landTarget,
+    sceneTitle,
     lastAnswer,
     landableAnswer,
     landHint,
     setLandAt,
-    setLandToBody,
+    setLandOnAnswer,
+    setLandTarget,
+    setSceneTitle,
     preferLanding,
     noteAnswer,
     landOne,

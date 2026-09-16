@@ -51,7 +51,7 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         // 叩问·作答：答案进答案池（文本与输入方式解耦：--source 记怎么打出来的）
         "question-answer" => Some(&["id", "body", "body-file", "source", "trigger"]),
         "question-answers" => Some(&["id"]),
-        "question-land" => Some(&["id", "node", "trigger"]),
+        "question-land" => Some(&["id", "node", "target", "title", "trigger"]),
         // 先问后排版：一轮一次落（顺序就是 --items 里的顺序）
         "question-round" => Some(&["work", "node", "items", "items-file", "trigger"]),
         _ => None,
@@ -296,13 +296,16 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
                     "count": answers.len(), "answers": answers })
         }
         "question-land" => {
-            // 落章：**只留痕，不写正文**——正文那一段字由界面插进编辑会话（这里不动稿子）
+            // 落章：正文那一段字由界面插进编辑会话（这里不动稿子）；章纲与场景卡由核心写
             let id = args.required_i64("id")?;
             let node = args.required_i64("node")?;
+            let target = args.optional("target").unwrap_or("body").to_string();
+            let title = args.optional("title").unwrap_or("").to_string();
             let trigger = args.optional("trigger").unwrap_or("cli").to_string();
-            let answer_id = store.mark_answer_landed(id, node, &trigger)?;
-            json!({ "ok": true, "command": "question-land", "card_id": id,
-                    "answer_id": answer_id, "node_id": node })
+            let done = store.mark_answer_landed(id, node, &target, &title, &trigger)?;
+            json!({ "ok": true, "command": "question-land", "card_id": id, "node_id": node,
+                    "target": target, "answer_ids": done.answer_ids,
+                    "scene_ids": done.scene_ids, "outline": done.outline })
         }
         "question-round" => {
             // 一轮落章（先问后排版）：把一串答案**一次**落进这一章。--items 给 JSON：
@@ -318,9 +321,10 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
                 Usage::from(r#"--items 需要是一个 JSON 数组，例如 [{"card_id":1,"body":"第一段"}]"#)
             })?;
             let trigger = args.optional("trigger").unwrap_or("cli").to_string();
-            let landed = store.apply_answer_round(work, node, &items, &trigger)?;
-            json!({ "ok": true, "command": "question-round", "count": landed.len(),
-                    "answers": landed })
+            let done = store.apply_answer_round(work, node, &items, &trigger)?;
+            json!({ "ok": true, "command": "question-round", "count": done.answer_ids.len(),
+                    "answers": done.answer_ids, "scene_ids": done.scene_ids,
+                    "outline": done.outline })
         }
         "question-deferrals" => {
             // 两种问法：这本书里**还等着**的（默认），或某张卡的**全部历史**

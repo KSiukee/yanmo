@@ -4,7 +4,7 @@
 // 文案一律从字典取（`question.template.*` / `flow.*`）——界面文案只有那一处来源。
 
 import { t } from "../locales/index.ts";
-import type { Gravity, QuestionDraft } from "../api/question.ts";
+import type { AnswerTarget, Gravity, QuestionDraft } from "../api/question.ts";
 
 const DAY_MS = 86_400_000;
 
@@ -126,4 +126,25 @@ export function asksThisChapter(question: { anchors: string[] }, node_id: number
 /** 候选里与这一章有关的有几条（面板顶上那句话用）。 */
 export function countForChapter(questions: { anchors: string[] }[], node_id: number | null): number {
   return questions.filter((question) => asksThisChapter(question, node_id)).length;
+}
+
+/** 落点三档（界面按这个顺序列）。 */
+export const ANSWER_TARGETS: AnswerTarget[] = ["body", "outline", "scene"];
+
+/** 落点怎么称呼（作答框与托盘上那几个选项）。 */
+export function targetLabel(target: AnswerTarget): string {
+  if (target === "body") return t("flow.target.body");
+  if (target === "outline") return t("flow.target.outline");
+  return t("flow.target.scene");
+}
+
+/**
+ * 一条问题的答案**默认**落到哪儿：**章纲那一类（plan）答的就是章纲，其余落正文**。
+ *
+ * 为什么按要素类型分：问"这一章发生了什么 / 谁在看 / 第一场戏在哪儿"的时候，作者写下的
+ * 那句话本来就**是**这一章的章纲；而"这一章从哪儿开始"答出来的是正文要接的东西。
+ * 这只是默认——托盘里逐条能改（"不设任何只能"）。
+ */
+export function defaultTarget(element: string): AnswerTarget {
+  return element === "plan" ? "outline" : "body";
 }

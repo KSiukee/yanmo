@@ -225,13 +225,7 @@ impl Store {
     /// 日志里只记字数，不把整段话抄进变更留痕。
     pub fn set_node_summary(&mut self, id: i64, summary: &str) -> Result<()> {
         let tx = self.conn.transaction()?;
-        let affected = tx.execute(
-            "UPDATE nodes SET summary = ?1, updated_at = ?2 WHERE id = ?3 AND deleted_at IS NULL",
-            params![summary, now_millis(), id],
-        )?;
-        if affected == 0 {
-            return Err(Error::invalid_with(codes::NODE_GONE, [("node_id", id.to_string())]));
-        }
+        set_summary_in(&tx, id, summary)?;
         Self::record_in(
             &self.device_id,
             &tx,
@@ -470,4 +464,19 @@ pub(super) fn soft_delete_node_in(conn: &Connection, id: i64) -> Result<usize> {
     // 在任何时候都成立，恢复时也才有一个稳定的"原来在第几位"可锚。
     renumber(conn, work_id, parent_id, None)?;
     Ok(affected)
+}
+
+/// 事务内版本：写一章的"一句话"（**不带事务、不留痕**——调用方给事务与留痕）。
+///
+/// 单列出来是为了让"叩问把答案落成章纲"能与它自己的账（标已落、逐条留痕）**同一个事务**：
+/// 章纲写进去了、答案却没标已落，或者反过来，都是最难查的半截状态。
+pub(super) fn set_summary_in(tx: &Connection, id: i64, summary: &str) -> Result<()> {
+    let affected = tx.execute(
+        "UPDATE nodes SET summary = ?1, updated_at = ?2 WHERE id = ?3 AND deleted_at IS NULL",
+        params![summary, now_millis(), id],
+    )?;
+    if affected == 0 {
+        return Err(Error::invalid_with(codes::NODE_GONE, [("node_id", id.to_string())]));
+    }
+    Ok(())
 }

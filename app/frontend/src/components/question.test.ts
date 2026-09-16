@@ -10,6 +10,7 @@ import {
   asksThisChapter,
   classLabel,
   countForChapter,
+  defaultTarget,
   dueLabel,
   inputLabel,
   landLabel,
@@ -17,6 +18,7 @@ import {
   reasonLines,
   renderDraft,
   sourceLabel,
+  targetLabel,
 } from "./question.ts";
 import type { Gravity, QuestionDraft } from "../api/question.ts";
 
@@ -124,4 +126,21 @@ test("认一条问题是不是这一章问出来的——只认 chapter:<当前�
   assert.equal(asksThisChapter({ anchors: ["chapter:70"] }, 7), false);
   assert.equal(countForChapter([asked, { anchors: ["chapter:7"] }, { anchors: ["chapter:1"] }], 7), 2);
   assert.equal(countForChapter([asked], null), 0);
+});
+
+test("默认落点按要素类型分：章纲那一类落章纲，其余落正文", () => {
+  assert.equal(defaultTarget("plan"), "outline", "问「这一章发生了什么 / 谁在看」答的就是章纲");
+  assert.equal(defaultTarget("chapter"), "body");
+  assert.equal(defaultTarget("rhythm"), "body");
+  assert.equal(defaultTarget("continuity"), "body");
+  assert.equal(defaultTarget(""), "body", "认不出的要素类型按正文算（最不打扰的那一档）");
+});
+
+test("落点称呼：三档各有各的说法", () => {
+  assert.equal(targetLabel("body"), "正文段落");
+  assert.equal(targetLabel("outline"), "章纲");
+  assert.equal(targetLabel("scene"), "场景卡");
+  for (const target of ["body", "outline", "scene"] as const) {
+    assert.ok(!targetLabel(target).startsWith("flow."), `字典里缺 flow.target.${target}`);
+  }
 });

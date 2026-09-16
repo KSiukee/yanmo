@@ -125,6 +125,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "这张问题卡还没有答案：{card_id}" : ["card_id"],
     ANSWER_LAND_NODE_INVALID => "answer.land_node_invalid"
         : "不能把答案落到这一段：{node_id} 不在这一章所属的书里，或不承载正文" : ["node_id"],
+    ANSWER_TARGET_UNKNOWN => "answer.target_unknown"
+        : "认不出的落点：{value}（只认 body / outline / scene）" : ["value"],
     ROUND_EMPTY => "round.empty" : "这一轮一条答案都没有，没什么可落的" : [],
     ROUND_CARD_FOREIGN => "round.card_foreign"
         : "这一条不属于这本书：卡 {card_id} 不在作品 {work_id} 里" : ["card_id", "work_id"],

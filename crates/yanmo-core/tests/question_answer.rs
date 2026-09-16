@@ -206,7 +206,8 @@ fn landing_marks_the_answer_and_leaves_a_trail_without_touching_the_prose() {
     store.record_question_answer(id, "他怕烧掉就认不出自己", "typed", "author").unwrap();
     let before = store.read_body(chapter).unwrap();
 
-    let answer_id = store.mark_answer_landed(id, chapter, "author").unwrap();
+    let receipt = store.mark_answer_landed(id, chapter, "body", "", "author").unwrap();
+    let answer_id = receipt.answer_ids[0];
 
     let saved = store.answer_of_question(id).unwrap();
     assert_eq!(saved.id, answer_id);
@@ -237,8 +238,8 @@ fn landing_twice_is_allowed_and_records_each_time() {
     let id = store.create_question_card(&card(work)).unwrap();
     store.record_question_answer(id, "同一句话再放一次也无妨", "typed", "author").unwrap();
 
-    store.mark_answer_landed(id, chapter, "author").unwrap();
-    store.mark_answer_landed(id, chapter, "author").unwrap();
+    store.mark_answer_landed(id, chapter, "body", "", "author").unwrap();
+    store.mark_answer_landed(id, chapter, "body", "", "author").unwrap();
 
     let ops: Vec<String> = store
         .card_events(store.answer_of_question(id).unwrap().id)
@@ -264,7 +265,7 @@ fn landing_refuses_a_node_that_holds_no_body_or_belongs_to_another_book() {
         (stranger, codes::ANSWER_LAND_NODE_INVALID, "别的作品的章"),
         (9999, codes::NODE_GONE, "不存在的节点"),
     ] {
-        let err = store.mark_answer_landed(id, node, "author").unwrap_err();
+        let err = store.mark_answer_landed(id, node, "body", "", "author").unwrap_err();
         assert_eq!(err.code(), expected, "{why}");
     }
     assert_eq!(
@@ -281,7 +282,7 @@ fn landing_without_an_answer_says_so() {
     let (work, chapter) = seeded(&mut store);
     let id = store.create_question_card(&card(work)).unwrap();
 
-    let err = store.mark_answer_landed(id, chapter, "author").unwrap_err();
+    let err = store.mark_answer_landed(id, chapter, "body", "", "author").unwrap_err();
     assert_eq!(err.code(), codes::ANSWER_NOT_FOUND);
 }
 
@@ -301,8 +302,8 @@ fn a_round_lands_in_the_given_order_and_writes_back_edits() {
             work,
             chapter,
             &[
-                RoundItem { card_id: second, body: "  第二段（改了字）  ".to_string() },
-                RoundItem { card_id: first, body: "第一段".to_string() },
+                RoundItem { card_id: second, body: "  第二段（改了字）  ".to_string(), target: String::new(), title: String::new() },
+                RoundItem { card_id: first, body: "第一段".to_string(), target: String::new(), title: String::new() },
             ],
             "author",
         )
@@ -310,7 +311,8 @@ fn a_round_lands_in_the_given_order_and_writes_back_edits() {
 
     let edited = store.answer_of_question(second).unwrap();
     let untouched = store.answer_of_question(first).unwrap();
-    assert_eq!(landed, vec![edited.id, untouched.id], "落下的顺序就是给的那个顺序");
+    assert_eq!(landed.answer_ids, vec![edited.id, untouched.id], "落下的顺序就是给的那个顺序");
+    assert!(landed.scene_ids.is_empty() && landed.outline.is_none(), "这一轮只落正文");
     assert_eq!(edited.body, "第二段（改了字）", "改过的字回写了答案池");
     assert_eq!(edited.status, "landed");
     assert_eq!(untouched.body, "第一段");
@@ -352,7 +354,14 @@ fn a_round_with_one_bad_item_writes_nothing_at_all() {
     store.record_question_answer(stranger, "别人家的答案", "typed", "author").unwrap();
     let volume = store.create_node(work, None, NodeKind::Volume, "第一卷").unwrap();
 
-    let one = |card_id: i64, body: &str| vec![RoundItem { card_id, body: body.to_string() }];
+    let one = |card_id: i64, body: &str| {
+        vec![RoundItem {
+            card_id,
+            body: body.to_string(),
+            target: String::new(),
+            title: String::new(),
+        }]
+    };
     let cases: [(Vec<RoundItem>, &str, &str); 4] = [
         (vec![], codes::ROUND_EMPTY, "空轮"),
         (one(good, "  "), codes::ANSWER_BODY_EMPTY, "空答案"),
@@ -377,4 +386,124 @@ fn a_round_with_one_bad_item_writes_nothing_at_all() {
         1,
         "只有建卡那一条痕"
     );
+}
+
+/// 落点三档：章纲（合并成一行）、场景卡（新建一张、正文就是答案）、正文（一个字都不写）。
+#[test]
+fn answers_land_where_the_author_says() {
+    let (_dir, mut store) = fresh();
+    let (work, chapter) = seeded(&mut store);
+    store.set_node_summary(chapter, "他回了家。").unwrap();
+    let pov = store.create_question_card(&card(work)).unwrap();
+    let scene = store.create_question_card(&card(work)).unwrap();
+    let prose = store.create_question_card(&card(work)).unwrap();
+    store.record_question_answer(pov, "第三人称，跟着林望", "typed", "author").unwrap();
+    store.record_question_answer(scene, "雨夜，码头，他等一个不会来的人", "typed", "author").unwrap();
+    store.record_question_answer(prose, "他站在门口，没敢敲门。", "typed", "author").unwrap();
+
+    let done = store
+        .apply_answer_round(
+            work,
+            chapter,
+            &[
+                RoundItem { card_id: pov, body: "第三人称，跟着林望".to_string(), target: "outline".to_string(), title: String::new() },
+                RoundItem { card_id: scene, body: "雨夜，码头，他等一个不会来的人".to_string(), target: "scene".to_string(), title: "码头".to_string() },
+                RoundItem { card_id: prose, body: "他站在门口，没敢敲门。".to_string(), target: String::new(), title: String::new() },
+            ],
+            "author",
+        )
+        .unwrap();
+
+    // ① 章纲：原有那句话留着，新的接在后面（一行，用「；」）
+    let summary: String = store
+        .conn()
+        .query_row("SELECT summary FROM nodes WHERE id = ?1", [chapter], |r| r.get(0))
+        .unwrap();
+    assert_eq!(summary, "他回了家。；第三人称，跟着林望");
+    assert_eq!(done.outline.as_deref(), Some(summary.as_str()), "回执要给界面库里的真值");
+
+    // ② 场景卡：这一章下面新建一张，名字是作者起的，正文就是那条答案
+    assert_eq!(done.scene_ids.len(), 1);
+    let scene_id = done.scene_ids[0];
+    let (kind, title, parent): (String, String, Option<i64>) = store
+        .conn()
+        .query_row(
+            "SELECT node_kind, title, parent_id FROM nodes WHERE id = ?1",
+            [scene_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        (kind.as_str(), title.as_str(), parent),
+        ("scene", "码头", Some(chapter)),
+        "场景卡挂在**这一章**下面，名字是作者起的"
+    );
+    assert_eq!(store.read_body(scene_id).unwrap(), "雨夜，码头，他等一个不会来的人");
+
+    // ③ 正文那一条：核心一个字都不写（正文由界面插进编辑会话）
+    assert_eq!(store.read_body(chapter).unwrap(), "");
+    assert_eq!(done.answer_ids.len(), 3, "三条都算落了");
+
+    // 每条痕都写清落到哪儿
+    let payload: String = store
+        .conn()
+        .query_row(
+            "SELECT payload FROM op_log WHERE entity = 'fragments' AND entity_id = ?1 AND op = 'land'",
+            [store.answer_of_question(scene).unwrap().id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(payload.contains("\"target\":\"scene\""), "{payload}");
+    assert!(payload.contains(&format!("\"scene_id\":{scene_id}")), "场景卡要记下新卡的 id：{payload}");
+}
+
+/// 同一句话落两回：章纲里不该出现两遍（别的落法不受影响——"再放一次"是作者的自由）。
+#[test]
+fn landing_the_same_line_twice_does_not_double_it_in_the_outline() {
+    let (_dir, mut store) = fresh();
+    let (work, chapter) = seeded(&mut store);
+    let id = store.create_question_card(&card(work)).unwrap();
+    store.record_question_answer(id, "第一场戏在码头", "typed", "author").unwrap();
+    let once = |store: &mut Store| {
+        store
+            .mark_answer_landed(id, chapter, "outline", "", "author")
+            .unwrap()
+            .outline
+            .unwrap()
+    };
+    assert_eq!(once(&mut store), "第一场戏在码头");
+    assert_eq!(once(&mut store), "第一场戏在码头", "同一句不重复接");
+    assert_eq!(store.answer_of_question(id).unwrap().status, "landed");
+}
+
+/// 认不出的落点当场拒：整轮都不写，章纲与场景卡一个都不动。
+#[test]
+fn an_unknown_target_is_refused_before_anything_is_written() {
+    let (_dir, mut store) = fresh();
+    let (work, chapter) = seeded(&mut store);
+    let good = store.create_question_card(&card(work)).unwrap();
+    let bad = store.create_question_card(&card(work)).unwrap();
+    store.record_question_answer(good, "这一条要落章纲", "typed", "author").unwrap();
+    store.record_question_answer(bad, "这一条落点写错了", "typed", "author").unwrap();
+
+    let err = store
+        .apply_answer_round(
+            work,
+            chapter,
+            &[
+                RoundItem { card_id: good, body: "这一条要落章纲".to_string(), target: "outline".to_string(), title: String::new() },
+                RoundItem { card_id: bad, body: "这一条落点写错了".to_string(), target: "telepathy".to_string(), title: String::new() },
+            ],
+            "author",
+        )
+        .unwrap_err();
+    assert_eq!(err.code(), codes::ANSWER_TARGET_UNKNOWN);
+
+    let summary: String = store
+        .conn()
+        .query_row("SELECT summary FROM nodes WHERE id = ?1", [chapter], |r| r.get(0))
+        .unwrap();
+    assert_eq!(summary, "", "半轮落不下去：章纲一个字都没写");
+    assert_eq!(store.answer_of_question(good).unwrap().status, "pending");
+    assert_eq!(store.question_cards(work, None).unwrap().len(), 2, "也没多出场景卡");
 }
