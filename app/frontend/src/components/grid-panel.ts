@@ -1,21 +1,26 @@
-// 大纲表的**状态与命令编排**：读全树、逐格存、切列、折叠、只看没填的。
+// 大纲表的**状态与命令编排**：读全树、逐格存、整片粘、拖动换位、选人、切列、折叠、只看没填的。
 //
 // 单独成文件的原因与别的 `*-panel.ts` 同一条：这一整块是"会发生什么"，
 // `.vue` 那一份只管"长什么样"。
 //
-// 四条分寸：
+// 五条分寸：
 // 1. **逐格存**：改哪一格只发那一格（一句话走 `set_node_summary`，四格一次发四格），
 //    存下来的回执是**库里真有的那一份**——界面显示的永远是库里的值，不是自己回显的；
-// 2. **打开才读**：它是"看一眼/改一遍"的一屏，不是常驻画面；
-// 3. **列与折叠是"当下想看什么"**：不落盘（与第二栏那些开关同一条规矩）；
-// 4. **不猜**：存不下就那一格报错、保持原值（绝不假装存上了）。
+// 2. **一片粘一次**：整片粘贴走 `save_outline_cells`（一片一次事务，要么全落要么不落）；
+// 3. **打开才读**：它是"看一眼/改一遍"的一屏，不是常驻画面；
+// 4. **列与折叠是"当下想看什么"**：不落盘（与第二栏那些开关同一条规矩）；
+// 5. **不猜**：存不下就那一格报错、保持原值（绝不假装存上了）。
 
-import { ref, watch, type Ref } from "vue";
+import { computed, ref, watch, type ComputedRef, type Ref } from "vue";
 
 import { asError } from "../api/errors.ts";
-import { outlineRows, type OutlineRowDto } from "../api/outline.ts";
-import { setNodeSummary, saveNodeFields } from "../api/core.ts";
-import { DEFAULT_COLUMNS, type GridColumn } from "./grid.ts";
+import { outlinePasteCells, outlineRows, type OutlineRowDto } from "../api/outline.ts";
+import { setNodeSummary, saveNodeFields, treeMoveNode } from "../api/core.ts";
+import { t } from "../locales/index.ts";
+import { dropPlan, type DropZone } from "./drop-plan.ts";
+import { useGridCast } from "./grid-cast.ts";
+import { parsePasteTable, pasteProblemText, planPaste } from "./grid-paste.ts";
+import { COLUMNS, DEFAULT_COLUMNS, visibleRows, type ColumnSpec, type GridColumn } from "./grid.ts";
 
 export interface GridPanelOptions {
   /** 当前作品（换书＝换一张表） */
@@ -30,17 +35,25 @@ export interface GridPanelState {
   /** 这一屏开着没有（它是**整块主区**上的一层，不是小弹窗） */
   visible: Ref<boolean>;
   rows: Ref<OutlineRowDto[]>;
+  /** 表里此刻真摆着的行（折叠与筛选之后）——粘贴与拖动都按它算落点 */
+  shown: ComputedRef<OutlineRowDto[]>;
   busy: Ref<boolean>;
   /** 失败时那句已经渲染好的话（`CoreError` 走字典渲染） */
   errorText: Ref<string>;
   /** 现在露哪几列（勾选开关；不落盘） */
   columns: Ref<GridColumn[]>;
+  /** 现在露着的那几列（顺序就是表里的顺序） */
+  shownColumns: ComputedRef<ColumnSpec[]>;
   /** 只看"要管一下"的行（没写一句话、或四格填了一半） */
   onlyUnfilled: Ref<boolean>;
   /** 收起来的卷 */
   collapsed: Ref<Set<number>>;
-  /** 刚存过的那一格（界面上闪一句回执） */
+  /** 刚存过的那一格 / 刚粘完那一片（界面上闪一句**已经渲染好的**回执） */
   justSaved: Ref<string>;
+  /** 现在就开着选人卡的那一行（没有就是 null） */
+  castFor: Ref<number | null>;
+  /** 这本书的人物卡（选人卡打开时读的） */
+  castCards: Ref<import("../api/entity.ts").EntityCard[]>;
   show: () => void;
   hide: () => void;
   toggle: () => void;
@@ -53,6 +66,16 @@ export interface GridPanelState {
   saveSummary: (node_id: number, text: string) => Promise<void>;
   /** 存这一行四格里的某一格（**整行四格一起发**：接口要一次给全） */
   saveField: (node_id: number, field: "pov" | "goal" | "conflict" | "outcome", value: string) => Promise<void>;
+  /** 凭空降下来的那一片（锚点是作者点下去的那一格） */
+  paste: (anchor: { row: number; column: GridColumn }, text: string) => Promise<void>;
+  /** 拖动一行到某一行上（落点由纯逻辑算，见 `drop-plan.ts`） */
+  drop: (dragged_id: number, target_id: number, zone: DropZone) => Promise<void>;
+  /** 打开某一行的选人卡 */
+  openCast: (node_id: number) => Promise<void>;
+  /** 收起选人卡 */
+  closeCast: () => void;
+  /** 选 / 不选一个人 */
+  toggleCast: (node_id: number, entity_id: number) => Promise<void>;
   /** 跳到这一章（顺手把表收起来） */
   open: (node_id: number) => Promise<void>;
   /** 在这个分组下面加一章 */
@@ -82,6 +105,14 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
     errorText.value = asError(error).message;
   }
 
+  const shown = computed(() =>
+    visibleRows(rows.value, { collapsed: collapsed.value, onlyUnfilled: onlyUnfilled.value }),
+  );
+  /** 露出来的列（保持 COLUMNS 的固定顺序）。 */
+  const shownColumns = computed(() => COLUMNS.filter((spec) => columns.value.includes(spec.key)));
+
+  const cast = useGridCast({ workId: deps.workId, replace, rowOf, report, busy });
+
   async function load() {
     const work = deps.workId.value;
     if (!work) {
@@ -109,7 +140,7 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
       // 核心这条命令只回 void：**写上的是作者刚写的字**（它自己会修剪，但摘要不做修剪），
       // 所以本地就按提交值更新；下一次 `load()` 拿库里的真值。
       replace({ ...before, summary: text });
-      justSaved.value = `summary:${node_id}`;
+      justSaved.value = t("grid.saved");
     } catch (error) {
       report(error);
     } finally {
@@ -130,7 +161,7 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
       const saved = await saveNodeFields({ ...before.fields, node_id, [field]: value });
       // 回执是**库里真有的那一份**（修剪过的）：拿它换掉手上那一行
       replace({ ...before, fields: saved });
-      justSaved.value = `${field}:${node_id}`;
+      justSaved.value = t("grid.saved");
     } catch (error) {
       report(error);
     } finally {
@@ -142,6 +173,7 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
   const COLUMN_ORDER: GridColumn[] = [
     "title",
     "summary",
+    "cast",
     "pov",
     "goal",
     "conflict",
@@ -169,6 +201,65 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
     await deps.openNode(node_id);
   }
 
+  /**
+   * 整片粘贴：**锚点就是作者点下去的那一格**，往右往下铺。
+   *
+   * 落点由纯逻辑算（`grid-paste.ts`）：铺不下、铺到了卷或只读列，都在这里当场说清，
+   * 一个字都不发出去（核心那边还有一道核对，见 `store::outline_paste`）。
+   */
+  async function paste(anchor: { row: number; column: GridColumn }, text: string) {
+    const work = deps.workId.value;
+    if (!work) return;
+    const column = shownColumns.value.findIndex((spec) => spec.key === anchor.column);
+    if (column < 0) return;
+    const plan = planPaste(parsePasteTable(text), shown.value, shownColumns.value.map((s) => s.key), {
+      row: anchor.row,
+      column,
+    });
+    if ("problem" in plan) {
+      // 粘不下：说清是哪儿不对，**一格都不动**（这一句不是"存失败"，是"没发出去"）
+      errorText.value = pasteProblemText(plan.problem);
+      return;
+    }
+    try {
+      busy.value = true;
+      errorText.value = "";
+      rows.value = await outlinePasteCells(work, plan.cells);
+      const touched = new Set(plan.cells.map((cell) => cell.node_id)).size;
+      justSaved.value = t("grid.paste.done", { cells: plan.cells.length, rows: touched });
+    } catch (error) {
+      report(error);
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  /**
+   * 拖动一行：落点 → (新父级, 第几位) 由 `drop-plan.ts` 算（目录树与这里共用一份）。
+   *
+   * 落了之后**重读整张表**：换卷 / 换序会连带改号的渲染，重读才是库里的真样子
+   * （只挪手上那一行的话，界面上会留着一份"看起来挪过了"的假象）。
+   */
+  async function drop(dragged_id: number, target_id: number, zone: DropZone) {
+    const landing = dropPlan(
+      rows.value.map((row) => ({ id: row.node_id, parent_id: row.parent_id })),
+      dragged_id,
+      target_id,
+      zone,
+    );
+    if (landing === null) return;
+    try {
+      busy.value = true;
+      errorText.value = "";
+      await treeMoveNode(dragged_id, landing.parent_id, landing.index);
+      await load();
+    } catch (error) {
+      report(error);
+    } finally {
+      busy.value = false;
+    }
+  }
+
   async function addChapter(parent_id: number | null) {
     try {
       busy.value = true;
@@ -190,6 +281,7 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
       collapsed.value = new Set();
       justSaved.value = "";
       errorText.value = "";
+      cast.reset();
       if (visible.value) void load();
     },
   );
@@ -197,12 +289,16 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
   return {
     visible,
     rows,
+    shown,
     busy,
     errorText,
     columns,
+    shownColumns,
     onlyUnfilled,
     collapsed,
     justSaved,
+    castFor: cast.openFor,
+    castCards: cast.cards,
     show: () => {
       visible.value = true;
       void load();
@@ -210,11 +306,13 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
     hide: () => {
       visible.value = false;
       justSaved.value = "";
+      cast.reset();
     },
     toggle: () => {
       if (visible.value) {
         visible.value = false;
         justSaved.value = "";
+        cast.reset();
       } else {
         visible.value = true;
         void load();
@@ -225,6 +323,11 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
     toggleCollapsed,
     saveSummary,
     saveField,
+    paste,
+    drop,
+    openCast: cast.open,
+    closeCast: cast.close,
+    toggleCast: cast.toggle,
     open,
     addChapter,
   };

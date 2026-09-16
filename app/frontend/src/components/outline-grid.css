@@ -145,3 +145,96 @@
 .grid__open:hover {
   color: var(--ym-accent);
 }
+
+/* 章名那一格是**拖行的抓手**：按住它整行跟着走 */
+.grid__open[draggable="true"] {
+  cursor: grab;
+}
+
+/* ── 出场人物那一格：空着时是一个"选人"的提示，点开是一张多选卡 ── */
+.grid__cast {
+  position: relative;
+}
+
+.grid__cast-open {
+  max-width: 100%;
+  padding: 2px 4px;
+  overflow: hidden;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.grid__cast-open:hover {
+  background: var(--ym-paper-dim);
+}
+
+/* 一个都还没选：灰一点，一眼看得出"这一格还没填" */
+.grid__cast-open--empty {
+  opacity: 0.55;
+}
+
+.grid__cast-pop {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 11rem;
+  max-height: 16rem;
+  overflow: auto;
+  padding: 6px 8px;
+  border: 1px solid var(--ym-line);
+  border-radius: 6px;
+  background: var(--ym-paper);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 18%);
+}
+
+.grid__cast-hint {
+  margin: 0 0 2px;
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.7;
+}
+
+.grid__cast-item {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.grid__cast-done {
+  margin-top: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+/* ── 拖行落点：上 / 中 / 下三段各自一条线或一层罩 ── */
+.grid__drop--before td {
+  box-shadow: inset 0 2px 0 var(--ym-accent);
+}
+
+.grid__drop--after td {
+  box-shadow: inset 0 -2px 0 var(--ym-accent);
+}
+
+.grid__drop--inside td {
+  background: color-mix(in srgb, var(--ym-accent) 12%, transparent);
+}

@@ -1301,8 +1301,97 @@ fn outline_cards_and_the_checkup_are_drivable_from_the_command_line() {
     }
 }
 
-/// 大纲体检第二刀：**伏笔的埋/收 + 事件的故事时间**。
+/// 出场人物与整片粘贴：**命令行也能走完**（界面上那一格点得动的事，这里要能反复跑）。
 ///
+/// 盯三件事：名单是**整份覆盖**（给了谁就是谁、不写就是清空）、
+/// 表里那一行真带上了人、整片粘贴要么全落要么一格都不落。
+#[test]
+fn cast_and_a_pasted_block_are_drivable_from_the_command_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let (work_id, chapter_id) = seed(dir.path(), "novel");
+    let work = work_id.to_string();
+    let chapter = chapter_id.to_string();
+    let lu = ok(dir.path(), "entity-new", &[("work", &work), ("kind", "person"), ("name", "陆文")]);
+    let zhang = ok(dir.path(), "entity-new", &[("work", &work), ("kind", "person"), ("name", "老张")]);
+    let lu_id = lu["card"]["id"].as_i64().unwrap();
+    let zhang_id = zhang["card"]["id"].as_i64().unwrap();
+
+    // 挂两个人：读回来按名字排
+    let both = format!("{lu_id},{zhang_id}");
+    let set = ok(dir.path(), "cast-set", &[("node", &chapter), ("entity", &both)]);
+    assert_eq!(set["cast"].as_array().unwrap().len(), 2, "{set}");
+    assert_eq!(set["cast"][0]["name"].as_str().unwrap(), "老张");
+
+    let list = ok(dir.path(), "cast-list", &[("work", &work)]);
+    assert_eq!(list["count"].as_i64().unwrap(), 1, "只有那一章挂过人：{list}");
+    assert_eq!(list["nodes"][0]["node_id"].as_i64().unwrap(), chapter_id);
+
+    // 大纲表那一屏也带着人（界面读的就是它）
+    let rows = ok(dir.path(), "outline-rows", &[("work", &work)]);
+    let row = rows["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["node_id"].as_i64() == Some(chapter_id))
+        .unwrap();
+    assert_eq!(row["cast"].as_array().unwrap().len(), 2, "{rows}");
+
+    // 整份覆盖：只留陆文；再不写 --entity 就是清空
+    let only_lu = ok(dir.path(), "cast-set", &[("node", &chapter), ("entity", &lu_id.to_string())]);
+    assert_eq!(only_lu["cast"].as_array().unwrap().len(), 1);
+    let cleared = ok(dir.path(), "cast-set", &[("node", &chapter)]);
+    assert!(cleared["cast"].as_array().unwrap().is_empty(), "不写 --entity = 谁也不出场");
+
+    // 整片粘贴：两格落在同一章上（一句话 + 视角）
+    let cells = format!(
+        "[{{\"node_id\":{chapter_id},\"column\":\"summary\",\"value\":\"他第一次进城\"}},\
+          {{\"node_id\":{chapter_id},\"column\":\"pov\",\"value\":\"陆文\"}}]"
+    );
+    let path = dir.path().join("cells.json");
+    std::fs::write(&path, cells).unwrap();
+    let pasted = ok(
+        dir.path(),
+        "paste-cells",
+        &[("work", &work), ("cells-file", path.to_str().unwrap())],
+    );
+    assert_eq!(pasted["cells"].as_i64().unwrap(), 2);
+
+    let rows = ok(dir.path(), "outline-rows", &[("work", &work)]);
+    let row = rows["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["node_id"].as_i64() == Some(chapter_id))
+        .unwrap();
+    assert_eq!(row["summary"].as_str().unwrap(), "他第一次进城");
+    assert_eq!(row["fields"]["pov"].as_str().unwrap(), "陆文");
+
+    // 一片里有一格落不了（落到卷上）：整片都不落——那一章的一句话保持原样
+    let volume_id = rows["rows"][0]["node_id"].as_i64().unwrap();
+    let bad = format!(
+        "[{{\"node_id\":{chapter_id},\"column\":\"summary\",\"value\":\"不该写进去\"}},\
+          {{\"node_id\":{volume_id},\"column\":\"goal\",\"value\":\"卷没有这一格\"}}]"
+    );
+    std::fs::write(&path, bad).unwrap();
+    match run(
+        dir.path(),
+        "paste-cells",
+        &[("work", &work), ("cells-file", path.to_str().unwrap())],
+    ) {
+        Err(CliError::Core(error)) => assert_eq!(error.code(), "node.no_fields"),
+        other => panic!("一片里有一格落不了就该整片拒：{other:?}"),
+    }
+    let rows = ok(dir.path(), "outline-rows", &[("work", &work)]);
+    let row = rows["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["node_id"].as_i64() == Some(chapter_id))
+        .unwrap();
+    assert_eq!(row["summary"].as_str().unwrap(), "他第一次进城", "拒了就不许留下半片");
+}
+
+/// 大纲体检第二刀：**伏笔的埋/收 + 事件的故事时间**。
 /// 这一段盯的是"只有结构化记下来才判得动"的两条规则：
 /// 埋久了没收的伏笔、后一章却故事时间更早的事件；以及"不写了"是正经结局、
 /// 非法边与脏锚点都说人话。

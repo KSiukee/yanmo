@@ -1,4 +1,4 @@
-//! 开发档里的**大纲命令面**：设定卡（人物 / 设定）、场景卡四格、大纲体检。
+//! 开发档里的**大纲命令面**：设定卡（人物 / 设定）、场景卡四格、出场人物、整片粘贴、大纲体检。
 //!
 //! 与别的开发档命令一样**只存在于开发构建**。单独成文件的原因：
 //! 它是同一件事的三个面（先有承载，才判得动，判完还能处置）——
@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 use yanmo_core::model::{
     Attribute, EntityKind, ForeshadowState, NewEntityCard, NewForeshadow, SceneFields,
 };
-use yanmo_core::store::{FragmentEdit, Store};
+use yanmo_core::store::{FragmentEdit, OutlineCell, Store};
 
 use crate::args::{Args, Usage};
 use crate::dev::body_of;
@@ -36,8 +36,20 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         "outline-dismiss" => Some(&["work", "fingerprint", "trigger"]),
         "outline-undismiss" => Some(&["work", "fingerprint", "trigger"]),
         "outline-clear-dismissed" => Some(&["work", "trigger"]),
+        "cast-set" => Some(&["node", "entity", "trigger"]),
+        "cast-list" => Some(&["work"]),
+        "outline-rows" => Some(&["work"]),
+        "paste-cells" => Some(&["work", "cells-file", "trigger"]),
         _ => None,
     }
+}
+
+/// 逗号分隔的一串 id（`--entity 3,5`；空着就是"一个都不要"，即清空名单）。
+fn split_ids(args: &Args, name: &str) -> Result<Vec<i64>, Usage> {
+    split_list(args, name)
+        .into_iter()
+        .map(|part| part.parse::<i64>().map_err(|_| Usage::from(format!("--{name} 要写成逗号分隔的整数"))))
+        .collect()
 }
 
 /// 逗号分隔的一串（`--alias 阿文,陆大人`）：空段丢掉。
@@ -250,6 +262,43 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
             let trigger = args.optional("trigger").unwrap_or("cli").to_string();
             store.clear_dismissed_issues(work, &trigger)?;
             json!({ "ok": true, "command": "outline-clear-dismissed", "dismissed": Vec::<String>::new() })
+        }
+        "cast-set" => {
+            let node = args.required_i64("node")?;
+            let trigger = args.optional("trigger").unwrap_or("cli").to_string();
+            // 名单是**整份覆盖**（与界面那一格同一条语义）：给了谁就是谁，没给的就是没有
+            let cast = store.set_node_cast(node, &split_ids(args, "entity")?, &trigger)?;
+            json!({ "ok": true, "command": "cast-set", "node_id": node, "cast": cast })
+        }
+        "cast-list" => {
+            let work = args.required_i64("work")?;
+            // 摊成按节点排的一串（脚本对表用；没挂过人的节点不出现）
+            let mut nodes: Vec<Value> = store
+                .node_cast(work)?
+                .into_iter()
+                .map(|(node_id, cast)| json!({ "node_id": node_id, "cast": cast }))
+                .collect();
+            nodes.sort_by_key(|row| row["node_id"].as_i64().unwrap_or(0));
+            json!({ "ok": true, "command": "cast-list", "count": nodes.len(), "nodes": nodes })
+        }
+        "outline-rows" => {
+            // 界面上那张大纲表读的就是这一份（一整屏一次给全）
+            let work = args.required_i64("work")?;
+            let rows = store.outline_rows(work)?;
+            json!({ "ok": true, "command": "outline-rows", "count": rows.len(), "rows": rows })
+        }
+        "paste-cells" => {
+            // 一片格子从 JSON 文件读进来（`[{"node_id":1,"column":"summary","value":"…"}]`）：
+            // 界面上那一片是鼠标粘的，自动化要的是"同一片能反复跑"
+            let work = args.required_i64("work")?;
+            let trigger = args.optional("trigger").unwrap_or("cli").to_string();
+            let path = args.required("cells-file")?.to_string();
+            let text = std::fs::read_to_string(&path)?;
+            let cells: Vec<OutlineCell> = serde_json::from_str(&text).map_err(|error| {
+                CliError::from(Usage::from(format!("--cells-file 不是合法的一片格子 JSON：{error}")))
+            })?;
+            let rows = store.save_outline_cells(work, &cells, &trigger)?;
+            json!({ "ok": true, "command": "paste-cells", "cells": cells.len(), "rows": rows.len() })
         }
         _ => return Ok(None),
     };

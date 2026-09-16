@@ -641,6 +641,8 @@ export const COMMANDS = {
   outlineDismiss: "outline_dismiss",
   outlineUndismiss: "outline_undismiss",
   outlineClearDismissed: "outline_clear_dismissed",
+  outlinePasteCells: "outline_paste_cells",
+  outlineSetCast: "outline_set_cast",
   saveNodeFields: "save_node_fields",
   foreshadowList: "foreshadow_list",
   foreshadowCreate: "foreshadow_create",

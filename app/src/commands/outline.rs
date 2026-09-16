@@ -1,6 +1,6 @@
-//! 大纲体检命令域：**把对不上的地方列出来**（只报告，不改稿）。
+//! 大纲命令域：**表的读数**、**整片粘贴**、**出场人物**，以及**体检**（只报告，不改稿）。
 //!
-//! 规则全在核心的 `outline`（纯逻辑、零文案）；这里只做两件事：
+//! 体检的规则全在核心的 `outline`（纯逻辑、零文案）；这里只做两件事：
 //! 把发现包成界面认的形状（**带上指纹**，忽略标记认它），以及记下"这一处我知道了"。
 //!
 //! 三个口径：
@@ -11,13 +11,13 @@
 
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::error::ApiError;
 use crate::storage::AppData;
-use yanmo_core::store::{OutlineRow, Store};
 use yanmo_core::outline::OutlineIssue;
+use yanmo_core::store::{CastMember, OutlineCell, OutlineRow, Store};
 
 /// 一条发现给界面的形状（**带指纹**：忽略标记与"撤销忽略"都认它）。
 #[derive(Debug, Serialize)]
@@ -115,4 +115,44 @@ pub fn outline_clear_dismissed(
         store.clear_dismissed_issues(work_id, "author")?;
         board(store, work_id)
     })
+}
+
+/// 交上来的一格：哪一段的哪一栏写什么（界面把粘进来的那一片拆好格再交上来）。
+///
+/// 拆格在界面（那儿才看得见"哪一列现在露着、哪一行被折叠了"），**入库前的核对在核心**
+/// （稳定码、这一段能不能填、是不是这本书的）——所以这张形状只是搬运，不带任何判断。
+#[derive(Debug, Deserialize)]
+pub struct OutlineCellDto {
+    pub node_id: i64,
+    /// 稳定码（`summary` / `pov` / `goal` / `conflict` / `outcome`）
+    pub column: String,
+    pub value: String,
+}
+
+/// 把一片粘进来的格子**一次写进库**，回这本书最新那一屏大纲表。
+///
+/// 一次事务：一片里有一格落不了，整片都不落（理见核心 `store::outline_paste`）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn outline_paste_cells(
+    data: State<'_, AppData>,
+    work_id: i64,
+    cells: Vec<OutlineCellDto>,
+) -> Result<Vec<OutlineRow>, ApiError> {
+    crate::acceptance::note_command("outline_paste_cells");
+    let cells: Vec<OutlineCell> = cells
+        .into_iter()
+        .map(|cell| OutlineCell { node_id: cell.node_id, column: cell.column, value: cell.value })
+        .collect();
+    data.with_store(|store| store.save_outline_cells(work_id, &cells, "author"))
+}
+
+/// 换掉一段的出场人物（**整份覆盖**），回这一段最新那一份名单。
+#[tauri::command(rename_all = "snake_case")]
+pub fn outline_set_cast(
+    data: State<'_, AppData>,
+    node_id: i64,
+    entity_ids: Vec<i64>,
+) -> Result<Vec<CastMember>, ApiError> {
+    crate::acceptance::note_command("outline_set_cast");
+    data.with_store(|store| store.set_node_cast(node_id, &entity_ids, "author"))
 }

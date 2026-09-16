@@ -259,6 +259,8 @@ fn main() {
             commands::outline::outline_dismiss,
             commands::outline::outline_undismiss,
             commands::outline::outline_clear_dismissed,
+            commands::outline::outline_paste_cells,
+            commands::outline::outline_set_cast,
             commands::foreshadow::foreshadow_list,
             commands::foreshadow::foreshadow_create,
             commands::foreshadow::foreshadow_update,

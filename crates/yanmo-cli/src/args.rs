@@ -196,7 +196,14 @@ pub const HELP_DEV: &str = "\
   outline-undismiss --work <id> --fingerprint <指纹> [--trigger <谁触发>]
                             撤销一次忽略
   outline-clear-dismissed --work <id> [--trigger <谁触发>]
-                            全部重新看一遍";
+                            全部重新看一遍
+  cast-set --node <章 id> [--entity <卡 id[,卡 id…]>] [--trigger <谁触发>]
+                            换掉这一段的出场人物（**整份覆盖**：给了谁就是谁，不写就是清空）
+  cast-list --work <id>      这本书每一段的出场人物（没挂过人的段不出现）
+  outline-rows --work <id>   大纲表那一屏（整棵树铺平，一行带上四格 / 伏笔 / 字数 / 出场人物）
+  paste-cells --work <id> --cells-file <JSON 路径> [--trigger <谁触发>]
+                            把一片格子一次写进库（每一格写成 node_id / column / value 三个字段；
+                            一片一次事务：有一格落不了，整片都不落）";
 
 /// 这个构建的帮助文本（发布构建只列救援档）。
 pub fn help_text() -> String {

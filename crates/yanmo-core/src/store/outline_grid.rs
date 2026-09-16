@@ -7,14 +7,17 @@
 //!
 //! 1. **四格**（视角 / 目标 / 冲突 / 结果）——凡承载正文的节点都有，没填就是空串；
 //! 2. **伏笔账**——这一章埋着几条还没收、收掉几条（作者一眼看得出哪一章的线头没结）；
-//! 3. **字数与有没有正文**——目录树本来就读它们，顺手带上。
+//! 3. **字数与有没有正文**——目录树本来就读它们，顺手带上；
+//! 4. **出场人物**——这一章挂了哪几张人物卡（名字是读的这一刻从卡上取的，
+//!    见 [`Store::node_cast`]）。
 //!
 //! 它是**只读**的：改哪一格走 [`Store::save_scene_fields`] / [`Store::set_node_summary`]，
-//! 一次改一个节点的那一项——表格逐格存，不该整屏重写。
+//! 一次改一个节点的那一项——表格逐格存，不该整屏重写；整片粘进来的那一片走
+//! [`Store::save_outline_cells`]（一片一次事务，理由在 `store::outline_paste`）。
 
 use std::collections::HashMap;
 
-use super::Store;
+use super::{CastMember, Store};
 use crate::error::Result;
 use crate::model::{ForeshadowState, NodeKind, SceneFields};
 
@@ -40,6 +43,8 @@ pub struct OutlineRow {
     pub planted_open: usize,
     /// 这一章**收掉**的伏笔有几条
     pub collected: usize,
+    /// 这一段出场的人物（空表＝还没挂过；名字是刚才从设定卡上读的）
+    pub cast: Vec<CastMember>,
 }
 
 impl Store {
@@ -65,6 +70,7 @@ impl Store {
         }
 
         let mut rows = Vec::new();
+        let mut cast = self.node_cast(work_id)?;
         for (node, depth) in self.node_walk(work_id)? {
             rows.push(OutlineRow {
                 node_id: node.id,
@@ -80,6 +86,8 @@ impl Store {
                     .unwrap_or_else(|| SceneFields::empty(node.id)),
                 planted_open: planted_open.get(&node.id).copied().unwrap_or(0),
                 collected: collected.get(&node.id).copied().unwrap_or(0),
+                // 挂过人的节点才在表里（没挂过就是空名单——"没填"与"填成空"是同一件事）
+                cast: cast.remove(&node.id).unwrap_or_default(),
             });
         }
         Ok(rows)

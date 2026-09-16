@@ -9,6 +9,7 @@ import { t } from "../locales/index.ts";
 export type GridColumn =
   | "title"
   | "summary"
+  | "cast"
   | "pov"
   | "goal"
   | "conflict"
@@ -26,6 +27,8 @@ export interface ColumnSpec {
 export const COLUMNS: ColumnSpec[] = [
   { key: "title", editable: false },
   { key: "summary", editable: true },
+  // 出场人物那一列**能改**，但改法是点选（那张多选卡），不是在格子里打字
+  { key: "cast", editable: true },
   { key: "pov", editable: true },
   { key: "goal", editable: true },
   { key: "conflict", editable: true },
@@ -34,8 +37,16 @@ export const COLUMNS: ColumnSpec[] = [
   { key: "words", editable: false },
 ];
 
-/** 默认露哪几列：章名 + 一句话 + 四格（伏笔与字数按需勾出来）。 */
-export const DEFAULT_COLUMNS: GridColumn[] = ["title", "summary", "pov", "goal", "conflict", "outcome"];
+/** 默认露哪几列：章名 + 一句话 + 出场人物 + 四格（伏笔与字数按需勾出来）。 */
+export const DEFAULT_COLUMNS: GridColumn[] = [
+  "title",
+  "summary",
+  "cast",
+  "pov",
+  "goal",
+  "conflict",
+  "outcome",
+];
 
 /** 四格那一族（数据列的真身：它们在 `fields` 里，不在行对象顶层）。 */
 export const FIELD_COLUMNS = ["pov", "goal", "conflict", "outcome"] as const;
@@ -90,6 +101,15 @@ export function foreshadowText(row: { planted_open: number; collected: number })
   return parts.join(" / ");
 }
 
+/**
+ * 出场人物那一列念什么：名字串起来；一个都没有就空着（界面上那一格摆"选人"的提示）。
+ *
+ * **只念名字**，不念 id、不念数量——作者要看的是"这一章有谁"。
+ */
+export function castText(row: { cast?: { name: string }[] }): string {
+  return (row.cast ?? []).map((member) => member.name).join(t("common.list_separator"));
+}
+
 export interface GridRow {
   node_id: number;
   parent_id: number | null;
@@ -99,6 +119,7 @@ export interface GridRow {
   summary: string;
   planted_open: number;
   collected: number;
+  cast: { entity_id: number; name: string }[];
 }
 
 /** 表里要摆的行：先按折叠状态剔掉收起的分组，再按"只看没填的"筛。 */
@@ -148,6 +169,8 @@ export function nextFillableRow<T extends GridRow>(
 export function columnWidth(column: GridColumn): string {
   if (column === "title") return "12rem";
   if (column === "summary" || column === "conflict" || column === "outcome") return "16rem";
+  // 人物那一列要摆得下三四个名字（多了折行，不撑破表）
+  if (column === "cast") return "12rem";
   if (column === "foreshadow") return "7rem";
   if (column === "words") return "5rem";
   return "10rem";

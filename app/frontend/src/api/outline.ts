@@ -41,6 +41,14 @@ export interface OutlineRowDto {
   planted_open: number;
   /** 这一章收掉的伏笔有几条 */
   collected: number;
+  /** 这一段出场的人物（空表＝还没挂过；名字是刚读到的） */
+  cast: CastMember[];
+}
+
+/** 名单里的一个人：设定卡的 id + 它**现在**的名字（卡改名，下次读就是新名）。 */
+export interface CastMember {
+  entity_id: number;
+  name: string;
 }
 
 /** 伏笔那一列要的两个数（`ForeshadowCount` 只是别名，读起来顺一点）。 */
@@ -49,6 +57,26 @@ export type ForeshadowCount = Pick<OutlineRowDto, "planted_open" | "collected">;
 /** 大纲表要读的那一屏（**整棵树铺平**，一次给全）。 */
 export const outlineRows = (work_id: number) =>
   call<OutlineRowDto[]>(COMMANDS.outlineRows, { work_id });
+
+/** 交上去的一格（界面把粘进来的那一片拆好格，核对在核心）。 */
+export interface OutlineCellPayload {
+  node_id: number;
+  /** 稳定码：`summary` / `pov` / `goal` / `conflict` / `outcome` */
+  column: string;
+  value: string;
+}
+
+/**
+ * 把一片粘进来的格子**一次写进库**，回这本书最新那一屏。
+ *
+ * 一片一次事务：里面有一格落不了，整片都不落（**绝不留下粘了一半的表**）。
+ */
+export const outlinePasteCells = (work_id: number, cells: OutlineCellPayload[]) =>
+  call<OutlineRowDto[]>(COMMANDS.outlinePasteCells, { work_id, cells });
+
+/** 换掉一段的出场人物（**整份覆盖**），回这一段最新那一份名单。 */
+export const outlineSetCast = (node_id: number, entity_ids: number[]) =>
+  call<CastMember[]>(COMMANDS.outlineSetCast, { node_id, entity_ids });
 
 /** 体检的一整屏。 */
 export interface OutlineBoard {

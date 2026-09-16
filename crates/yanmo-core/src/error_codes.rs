@@ -149,6 +149,14 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     ENTITY_NOT_FOUND => "entity.not_found" : "设定卡不存在：{entity_id}" : ["entity_id"],
     ENTITY_BAD_FIELD => "entity.bad_field"
         : "这张设定卡的「{field}」存坏了：{value}" : ["field", "value"],
+    CAST_ENTITY_FOREIGN => "cast.entity_foreign"
+        : "这一张不属于这本书：设定卡 {entity_id} 不在作品 {work_id} 里"
+        : ["entity_id", "work_id"],
+    CAST_NODE_NO_BODY => "cast.node_no_body"
+        : "这一段挂不了出场人物（只有承载正文的章 / 节 / 场景卡才有）：{node_id}" : ["node_id"],
+    OUTLINE_PASTE_TOO_BIG => "outline.paste_too_big"
+        : "一次粘进来的格子太多（{cells} 格，上限 {max}）——分成几次粘，或先只粘一列"
+        : ["cells", "max"],
     NODE_NO_FIELDS => "node.no_fields"
         : "这一段没有那四格（只有承载正文的章 / 节 / 单篇 / 场景卡才有）：{node_id}"
         : ["node_id"],

@@ -15,6 +15,7 @@ import { addIntent, containerLabel, type TreeRow } from "../editor/tree";
 import { composeTitle, renderedPrefix, splitTitle, type TitleParts } from "../editor/title-edit";
 import { t } from "../locales/index.ts";
 import { formatCaliberNumber, formatCaliberWords } from "../editor/display.ts";
+import { dropPlan, type DropZone } from "./drop-plan.ts";
 
 const props = defineProps<{ session: EditorSession }>();
 // 从会话对象里取出的都是 ref，模板里照常自动解包
@@ -113,7 +114,7 @@ const listEl = ref<HTMLElement | null>(null);
 /** 拖拽：谁在拖、落在谁身上、落在哪一段 */
 const dragging = ref<number | null>(null);
 const dropOn = ref<number | null>(null);
-const dropZone = ref<"before" | "inside" | "after">("inside");
+const dropZone = ref<DropZone>("inside");
 
 /** 点一行：能写的就打开来写，容器就展开 / 收起（**类型说了算，界面不猜**） */
 function openRow(row: TreeRow) {
@@ -152,7 +153,7 @@ function onDragOver(row: TreeRow, event: DragEvent) {
   if (id === null || id === row.id) return;
   const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
   const ratio = (event.clientY - box.top) / Math.max(1, box.height);
-  let zone: "before" | "inside" | "after" = ratio < 0.25 ? "before" : ratio > 0.75 ? "after" : "inside";
+  let zone: DropZone = ratio < 0.25 ? "before" : ratio > 0.75 ? "after" : "inside";
   // 放不进去（收不了下级 / 会成环）就退成"排在前后"，别画一个骗人的落点
   if (zone === "inside" && (!row.accepts_children || !canDrop(id, row.id))) {
     zone = ratio < 0.5 ? "before" : "after";
@@ -174,14 +175,15 @@ async function onDrop(row: TreeRow) {
   resetDrag();
   if (id === null || landed !== row.id || id === row.id) return;
 
-  if (zone === "inside") {
-    await move(id, row.id, Number.MAX_SAFE_INTEGER); // 追加到这一层末尾（越界由核心夹）
-    return;
-  }
-  const siblings = rows.value.filter((item) => item.parent_id === row.parent_id);
-  const at = siblings.findIndex((item) => item.id === row.id);
-  if (at < 0) return;
-  await move(id, row.parent_id, at + (zone === "after" ? 1 : 0));
+  // 落点 → (新父级, 第几位)：算法只有一处（`drop-plan.ts`），目录树与大纲表共用
+  const landing = dropPlan(
+    rows.value.map((item) => ({ id: item.id, parent_id: item.parent_id })),
+    id,
+    row.id,
+    zone,
+  );
+  if (landing === null) return;
+  await move(id, landing.parent_id, landing.index);
 }
 
 /** 行上的「×」：删掉它（软删，进回收站能捞回来）——容器会把里面的东西一起带走 */

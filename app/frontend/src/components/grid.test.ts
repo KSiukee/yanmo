@@ -6,6 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  castText,
   cellEditable,
   cellValue,
   COLUMNS,
@@ -30,25 +31,36 @@ function row(over: Partial<Record<string, unknown>> = {}) {
     fields: { pov: "", goal: "", conflict: "", outcome: "" },
     planted_open: 0,
     collected: 0,
+    cast: [],
     ...over,
   } as never;
 }
 
 const spec = (key: string) => COLUMNS.find((item) => item.key === key)!;
 
-test("列：默认露章名 + 一句话 + 四格；伏笔与字数按需勾", () => {
-  assert.deepEqual(DEFAULT_COLUMNS, ["title", "summary", "pov", "goal", "conflict", "outcome"]);
-  assert.equal(COLUMNS.length, 8);
+test("列：默认露章名 + 一句话 + 出场人物 + 四格；伏笔与字数按需勾", () => {
+  assert.deepEqual(DEFAULT_COLUMNS, [
+    "title",
+    "summary",
+    "cast",
+    "pov",
+    "goal",
+    "conflict",
+    "outcome",
+  ]);
+  assert.equal(COLUMNS.length, 9);
   assert.equal(spec("summary").editable, true);
   assert.equal(spec("title").editable, false, "章名归目录树管");
   assert.equal(spec("foreshadow").editable, false, "伏笔去伏笔账本改");
-
+  assert.equal(spec("cast").editable, true, "出场人物能改，但改法是点选（不是在格子里打字）");
 });
 
-test("卷不承载正文：四格对它填不了（一句话也一样不摆）", () => {
+test("卷不承载正文：四格与出场人物对它都填不了（一句话也一样不摆）", () => {
   assert.equal(cellEditable(spec("pov"), { kind: "volume" }), false);
   assert.equal(cellEditable(spec("pov"), { kind: "chapter" }), true);
   assert.equal(cellEditable(spec("pov"), { kind: "scene" }), true);
+  assert.equal(cellEditable(spec("cast"), { kind: "volume" }), false);
+  assert.equal(cellEditable(spec("cast"), { kind: "chapter" }), true);
   assert.equal(cellEditable(spec("foreshadow"), { kind: "chapter" }), false);
 });
 
@@ -88,6 +100,12 @@ test("要不要管一下：没写一句话、或四格填了一半；四格一�
   assert.equal(needsAttention(done as never), false);
   // 卷：分组行，从不提醒
   assert.equal(needsAttention(row({ kind: "volume" }) as never), false);
+});
+
+test("出场人物那一列：名字串起来，一个没有就空着（界面摆「选人物」的提示）", () => {
+  assert.equal(castText({ cast: [{ entity_id: 1, name: "陆文" }, { entity_id: 2, name: "老张" }] }), "陆文、老张");
+  assert.equal(castText({ cast: [] }), "");
+  assert.equal(castText({}), "", "没这一栏（旧形状）也当空着，不许炸");
 });
 
 test("伏笔那一列：埋/收都念，一条没有就不摆字", () => {
