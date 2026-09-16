@@ -27,6 +27,7 @@ const emit = defineEmits<{
   back: [];
   clear: [];
   land: [];
+  "update:landAt": [LandAt];
 }>();
 
 /** 改字：失焦或回车之后才回写（击键级同步不跨进程，这里也不必每个字都往上报） */
@@ -83,6 +84,27 @@ function amend(index: number, event: Event) {
           {{ t("flow.round.back") }}
         </button>
       </div>
+      <!-- 落到哪儿由作者定（与"跟着这一章走"同一个落点设置，只是在这儿也能改） -->
+      <span class="at">
+        <label>
+          <input
+            type="radio"
+            name="round-land-at"
+            :checked="props.landAt === 'end'"
+            @change="emit('update:landAt', 'end')"
+          />
+          {{ landLabel("end") }}
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="round-land-at"
+            :checked="props.landAt === 'cursor'"
+            @change="emit('update:landAt', 'cursor')"
+          />
+          {{ landLabel("cursor") }}
+        </label>
+      </span>
       <p v-if="!props.canLand" class="hint">{{ t("flow.land.no_chapter") }}</p>
     </div>
 
@@ -138,6 +160,17 @@ function amend(index: number, event: Event) {
 }
 .foot {
   margin-top: 6px;
+}
+.at {
+  display: inline-flex;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: 11px;
+}
+.at label {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
 }
 .act,
 .link {

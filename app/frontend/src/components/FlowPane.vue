@@ -118,6 +118,7 @@ const {
       @back="round.back"
       @clear="round.clear"
       @land="landRound"
+      @update:land-at="landing.setLandAt"
     />
 
     <!-- 「记下了」这条回执放在面板上固定一处：作答之后那一张就离开"正在问"了，

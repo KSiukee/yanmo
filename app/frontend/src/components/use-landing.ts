@@ -45,6 +45,15 @@ export function useLanding(options: LandingOptions) {
   const setLandAt = (at: LandAt) => (landAt.value = at);
   const setLandToBody = (on: boolean) => (landToBody.value = on);
 
+  /**
+   * 进"跟章走"那两种模式时的落法默认：勾上落进正文；给了 `at` 就顺手把落点也挪过去
+   * （进「先问后排版」时给章末——那一章通常还是空的，段自然接在后面）。
+   */
+  function preferLanding(at?: LandAt) {
+    landToBody.value = true;
+    if (at) landAt.value = at;
+  }
+
   /** 记住刚答下的那一份（回执要用；它同时也是"还能补落"的那一条） */
   function noteAnswer(answer: Answer) {
     lastAnswer.value = answer;
@@ -87,6 +96,7 @@ export function useLanding(options: LandingOptions) {
     landHint,
     setLandAt,
     setLandToBody,
+    preferLanding,
     noteAnswer,
     landOne,
     landLast,

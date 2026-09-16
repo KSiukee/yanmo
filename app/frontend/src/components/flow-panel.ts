@@ -296,15 +296,11 @@ export function useFlowPanel(props: FlowPanelOptions) {
     }
   }
 
-  /**
-   * 换走法。三种走法共用一个开关位（同时只能有一种）。
-   *
-   * 打开跟章走的那两种时顺手勾上「落进正文」——那两种模式的意思本来就是"答完就落进这一章"
-   * （模式 B 只是把"落"推到一轮之后）；作者当然还能自己取消。
-   */
+  /** 换走法：三种共用一个开关位（同时只有一种）。落法默认交给 `useLanding` 那边定。 */
   function pickMode(next: PanelMode, on: boolean) {
     mode.value = on ? next : "list";
-    if (mode.value !== "list") landing.setLandToBody(true);
+    if (mode.value === "round") landing.preferLanding("end");
+    else if (mode.value === "walk") landing.preferLanding();
     void refresh();
   }
   const toggle = (next: PanelMode) => (event: Event) =>
@@ -316,10 +312,8 @@ export function useFlowPanel(props: FlowPanelOptions) {
   // "正在问的那一张"，回头路那几个则要带上"哪本书"（各自判一遍容易漏，漏了就悄悄点不动）。
   const withActive = (action: (cardId: number) => Promise<QuestionBoard>) =>
     active.value ? dispose(() => action(active.value!.card_id)) : undefined;
-  const withWork = (action: (workId: number, arg: string) => Promise<QuestionBoard>) => {
-    return (arg: string) =>
-      props.workId ? dispose(() => action(props.workId!, arg)) : undefined;
-  };
+  const withWork = (action: (workId: number, arg: string) => Promise<QuestionBoard>) =>
+    (arg: string) => (props.workId ? dispose(() => action(props.workId!, arg)) : undefined);
   const openDefer = () => (deferFor.value = true);
   const closeDefer = () => (deferFor.value = false);
   const openInspire = () => (inspireFor.value = true);
