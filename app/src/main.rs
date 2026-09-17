@@ -29,6 +29,7 @@ mod exitwatch;
 mod export_fs;
 mod mirror;
 mod mirror_fs;
+mod mirror_sync;
 mod open_folder;
 mod pick_dir;
 mod single;
@@ -312,6 +313,7 @@ fn main() {
             commands::mirror::mirror_set_enabled,
             commands::mirror::mirror_sync_now,
             commands::mirror::mirror_open_folder,
+            commands::mirror::mirror_resolve,
             commands::work::delete_work,
             commands::work::export_work,
             commands::compile::compile_presets,

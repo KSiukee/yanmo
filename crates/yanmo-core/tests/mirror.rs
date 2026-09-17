@@ -433,3 +433,82 @@ fn a_conflict_clears_itself_once_the_file_is_back_to_our_version() {
     store.mirror_record(work, &plan.records).unwrap();
     assert!(store.mirror_state(work).unwrap().iter().all(|entry| !entry.conflict));
 }
+
+/// 取正文与写文件**互为逆运算**：我们自己写出去的，读回来必须一字不差。
+#[test]
+fn taking_the_body_back_out_of_a_mirror_file_round_trips() {
+    let (_dir, mut store) = fresh();
+    let work = novel(&mut store);
+    let files = store.render_mirror(work).unwrap();
+    let first = &files[0];
+    let text = std::str::from_utf8(&first.content).unwrap();
+    assert_eq!(
+        yanmo_core::store::mirror_body_of(text),
+        store.read_body(first.node_id).unwrap(),
+        "写出去再读回来，正文必须一模一样"
+    );
+}
+
+/// 作者用记事本改过的那份：标题行可能没了、也可能换成他自己写的，**两种都要读得懂**。
+#[test]
+fn a_hand_edited_file_is_read_rather_than_refused() {
+    // 没有标题行：整篇都是正文
+    assert_eq!(yanmo_core::store::mirror_body_of("第一段。\n\n第二段。\n"), "第一段。\n\n第二段。");
+    // 有我们写的那行标题：去掉标题与它后面那个空行
+    assert_eq!(yanmo_core::store::mirror_body_of("# 第三章\n\n正文。\n"), "正文。");
+    // CRLF 与多余的结尾换行照样收干净
+    assert_eq!(yanmo_core::store::mirror_body_of("# 章\r\n\r\n正文\r\n\r\n\r\n"), "正文");
+    // 只有标题、没有正文：正文是空的，不是把这行标题当正文
+    assert_eq!(yanmo_core::store::mirror_body_of("# 章\n"), "");
+}
+
+/// 「采纳」= 先给库里那一版留快照，再换成磁盘上那份；**不记进今日码字**。
+#[test]
+fn adopting_an_external_text_keeps_the_library_version_as_a_snapshot() {
+    let (_dir, mut store) = fresh();
+    let work = novel(&mut store);
+    let chapter = store
+        .list_nodes(work)
+        .unwrap()
+        .into_iter()
+        .find(|node| node.title_rendered == "第一章")
+        .unwrap()
+        .id;
+    let before = store.read_body(chapter).unwrap();
+
+    assert!(
+        store.adopt_mirror_body(chapter, "记事本里改过的正文。\n").unwrap(),
+        "内容不同就该真的换掉"
+    );
+    assert_eq!(store.read_body(chapter).unwrap(), "记事本里改过的正文。\n");
+
+    let snapshots = store.list_snapshots(chapter).unwrap();
+    assert_eq!(snapshots.len(), 1, "库里原来那一版要留成快照：{snapshots:?}");
+    assert_eq!(snapshots[0].reason, "mirror_adopt");
+    assert_eq!(store.snapshot_body(snapshots[0].id).unwrap(), before, "快照里是原来那份字");
+
+    // 一模一样时什么都不做（幂等）
+    assert!(!store.adopt_mirror_body(chapter, "记事本里改过的正文。\n").unwrap());
+    assert_eq!(store.list_snapshots(chapter).unwrap().len(), 1, "没变就不该再留一份快照");
+}
+
+/// 采纳之后，镜像下一轮把这份字按我们的格式重写出去，冲突随之消失。
+#[test]
+fn after_adopting_the_mirror_settles_without_a_conflict() {
+    let (_dir, mut store) = fresh();
+    let work = novel(&mut store);
+    settle(&mut store, work, &[]);
+
+    // 采纳磁盘上那一份（壳体那边同时会把那个外部文件删掉，下一轮按库里的字重写）
+    let node_id = store.mirror_state(work).unwrap()[0].node_id;
+    store.adopt_mirror_body(node_id, "改过的一段。").unwrap();
+
+    let desired = store.render_mirror(work).unwrap();
+    let file = desired.iter().find(|file| file.node_id == node_id).unwrap();
+    assert_eq!(
+        std::str::from_utf8(&file.content).unwrap(),
+        "# 第一章\n\n改过的一段。\n",
+        "重写出去的还是我们那一套格式"
+    );
+    assert!(store.mirror_pending(work).unwrap(), "库变了 → 下一轮该把这份写出去");
+}

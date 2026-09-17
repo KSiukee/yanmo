@@ -6,8 +6,8 @@
 //! `yanmo_core::store::mirror` 是账本与渲染，两处都可单测）；这里只做三件核心不做的事：
 //!
 //! 1. **异步**：落盘之后投一个信号就走，绝不挡击键（与"边写边存"同一条精神）；
-//! 2. **落盘**：真的读写文件——探磁盘、原子写、`rename`、收残留，全在
-//!    [`crate::mirror_fs`]（那一层不碰数据库、也不碰线程，单独可测）；
+//! 2. **一轮对账怎么走**：见 [`crate::mirror_sync`]（取数 / 算计划 / 落盘 / 记账 / 收集待定夺的事）；
+//!    真碰磁盘的那一层在 [`crate::mirror_fs`]（不碰数据库、也不碰线程，单独可测）；
 //! 3. 把"上次对完账的样子"记在内存里，供界面如实报告（有几份被人改过、上次对上是什么时候）。
 //!
 //! # 为什么与导出不共用一条路
@@ -31,7 +31,6 @@
 //! 镜像**不是备份**：它就在稿库同一个盘、同一个目录里，盘坏了它一起没。它的承诺是
 //! "稿子永远是你能用记事本打开的 `.md`"（不被格式困住），不是"盘坏了还在"——那是备份的事。
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex};
@@ -39,12 +38,8 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
-use yanmo_core::store::MirrorEntry;
+use tauri::AppHandle;
 
-use crate::error::ApiError;
-use crate::mirror_fs::{disk_looks_untouched, execute, probe};
-use crate::storage::AppData;
 
 /// 镜像根目录名（**语言无关**：它跟着稿子走，不该随界面语言变）。
 pub const MIRROR_DIR: &str = "mirror";
@@ -55,6 +50,27 @@ const SWEEP: Duration = Duration::from_secs(2);
 const SWEEP_IDLE: Duration = Duration::from_secs(15);
 /// 连着这么多次巡检都没活干，就放慢到 [`SWEEP_IDLE`]。
 const IDLE_AFTER: u32 = 15;
+
+/// 明细列表最多列几条（再多就只报个数：对话框是给人看的，不是日志）。
+pub const ISSUE_LIST_MAX: usize = 100;
+
+/// 要作者定夺的一件事：**磁盘上那一份**与研墨这一边对不上。
+///
+/// 三种来路，处置方式不同：
+/// - `edited`：我们写过的那份被别的工具改过 → 可以**采纳**（把它收进库里）或**覆盖**（用库里的盖回去）；
+/// - `foreign`：想写的路径上本来就有一份别的东西 → 只有**覆盖**这一条路（删掉它再写我们的）；
+/// - `untracked`：镜像目录里没账的 `.md`（多半是作者自己挪过名字）→ **只看不动**，给人自己处置。
+#[derive(Debug, Clone, Serialize)]
+pub struct MirrorIssue {
+    /// 能对上账的节点；没账的文件给 0
+    pub node_id: i64,
+    /// 章名（没账的文件给空串）
+    pub title: String,
+    /// 相对镜像根的路径（**只给界面显示**：处置命令只收"第几条"，不收路径）
+    pub relative_path: String,
+    /// edited / foreign / untracked
+    pub kind: &'static str,
+}
 
 /// 镜像现在什么样——**只读报告**，界面拿它说话（不改任何东西）。
 #[derive(Debug, Clone, Default, Serialize)]
@@ -67,21 +83,44 @@ pub struct MirrorStatus {
     pub last_sync_at: i64,
     /// 账上照看的文件数
     pub files: usize,
-    /// **有人在我们之外改过、暂未覆盖**的文件数（下一步给作者定夺：合并 / 覆盖）
+    /// **有人在我们之外改过、暂未覆盖**的文件数（等作者在对话框里定夺）
     pub conflicts: usize,
+    /// 镜像目录里**没有账**的 `.md` 文件数（研墨不会动它们；只如实报告）
+    pub untracked: usize,
+    /// 要作者定夺的事的明细（上限 [`ISSUE_LIST_MAX`] 条；计数在 `conflicts` / `untracked` 里不受限）
+    pub issues: Vec<MirrorIssue>,
     /// 这一轮没对上的书（下一轮会再来）
     pub failed_works: usize,
     /// 最近一次失败的技术说明（空 = 没失败；界面只把它放进日志味的提示里）
     pub last_error: String,
 }
 
-struct Inner {
+pub(crate) struct Inner {
     /// 唤醒信号：容量 1 的通道，**投不满就丢**——连打一百下合成一次对账。
     wake: SyncSender<()>,
     status: Mutex<MirrorStatus>,
     force: AtomicBool,
     stop: AtomicBool,
     join: Mutex<Option<JoinHandle<()>>>,
+}
+
+impl Inner {
+    /// 把这一轮的结果挂上去（界面与下一轮都读它）。
+    pub(crate) fn publish(&self, report: MirrorStatus) {
+        if let Ok(mut slot) = self.status.lock() {
+            *slot = report;
+        }
+    }
+
+    /// 上一轮"没账的文件"清单：不扫目录的那几轮沿用它（扫目录是 FS 走一遍，不能每投一次信号就来）。
+    pub(crate) fn previous_untracked(&self) -> Vec<MirrorIssue> {
+        self.status
+            .lock()
+            .map(|status| {
+                status.issues.iter().filter(|issue| issue.kind == "untracked").cloned().collect()
+            })
+            .unwrap_or_default()
+    }
 }
 
 /// 壳持有的镜像句柄（可克隆：命令层、存储层、搬迁那一步都要用它说话）。
@@ -169,130 +208,10 @@ fn run(app: AppHandle, rx: Receiver<()>, inner: Arc<Inner>) {
         }
         let full = !booted || inner.force.load(Ordering::SeqCst);
         booted = true;
-        let did_work = sweep(&app, &inner, full, idle);
+        let did_work = crate::mirror_sync::sweep(&app, &inner, full, idle);
         if did_work {
             inner.force.store(false, Ordering::SeqCst);
         }
         idle_streak = if did_work { 0 } else { idle_streak.saturating_add(1) };
-    }
-}
-
-/// 巡一遍：**锁内取数与记账、锁外读写文件**（文件 I/O 不许占着数据锁）。
-fn sweep(app: &AppHandle, inner: &Inner, full: bool, idle: bool) -> bool {
-    let Some(data) = app.try_state::<AppData>() else {
-        return false;
-    };
-    let root = data.mirror_root();
-    let mut report = MirrorStatus {
-        root: root.display().to_string(),
-        ..MirrorStatus::default()
-    };
-
-    match data.with_store(|store| store.mirror_enabled()) {
-        Ok(enabled) => report.enabled = enabled,
-        Err(error) => {
-            report.last_error = technical(&error);
-            publish(inner, report);
-            return false;
-        }
-    }
-    if !report.enabled {
-        report.last_sync_at = yanmo_core::time::now_millis();
-        publish(inner, report);
-        return false;
-    }
-
-    let works = match data.with_store(|store| store.mirror_works()) {
-        Ok(works) => works,
-        Err(error) => {
-            report.last_error = technical(&error);
-            publish(inner, report);
-            return false;
-        }
-    };
-
-    let mut did_work = false;
-    for work in works {
-        // ① 锁内：算出"该有什么"和"账上是什么"（不碰文件）
-        let prepared = data.with_store(|store| {
-            Ok((
-                store.render_mirror(work)?,
-                store.mirror_state(work)?,
-                store.mirror_pending(work)?,
-            ))
-        });
-        let (desired, state, pending) = match prepared {
-            Ok(parts) => parts,
-            Err(error) => {
-                // 单本书出问题（比如树深过上限）不该让别的书跟着停摆
-                report.failed_works += 1;
-                report.last_error = technical(&error);
-                continue;
-            }
-        };
-
-        let mut verify = full;
-        if !pending {
-            // 库没变：日常投来的信号到这儿就结束；只有空闲巡检 / 全量核对才去看磁盘
-            if !(idle || full) {
-                report.files += state.len();
-                continue;
-            }
-            if disk_looks_untouched(&root, &state) {
-                report.files += state.len();
-                continue;
-            }
-            verify = true; // 磁盘上少了、或大小不对 → 这一本全量核一遍
-        }
-
-        // ② 锁外：探磁盘 → 算计划 → 落盘
-        let account = account_of(&state);
-        let plan = yanmo_core::store::plan_mirror(
-            &desired,
-            &state,
-            |path| probe(&root, path, &account),
-            verify,
-        );
-        if let Err(error) = execute(&root, &desired, &plan) {
-            // **没落成就不记账**：账留在原样，下一轮从原样再来（写是幂等的，重来不亏）
-            report.failed_works += 1;
-            report.conflicts += plan.conflicts.len();
-            report.last_error = technical(&error);
-            continue;
-        }
-
-        // ③ 锁内：记账
-        if let Err(error) = data.with_store(|store| store.mirror_record(work, &plan.records)) {
-            report.failed_works += 1;
-            report.last_error = technical(&error);
-            continue;
-        }
-        report.files += plan.records.len();
-        report.conflicts += plan.conflicts.len();
-        did_work = true;
-    }
-
-    report.last_sync_at = yanmo_core::time::now_millis();
-    publish(inner, report);
-    did_work
-}
-
-/// 账按路径索引（探磁盘时按路径查"这一份记的是什么"）。
-fn account_of(state: &[MirrorEntry]) -> HashMap<&str, &MirrorEntry> {
-    state.iter().map(|entry| (entry.relative_path.as_str(), entry)).collect()
-}
-
-fn publish(inner: &Inner, report: MirrorStatus) {
-    if let Ok(mut slot) = inner.status.lock() {
-        *slot = report;
-    }
-}
-
-/// 失败的技术说明（进状态给日志味提示，**不是界面文案**）。
-fn technical(error: &ApiError) -> String {
-    if error.detail.is_empty() {
-        error.code.clone()
-    } else {
-        format!("{} ({})", error.code, error.detail)
     }
 }

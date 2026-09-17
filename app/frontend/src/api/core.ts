@@ -593,6 +593,7 @@ export const COMMANDS = {
   mirrorSetEnabled: "mirror_set_enabled",
   mirrorSyncNow: "mirror_sync_now",
   mirrorOpenFolder: "mirror_open_folder",
+  mirrorResolve: "mirror_resolve",
   exitApp: "exit_app",
   openEditorTarget: "open_editor_target",
   openChapter: "open_chapter",

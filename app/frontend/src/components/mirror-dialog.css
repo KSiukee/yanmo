@@ -1,0 +1,48 @@
+.mirror__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 46vh;
+  overflow: auto;
+}
+
+.mirror__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line, #e5e0d8);
+}
+
+.mirror__row:last-child {
+  border-bottom: none;
+}
+
+.mirror__what {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mirror__name {
+  font-weight: 600;
+}
+
+.mirror__path {
+  font-size: 12px;
+  opacity: 0.7;
+  word-break: break-all;
+}
+
+.mirror__actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.mirror__note {
+  font-size: 12px;
+  opacity: 0.7;
+}

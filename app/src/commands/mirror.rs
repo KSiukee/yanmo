@@ -76,3 +76,74 @@ fn status_of(data: &AppData) -> Result<MirrorStatus, ApiError> {
         }),
     }
 }
+
+/// 处置一条**待定夺**的事：把磁盘上那一份**收进研墨**（`adopt`），或用研墨里的版本**盖回去**
+/// （`overwrite`）。
+///
+/// **不收路径**：只收"第几条"（清单是壳自己产出来的）+ 那个节点 id 做核对——界面从头到尾
+/// 拿不到、也递不进一个可操作的文件路径（与"命令不接受路径参数"同一条纪律）。
+///
+/// 两条路最后都落在同一处：**把磁盘上那一份删掉，让镜像下一轮按库里的字重写**。
+/// 这样"写盘"永远只有镜像那一处，格式与原子写都只有一份口径。
+#[tauri::command(rename_all = "snake_case")]
+pub fn mirror_resolve(
+    data: State<'_, AppData>,
+    index: usize,
+    node_id: i64,
+    action: String,
+) -> Result<MirrorStatus, ApiError> {
+    let handle = data.mirror().ok_or_else(|| ApiError::new("shell.mirror_unavailable"))?;
+    let adopt = match action.as_str() {
+        "adopt" => true,
+        "overwrite" => false,
+        other => {
+            return Err(ApiError::with(
+                "shell.mirror_unknown_action",
+                [("value", other.to_string())],
+            ));
+        }
+    };
+
+    let issues = handle.status().issues;
+    let issue = issues
+        .get(index)
+        .ok_or_else(|| ApiError::new("shell.mirror_issue_gone"))?;
+    // 清单可能刚被别的处置刷新过：序号与节点对不上就明确报"这一条已经不在了"，
+    // **绝不按一个过期的序号去动文件**。
+    if issue.kind == "untracked" || issue.node_id != node_id {
+        return Err(ApiError::new("shell.mirror_issue_gone"));
+    }
+
+    let root = data.mirror_root();
+    let path = root.join(&issue.relative_path);
+    // 安全阀：清单是我们自己产的，仍然钉一道——绝不出镜像根
+    if !path.starts_with(&root) {
+        return Err(ApiError::new("shell.mirror_issue_gone"));
+    }
+
+    if adopt {
+        let text = std::fs::read_to_string(&path).map_err(|error| {
+            ApiError::with("shell.mirror_read_failed", [("path", path.display().to_string())])
+                .caused_by(error)
+        })?;
+        let body = yanmo_core::store::mirror_body_of(&text);
+        data.with_store(|store| store.adopt_mirror_body(issue.node_id, &body))?;
+    }
+
+    match std::fs::remove_file(&path) {
+        Ok(()) => {}
+        // 已经不在了：目标状态就是"它不在"，下一轮照样按库里的字写出来
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(ApiError::with(
+                "shell.mirror_remove_failed",
+                [("path", path.display().to_string())],
+            )
+            .caused_by(error));
+        }
+    }
+
+    // 立刻对一遍，不等下一次巡检（作者点了按钮就该看到它变了）
+    data.force_mirror();
+    status_of(&data)
+}

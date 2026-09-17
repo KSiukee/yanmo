@@ -205,8 +205,9 @@ impl Store {
 /// 落一条快照，并**顺手做滚动保留**（写快照的入口只有这一个，谁都绕不过裁剪）。
 ///
 /// 收 `&Connection`（事务也是它）：这样"写快照"能与调用方的其它写入、以及那一笔留痕
-/// 共用一个事务（评审：中等 6）。
-fn write_snapshot_in(
+/// 共用一个事务（评审：中等 6）。`pub(super)`：磁盘镜像"采纳外部改动"那条路也要在
+/// **同一个事务**里先留后写（见 `store::mirror`）。
+pub(super) fn write_snapshot_in(
     tx: &rusqlite::Connection,
     node_id: i64,
     body: &str,

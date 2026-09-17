@@ -4,7 +4,7 @@
 // 有冲突。选错的代价不是崩，而是**作者对"磁盘上到底有没有那份 .md"形成错误印象**，
 // 而那正是这个功能存在的全部理由。所以让机器盯着，别散在模板里靠肉眼。
 
-import type { MirrorStatus } from "../api/mirror";
+import type { MirrorIssue, MirrorStatus } from "../api/mirror";
 
 /** 状态行该说什么（渲染层再把它翻成文案）。 */
 export type MirrorLine =
@@ -30,4 +30,20 @@ export function clockText(millis: number): string {
   const date = new Date(millis);
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+/** 一条待定夺的事在列表里的稳定键（同一个路径先后换过类型也算同一条）。 */
+export function issueKey(issue: MirrorIssue): string {
+  return `${issue.kind}:${issue.relative_path}`;
+}
+
+/**
+ * 这一条能给作者哪几条路。
+ *
+ * **没账的文件一条都不给**：研墨不知道它是哪一章，也不该去动一份自己没有账的东西——
+ * 只把路径报出来，让作者自己去看看（多半是他把文件挪了名字）。
+ */
+export function issueActions(issue: MirrorIssue): { adopt: boolean; overwrite: boolean } {
+  const ours = issue.kind !== "untracked" && issue.node_id > 0;
+  return { adopt: ours, overwrite: ours };
 }

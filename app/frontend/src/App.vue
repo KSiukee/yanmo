@@ -11,6 +11,7 @@ import { computed, ref } from "vue";
 import { t } from "./locales/index.ts";
 import { useEditorSession } from "./editor/session";
 import { useAsideTab } from "./editor/aside";
+import { useMirrorReview, watchMirrorAtStartup } from "./editor/mirror-review.ts";
 import { useQuestionPush } from "./editor/question-push.ts";
 import type { SelectedQuestion } from "./api/question.ts";
 import DirectoryPane from "./components/DirectoryPane.vue";
@@ -28,11 +29,17 @@ import WorkFormDialog from "./components/WorkFormDialog.vue";
 import SnapshotDialog from "./components/SnapshotDialog.vue";
 import TrashDialog from "./components/TrashDialog.vue";
 import CompileDialog from "./components/CompileDialog.vue";
+import MirrorConflictDialog from "./components/MirrorConflictDialog.vue";
 import TypesetDialog from "./components/TypesetDialog.vue";
 import WritingDialog from "./components/WritingDialog.vue";
 
 // 会话在布局层建**一次**：目录树、书架与正文编辑器说的必须是同一本书、同一章
 const session = useEditorSession();
+
+// 磁盘 .md 镜像：启动后看几眼，有"磁盘上那份与研墨不一样"的事就把对话框请出来。
+// 看一眼是异步的（后台那趟对账要几秒），看不到就算了——那是真的没有要对的事。
+const { open: mirrorReviewOpen } = useMirrorReview();
+watchMirrorAtStartup();
 
 // 叩问的「推」：门槛（每天几次 / 冷却）在核心算，这里只管三个时机——
 // 开新章 / 卡住一会儿 / 刚写完一章（判据见 editor/question-push.ts）。
@@ -176,6 +183,7 @@ const hint = computed(() => {
     <TypesetDialog v-if="typesetVisible" :session="session" />
     <WritingDialog v-if="writingVisible" :session="session" />
     <CompileDialog v-if="compileVisible" :session="session" />
+    <MirrorConflictDialog v-if="mirrorReviewOpen" :session="session" />
     <SettingsDialog v-if="settingsVisible && settingsValues" :session="session" />
     <BackupDialog v-if="backupVisible && backupStatus" :session="session" />
     <OutlineDialog v-if="loreVisible" :session="session" />

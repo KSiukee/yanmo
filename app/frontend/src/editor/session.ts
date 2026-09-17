@@ -86,6 +86,7 @@ import {
   type EditorSnapshot,
   type SnapshotRestoreAck,
 } from "../api/core";
+import { resolveMirrorIssue } from "../api/mirror";
 import { Autosave, type AutosaveState } from "./autosave";
 import { useAddChapter, type AddChapter } from "./add-chapter";
 import { useAppearance, type AppearanceState } from "./appearance";
@@ -182,6 +183,11 @@ export interface EditorSession {
    */
   insertText: (text: string, at: "cursor" | "end") => boolean;
   switchChapter: (node_id: number | null | undefined, fresh?: boolean) => Promise<void>;
+  /**
+   * 处置镜像里那一条待定夺的事（采纳 / 覆盖）。**顺序在这里定死**：先把手上的字落盘 →
+   * 走壳的处置命令 → 采纳的正好是眼下开着的那一章时，把编辑器换成库里那一份。
+   */
+  resolveMirror: (index: number, node_id: number, action: "adopt" | "overwrite") => Promise<void>;
   /// 在某一章后面新建一章并切过去（目录树的「+」走这条）；返回新章 id，没建成是 null
   addChapterAfter: (node_id: number) => Promise<number | null>;
   /** 删掉目录里的一段（软删，进回收站；删到正在写的那一支会自动换落点） */
@@ -586,6 +592,19 @@ export function useEditorSession(): EditorSession {
     } finally {
       switching.value = false;
     }
+  }
+
+  /**
+   * 处置磁盘镜像里那一条（对话框上的「收进研墨」/「盖回去」走这条）。
+   *
+   * 三步的顺序不能换：**先落盘**（手上这份字先安全进库；不先落，采纳回来的字或刚敲的字
+   * 总有一边会被顶掉）→ 处置（壳那边采纳 / 删掉磁盘上那份）→ **采纳的正好是开着的那一章时
+   * 重读一遍**（编辑器里那份是旧的；不换掉，下一次自动落盘会把刚收进来的字又盖回去）。
+   */
+  async function resolveMirror(index: number, node_id: number, action: "adopt" | "overwrite") {
+    await flushCurrent();
+    await resolveMirrorIssue(index, node_id, action);
+    if (action === "adopt" && autosave.value?.node_id === node_id) await switcher.reload();
   }
 
   /**
@@ -1182,6 +1201,7 @@ export function useEditorSession(): EditorSession {
     persistNow,
     insertText,
     switchChapter,
+    resolveMirror,
     retryExit: () => void gate?.retry(),
     escapeExit: () => void gate?.escape(),
     forceExit: () => void gate?.forceExit(),

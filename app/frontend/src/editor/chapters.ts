@@ -70,6 +70,33 @@ export class ChapterSwitch {
     }
   }
 
+  /**
+   * **重新读一遍当前这一章**（库里的正文被换过之后用：磁盘上那份刚被收进库里）。
+   *
+   * 与 [`to`] 的两点不同，都是有意的：
+   * - **不落盘**：手上这份若是旧的，就该被库里那份顶掉——落盘会把刚收进来的字又盖回去；
+   * - 不检查"已经在同一章"：要的就是重读同一章。
+   * 取不到（章被删了 / 不是正文节点）时停在原地，只报错——旧内容与旧控制器都不动。
+   */
+  async reload(): Promise<boolean> {
+    if (this.busy) return false;
+    const current = this.deps.autosave();
+    if (!current) return false;
+    const node_id = current.node_id;
+    this.busy = true;
+    try {
+      const snapshot = await this.deps.loadChapter(node_id);
+      this.deps.applyChapter(snapshot);
+      this.deps.startAutosave(snapshot);
+      return true;
+    } catch (error) {
+      this.deps.onError?.(error instanceof Error ? error.message : String(error));
+      return false;
+    } finally {
+      this.busy = false;
+    }
+  }
+
   /** 正在切吗（界面据此禁用按钮，防连点） */
   get switching(): boolean {
     return this.busy;

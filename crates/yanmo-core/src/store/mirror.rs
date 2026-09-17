@@ -250,3 +250,92 @@ fn heading(node: &super::NodeSummary) -> String {
         node.title_rendered.clone()
     }
 }
+
+/// 从一份镜像文件的内容里取出**正文**——它与 [`Store::render_mirror`] 写的格式互为逆运算。
+///
+/// 口径（只此一处）：
+/// - 换行先归一成 `\n`；
+/// - 第一行以 `# ` 开头时，那是**我们自己写的那行标题**，连同它后面那一个空行一起去掉；
+/// - 其余原样留下（内部空行保留），**末尾多余的换行收掉**——库里存的正文本来就不带尾换行
+///   （编辑器那套序列化的形状），留着它会让"采纳"之后的第一次落盘白改一遍。
+///
+/// 作者用记事本改过的那份常常已经没有标题行了（也可能自己写了一行别的标题）：
+/// 有就去掉、没有就整篇当正文——两种都不算错，**能读懂就够**。
+pub fn mirror_body_of(text: &str) -> String {
+    let unified = text.replace("\r\n", "\n").replace('\r', "\n");
+    let mut rest = unified.as_str();
+    if let Some(after_heading) = rest.strip_prefix("# ") {
+        // 标题那一行连同它自己的换行
+        let after_line = after_heading.split_once('\n').map(|(_, tail)| tail).unwrap_or("");
+        rest = after_line.strip_prefix('\n').unwrap_or(after_line);
+    }
+    rest.trim_end_matches('\n').to_string()
+}
+
+impl Store {
+    /// 把磁盘上那一份**外部改动**收进库里（对话框里「采纳」那一条路）。
+    ///
+    /// 顺序与抢救快照同一条纪律：**先给库里那一版留快照，再换正文**——作者在记事本里改的东西
+    /// 进来，库里原来那份也还在（在快照里），谁都没丢。两步在**同一个事务**里。
+    ///
+    /// **不记账**：这些字不是今天敲出来的（同 [`Store::write_body`]，与抢救快照有意不同）。
+    /// 返回是否真的换了（内容一模一样时什么都不做）。
+    pub fn adopt_mirror_body(&mut self, node_id: i64, text: &str) -> Result<bool> {
+        self.node_work(node_id)?; // 节点不在就明确报错，不悄悄写一个不存在的章节
+        let current = self.read_body(node_id)?;
+        if current == text {
+            return Ok(false);
+        }
+        let stats = super::content::stats_of(text);
+        let tx = self.conn.transaction()?;
+        super::snapshot::write_snapshot_in(&tx, node_id, &current, REASON_ADOPT, false)?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "snapshots",
+            node_id,
+            "snapshot",
+            serde_json::json!({ "reason": REASON_ADOPT }),
+        )?;
+        super::content::put_body(&tx, node_id, text, stats)?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "node_contents",
+            node_id,
+            "adopt_mirror",
+            serde_json::json!({ "char_count": stats.char_count }),
+        )?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+
+    /// 账上挂着"待作者定夺"的行（节点 id + 相对路径）——汇报时每轮都要数一遍。
+    pub fn mirror_conflict_entries(&self) -> Result<Vec<(i64, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT node_id, relative_path FROM mirror_state
+              WHERE conflict = 1 ORDER BY work_id, relative_path",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    /// 镜像账上**所有**写过的相对路径（找"没账的文件"时拿它做差集）。
+    pub fn mirror_paths(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT relative_path FROM mirror_state")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+}
+
+/// 快照理由：这一版是"采纳磁盘上的改动之前，库里原来那一版"（界面自己查字典渲染）。
+pub const REASON_ADOPT: &str = "mirror_adopt";

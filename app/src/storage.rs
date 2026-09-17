@@ -363,11 +363,6 @@ impl AppData {
         }
     }
 
-    /// 逃生导出目录（**路径策略在 [`crate::escape`]，原子写在核心**）。
-    pub fn escape_dir(&self) -> PathBuf {
-        crate::escape::dir(&self.db_path)
-    }
-
     /// 逃生导出的候选落点，按"最不容易与故障同源"排序（顺序与理由见 [`crate::escape`]）。
     pub fn escape_candidates(&self) -> Vec<PathBuf> {
         crate::escape::candidates(&self.db_path)
@@ -607,8 +602,7 @@ mod tests {
     fn the_escape_directory_hangs_off_the_data_dir_and_the_gate_starts_disarmed() {
         let dir = tempfile::tempdir().unwrap();
         let data = AppData::open_at_for_test(dir.path()).unwrap();
-        assert_eq!(data.escape_dir(), crate::escape::dir(data.db_path()));
-        assert_eq!(data.escape_candidates().last(), Some(&data.escape_dir()));
+        assert_eq!(data.escape_candidates().last(), Some(&crate::escape::dir(data.db_path())));
         assert!(!data.exit_gate_armed(), "界面没就绪前不该拦关窗");
         data.arm_exit_gate();
         assert!(data.exit_gate_armed());

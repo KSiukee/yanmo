@@ -266,4 +266,86 @@ mod tests {
         assert_eq!(read(&root, &path), "# 第二章\n\n第二章改过了。\n");
         assert!(plan.unchanged >= 1, "另一份没变，不该跟着重写");
     }
+
+    /// 扫目录只认 `.md`：原子写留下的临时文件、作者自己放的东西，都不算"没账的章节"。
+    #[test]
+    fn scanning_only_counts_markdown_files() {
+        let (_dir, _store, root) = setup();
+        std::fs::create_dir_all(root.join("书-1/卷一")).unwrap();
+        std::fs::write(root.join("书-1/卷一/001-第一章.md"), "# 第一章\n").unwrap();
+        std::fs::write(root.join("书-1/卷一/002-第二章.md.part"), "半截").unwrap();
+        std::fs::write(root.join("书-1/README.txt"), "作者自己放进来的").unwrap();
+        std::fs::write(root.join("散篇.md"), "# 散篇\n").unwrap();
+
+        assert_eq!(
+            scan_markdown(&root),
+            vec!["书-1/卷一/001-第一章.md".to_string(), "散篇.md".to_string()],
+            "只认 .md，路径用正斜杠、排好序"
+        );
+    }
+
+    /// 「覆盖」这条路的机理：**把磁盘上那一份删掉**，下一轮按库里的字重写，冲突随之消失。
+    ///
+    /// 对话框上的「覆盖」按钮最后走的就是这几步（见 `commands::mirror::mirror_resolve`）。
+    #[test]
+    fn overwriting_by_deleting_the_file_settles_the_conflict() {
+        let (_dir, mut store, root) = setup();
+        let (work, _) = book(&mut store);
+        reconcile(&mut store, &root, work, true);
+
+        let path = format!("长夜-{work}/001-第一卷/001-第一章.md");
+        std::fs::write(root.join(&path), "作者改过的。\n").unwrap();
+        let conflicted = reconcile(&mut store, &root, work, true);
+        assert_eq!(conflicted.conflicts.len(), 1);
+        assert!(store.mirror_conflict_entries().unwrap().len() == 1);
+
+        // 作者点了「覆盖」：删掉磁盘上那一份，让镜像按库里的字重写
+        std::fs::remove_file(root.join(&path)).unwrap();
+        let settled = reconcile(&mut store, &root, work, true);
+
+        assert_eq!(read(&root, &path), "# 第一章\n\n第一章的正文。\n", "库里那份又回到磁盘上");
+        assert!(settled.conflicts.is_empty(), "冲突该没了：{:?}", settled.conflicts);
+        assert!(store.mirror_conflict_entries().unwrap().is_empty(), "账上也不该再挂着");
+    }
+}
+
+/// 扫出镜像根下**所有** `.md` 的相对路径（正斜杠、已排序），供"没账的文件"做差集。
+///
+/// 只认 `.md`：原子写可能留下临时文件（扩展名不是 `.md`），那是我们自己的残渣，
+/// 不该报给作者看。**只读**：这里一个文件都不动。
+///
+/// 两道闸：深度与条数。镜像树最深受树深上限（64）约束，但目录里可能有作者放进来的一大堆
+/// 东西——扫到上限就停，宁可少报也不把一次巡检拖成"扫盘"。
+pub(crate) fn scan_markdown(root: &Path) -> Vec<String> {
+    /// 最多往里走几层（镜像自己的层级 = 作品 / 卷 / 章，再加点余量）。
+    const MAX_DEPTH: usize = 80;
+    /// 最多认几份（超过就不再收集；对账那边只列前 100 条）。
+    const MAX_FILES: usize = 5000;
+
+    let mut out = Vec::new();
+    let mut stack = vec![(root.to_path_buf(), 0usize)];
+    while let Some((dir, depth)) = stack.pop() {
+        if depth > MAX_DEPTH || out.len() >= MAX_FILES {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push((path, depth + 1));
+                continue;
+            }
+            if path.extension().is_none_or(|ext| ext != "md") {
+                continue;
+            }
+            if let Ok(relative) = path.strip_prefix(root) {
+                out.push(relative.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
 }
