@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test \"src/**/*.test.ts\"",
-    "typecheck": "tsc -p tsconfig.app.json --noEmit"
+    "typecheck": "vue-tsc -p tsconfig.app.json --noEmit"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -21,6 +21,7 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^6",
     "typescript": "^5.6",
-    "vite": "^7"
+    "vite": "^7",
+    "vue-tsc": "^3.3.11"
   }
 }

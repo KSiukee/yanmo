@@ -11,7 +11,7 @@ import { formatBytes } from "../editor/display.ts";
 import type { BackupConfig, BackupTarget } from "../api/core";
 
 const props = defineProps<{ session: EditorSession }>();
-const { visible, status, lastReport, busy, error, close, save, runNow, dismissTip } =
+const { status, lastReport, busy, error, close, save, runNow, dismissTip } =
   props.session.backup;
 
 /** 保留份数（改了就存；输入非法时不动） */

@@ -13,7 +13,7 @@ import { formatWhen } from "../editor/display";
 const props = defineProps<{ session: EditorSession }>();
 const { entries, busy, close, open, remove, export: exportWork, note, openCreate, openEdit } =
   props.session.shelf;
-const { visible: trashVisible, toggle: toggleTrash } = props.session.trash;
+const { toggle: toggleTrash } = props.session.trash;
 const { workId, caliber } = props.session;
 const { open: openCompile } = props.session.compile;
 

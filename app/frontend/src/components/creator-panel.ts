@@ -49,6 +49,8 @@ export interface CreatorPanelState {
   options: Ref<{ kind: FragmentKind | "all"; count: number }[]>;
   list: Ref<Fragment[]>;
   canJot: Ref<boolean>;
+  /** 当前这一章（锚点徽标的判据；`null` = 没打开着任何一章） */
+  currentChapter: Ref<number | null>;
   refresh: () => Promise<void>;
   jot: (body: string, kind?: FragmentKind) => Promise<boolean>;
   startEdit: (item: Fragment) => void;
@@ -243,6 +245,7 @@ export function useCreatorPanel(deps: CreatorPanelOptions): CreatorPanelState {
     options,
     list,
     canJot,
+    currentChapter,
     refresh,
     jot,
     startEdit,

@@ -34,7 +34,7 @@ const {
 } = props.session.directory;
 // 目录树里的字数按**当前口径**显示（口径跟着作品语言，可在状态栏切换）
 const { caliber } = props.session;
-const { neighbors, switching, switchChapter, deleteNode, adding, trash } = props.session;
+const { neighbors, switching, switchChapter, deleteNode, adding } = props.session;
 // 点「+」之后的编排在 editor/add-chapter.ts（这里只接线，不写流程）
 const { addHere } = adding;
 // 分卷：到点了提一句、收好之后能撤销（编排与分寸在 editor/volumes.ts）

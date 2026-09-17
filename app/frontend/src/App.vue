@@ -74,7 +74,7 @@ const { visible: settingsVisible, values: settingsValues, open: openSettings } =
 // 「资料」（人物与设定 / 事件 / 伏笔）：入口在顶栏；它是大纲体检的数据源，打开才读
 const { visible: loreVisible, show: showLore } = session.lore;
 // 「大纲」表：整块主区上的一层（Esc 关；它自己管读与存）
-const { visible: gridVisible, toggle: toggleGrid, hide: hideGrid } = session.grid;
+const { visible: gridVisible, toggle: toggleGrid } = session.grid;
 // 专注模式：只改"露哪几块"（判断在 editor/zen.ts），布局层照着渲染，不自己 if
 const { on: zenOn, chrome: zenChrome, toggle: toggleZen } = session.zen;
 // 专注时的悬浮卡片：一次只开一张；卡片里放的是**原来那个目录树组件**，不写第二份

@@ -11,6 +11,8 @@
 | [rusqlite](https://github.com/rusqlite/rusqlite) / SQLite | MIT / 公有领域 | 本地数据库（WAL、全文检索） | `bundled` 特性：随二进制编译 SQLite 源码，版本可控 |
 | [Vue 3](https://vuejs.org/) | MIT | 前端框架 | — |
 | [Vite](https://vite.dev/) | MIT | 前端构建 | 开发期依赖 |
+| [TypeScript](https://www.typescriptlang.org/) | Apache-2.0 | 前端类型检查 | 开发期依赖 |
+| [vue-tsc](https://github.com/vuejs/language-tools) | MIT | 单文件组件（`.vue`）的类型检查 | 开发期依赖；随它进来的 @volar/typescript 与 @vue/language-core 也是 MIT |
 | [TipTap](https://tiptap.dev/) / [ProseMirror](https://prosemirror.net/) | MIT | 正文编辑器内核 | — |
 
 ## 测试依赖（不随产品分发）

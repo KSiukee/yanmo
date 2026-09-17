@@ -79,8 +79,22 @@ export function cellEditable(spec: ColumnSpec, row: { kind: string }): boolean {
   return row.kind !== "volume";
 }
 
+/**
+ * `cellValue` 真正读的那几栏。
+ *
+ * **别写 `Record<string, unknown>`**：那会要求调用方带索引签名，而行对象
+ * （`OutlineRowDto`）是接口、天生没有——vue-tsc 一开就报 TS2345。写得窄一点，
+ * 谁传得进来由这里说了算，也不必让调用方加一个它并不需要的签名。
+ */
+export interface CellSource {
+  title?: unknown;
+  summary?: unknown;
+  word_count?: unknown;
+  fields?: Record<string, string>;
+}
+
 /** 一格里现在是什么值。 */
-export function cellValue(row: Record<string, unknown>, column: GridColumn): string {
+export function cellValue(row: CellSource, column: GridColumn): string {
   if (column === "title") return String(row.title ?? "");
   if (column === "summary") return String(row.summary ?? "");
   if (column === "words") return String(row.word_count ?? "");

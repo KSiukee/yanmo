@@ -282,6 +282,7 @@ function statusText(status: AutosaveState["status"]): string {
       :editor="editor"
       class="editor__area"
       :class="{ 'editor__area--wide': wideMeasure }"
+      :style="bodyStyle"
     />
 
     <ExitDialog
