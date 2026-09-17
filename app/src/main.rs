@@ -20,6 +20,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::exitwatch::RequestOutcome;
 
 mod acceptance;
+mod acceptance_args;
 mod acceptance_guard;
 mod commands;
 mod diagnose;
@@ -29,6 +30,7 @@ mod exitwatch;
 mod export_fs;
 mod mirror;
 mod mirror_fs;
+mod mirror_headless;
 mod mirror_sync;
 mod open_folder;
 mod pick_dir;
@@ -54,6 +56,11 @@ fn main() {
     if let Some(plan) = acceptance::parse(&argv) {
         match plan.mode {
             acceptance::Mode::Check => std::process::exit(acceptance::run_check(&plan)),
+            acceptance::Mode::Mirror => std::process::exit(mirror_headless::run(
+                &plan.dir,
+                plan.rounds,
+                plan.out.as_deref(),
+            )),
             acceptance::Mode::Bench => {
                 let report = acceptance::run_bench(&plan);
                 let refused = report.refused.clone();

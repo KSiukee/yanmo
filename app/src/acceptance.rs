@@ -25,6 +25,11 @@
 //!
 //! 另有 `--check <目录>`：体检一份库，把 JSON 写出来——"不丢稿"演练用它核对。
 //!
+//! 另有 `--mirror-sync <目录> [--rounds N]`：**不开窗口**把磁盘 `.md` 镜像对账跑几轮，
+//! 把账面上的结论写成 JSON——给"长期跑下来安全机制跟不跟得上"这类外部验收用。
+//! 它与界面里那条路是**同一个函数**（`crate::mirror_sync::sweep_data`），不是另写一份：
+//! 外面驱动的正是 GUI 跑的那一套计划与账。
+//!
 //! ⚠️ 它不是"什么也不写"（2026-09-15 代码质量评审：中等 18）：它会 `Store::open`
 //! （可能升级结构、登记本机、给老库回填字数标记），报告默认还写在**库旁边**
 //! （`--out` 可以指到别处）。**要体检一份坏库，先把库文件复制一份再跑**——
@@ -33,110 +38,16 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+// 启动参数面在隔壁 acceptance_args：这一份只管「跑起来之后做什么」
+pub use crate::acceptance_args::{parse, Mode, Plan, SUPPORTED};
+
 use crate::acceptance_guard::{wipe_guard, SCRATCH_MARKER};
 use yanmo_core::db;
 use yanmo_core::model::{NodeKind, WorkKind};
 use yanmo_core::store::{BackupRequest, BackupTarget, Store};
 
-/// 这一份程序支不支持验收模式（`--version` 会把它报出去，脚本据此挡老版本）。
-pub const SUPPORTED: u32 = 1;
-
 /// 一章的正文：一小段可复现的话反复拼——**同一份数据，谁跑都一样**。
 const SENTENCE: &str = "雨下了整夜，屋檐上的水声一直没停。她把灯芯挑亮了一点，又低头写下去。";
-
-/// 验收模式的两个入口。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Mode {
-    /// 数据基准（不开窗口）
-    Bench,
-    /// 界面冷启动计时（开窗口）
-    Ui,
-    /// 体检一份库（会打开库；报告默认写在库旁边）——给"不丢稿"演练核对用
-    Check,
-}
-
-/// 一次验收要跑的东西。
-#[derive(Debug, Clone)]
-pub struct Plan {
-    pub mode: Mode,
-    /// 数据目录（默认系统临时目录下的 `yanmo-acceptance`）
-    pub dir: PathBuf,
-    /// 报告写到哪（前缀：真正落盘时会补上版本号与时间戳）
-    pub report: PathBuf,
-    /// `--check` 的结果写哪个文件。
-    ///
-    /// **不能靠 stdout**：研墨是 GUI 子系统程序（`windows_subsystem = "windows"`），
-    /// 在 cmd 里拿不到可用的标准输出——`println!` 写了也看不见（演练当场踩到）。
-    /// 所以体检结果一律落文件，脚本用 `type` 打出来给人看，文件本身也留作证据。
-    pub out: Option<PathBuf>,
-    pub chapters: usize,
-    pub chars: usize,
-}
-
-impl Default for Plan {
-    fn default() -> Self {
-        Self {
-            mode: Mode::Bench,
-            dir: std::env::temp_dir().join("yanmo-acceptance"),
-            report: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).join("验收报告"),
-            out: None,
-            chapters: 1000,
-            chars: 3000,
-        }
-    }
-}
-
-/// 认启动参数。不认识的参数一律不管（正常启动走原路）。
-pub fn parse(argv: &[String]) -> Option<Plan> {
-    let mut plan = Plan::default();
-    let mut seen = false;
-    for (index, arg) in argv.iter().enumerate() {
-        match arg.as_str() {
-            "--self-test-bench" | "--self-test" => {
-                plan.mode = Mode::Bench;
-                seen = true;
-            }
-            "--self-test-ui" => {
-                plan.mode = Mode::Ui;
-                seen = true;
-            }
-            "--check" => {
-                plan.mode = Mode::Check;
-                seen = true;
-                if let Some(dir) = argv.get(index + 1) {
-                    plan.dir = PathBuf::from(dir);
-                }
-            }
-            "--dir" => {
-                if let Some(dir) = argv.get(index + 1) {
-                    plan.dir = PathBuf::from(dir);
-                }
-            }
-            "--report" => {
-                if let Some(path) = argv.get(index + 1) {
-                    plan.report = PathBuf::from(path);
-                }
-            }
-            "--out" => {
-                if let Some(path) = argv.get(index + 1) {
-                    plan.out = Some(PathBuf::from(path));
-                }
-            }
-            "--chapters" => {
-                if let Some(value) = argv.get(index + 1).and_then(|raw| raw.parse().ok()) {
-                    plan.chapters = value;
-                }
-            }
-            "--chars" => {
-                if let Some(value) = argv.get(index + 1).and_then(|raw| raw.parse().ok()) {
-                    plan.chars = value;
-                }
-            }
-            _ => {}
-        }
-    }
-    seen.then_some(plan)
-}
 
 /// 一条量出来的指标。
 #[derive(Debug, Clone)]
@@ -520,7 +431,7 @@ fn human_ms(ms: f64) -> String {
 }
 
 /// JSON 字符串转义（只处理必须处理的几个字符）。
-fn json_string(value: &str) -> String {
+pub(crate) fn json_string(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 2);
     out.push('"');
     for ch in value.chars() {

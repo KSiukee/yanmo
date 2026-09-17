@@ -27,6 +27,15 @@ pub(crate) fn sweep(app: &AppHandle, inner: &Inner, full: bool, idle: bool) -> b
     let Some(data) = app.try_state::<AppData>() else {
         return false;
     };
+    sweep_data(&data, inner, full, idle)
+}
+
+/// 一轮对账的**正文**（只差"数据句柄从哪儿来"这一步）。
+///
+/// 分开的理由只有一个：无窗口那条路（验收模式的镜像对账）手上只有 [`AppData`]、
+/// 没有 `AppHandle`。**这是同一个函数，不是第二份实现**——界面里的工作线程也走这里，
+/// 所以"从外面驱动的"与"GUI 跑的"永远同一套计划、同一份账、同一条"外面的改动一个字不碰"。
+pub(crate) fn sweep_data(data: &AppData, inner: &Inner, full: bool, idle: bool) -> bool {
     let root = data.mirror_root();
     let mut report = MirrorStatus {
         root: root.display().to_string(),

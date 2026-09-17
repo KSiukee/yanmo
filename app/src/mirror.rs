@@ -105,11 +105,33 @@ pub(crate) struct Inner {
 }
 
 impl Inner {
+    /// 一个**没有工作线程**的 `Inner`：只用来承载"这一轮的报告"。
+    ///
+    /// 给无窗口那条路用（验收模式的镜像对账）：那边自己按次序调
+    /// [`crate::mirror_sync::sweep_data`]，不需要节拍、也不需要停机——
+    /// 反而不能起线程：起了就多一层"谁先跑、跑完没有"的竞态，而那条路要的是
+    /// **跑完就拿到结论**。（`wake` 那一头没有接收者：这条路从不 `poke`。）
+    pub(crate) fn detached() -> Self {
+        let (wake, _receiver) = mpsc::sync_channel(1);
+        Self {
+            wake,
+            status: Mutex::new(MirrorStatus::default()),
+            force: AtomicBool::new(false),
+            stop: AtomicBool::new(false),
+            join: Mutex::new(None),
+        }
+    }
+
     /// 把这一轮的结果挂上去（界面与下一轮都读它）。
     pub(crate) fn publish(&self, report: MirrorStatus) {
         if let Ok(mut slot) = self.status.lock() {
             *slot = report;
         }
+    }
+
+    /// 上一轮挂上去的报告（无窗口那条路拿它出结论）。
+    pub(crate) fn status(&self) -> MirrorStatus {
+        self.status.lock().map(|status| status.clone()).unwrap_or_default()
     }
 
     /// 上一轮"没账的文件"清单：不扫目录的那几轮沿用它（扫目录是 FS 走一遍，不能每投一次信号就来）。
