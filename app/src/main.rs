@@ -24,7 +24,11 @@ mod acceptance_guard;
 mod commands;
 mod diagnose;
 mod error;
+mod escape;
 mod exitwatch;
+mod export_fs;
+mod mirror;
+mod mirror_fs;
 mod open_folder;
 mod pick_dir;
 mod single;
@@ -131,6 +135,11 @@ fn main() {
                 }
             };
             app.manage(data);
+            // 磁盘 `.md` 镜像的工作线程：**验收模式不起**——它的巡检节拍会掺进冷启动读数。
+            if acceptance::ui_plan().is_none() {
+                let handle = crate::mirror::MirrorHandle::start(app.handle().clone());
+                app.state::<storage::AppData>().attach_mirror(handle);
+            }
             // 验收模式：界面要是到点还没就绪（页面没加载完、前端报错），
             // 也要出报告并退出——**绝不挂在那儿等**。
             if acceptance::ui_plan().is_some() {
@@ -299,6 +308,10 @@ fn main() {
             commands::location::data_location_pick,
             commands::location::data_location_move,
             commands::location::data_location_cancel,
+            commands::mirror::mirror_status,
+            commands::mirror::mirror_set_enabled,
+            commands::mirror::mirror_sync_now,
+            commands::mirror::mirror_open_folder,
             commands::work::delete_work,
             commands::work::export_work,
             commands::compile::compile_presets,

@@ -30,6 +30,8 @@ mod export;
 mod foreshadow;
 mod fragment;
 mod import;
+mod mirror;
+mod mirror_plan;
 mod node;
 mod naming;
 mod node_edit;
@@ -57,6 +59,7 @@ mod search;
 mod session;
 mod snapshot;
 mod trash;
+mod tree_path;
 mod volume;
 mod work;
 mod work_text;
@@ -78,7 +81,12 @@ pub use outline_grid::OutlineRow;
 pub use outline_paste::{OutlineCell, MAX_PASTE_CELLS};
 pub use draft::{parse_work_json, DraftScale, NodeDraft, StampMismatch, WorkDraft};
 pub use import::{find_drafts, manifest_near, ImportReport};
-pub(crate) use export::normalize;
+pub use mirror_plan::{
+    plan_mirror, ConflictReason, DiskState, MirrorAction, MirrorConflict, MirrorEntry, MirrorFile,
+    MirrorPlan, MirrorRecord,
+};
+pub(crate) use tree_path::normalize;
+pub use tree_path::work_folder_name;
 pub use naming::NamingRewrite;
 pub use node::{ChapterNeighbors, ChapterSummary, NodeSummary, SubtreeRollup};
 pub use relocate::{copy_dir, verify_same_scale, Relocation};

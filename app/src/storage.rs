@@ -19,159 +19,18 @@ use yanmo_core::store::{Relocation, SessionReport, Store};
 
 use crate::error::ApiError;
 use crate::exitwatch::ExitWatch;
+use crate::export_fs::{
+    export_folder_name, prune_export, read_export_manifest, write_export_manifest, write_files,
+};
 
-/// 逃生导出目录（关窗存不下去时，把手上这份正文原子写到这里）。
-const ESCAPE_DIR: &str = "escape";
-/// 系统临时目录 / 主目录下的逃生文件夹名（语言无关，跟导出目录同一个语言）。
-const ESCAPE_ROOT: &str = "YanmoEscape";
+/// 一次导出的结果（类型与落盘口径都在 [`crate::export_fs`]，这里转出去给命令层用）。
+pub use crate::export_fs::ExportOutcome;
+
 /// 系统答不上"文档在哪"时的导出落点：数据目录里的一个子目录。
 const EXPORT_DIR: &str = "export";
 // 库文件名与"文档/导出目录"的名字**不写在本文件**：图形界面与命令行救援入口是两个壳，
 // 它们必须认同同一份约定（常量与选择规则都在 `yanmo_core::paths`）——
 // 各写一份的结果是改一处漏一处，作者会以为稿子分家了。
-
-/// 一次导出的结果（路径只报给界面看，界面拿到也改不了）。
-pub struct ExportOutcome {
-    pub dir: PathBuf,
-    pub files: usize,
-    pub removed: usize,
-}
-
-/// 清掉导出目录里这次不再需要的 txt / json，再收掉空目录。
-///
-/// 只动我们自己的两种后缀，且只在导出目录内——**作者往里放的东西一概不碰**。
-/// 把一组文件写进 `dir`（按需建目录；**内容一样就不重写**，不白改 mtime）。
-///
-/// 导出与编译共用这一份：多一处写盘循环，就多一处"忘了改"的机会。
-fn write_files(dir: &Path, files: &[yanmo_core::store::RenderedFile]) -> Result<(), ApiError> {
-    for file in files {
-        let path = dir.join(&file.relative_path);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                ApiError::with(
-                    "shell.export_dir_create_failed",
-                    [("path", parent.display().to_string())],
-                )
-                .caused_by(e)
-            })?;
-        }
-        // 比字节：docx 这类产物根本不是 UTF-8 文本，按字符串比会永远"不相等"而反复重写
-        let unchanged = std::fs::read(&path).map(|old| old == file.content).unwrap_or(false);
-        if unchanged {
-            continue;
-        }
-        yanmo_core::atomic::write_atomic(&path, &file.content).map_err(|e| {
-            ApiError::with("shell.export_write_failed", [("path", path.display().to_string())])
-                .caused_by(e)
-        })?;
-    }
-    Ok(())
-}
-
-/// 导出/编译落点的文件夹名：`<归一化书名>-<作品 id>`。
-///
-/// 为什么要带 id：**重名作品是允许的**，而"清残留"是按目录做的——两本同名书共用同一个目录时，
-/// 后导的那本会把先导的那本刚写下的文件删掉（2026-09-15 代码质量评审：中等 17）。
-/// 备份那条路早就是这么防撞的（`-<id>`），这里跟它对齐。
-fn export_folder_name(work_id: i64, work_title: &str) -> String {
-    format!("{}-{}", yanmo_core::atomic::safe_file_name(work_title), work_id)
-}
-
-/// 导出清单：这个目录里**上一次导出写了哪些文件**（相对路径，一行一个）。
-///
-/// 放一个点开头的文件，作者在文件管理器里默认看不见它。
-const EXPORT_MANIFEST: &str = ".yanmo-export-manifest.txt";
-
-/// 读上一次的导出清单；读不到就当空（**空清单意味着什么都不删**，见 `prune_export`）。
-fn read_export_manifest(dir: &Path) -> Vec<String> {
-    std::fs::read_to_string(dir.join(EXPORT_MANIFEST))
-        .map(|text| {
-            text.lines()
-                .map(|line| line.trim().replace('/', std::path::MAIN_SEPARATOR_STR))
-                .filter(|line| !line.is_empty())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// 写下这一次的导出清单。**失败不报错**：清单只是"下次能清得更准"，
-/// 写不下不该让一次成功的导出变成失败。
-fn write_export_manifest(dir: &Path, files: &[yanmo_core::store::RenderedFile]) {
-    let mut text = files
-        .iter()
-        .map(|file| file.relative_path.replace('/', std::path::MAIN_SEPARATOR_STR))
-        .collect::<Vec<_>>()
-        .join("\n");
-    text.push('\n');
-    let _ = std::fs::write(dir.join(EXPORT_MANIFEST), text);
-}
-
-/// 清掉**上一次导出留下的孤儿**：只删"上次我们自己写、这次没写"的那些文件。
-///
-/// 为什么按清单清，而不是"把这个目录里所有不认识的 txt/json 都删掉"：
-/// ① 目录名按书名归一化，而**重名作品是允许的**——B 的导出会把 A 刚导出的文件删掉；
-/// ② 同一本书的编译产物（`submission/`、`chapters/`、`merged/` 里的 txt）就在同一个目录下，
-///    那样扫会把作者刚拿去投稿的那份一并删掉（2026-09-15 代码质量评审：中等 17）。
-///
-/// 只认自己的清单还有个好处：**升级后第一次导出时清单还是空的，于是什么都不删**——
-/// 宁可留几个孤儿，也不误删作者的产物。
-///
-/// `ours` 由调用方给（导出的产物是 txt/json，编译的产物还可能是 docx）：后缀写死在一处，
-/// 换个场景就会误删作者自己放进来的文件。
-fn prune_export(
-    dir: &Path,
-    previous: &[String],
-    files: &[yanmo_core::store::RenderedFile],
-    ours: &[&str],
-) -> Result<usize, ApiError> {
-    if !dir.is_dir() {
-        return Ok(0);
-    }
-    let keep: std::collections::HashSet<String> = files
-        .iter()
-        .map(|file| file.relative_path.replace('/', std::path::MAIN_SEPARATOR_STR))
-        .collect();
-    let mut removed = 0;
-    for relative in previous {
-        if keep.contains(relative) {
-            continue; // 这次也写了它，留着
-        }
-        let path = dir.join(relative);
-        // 安全阀：清单里的路径必须是**这个目录内的相对路径**（清单文件也可能被人手改）
-        if !path.starts_with(dir) || !path.is_file() {
-            continue;
-        }
-        let is_ours = path.extension().is_some_and(|ext| ours.iter().any(|ours| ext == *ours));
-        if !is_ours {
-            continue;
-        }
-        std::fs::remove_file(&path).map_err(|e| {
-            ApiError::with(
-                "shell.export_file_remove_failed",
-                [("path", path.display().to_string())],
-            )
-            .caused_by(e)
-        })?;
-        removed += 1;
-    }
-    // 收掉空目录（自下而上，失败就当它还有用，不报错）
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(current) = stack.pop() {
-        if let Ok(entries) = std::fs::read_dir(&current) {
-            for entry in entries.flatten() {
-                if entry.path().is_dir() {
-                    dirs.push(entry.path());
-                    stack.push(entry.path());
-                }
-            }
-        }
-    }
-    for path in dirs.into_iter().rev() {
-        let _ = std::fs::remove_dir(&path);
-    }
-    Ok(removed)
-}
 
 /// 壳持有的数据句柄：核心的存储层句柄（唯一读写入口），加上它落在哪里。
 ///
@@ -201,6 +60,11 @@ pub struct AppData {
     session: SessionReport,
     exit_gate_armed: AtomicBool,
     exit_watch: ExitWatch,
+    /// 磁盘 `.md` 镜像的工作线程（`setup` 里挂上；验收模式与命令行没有它 → `None`）。
+    ///
+    /// 它落在壳里而不是核心：核心零 UI 依赖、也不该自己起线程；镜像要写文件、要异步，
+    /// 这两件事本来就归壳（同 [`AppData::write_export`]）。
+    mirror: Mutex<Option<crate::mirror::MirrorHandle>>,
 }
 
 /// 启动期定下来的事：数据目录在哪、位置记录写哪、要不要首启引导。
@@ -342,6 +206,7 @@ impl AppData {
             session,
             exit_gate_armed: AtomicBool::new(false),
             exit_watch: ExitWatch::default(),
+            mirror: Mutex::new(None),
         })
     }
 
@@ -403,6 +268,9 @@ impl AppData {
     /// 返回成功意味着"新位置已经有一份核对过的稿子"，界面接着重启壳（与换库同一条路）。
     /// **旧位置一字不删**：删不删由作者自己看过之后定——那是唯一一份稿子的备份。
     pub fn relocate(&self, target: &Path) -> Result<Relocation, ApiError> {
+        // **先把镜像线程收干净**：它可能正握着一份 `.md` 在写，而紧接着整份数据目录要被复制走
+        // ——复制到一半的那些文件在新位置上会被当成"外面的改动"，白白报一堆假冲突。
+        self.stop_mirror();
         let from = self.data_dir();
         // 先把这次会话**正常收尾**：否则复制过去的那份库里留着一个"没关干净"的记录，
         // 下次在新位置打开时会弹一句"上次异常退出"的假警报（作者刚搬完家，最怕这种吓人话）。
@@ -416,8 +284,10 @@ impl AppData {
                 Ok(report)
             });
         if outcome.is_err() {
-            // 没搬成：把原库重新挂上，让作者接着写（不能留在"没有库"的状态）
+            // 没搬成：把原库重新挂上，让作者接着写（不能留在"没有库"的状态）；
+            // 镜像线程也一并起回来——停在原地却不再跟稿子，比不做镜像更糟（作者会以为它还在）。
             self.reopen_store()?;
+            self.restart_mirror();
         }
         outcome
     }
@@ -442,33 +312,65 @@ impl AppData {
         &self.exit_watch
     }
 
-    /// 逃生导出目录（**路径策略在壳，原子写在核心**）。
-    pub fn escape_dir(&self) -> PathBuf {
-        self.db_path
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join(ESCAPE_DIR)
+    /// 镜像根目录：数据目录里的 `mirror/`。
+    ///
+    /// 为什么放在稿库里面（而不是"文档"下另起一处）：它要**跟着稿子走**——换位置、便携模式
+    /// 拔盘带走、换库，都是整份数据目录的事；另起一处迟早会出现"镜像还是上一本书的"。
+    /// 想找它的作者有「打开镜像文件夹」那个入口，不必自己记路径。
+    pub fn mirror_root(&self) -> PathBuf {
+        self.data_dir().join(crate::mirror::MIRROR_DIR)
     }
 
-    /// 逃生导出的候选落点，**按"最不容易与故障同源"排序**（评审：中等 20）。
-    ///
-    /// "存不下去"的常见原因正是盘满、目录只读、介质写保护、UNC 断开——逃生通道要是与故障
-    /// 同源（默认就写在数据目录里），最需要它的时候恰好也用不了。所以顺序是：
-    /// ① 系统临时目录（通常另一块盘 / 另一个卷）→ ② 作者主目录 → ③ 数据目录（最后兜底）。
-    /// 调用方依次真写，**第一个成功的就把实际落点报给界面**。
-    pub fn escape_candidates(&self) -> Vec<PathBuf> {
-        let mut out: Vec<PathBuf> = Vec::new();
-        let push = |out: &mut Vec<PathBuf>, dir: PathBuf| {
-            if !out.contains(&dir) {
-                out.push(dir);
-            }
-        };
-        push(&mut out, std::env::temp_dir().join(ESCAPE_ROOT));
-        if let Some(home) = yanmo_core::paths::home_dir() {
-            push(&mut out, home.join(ESCAPE_ROOT));
+    /// 挂上镜像工作线程（`setup` 里 manage 之后调一次）。
+    pub fn attach_mirror(&self, mirror: crate::mirror::MirrorHandle) {
+        if let Ok(mut slot) = self.mirror.lock() {
+            *slot = Some(mirror);
         }
-        push(&mut out, self.escape_dir());
-        out
+    }
+
+    /// 镜像句柄（验收模式与命令行没有 → `None`）。
+    pub fn mirror(&self) -> Option<crate::mirror::MirrorHandle> {
+        self.mirror.lock().ok().and_then(|slot| slot.clone())
+    }
+
+    /// 告诉镜像"刚落了盘"——**不阻塞、不排队**（它在后台自己对账）。
+    pub fn poke_mirror(&self) {
+        if let Some(mirror) = self.mirror() {
+            mirror.poke();
+        }
+    }
+
+    /// 让镜像先做一次全量核对（作者点「立即同步」）。
+    pub fn force_mirror(&self) {
+        if let Some(mirror) = self.mirror() {
+            mirror.force_sync();
+        }
+    }
+
+    /// 停机并等镜像线程真的停下（搬迁前必须做，见 [`crate::mirror::MirrorHandle::stop_and_join`]）。
+    pub fn stop_mirror(&self) {
+        if let Some(mirror) = self.mirror() {
+            mirror.stop_and_join();
+        }
+    }
+
+    /// 把镜像线程重新起起来（搬迁没成、留在原处时用）。
+    pub fn restart_mirror(&self) {
+        if let Some(old) = self.mirror() {
+            if let Ok(mut slot) = self.mirror.lock() {
+                *slot = Some(old.restart());
+            }
+        }
+    }
+
+    /// 逃生导出目录（**路径策略在 [`crate::escape`]，原子写在核心**）。
+    pub fn escape_dir(&self) -> PathBuf {
+        crate::escape::dir(&self.db_path)
+    }
+
+    /// 逃生导出的候选落点，按"最不容易与故障同源"排序（顺序与理由见 [`crate::escape`]）。
+    pub fn escape_candidates(&self) -> Vec<PathBuf> {
+        crate::escape::candidates(&self.db_path)
     }
 
     /// 把渲染好的文件写进这本书的导出目录，并清掉上次导出、这次不再需要的残留。
@@ -702,31 +604,14 @@ mod tests {
     }
 
     #[test]
-    fn escape_dir_sits_next_to_the_database_and_gate_starts_disarmed() {
+    fn the_escape_directory_hangs_off_the_data_dir_and_the_gate_starts_disarmed() {
         let dir = tempfile::tempdir().unwrap();
         let data = AppData::open_at_for_test(dir.path()).unwrap();
-        assert_eq!(data.escape_dir(), dir.path().join(ESCAPE_DIR));
+        assert_eq!(data.escape_dir(), crate::escape::dir(data.db_path()));
+        assert_eq!(data.escape_candidates().last(), Some(&data.escape_dir()));
         assert!(!data.exit_gate_armed(), "界面没就绪前不该拦关窗");
         data.arm_exit_gate();
         assert!(data.exit_gate_armed());
-    }
-
-    #[test]
-    fn escape_candidates_never_put_the_data_dir_first() {
-        // 2026-09-15 代码质量评审：中等 20——"存不下去"的常见原因正是盘满 / 只读 / 写保护，
-        // 逃生通道与故障同源（就在数据目录里）等于最需要它时用不了。数据目录只能兜底。
-        let dir = tempfile::tempdir().unwrap();
-        let data = AppData::open_at_for_test(dir.path()).unwrap();
-        let candidates = data.escape_candidates();
-
-        assert!(candidates.len() >= 2, "至少要有临时目录与数据目录两站：{candidates:?}");
-        assert_eq!(
-            candidates.first().unwrap(),
-            &std::env::temp_dir().join(ESCAPE_ROOT),
-            "第一站必须是系统临时目录（通常另一块盘）"
-        );
-        assert_eq!(candidates.last().unwrap(), &data.escape_dir(), "数据目录只能垫底");
-        assert!(!candidates.contains(&data.data_dir()), "候选是子目录，不是库文件所在的那个目录本身");
     }
 
     #[test]

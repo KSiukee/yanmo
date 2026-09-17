@@ -4,11 +4,12 @@
 //! - 这一层只管"应该有哪些文件、每个文件里是什么"（可单测、可复现）；
 //! - 落盘（原子写、清掉上一次的残留）在壳里，见 `yanmo_app::storage`。
 //!
-//! 这样同一份渲染，既能用于"导出给作者带走"，也能用于将来"磁盘镜像"那件事。
+//! 这样同一份渲染，既能用于"导出给作者带走"，也能用于"磁盘镜像"那件事
+//! （镜像的分支在 [`super::mirror`]，**路径与命名走 [`super::tree_path`] 同一套**）。
 //!
 //! # 幂等
 //!
-//! **同一份内容、同一份结构，渲染出来的字节必须完全一样**：不写时间戳、不写绝对路径、
+//! **同一份内容、同一份结构，渲染出来的字节必须完全一样**：不写时间戳、不写绝对路径，
 //! 顺序一律按阅读顺序（父 → 子、sort_order → id），换行统一成 `\n` 并以一个换行结尾。
 //! 这样把它放进 git，diff 里只会出现真正的改动——不会因为"又导了一次"冒出噪声。
 //!
@@ -16,19 +17,8 @@
 //!
 //! 只输出**文件**：卷 / 节这些容器体现在路径里（`001-第一卷/002-第一章.txt`），
 //! 由落盘那一层按需建目录。文件名带三位序号，所以文件管理器里的顺序就是阅读顺序。
-//!
-//! # 深度上限（为什么读路径也要拦）
-//!
-//! 递归渲染按 `MAX_TREE_DEPTH` 设了上限：比它更深的树**返回 `TREE_TOO_DEEP`，绝不递归到爆栈**。
-//! 写入口早就拦着（新建/移动超深会报错），但**读路径以前没拦**：深度限制是后加的，
-//! 在它之前建出来的深树会被现在的版本原样打开，而备份会对每本书都调一次这里的渲染——
-//! 一次爆栈就把整个进程带走，连关窗快照都来不及做（"不丢稿"最不该崩的就是这条路）。
-//! 宁可明确报错让人看见，也不让进程无声地死掉。
 
-use std::collections::HashMap;
-
-use super::{too_deep, Store, MAX_TREE_DEPTH};
-use crate::atomic::safe_file_name;
+use super::{too_deep, tree_path, Store, MAX_TREE_DEPTH};
 use crate::error::{codes, Error, Result};
 
 /// 导出格式。
@@ -83,15 +73,14 @@ impl Store {
     pub fn render_work(&self, work_id: i64, format: ExportFormat) -> Result<Vec<RenderedFile>> {
         let work = self.get_work(work_id)?;
         let nodes = self.list_nodes(work_id)?;
-        let kids = children_index(&nodes);
         match format {
             ExportFormat::Text => {
                 let mut out = Vec::new();
-                collect_text(self, &nodes, &kids, None, "", 0, &mut out)?;
+                collect_text(self, &nodes, &mut out)?;
                 if out.is_empty() {
                     // 一个字都没有的书：留一个文件，免得导出一个空文件夹让人以为失败了。
                     // 文件名**语言无关**（它会留在作者磁盘上，不该随界面语言变）
-                    out.push(RenderedFile::text("empty.txt", normalize(&work.title)));
+                    out.push(RenderedFile::text("empty.txt", tree_path::normalize(&work.title)));
                 }
                 Ok(out)
             }
@@ -106,6 +95,7 @@ impl Store {
                 //   作者写的是模板（`第{$N}章 灯`），显示名是渲染结果（`第3章 灯`）；
                 //   只带显示名的话，读回来就成了钉死的文字（插入一章号不会重排）。
                 //   空串也是有效取值（＝"没起名的卷"），所以**这一格在不在本身就是信息**。
+                let kids = tree_path::children_index(&nodes);
                 let payload = serde_json::json!({
                     "title": work.title,
                     "kind": work.kind.as_str(),
@@ -141,99 +131,30 @@ pub(crate) fn fingerprint_of_text(files: &[RenderedFile]) -> String {
     crate::text::content_hash(&combined)
 }
 
-/// 一份内容写成文件时的统一口径：换行归一、末尾留一个换行；空内容就是空文件。
-pub(crate) fn normalize(body: &str) -> String {
-    let unified = body.replace("\r\n", "\n").replace('\r', "\n");
-    let trimmed = unified.trim_end_matches('\n');
-    if trimmed.is_empty() {
-        String::new()
-    } else {
-        format!("{trimmed}\n")
-    }
-}
-
-fn children_index(nodes: &[super::NodeSummary]) -> HashMap<Option<i64>, Vec<usize>> {
-    let mut kids: HashMap<Option<i64>, Vec<usize>> = HashMap::new();
-    for (position, node) in nodes.iter().enumerate() {
-        kids.entry(node.parent_id).or_default().push(position);
-    }
-    kids
-}
-
-/// 节点名：标题为空（新建后还没起名）就退到**结构标识**
-/// （`volume` / `chapter` …）——那是语言无关的取值，比一个"未命名"有用得多。
-fn node_name(node: &super::NodeSummary) -> String {
-    if node.title_rendered.trim().is_empty() {
-        node.kind.as_str().to_string()
-    } else {
-        safe_file_name(&node.title_rendered)
-    }
-}
-
-/// 节点在这条路上的名字（带序号，顺序一眼可见）。
-fn segment(node: &super::NodeSummary) -> String {
-    format!("{:03}-{}", node.sort_order + 1, node_name(node))
-}
-
-fn join(path: &str, name: &str) -> String {
-    if path.is_empty() {
-        name.to_string()
-    } else {
-        format!("{path}/{name}")
-    }
-}
-
 /// 按阅读顺序走一遍，把承载正文的节点收成文件（容器只体现在路径里）。
-fn collect_text(
-    store: &Store,
-    nodes: &[super::NodeSummary],
-    kids: &HashMap<Option<i64>, Vec<usize>>,
-    parent: Option<i64>,
-    path: &str,
-    ancestors: usize,
-    out: &mut Vec<RenderedFile>,
-) -> Result<()> {
-    for index in kids.get(&parent).into_iter().flatten() {
-        let node = &nodes[*index];
-        // 尺子与读路径**同一把**：祖先数 ≥ MAX_TREE_DEPTH 就是越限（见 `Store::node_ancestors`）。
-        // 两处口径必须一致，否则会出现"读得出来、导不出来"这种反向故障。
-        //
-        // 这道门放在**真要处理这个节点**的时候，不能放在函数开头：容器类型（章节也算）
-        // 即使没有下级也会走进来一轮空迭代——放在开头的话，写入口允许的最深那棵树
-        // 会因为"空着的第 65 层"被判成坏数据（这个坑我在写这条修复时当场踩了一次）。
-        if ancestors >= MAX_TREE_DEPTH {
-            return Err(too_deep());
-        }
-        // **有没有下级按数据判，不按"这种类型能不能放下级"判**：后者是界面上的可放性
-        // （点「+」往哪儿加），而导出是"把作者的字带走"——一个标志位不该让它偷偷少几章。
-        // 真踩过：单篇挂了一节（数据层允许），分章导出只出了单篇那一个文件，节里的字没影了。
-        let container =
-            node.kind.accepts_children() || kids.contains_key(&Some(node.id));
-        let here = if container { join(path, &segment(node)) } else { path.to_string() };
+fn collect_text(store: &Store, nodes: &[super::NodeSummary], out: &mut Vec<RenderedFile>) -> Result<()> {
+    tree_path::walk(nodes, |node, here| {
         if node.kind.holds_body() {
             out.push(RenderedFile::text(
-                format!("{}.txt", join(path, &segment(node))),
-                normalize(&store.read_body(node.id)?),
+                format!("{here}.txt"),
+                tree_path::normalize(&store.read_body(node.id)?),
             ));
         }
-        if container {
-            collect_text(store, nodes, kids, Some(node.id), &here, ancestors + 1, out)?;
-        }
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 fn json_nodes(
     store: &Store,
     nodes: &[super::NodeSummary],
-    kids: &HashMap<Option<i64>, Vec<usize>>,
+    kids: &std::collections::HashMap<Option<i64>, Vec<usize>>,
     parent: Option<i64>,
     ancestors: usize,
 ) -> Result<Vec<serde_json::Value>> {
     let mut out = Vec::new();
     for index in kids.get(&parent).into_iter().flatten() {
         let node = &nodes[*index];
-        // 同 `collect_text`：与读路径同一把尺子，而且只在真要处理这个节点时才拦
+        // 同渲染走法：与读路径同一把尺子，而且只在真要处理这个节点时才拦
         if ancestors >= MAX_TREE_DEPTH {
             return Err(too_deep());
         }
@@ -245,7 +166,7 @@ fn json_nodes(
             item.insert("title_template".into(), node.title.clone().into());
         }
         if node.kind.holds_body() {
-            item.insert("body".into(), normalize(&store.read_body(node.id)?).into());
+            item.insert("body".into(), tree_path::normalize(&store.read_body(node.id)?).into());
         }
         let children = json_nodes(store, nodes, kids, Some(node.id), ancestors + 1)?;
         if !children.is_empty() {

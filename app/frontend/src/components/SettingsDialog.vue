@@ -11,6 +11,7 @@ import { t } from "../locales/index.ts";
 import type { EditorSession } from "../editor/session";
 import { SETTINGS_SECTIONS, firstSection } from "../editor/settings-nav.ts";
 import LocationDialog from "./LocationDialog.vue";
+import MirrorSettings from "./MirrorSettings.vue";
 import SettingsResetConfirm from "./SettingsResetConfirm.vue";
 import TypographySettings from "./TypographySettings.vue";
 import AskingSettings from "./AskingSettings.vue";
@@ -275,6 +276,10 @@ async function runRewrite() {
       <button type="button" class="settings__button dialog__button" :disabled="!dataPath" @click="startRelocate">
         {{ t("location.change") }}
       </button>
+
+      <!-- 磁盘 .md 镜像：**独立一块**（开关 / 状态 / 打开 / 立即对一遍），见 MirrorSettings.vue。
+           它跟「稿子放在哪」放一起，是因为两者都在回答同一句话：我的字到底在这个机器的哪些地方。 -->
+      <MirrorSettings />
 
       <p v-if="unavailable" class="settings__hint settings__hint--bad">
         {{ t("settings.unavailable") }}

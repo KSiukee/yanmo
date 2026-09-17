@@ -36,6 +36,11 @@ pub const SHELL_CODES: &[(&str, &[&str])] = &[
     ("shell.export_dir_create_failed", &["path"]),
     ("shell.export_write_failed", &["path"]),
     ("shell.question_bad_preset", &["value"]),
+    ("shell.mirror_write_failed", &["path"]),
+    ("shell.mirror_rename_failed", &["path"]),
+    ("shell.mirror_remove_failed", &["path"]),
+    ("shell.mirror_dir_create_failed", &["path"]),
+    ("shell.mirror_unavailable", &[]),
 ];
 
 /// 壳层失败**人人都有的那个参数**：底层原因（数据库 / 文件系统给的技术消息）。

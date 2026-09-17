@@ -24,6 +24,8 @@ pub mod foreshadow;
 pub mod fragment;
 /// 稿子放哪：位置查询、换位置、打开文件夹。
 pub mod location;
+/// 磁盘即 `.md`：强镜像的状态、开关、立即同步与打开目录。
+pub mod mirror;
 /// 大纲体检：把对不上的地方列出来（只报告，不改稿）。
 pub mod outline;
 /// 叩问：问题候选取材、处置四件套与记灵感（**只问不写**）。

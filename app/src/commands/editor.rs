@@ -271,7 +271,7 @@ pub fn save_body(
     body: String,
     tz_offset_minutes: i32,
 ) -> Result<SaveAck, ApiError> {
-    data.with_store(|store| {
+    let ack = data.with_store(|store| {
         let stats = store.write_body_counted(node_id, &body, tz_offset_minutes)?;
         Ok(SaveAck {
             char_count: stats.char_count,
@@ -279,7 +279,12 @@ pub fn save_body(
             word_count: stats.word_count,
             fingerprint: yanmo_core::text::content_hash(&body),
         })
-    })
+    })?;
+    // 落盘之后**顺手叫一声**镜像（磁盘即 `.md`）：只投个信号，不在这里等它写文件
+    // ——击键的路上一秒都不许多花（它在后台合并、对账）。内容没变时核心不写库，这一声
+    // 就白叫了：白叫的代价是一次空巡检，比"漏叫"便宜得多。
+    data.poke_mirror();
+    Ok(ack)
 }
 
 /// 库里这份正文的指纹——**写后读回校验**用，避免每几秒搬运整章文本。
@@ -301,7 +306,7 @@ pub fn emergency_snapshot(
     reason: String,
     tz_offset_minutes: i32,
 ) -> Result<SaveAck, ApiError> {
-    data.with_store(|store| {
+    let ack = data.with_store(|store| {
         let stats = store.emergency_snapshot(node_id, &body, &reason, tz_offset_minutes)?;
         Ok(SaveAck {
             char_count: stats.char_count,
@@ -309,7 +314,10 @@ pub fn emergency_snapshot(
             word_count: stats.word_count,
             fingerprint: yanmo_core::text::content_hash(&body),
         })
-    })
+    })?;
+    // 抢救回来的字也是字：镜像照样要跟上（同 `save_body`）
+    data.poke_mirror();
+    Ok(ack)
 }
 
 /// 上次会话的交代：界面启动时问一次，决定要不要提示"上次没有正常退出"。
