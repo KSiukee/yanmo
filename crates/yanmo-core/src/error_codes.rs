@@ -208,6 +208,25 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     STORE_RELOCATE_VERIFY_FAILED => "store.relocate_verify_failed"
         : "新位置复制过去的稿子核对不上（{path}）：原位置没动过，稿子还在原处（{detail}）"
         : ["path", "detail"],
+    // ── SOP（作者自己的写作流程）────────────────────────────────────────
+    SOP_TOO_MANY_STEPS => "sop.too_many_steps"
+        : "一条流程最多 {max} 步（现在 {count} 步）——先删掉几步" : ["max", "count"],
+    SOP_ID_EMPTY => "sop.id_empty"
+        : "流程里有一个条目没有稳定 id——每一步、每个检查项都要有" : [],
+    SOP_ID_BAD => "sop.id_bad"
+        : "流程条目的 id 不合规：{value}（只允许字母、数字、- 与 _，最长 {max} 个字符）"
+        : ["value", "max"],
+    SOP_ID_DUPLICATE => "sop.id_duplicate"
+        : "同一条流程里有两个一样的 id：{value}" : ["value"],
+    SOP_TEXT_TOO_LONG => "sop.text_too_long"
+        : "流程里的文字太长了（{chars} 字，上限 {max}）——步骤名与说明是一句话，不是正文"
+        : ["chars", "max"],
+    SOP_MINUTES_BAD => "sop.minutes_bad"
+        : "参考时长要在 1 到 {max} 分钟之间（给的是 {value}）" : ["value", "max"],
+    SOP_ACTION_UNKNOWN_TARGET => "sop.action_unknown_target"
+        : "认不出的绑定动作：{value}（这一版只认 aside＝打开哪块面板）" : ["value"],
+    SOP_REVISION_NOT_FOUND => "sop.revision_not_found"
+        : "找不到这条流程改动记录：{seq}" : ["seq"],
 }
 
 /// 按码把参数填进日志模板；模板不认识这个码就退回 `码(名字=取值, …)`。

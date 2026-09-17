@@ -59,6 +59,8 @@ mod scene_card;
 mod search;
 mod session;
 mod snapshot;
+mod sop;
+mod sop_store;
 mod trash;
 mod tree_path;
 mod volume;
@@ -67,6 +69,10 @@ mod work_text;
 mod writing;
 
 pub use appearance::{Appearance, ResolvedAppearance};
+pub use sop::{
+    ResolvedSop, ResolvedStep, Sop, SopAction, SopCheck, SopRevision, SopSource, SopStep,
+    ACTION_ASIDE, DEFAULT_STEP_IDS, MAX_ID_CHARS, MAX_MINUTES, MAX_STEPS, MAX_TEXT_CHARS,
+};
 pub use backup::{
     gaps_for, has_other_volume, ledger_summary, read_ledger, read_manifest, BackupConfig,
     BackupLedger, BackupManifest, BackupReport, BackupRequest, BackupTarget, BackupVerify,
