@@ -32,6 +32,27 @@ struct Marker {
     fingerprint: String,
     /// 上一次是不是正常退出
     clean: bool,
+    /// 界面卡死的一次现场（守护之心留下的交代；没卡过就是 `None`）
+    #[serde(default)]
+    revive: Option<UiFreeze>,
+}
+
+/// 界面卡死的一次现场：**留给界面的交代**（重载之后要告诉作者发生了什么）。
+///
+/// 它是"这一次会话里卡过"的记录，不是崩溃检测：卡死时进程还活着，
+/// 崩溃检测那个 `clean` 标记此时仍然是"未正常退出"（会话本来就没结束）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiFreeze {
+    /// 判死那一刻（unix 毫秒）
+    pub at: i64,
+    /// 卡住时正在编辑的节点（不知道就是 `None`）
+    pub node_id: Option<i64>,
+    /// 那一刻库里最后一版的指纹——重载后据此说"恢复到最后落盘的那一版"
+    pub fingerprint: String,
+    /// 这一次会话里第几次判死
+    pub attempt: u32,
+    /// 自动重载也没救回来（停手了）：界面下次起来要说得更明白
+    pub gave_up: bool,
 }
 
 /// 上一次会话留下的交代。
@@ -43,6 +64,8 @@ pub struct SessionReport {
     pub last_node_id: Option<i64>,
     /// 上次活动时间（unix 毫秒）
     pub last_seen_at: Option<i64>,
+    /// 上一次会话里界面卡过没有（卡过就带着现场：次数、那一刻正在编辑的章、最后一版的指纹）
+    pub revive: Option<UiFreeze>,
 }
 
 /// 界面当前该挂载的编辑目标。
@@ -65,6 +88,7 @@ impl Store {
             node_id: None,
             fingerprint: String::new(),
             clean: false,
+            revive: None,
         })?;
         Ok(report)
     }
@@ -79,6 +103,7 @@ impl Store {
             unclean: previous.as_ref().map(|m| !m.clean).unwrap_or(false),
             last_node_id: previous.as_ref().and_then(|m| m.node_id),
             last_seen_at: previous.as_ref().map(|m| m.heartbeat_at),
+            revive: previous.as_ref().and_then(|m| m.revive.clone()),
         })
     }
 
@@ -156,8 +181,47 @@ impl Store {
             return Ok(());
         };
         marker.clean = true;
+        // 卡死交代是**给这一次重载看的**：正常退出时清掉，免得下次开窗又念一遍旧事
+        marker.revive = None;
         marker.heartbeat_at = now_millis();
         Self::write_marker(&self.conn, &marker)
+    }
+
+    /// **界面卡死的证据**（守护之心用）：把这一刻写进会话标记，并在 op-log 留一条。
+    ///
+    /// 为什么要同事务：这两样是同一件事的两面（"卡过"与"什么时候卡的"），
+    /// 一边写进去另一边没写，事后就说不清到底卡没卡。
+    ///
+    /// `gave_up` 有两个时刻会用：判死那一刻（先按"尝试重载"记，`false`），
+    /// 以及重载用尽/调不动时补记一次（`true`）——补记是把同一条交代更新成最终结论。
+    ///
+    /// ⚠️ 会话标记还没登记（没走过 `begin_session`）时**不凭空造一个**：那会让
+    /// "上次是不是正常退出"这句话失去依据。
+    pub fn note_ui_freeze(&mut self, attempt: u32, gave_up: bool) -> Result<()> {
+        let Some(mut marker) = Self::read_marker(&self.conn)? else {
+            return Ok(());
+        };
+        let at = now_millis();
+        let node_id = marker.node_id;
+        let fingerprint = marker.fingerprint.clone();
+        marker.revive = Some(UiFreeze { at, node_id, fingerprint: fingerprint.clone(), attempt, gave_up });
+        marker.heartbeat_at = at;
+        let tx = self.conn.transaction()?;
+        Self::write_marker(&tx, &marker)?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "ui",
+            node_id.unwrap_or(0),
+            if gave_up { "freeze_gave_up" } else { "freeze" },
+            serde_json::json!({
+                "attempt": attempt,
+                "node_id": node_id,
+                "fingerprint": fingerprint,
+            }),
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// 读标记。读不出来（没写过 / JSON 坏了）时按**未正常退出**处理——
@@ -178,6 +242,7 @@ impl Store {
                 node_id: None,
                 fingerprint: String::new(),
                 clean: false,
+                revive: None,
             })
         }))
     }

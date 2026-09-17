@@ -532,6 +532,11 @@ export interface SessionNotice {
   last_node_id: number | null;
   /** 上次活动时间（unix 毫秒） */
   last_seen_at: number | null;
+  /** 上次会话里界面卡过没有（带着现场：第几次、卡在哪一章、最后一版指纹） */
+  revive: { at: number; node_id: number | null; fingerprint: string; attempt: number; gave_up: boolean } | null;
+  /** 守护之心的现状（`alive` / `probing` / `waiting` / `gave_up`）与本次会话重载次数 */
+  watchdog: string;
+  revives: number;
 }
 
 /** 退出收尾的回执。 */
@@ -675,6 +680,7 @@ export const COMMANDS = {
   bodyFingerprint: "body_fingerprint",
   emergencySnapshot: "emergency_snapshot",
   sessionReport: "session_report",
+  uiAlive: "ui_alive",
   armExitGate: "arm_exit_gate",
   ackCloseRequest: "ack_close_request",
   closeSession: "close_session",
@@ -1043,6 +1049,10 @@ export const emergencySnapshot = (
 /** 上次会话的交代（崩溃检测）。 */
 export const sessionReport = () => call<SessionNotice>(COMMANDS.sessionReport);
 
+/** 探活的回话：壳问"你还活着吗"，界面立刻回一声（守护之心的心跳之一）。 */
+export const uiAlive = () => call<void>(COMMANDS.uiAlive);
+
+
 /** 界面已就绪：从现在起关窗会先过闸门。 */
 export const armExitGate = () => call<void>(COMMANDS.armExitGate);
 
@@ -1069,6 +1079,10 @@ export const requestExit = () => call<void>(COMMANDS.exitApp);
  */
 export const onCloseRequested = (handler: () => void): Promise<UnlistenFn> =>
   listen("close-requested", () => handler());
+
+/** 壳来探活：**立刻**回一声（回话即心跳）。页面死在 JS 死循环里时它永远排着不执行——回不了话正是判据。 */
+export const onUiProbe = (handler: () => void): Promise<UnlistenFn> =>
+  listen("ui-probe", () => handler());
 
 /**
  * 全屏开关：**窗口能力，不走核心**（只改窗口，正文一个字都不动）。

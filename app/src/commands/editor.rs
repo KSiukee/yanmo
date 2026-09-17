@@ -127,6 +127,12 @@ pub struct SessionNotice {
     pub last_node_id: Option<i64>,
     /// 上次活动时间（unix 毫秒）
     pub last_seen_at: Option<i64>,
+    /// 上次会话里界面卡过没有（卡过就带着现场：第几次、卡在哪一章、最后一版的指纹）
+    pub revive: Option<yanmo_core::store::UiFreeze>,
+    /// 守护之心此刻的状态（`alive` / `probing` / `waiting` / `gave_up`）——体检与演练读它
+    pub watchdog: String,
+    /// 这一次会话已经自动重载过几次
+    pub revives: u32,
 }
 
 /// 退出收尾的回执。
@@ -147,9 +153,11 @@ pub struct EscapeAck {
 #[tauri::command]
 pub fn open_editor_target(data: State<'_, AppData>) -> Result<EditorSnapshot, ApiError> {
     crate::acceptance::note_command("open_editor_target");
-    let preferred = data.session().last_node_id;
+    let startup = data.session().last_node_id;
+    let live = data.with_store(|store| Ok(store.peek_session()?.last_node_id))?;
     data.with_store(|store| {
-        let target = store.ensure_editor_target_preferring(preferred)?;
+        // **这一次会话**开过章就用它（自动重载复活靠这条回到原位）；没开过才用启动时那一章
+        let target = store.ensure_editor_target_preferring(live.or(startup))?;
         // 打开就记下是哪一章：万一还没写一个字就被杀，重开也能回到原位
         store.note_open_node(target.node_id)?;
         sweep_question_requeues(store, target.work_id);
@@ -289,10 +297,18 @@ pub fn save_body(
 
 /// 库里这份正文的指纹——**写后读回校验**用，避免每几秒搬运整章文本。
 ///
-/// 界面每几秒就会调它一次，核心顺手把这次调用当作**心跳**（崩溃检测据此知道进程还活着）。
+/// 界面每几秒调它一次，核心顺手把它当**心跳**；它也是守护之心的心跳（见 [`crate::guardian`]）：
+/// **界面活着才会每 3 秒来一次**，死在 JS 死循环里的来不了——壳在这里打一个内存时间戳。
 #[tauri::command(rename_all = "snake_case")]
 pub fn body_fingerprint(data: State<'_, AppData>, node_id: i64) -> Result<String, ApiError> {
+    data.watchdog().beat(std::time::Instant::now());
     data.with_store(|store| store.body_fingerprint(node_id))
+}
+
+/// 探活的回话（见 [`crate::guardian`]）：**不碰库**——否则"核心卡住"会被误判成"界面卡死"。
+#[tauri::command]
+pub fn ui_alive(data: State<'_, AppData>) {
+    data.watchdog().beat(std::time::Instant::now());
 }
 
 /// 发现"库里的正文和手上这份对不上"时的抢救：先留快照，再把库改回手上的版本。
@@ -328,6 +344,10 @@ pub fn session_report(data: State<'_, AppData>) -> SessionNotice {
         unclean: session.unclean,
         last_node_id: session.last_node_id,
         last_seen_at: session.last_seen_at,
+        revive: session.revive.clone(),
+        // 守护之心的现状一并报出来：真机演练与体检据此看"判了没有、重载几次"
+        watchdog: data.watchdog().state().to_string(),
+        revives: data.watchdog().revives(),
     }
 }
 

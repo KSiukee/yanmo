@@ -28,6 +28,7 @@ mod error;
 mod escape;
 mod exitwatch;
 mod export_fs;
+mod guardian;
 mod mirror;
 mod mirror_fs;
 mod mirror_headless;
@@ -37,6 +38,7 @@ mod pick_dir;
 mod single;
 mod storage;
 mod volume;
+mod watchdog;
 
 fn main() {
     // **验收模式**（`--self-test-bench` / `--self-test-ui` / `--check`）：只由启动参数进入，
@@ -147,6 +149,8 @@ fn main() {
             if acceptance::ui_plan().is_none() {
                 let handle = crate::mirror::MirrorHandle::start(app.handle().clone());
                 app.state::<storage::AppData>().attach_mirror(handle);
+                // 守护之心：界面卡死了自己重载（验收模式不起——那条路的读数要干净）
+                crate::guardian::start(app.handle().clone());
             }
             // 验收模式：界面要是到点还没就绪（页面没加载完、前端报错），
             // 也要出报告并退出——**绝不挂在那儿等**。
@@ -222,6 +226,7 @@ fn main() {
             commands::editor::save_body,
             commands::editor::set_node_summary,
             commands::editor::body_fingerprint,
+            commands::editor::ui_alive,
             commands::editor::emergency_snapshot,
             commands::editor::session_report,
             commands::editor::arm_exit_gate,

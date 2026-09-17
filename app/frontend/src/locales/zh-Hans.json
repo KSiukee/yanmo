@@ -448,6 +448,8 @@
   "location.risk.occupied": "✕ 这个位置里已经有一份研墨的稿子：搬家不会覆盖它，请换个空文件夹。",
   "location.risk.removable": "⚠ 这是可移动盘（U 盘/移动硬盘）或网络盘：写在半路被拔掉、断网，可能把库写坏。真要放这里，请记得安全弹出。",
   "session.crash_notice": "上次没有正常退出（最后落盘：{when}）——已回到崩溃前那一章的最后落盘位置。",
+  "session.revive_notice": "界面刚才卡住了，已自动重载（第 {count} 次）——回到最后落盘的那一版。重载会丢掉卡住那一刻还没落盘的击键，请回头看一眼刚才那几句还在不在。",
+  "session.revive_failed": "界面卡住了，自动重载试过 {count} 次都没能把它救回来——最后落盘的稿子没丢。如果窗口还是白的，请关掉重开。",
   "session.location_failed": "换稿子位置失败：{detail}",
   "session.create_chapter_failed": "没能新建章节：{detail}",
   "session.delete_unsaved": "没能先把这一章存下来，这次没有删除：{detail}",

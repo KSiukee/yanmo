@@ -216,3 +216,111 @@ fn opened_chapter_is_remembered_even_before_any_save() {
         "还没落盘就被杀，也要能说出当时开的是哪一章"
     );
 }
+
+// ── 守护之心：界面卡死的证据 ──────────────────────────────────────────────
+//
+// 这一组守的是"卡过这件事**留得下、说得清、不会反复念**"：
+//   ① 判死那一刻，现场（第几次、卡在哪一章、最后一版的指纹）进会话标记，同时进 op-log；
+//   ② 正常退出把它清掉——它是给"这一次重载"看的，不该下次开窗还念；
+//   ③ 真被杀了（没有正常退出）时它**必须还在**：那正是作者最需要知道的一次。
+
+/// op-log 里的卡死记录（新的在前）。
+fn freeze_log(store: &Store) -> Vec<(String, serde_json::Value)> {
+    let mut stmt = store
+        .conn()
+        .prepare("SELECT op, payload FROM op_log WHERE entity = 'ui' ORDER BY seq")
+        .unwrap();
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .unwrap();
+    rows.map(|row| {
+        let (op, payload) = row.unwrap();
+        (op, serde_json::from_str(&payload).unwrap())
+    })
+    .collect()
+}
+
+#[test]
+fn a_freeze_leaves_its_scene_in_the_marker_and_the_op_log() {
+    let (_dir, path) = fresh();
+    let mut store = Store::open(&path).unwrap();
+    store.begin_session().unwrap();
+    let node = store.ensure_editor_target().unwrap().node_id;
+    store.write_body(node, "卡死之前写下的这一版。").unwrap();
+    // 落盘那一路顺带把"最后一版的指纹"记进标记（卡死证据直接抄它）
+    let written = marker(&store)["fingerprint"].as_str().unwrap().to_string();
+    assert!(!written.is_empty(), "落盘之后标记里该有指纹了");
+
+    assert!(store.peek_session().unwrap().revive.is_none(), "没卡过就不该有交代");
+
+    store.note_ui_freeze(1, false).unwrap();
+    let report = store.peek_session().unwrap();
+    let revive = report.revive.expect("卡过就要留交代");
+    assert_eq!(revive.attempt, 1);
+    assert!(!revive.gave_up, "第一次判死时还在试着重载");
+    assert_eq!(revive.node_id, Some(node), "要记着卡在哪一章（重开回到原位靠它）");
+    assert_eq!(revive.fingerprint, written, "最后一版的指纹也要记下");
+    assert!(revive.at > 0);
+
+    let log = freeze_log(&store);
+    assert_eq!(log.len(), 1, "同一次事务里还要在 op-log 留一条");
+    assert_eq!(log[0].0, "freeze");
+    assert_eq!(log[0].1["attempt"], 1);
+    assert_eq!(log[0].1["node_id"], node);
+
+    // 停手时把同一条交代更新成最终结论，并再留一条（"我试过了、没成"）
+    store.note_ui_freeze(3, true).unwrap();
+    let revive = store.peek_session().unwrap().revive.unwrap();
+    assert_eq!(revive.attempt, 3);
+    assert!(revive.gave_up);
+    let log = freeze_log(&store);
+    assert_eq!(log.len(), 2);
+    assert_eq!(log[1].0, "freeze_gave_up");
+}
+
+#[test]
+fn a_clean_exit_clears_the_freeze_note() {
+    let (_dir, path) = fresh();
+    let mut store = Store::open(&path).unwrap();
+    store.begin_session().unwrap();
+    let node = store.ensure_editor_target().unwrap().node_id;
+    store.note_ui_freeze(1, false).unwrap();
+
+    store.end_session(node).unwrap();
+    assert!(
+        store.peek_session().unwrap().revive.is_none(),
+        "正常退出之后不该再念旧事——那一次重载时已经告诉过作者了"
+    );
+
+    // 再开一次也不会翻出来
+    let mut again = Store::open(&path).unwrap();
+    let report = again.begin_session().unwrap();
+    assert!(!report.unclean);
+    assert!(report.revive.is_none());
+}
+
+#[test]
+fn a_freeze_survives_a_kill_and_is_reported_with_the_crash() {
+    let (_dir, path) = fresh();
+    let node;
+    {
+        let mut store = Store::open(&path).unwrap();
+        store.begin_session().unwrap();
+        node = store.ensure_editor_target().unwrap().node_id;
+        store.write_body(node, "刚卡死就被杀了。").unwrap();
+        store.note_ui_freeze(2, true).unwrap();
+        // ★ 故意不 end_session —— 这就是"卡死之后被杀"
+    }
+    {
+        let mut store = Store::open(&path).unwrap();
+        let report = store.begin_session().unwrap();
+        assert!(report.unclean, "被杀这件事照旧要报");
+        let revive = report.revive.expect("卡死那次也该留下");
+        assert_eq!(revive.attempt, 2);
+        assert!(revive.gave_up, "停手了就得说清");
+        assert_eq!(revive.node_id, Some(node));
+        // 而且：正文一个字没少（证据只是证据，不许影响稿子）
+        let (body, _) = store.read_body_with_stats(node).unwrap();
+        assert_eq!(body, "刚卡死就被杀了。");
+    }
+}

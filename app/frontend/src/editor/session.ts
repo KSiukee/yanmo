@@ -32,6 +32,8 @@ import {
   listShelf,
   listTrash,
   onCloseRequested,
+  onUiProbe,
+  uiAlive,
   openChapter,
   openEditorTarget,
   openWorkTarget,
@@ -94,6 +96,7 @@ import { useWriting, type WritingState } from "./writing";
 import { localOffsetMinutes, useBackup, type BackupState } from "./backup";
 import { ChapterSwitch } from "./chapters";
 import { t } from "../locales/index.ts";
+import { startupNotice } from "./notice.ts";
 import {
   asCaliber,
   asLanguage,
@@ -257,6 +260,7 @@ export function useEditorSession(): EditorSession {
   const autosave = shallowRef<Autosave | null>(null);
   let gate: ExitGate | null = null;
   let stopCloseListener: (() => void) | null = null;
+  let stopProbeListener: (() => void) | null = null;
   let stopCompositionWatch: (() => void) | null = null;
   /** 启动诊断的清理句柄（焦点/输入法事件监听） */
   let stopDiagnoseWatch: (() => void) | null = null;
@@ -1123,16 +1127,16 @@ export function useEditorSession(): EditorSession {
         persistNow(); // 关窗前把光标也记下（正文由闸门的 flush 负责）
         void gate?.requestExit();
       });
+      // 探活的回话：壳发现心跳停了会问一声"你还活着吗"，界面立刻回一句。
+      // **这一句就是判据**：页面死在 JS 死循环里时它永远回不了（见 api 里的说明）。
+      stopProbeListener = await onUiProbe(() => {
+        void uiAlive().catch(() => {});
+      });
       // 界面就绪：从现在起关窗会先过闸门（未就绪时一律放行，免得窗口关不掉）
       await armExitGate();
 
-      const notice = await sessionReport();
-      if (notice.unclean) {
-        const when = notice.last_seen_at
-          ? new Date(notice.last_seen_at).toLocaleString()
-          : t("session.time_unknown");
-        crashNotice.value = t("session.crash_notice", { when });
-      }
+      // 该说哪一句由 notice.ts 判（卡死优先于崩溃——那一条有单测盯着）
+      crashNotice.value = startupNotice(await sessionReport());
     } catch (error) {
       failure.value = error instanceof Error ? error.message : String(error);
     }
@@ -1143,6 +1147,7 @@ export function useEditorSession(): EditorSession {
     document.removeEventListener("visibilitychange", onVisibilityChange);
     stopGlobalKeys?.();
     stopCloseListener?.();
+    stopProbeListener?.();
     stopCompositionWatch?.();
     stopDiagnoseWatch?.();
     stopDialogFocusWatch?.();

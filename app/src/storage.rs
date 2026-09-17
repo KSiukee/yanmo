@@ -60,6 +60,8 @@ pub struct AppData {
     session: SessionReport,
     exit_gate_armed: AtomicBool,
     exit_watch: ExitWatch,
+    /// 守护之心：心跳与"卡死了怎么办"的状态机（线程在 [`crate::guardian`]）
+    watchdog: crate::watchdog::Watchdog,
     /// 磁盘 `.md` 镜像的工作线程（`setup` 里挂上；验收模式与命令行没有它 → `None`）。
     ///
     /// 它落在壳里而不是核心：核心零 UI 依赖、也不该自己起线程；镜像要写文件、要异步，
@@ -206,6 +208,7 @@ impl AppData {
             session,
             exit_gate_armed: AtomicBool::new(false),
             exit_watch: ExitWatch::default(),
+            watchdog: crate::watchdog::Watchdog::new(std::time::Instant::now()),
             mirror: Mutex::new(None),
         })
     }
@@ -310,6 +313,23 @@ impl AppData {
     /// 关窗请求的兜底时钟（界面不回话时由它放行退出）。
     pub fn exit_watch(&self) -> &ExitWatch {
         &self.exit_watch
+    }
+
+    /// 守护之心：心跳打点与看门狗线程都走它。
+    pub fn watchdog(&self) -> &crate::watchdog::Watchdog {
+        &self.watchdog
+    }
+
+    /// 留"界面卡死"的证据（尽力而为、**不阻塞**看门狗线程）：库里那把锁可能正被一个
+    /// 卡住的界面调用拿着，那种时候宁可少一条证据，也不能让看门狗干等。
+    pub fn note_ui_freeze_now(&self, attempt: u32, gave_up: bool) {
+        // 英文：给开发者与体检看，不是界面文案
+        let Ok(mut slot) = self.store.try_lock() else {
+            return crate::diagnose::note("watchdog evidence skipped: store is busy");
+        };
+        if let Some(store) = slot.as_mut() {
+            let _ = store.note_ui_freeze(attempt, gave_up);
+        }
     }
 
     /// 镜像根目录：数据目录里的 `mirror/`。

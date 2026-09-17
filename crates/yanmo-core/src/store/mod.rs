@@ -111,7 +111,7 @@ pub use question_push::PushOutcome;
 pub use question_select::SelectedQuestion;
 pub use question_weights::TemplateLearning;
 pub use search::SearchHit;
-pub use session::{EditorCursor, EditorTarget, SessionReport};
+pub use session::{EditorCursor, EditorTarget, SessionReport, UiFreeze};
 pub use snapshot::{SnapshotSummary, AUTO_SNAPSHOTS_KEPT};
 pub use trash::{TrashEntry, TrashKind};
 pub use volume::{CloseReceipt, DissolveReceipt};
