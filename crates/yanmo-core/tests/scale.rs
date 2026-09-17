@@ -5,7 +5,7 @@
 
 use std::time::Instant;
 
-use yanmo_core::model::{NodeKind, WorkKind};
+use yanmo_core::model::{EntityKind, NewEntityCard, NewForeshadow, NodeKind, WorkKind};
 use yanmo_core::store::Store;
 
 fn fresh() -> (tempfile::TempDir, Store) {
@@ -53,11 +53,56 @@ fn three_million_chars_across_a_thousand_chapters() {
     let one = store.read_body(ids[500]).unwrap();
     let read = started.elapsed();
 
+    // 「计划 vs 实际」全书对一遍：**要读全部正文做字面匹配**，是这一族里最重的一步。
+    // 给它一份真实形状的计划（100 张人物卡 / 20 条还埋着的伏笔 / 每章挂两个人 + 一句话），
+    // 否则量出来的只是"读一遍正文"的时间，不是这一屏真实要花的时间。
+    let mut cards = Vec::new();
+    for index in 0..100 {
+        cards.push(
+            store
+                .create_entity_card(
+                    &NewEntityCard {
+                        work_id: work.id,
+                        kind: EntityKind::Person,
+                        name: format!("人名{index:03}"),
+                        aliases: Vec::new(),
+                        attributes: Vec::new(),
+                        note: String::new(),
+                    },
+                    "scale",
+                )
+                .unwrap(),
+        );
+    }
+    for index in 0..20 {
+        store
+            .create_foreshadow(
+                &NewForeshadow {
+                    work_id: work.id,
+                    body: format!("伏笔{index:02}的那件东西"),
+                    planted_node: Some(ids[index]),
+                    note: String::new(),
+                },
+                "scale",
+            )
+            .unwrap();
+    }
+    for (index, id) in ids.iter().enumerate() {
+        store.set_node_summary(*id, "一句话章纲").unwrap();
+        store
+            .set_node_cast(*id, &[cards[index % 100], cards[(index + 7) % 100]], "scale")
+            .unwrap();
+    }
+    let started = Instant::now();
+    let actual = store.outline_actuals(work.id).unwrap();
+    let scan = started.elapsed();
+
     println!(
         "[规模] 1000 章 / 共约 {total_chars} 字：写入 {write:?}｜全树 {tree:?}（{} 节点）｜\
-         检索 {search:?}（命中 {}）｜读一章 {read:?}｜库 {:.1} MB",
+         检索 {search:?}（命中 {}）｜读一章 {read:?}｜计划vs实际 {scan:?}（{} 章）｜库 {:.1} MB",
         nodes.len(),
         hits.len(),
+        actual.chapters.len(),
         db_bytes(&store) as f64 / 1024.0 / 1024.0
     );
 
@@ -66,6 +111,8 @@ fn three_million_chars_across_a_thousand_chapters() {
     assert_eq!(one, body);
     assert!(write.as_secs() < 60, "写入耗时数量级异常：{write:?}");
     assert!(search.as_secs() < 10, "检索耗时数量级异常：{search:?}");
+    assert_eq!(actual.truncated, 0, "1000 章还没到安全阀");
+    assert!(scan.as_secs() < 30, "全书对一遍耗时数量级异常：{scan:?}");
 }
 
 /// 病态场景：**单章** 300 万字（正常写作不会这样，但粘贴/导入可能造出来）。

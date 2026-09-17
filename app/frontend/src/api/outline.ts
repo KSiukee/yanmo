@@ -99,3 +99,71 @@ export const outlineUndismiss = (work_id: number, fingerprint: string) =>
 /** 全部重新看一遍（"我改过设定了"）。 */
 export const outlineClearDismissed = (work_id: number) =>
   call<OutlineBoard>(COMMANDS.outlineClearDismissed, { work_id });
+
+/** 正文里出现的一张卡（给界面显示：是哪张卡、命中哪个叫法）。 */
+export interface ActualCastRef {
+  entity_id: number;
+  name: string;
+  /** 命中的那个叫法（可能是别称） */
+  matched: string;
+}
+
+/** 一条"像被点到了"的伏笔（**候选**，不是结论）。 */
+export interface ActualForeshadowHit {
+  foreshadow_id: number;
+  body: string;
+  /** 命中的片段（让作者看得见"凭什么说像"） */
+  fragments: string[];
+  fragments_total: number;
+}
+
+/** 一章的「计划 vs 实际」。 */
+export interface ChapterActualDto {
+  node_id: number;
+  title: string;
+  /** `unwritten` / `written` / `deviated` */
+  state: string;
+  has_body: boolean;
+  planned: ActualCastRef[];
+  matched: ActualCastRef[];
+  /** 正文里出现、计划里没有的（可以一键补进计划） */
+  extra: ActualCastRef[];
+  /** 计划里挂了、正文里没认到的（只提示，绝不自动撤） */
+  missing: ActualCastRef[];
+  foreshadows: ActualForeshadowHit[];
+}
+
+/** 一份大纲留底的摘要（"这一章能不能撤销上一次对齐"认它）。 */
+export interface OutlineSnapshotDto {
+  id: number;
+  node_id: number;
+  note: string;
+  created_at: number;
+}
+
+/** 「计划 vs 实际」那一屏的一页。 */
+export interface OutlineActualPageDto {
+  chapters: ChapterActualDto[];
+  /** 这一屏之外还有几章没对到（书太大时才有） */
+  truncated: number;
+  undoable: OutlineSnapshotDto[];
+}
+
+/** 全书对一遍（只读；要读全部正文做字面匹配，所以是一次显式动作）。 */
+export const outlineActuals = (work_id: number) =>
+  call<OutlineActualPageDto>(COMMANDS.outlineActuals, { work_id });
+
+/** 对齐的回执：补完的名单 + 这次留下的底（有底才谈得上撤销）。 */
+export interface AlignReceiptDto {
+  cast: CastMember[];
+  added: number;
+  snapshot_id: number | null;
+}
+
+/** 把正文里出现、计划里没有的人**补进**这一章的出场人物（只补不删）。 */
+export const outlineAlignCast = (node_id: number, entity_ids: number[]) =>
+  call<AlignReceiptDto>(COMMANDS.outlineAlignCast, { node_id, entity_ids });
+
+/** 撤销上一次对齐（把这一章的大纲放回最近那份留底）。 */
+export const outlineAlignUndo = (node_id: number) =>
+  call<CastMember[]>(COMMANDS.outlineAlignUndo, { node_id });

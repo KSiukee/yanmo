@@ -28,8 +28,11 @@
 //!    作者忽略过的那一条，下一轮照样不同一条新的；而"同一张卡的另一个属性又冲突了"
 //!    依然会报（身份里带着属性键）。
 
+mod actual;
 mod issue;
 mod rules;
 
+pub use actual::{chapter_state, foreshadow_candidates, mentioned_cards, plan_is_empty,
+    CastRef, ChapterActual, ChapterState, ForeshadowHit};
 pub use issue::{IssueRule, OutlineIssue};
 pub use rules::{scan, OutlineData};

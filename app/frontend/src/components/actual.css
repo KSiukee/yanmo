@@ -1,0 +1,92 @@
+.actual__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.actual__row {
+  border-bottom: 1px solid var(--ym-line);
+}
+
+.actual__row:last-child {
+  border-bottom: none;
+}
+
+.actual__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px;
+  cursor: pointer;
+}
+
+.actual__head:hover {
+  background: var(--ym-paper-dim);
+}
+
+.actual__state {
+  flex: none;
+  min-width: 3.5em;
+  padding: 1px 6px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.actual__state--deviated {
+  border-color: var(--ym-accent);
+  color: var(--ym-accent);
+}
+
+.actual__state--unwritten {
+  opacity: 0.7;
+}
+
+.actual__title {
+  font-weight: 600;
+}
+
+.actual__counts {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.actual__detail {
+  padding: 0 4px 10px 4px;
+}
+
+.actual__line {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.actual__line--warn {
+  color: var(--ym-accent);
+}
+
+.actual__label {
+  flex: none;
+  min-width: 5.5em;
+  opacity: 0.7;
+}
+
+.actual__hint {
+  opacity: 0.7;
+  font-size: 12px;
+}
+
+.actual__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.actual__hit {
+  display: inline-block;
+  margin-right: 8px;
+}

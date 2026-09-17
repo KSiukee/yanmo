@@ -17,7 +17,10 @@ use tauri::State;
 use crate::error::ApiError;
 use crate::storage::AppData;
 use yanmo_core::outline::OutlineIssue;
-use yanmo_core::store::{CastMember, OutlineCell, OutlineRow, Store};
+use yanmo_core::outline::{ChapterActual};
+use yanmo_core::store::{
+    CastMember, OutlineCell, OutlineRow, OutlineSnapshotSummary, Store,
+};
 
 /// 一条发现给界面的形状（**带指纹**：忽略标记与"撤销忽略"都认它）。
 #[derive(Debug, Serialize)]
@@ -155,4 +158,88 @@ pub fn outline_set_cast(
 ) -> Result<Vec<CastMember>, ApiError> {
     crate::acceptance::note_command("outline_set_cast");
     data.with_store(|store| store.set_node_cast(node_id, &entity_ids, "author"))
+}
+
+/// 「计划 vs 实际」那一屏的一页：逐章的对账结果 + 哪些章能撤销上一次对齐。
+///
+/// 为什么把"能不能撤销"一起给：那一屏是**一次请求画出来**的，再为每一章问一次
+/// "有没有留底"就是 N 次往返（这一屏本来就有一千行的可能）。
+#[derive(Debug, Serialize)]
+pub struct OutlineActualPage {
+    pub chapters: Vec<ChapterActual>,
+    /// 这一屏之外还有几章没对到（书太大时才有；界面要如实说）
+    pub truncated: usize,
+    /// 每一章最近一份大纲留底（只有留过底的章在里头）
+    pub undoable: Vec<OutlineSnapshotSummary>,
+}
+
+/// 全书对一遍：**每一章的计划 vs 正文里认得到的东西**（只读）。
+///
+/// 认的是**字面**：设定卡的名字 / 别称有没有出现在正文里、还埋着的伏笔有没有相近说法。
+/// 判不了的（四格、一句话）只并排摆着看，不判对错——判它们要实体抽取，那是另一件事。
+#[tauri::command(rename_all = "snake_case")]
+pub fn outline_actuals(
+    data: State<'_, AppData>,
+    work_id: i64,
+) -> Result<OutlineActualPage, ApiError> {
+    crate::acceptance::note_command("outline_actuals");
+    data.with_store(|store| {
+        let report = store.outline_actuals(work_id)?;
+        Ok(OutlineActualPage {
+            chapters: report.chapters,
+            truncated: report.truncated,
+            undoable: store.outline_snapshot_index(work_id)?,
+        })
+    })
+}
+
+/// 对齐的回执：补完之后的名单 + **这一章现在有哪份留底**（界面拿它露"撤销"按钮）。
+///
+/// 带上留底 id 是为了省一次全书重扫：点一下补完，界面立刻知道能不能撤。
+#[derive(Debug, Serialize)]
+pub struct AlignReceipt {
+    pub cast: Vec<CastMember>,
+    pub added: usize,
+    /// 这次改动留下的底（没有变化时是 `None`：没改动就不留底）
+    pub snapshot_id: Option<i64>,
+}
+
+/// 把正文里出现、计划里没有的人**补进**这一章的出场人物（只补不删）。
+///
+/// 改之前核心会先给这一章的大纲留一份底（[`outline_align_undo`] 能把这一章放回去）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn outline_align_cast(
+    data: State<'_, AppData>,
+    node_id: i64,
+    entity_ids: Vec<i64>,
+) -> Result<AlignReceipt, ApiError> {
+    crate::acceptance::note_command("outline_align_cast");
+    data.with_store(|store| {
+        let added = store.align_outline_cast(node_id, &entity_ids)?;
+        Ok(AlignReceipt {
+            cast: store.node_cast_of(node_id)?,
+            added,
+            // 没变化（全是已有的）时核心不留底，这里也就没有可撤的
+            snapshot_id: if added == 0 {
+                None
+            } else {
+                store.latest_outline_snapshot(node_id)?.map(|item| item.id)
+            },
+        })
+    })
+}
+
+/// 撤销上一次对齐：把这一章的大纲放回**最近那份留底**里那一份。
+///
+/// 没有留底就明确报错（`outline.no_snapshot`）——绝不"看起来撤销成功了、其实什么都没做"。
+#[tauri::command(rename_all = "snake_case")]
+pub fn outline_align_undo(data: State<'_, AppData>, node_id: i64) -> Result<Vec<CastMember>, ApiError> {
+    crate::acceptance::note_command("outline_align_undo");
+    data.with_store(|store| {
+        let latest = store.latest_outline_snapshot(node_id)?.ok_or_else(|| {
+            yanmo_core::error::Error::invalid(yanmo_core::error_codes::codes::SNAPSHOT_NOT_FOUND)
+        })?;
+        store.restore_outline_snapshot(latest.id)?;
+        store.node_cast_of(node_id)
+    })
 }
