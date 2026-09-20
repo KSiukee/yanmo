@@ -14,6 +14,8 @@ use crate::error::{codes, Error, Result};
 pub enum Preset {
     /// 投稿版：单个 `docx`（正文 + 大纲）——给编辑看的那一份
     SubmissionDocx,
+    /// 单篇投稿版：一份短稿一个 `docx`（**书名页 + 正文**，不附大纲）
+    ArticleDocx,
     /// 分章纯文本：一章一个文件，结构用目录表示（最容易被人接手）
     ChaptersTxt,
     /// 合并纯文本：全书拼成一个文件（通读、贴到别处用）
@@ -22,13 +24,18 @@ pub enum Preset {
 
 impl Preset {
     /// 全部预设（顺序就是界面上的顺序）。
-    pub const ALL: &'static [Preset] =
-        &[Preset::SubmissionDocx, Preset::ChaptersTxt, Preset::MergedTxt];
+    pub const ALL: &'static [Preset] = &[
+        Preset::SubmissionDocx,
+        Preset::ArticleDocx,
+        Preset::ChaptersTxt,
+        Preset::MergedTxt,
+    ];
 
     /// 稳定代码（也用作产物子目录名）。
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::SubmissionDocx => "submission_docx",
+            Self::ArticleDocx => "article_docx",
             Self::ChaptersTxt => "chapters_txt",
             Self::MergedTxt => "merged_txt",
         }
@@ -49,14 +56,29 @@ impl Preset {
     pub const fn folder(self) -> &'static str {
         match self {
             Self::SubmissionDocx => "submission",
+            Self::ArticleDocx => "article",
             Self::ChaptersTxt => "chapters",
             Self::MergedTxt => "merged",
         }
     }
 
-    /// 这一种预设要不要在正文上设字数上限（投稿版要：编辑只看开头）。
+    /// 这一种预设要不要在正文上设字数上限。
+    ///
+    /// 长篇投稿版要（编辑先看开头那几万字）；**单篇投稿版不要**——
+    /// 短篇本来就短，一刀切掉半篇反而是把作者的稿子弄残。
     pub const fn caps_body(self) -> bool {
         matches!(self, Self::SubmissionDocx)
+    }
+
+    /// 这一档产出的文件扩展名。
+    ///
+    /// 放在核心而不是壳里：**清理旧产物按扩展名认**（改了名 / 删了篇之后的孤儿），
+    /// 认错了就会把上一份产物留在文件夹里，或者把别档的产物删掉。
+    pub const fn extension(self) -> &'static str {
+        match self {
+            Self::SubmissionDocx | Self::ArticleDocx => "docx",
+            Self::ChaptersTxt | Self::MergedTxt => "txt",
+        }
     }
 }
 

@@ -235,3 +235,51 @@ fn an_unknown_preset_is_refused() {
         assert_eq!(Preset::parse(preset.as_str()).unwrap(), *preset);
     }
 }
+
+/// 一篇短稿：单篇作品的根节点就是正文本身。
+fn article(store: &mut Store) -> i64 {
+    let work = store.create_work(WorkKind::Article, "夜行记").unwrap();
+    store.set_work_summary(work.id, "一个夜里走路的人。").unwrap();
+    let root = store.list_nodes(work.id).unwrap()[0].id;
+    store.write_body(root, "他走进巷子。\n\n路灯亮着。").unwrap();
+    work.id
+}
+
+#[test]
+fn article_docx_has_a_cover_page_and_no_outline() {
+    let (_dir, mut store) = fresh();
+    let work_id = article(&mut store);
+    let options = CompileOptions::defaults_for(Preset::ArticleDocx);
+    let files = compile(&store, work_id, Preset::ArticleDocx, &options).unwrap();
+    assert_eq!(files.len(), 1, "单篇投稿版就一个文件");
+    assert_eq!(files[0].relative_path, "article/夜行记.docx", "落在自己的预设子目录里");
+
+    let mut zip = open_docx(&files[0]);
+    let document = part(&mut zip, "word/document.xml");
+    assert_eq!(document.matches("夜行记").count(), 1, "标题只在书名页上摆一次");
+    assert!(document.contains("一个夜里走路的人。"), "简介跟着标题上书名页");
+    assert!(document.contains("w:br w:type=\"page\""), "书名页与正文之间要分页");
+    assert!(document.contains("他走进巷子。"));
+    assert!(document.contains("路灯亮着。"));
+    assert!(!document.contains("大纲"), "单篇投稿版不附大纲");
+    // 样式仍是那一套（宋体、段首缩进两字符）——两条 docx 路径共用同一份 styles.xml
+    let styles = part(&mut zip, "word/styles.xml");
+    assert!(styles.contains("宋体"));
+    assert!(styles.contains("w:firstLineChars=\"200\""));
+}
+
+#[test]
+fn article_docx_takes_the_whole_piece_and_compiles_to_the_same_bytes() {
+    let (_dir, mut store) = fresh();
+    let work_id = article(&mut store);
+    let options = CompileOptions::defaults_for(Preset::ArticleDocx);
+    let first = compile(&store, work_id, Preset::ArticleDocx, &options).unwrap();
+    let second = compile(&store, work_id, Preset::ArticleDocx, &options).unwrap();
+    assert_eq!(first, second, "渲染两遍必须逐字节一样");
+
+    let document = {
+        let mut zip = open_docx(&first[0]);
+        part(&mut zip, "word/document.xml")
+    };
+    assert!(document.contains("路灯亮着。"), "不卡字数：结尾那一段也得在");
+}

@@ -1,4 +1,4 @@
-//! 编译管线：**一份原稿 → 一种成品**（投稿版 docx / 分章 txt / 合并 txt）。
+//! 编译管线：**一份原稿 → 一种成品**（长篇投稿版 docx / 单篇投稿版 docx / 分章 txt / 合并 txt）。
 //!
 //! 与导出（`store::export`，私有模块不进文档）是同一套路子的两条出口：
 //! - 这里只回答"该有哪些文件、每个文件里是什么"（纯函数、可单测、可复现）；
@@ -38,6 +38,11 @@ pub fn compile(
         Preset::SubmissionDocx => {
             let items = reading::read(store, work_id)?;
             Ok(vec![docx::render(&work, &items, options)])
+        }
+        Preset::ArticleDocx => {
+            // 单篇投稿版：书名页 + 正文（不附大纲、不卡字数）
+            let items = reading::read(store, work_id)?;
+            Ok(vec![docx::render_article(&work, &items, options)])
         }
         Preset::ChaptersTxt => {
             // 分章那条与"导出成文件"共用同一份渲染：一章一个文件、结构用目录表达。

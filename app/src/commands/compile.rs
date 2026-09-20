@@ -128,7 +128,8 @@ pub fn compile_work(
         let title = store.get_work(work_id)?.title;
         Ok((title, compile(store, work_id, preset, &options)?))
     })?;
-    let extension = if preset == Preset::SubmissionDocx { "docx" } else { "txt" };
+    // 扩展名由核心给（它知道这一档产出什么）——清理旧产物按它认，认错就留垃圾或误删
+    let extension = preset.extension();
     let outcome = data.write_compile(work_id, &title, preset.folder(), extension, &files)?;
     Ok(CompileAckDto {
         path: outcome.dir.display().to_string(),

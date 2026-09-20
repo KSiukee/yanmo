@@ -882,6 +882,7 @@
   "compile.lead": "选一种成品，先说清会生成哪些文件，再动手。产物落在导出目录里各自的子文件夹，互不覆盖。",
   "compile.preset": "要哪种成品",
   "compile.preset.submission_docx": "投稿版（单个 Word 文档：正文 + 大纲）",
+  "compile.preset.article_docx": "单篇投稿版（书名页 + 正文，一份短稿一个 Word）",
   "compile.preset.chapters_txt": "分章纯文本（一章一个文件）",
   "compile.preset.merged_txt": "合并纯文本（全书一个文件）",
   "compile.body_limit": "正文只带前",

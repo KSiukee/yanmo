@@ -14,7 +14,10 @@ use super::zip::{write_stored, Entry};
 use super::{preset::Preset, CompileOptions};
 use ooxml as x;
 
+mod article;
 mod ooxml;
+
+pub(crate) use article::render as render_article;
 
 /// 排一份投稿版 docx。
 pub(crate) fn render(work: &Work, items: &[Item], options: &CompileOptions) -> RenderedFile {
@@ -65,8 +68,19 @@ pub(crate) fn render(work: &Work, items: &[Item], options: &CompileOptions) -> R
         }
     }
 
-    let document = x::document(&body);
-    let core = x::core_properties(&work.title);
+    RenderedFile {
+        relative_path: format!("{}/{}.docx", Preset::SubmissionDocx.folder(), file_stem(work)),
+        content: package(&body, &work.title),
+    }
+}
+
+/// 把一段 `document.xml` 的正文打成一个 docx 包。
+///
+/// 两条渲染路径（长篇投稿版 / 单篇投稿版）**共用这一份"包"**：包里那几件
+///（内容类型、关系、样式、属性）少一件 Word 就打不开，抄第二份迟早抄漏。
+pub(super) fn package(body: &str, title: &str) -> Vec<u8> {
+    let document = x::document(body);
+    let core = x::core_properties(title);
     let files = [
         Entry { name: "[Content_Types].xml", data: x::CONTENT_TYPES.as_bytes() },
         Entry { name: "_rels/.rels", data: x::ROOT_RELS.as_bytes() },
@@ -77,16 +91,11 @@ pub(crate) fn render(work: &Work, items: &[Item], options: &CompileOptions) -> R
         Entry { name: "word/settings.xml", data: x::SETTINGS.as_bytes() },
         Entry { name: "word/document.xml", data: document.as_bytes() },
     ];
-    let package = write_stored(&files);
-
-    RenderedFile {
-        relative_path: format!("{}/{}.docx", Preset::SubmissionDocx.folder(), file_stem(work)),
-        content: package,
-    }
+    write_stored(&files)
 }
 
 /// 文件名用的书名（去掉路径分隔符这类会捣乱的字）。
-fn file_stem(work: &Work) -> String {
+pub(super) fn file_stem(work: &Work) -> String {
     let cleaned = crate::atomic::safe_file_name(&work.title);
     if cleaned.trim().is_empty() {
         "work".to_string()

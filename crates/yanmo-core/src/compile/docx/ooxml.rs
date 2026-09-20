@@ -39,6 +39,11 @@ pub(crate) fn paragraph(style: Option<&str>, text: &str) -> String {
     format!("<w:p>{props}<w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p>", escape(text))
 }
 
+/// 一个**分页**段落：单篇投稿版用它把书名页与正文分开（长篇投稿版不分页）。
+pub(crate) fn page_break() -> String {
+    "<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>".to_string()
+}
+
 /// XML 文本转义；顺手把 XML 1.0 不接受的控制字符剔掉（正文里混进一个就会让 Word 打不开）。
 pub(crate) fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
