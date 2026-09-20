@@ -29,6 +29,7 @@ mod escape;
 mod exitwatch;
 mod export_fs;
 mod guardian;
+mod guardian_wire;
 mod mirror;
 mod mirror_fs;
 mod mirror_headless;

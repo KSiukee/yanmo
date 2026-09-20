@@ -324,3 +324,49 @@ fn a_freeze_survives_a_kill_and_is_reported_with_the_crash() {
         assert_eq!(body, "刚卡死就被杀了。");
     }
 }
+
+/// **卡死那条交代要当场看得见**（守护之心）：看门狗是在这一次会话**中途**写下它的，
+/// 所以界面重载回来时得从标记里现读——`begin_session` 那份快照里永远是空的
+/// （2026-09-20 真机演练逮到的：复活成功了，屏幕上却没那句交代）。
+#[test]
+fn the_freeze_notice_is_readable_right_after_it_was_written() {
+    let (_dir, path) = fresh();
+    let mut store = Store::open(&path).unwrap();
+    store.begin_session().unwrap();
+    assert!(store.session_revive().unwrap().is_none(), "刚开会话时没有交代");
+
+    store.note_ui_freeze(3, false).unwrap();
+    let freeze = store.session_revive().unwrap().expect("卡过就该读得到");
+    assert_eq!(freeze.attempt, 3);
+    assert!(!freeze.gave_up);
+
+    // 正常退出时清掉（免得下次开窗又念一遍旧事）
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap().id;
+    let volume = store.create_node(work, None, NodeKind::Volume, "第一卷").unwrap();
+    let chapter = store.create_node(work, Some(volume), NodeKind::Chapter, "第一章").unwrap();
+    store.end_session(chapter).unwrap();
+    assert!(store.session_revive().unwrap().is_none(), "正常退出后不该再念旧事");
+}
+
+/// **哪一刀动了手**要留痕（排查用）：op-log 里一条 `ui.revive`，带杠杆名与结果。
+#[test]
+fn every_lever_that_was_pulled_is_recorded() {
+    let (_dir, path) = fresh();
+    let mut store = Store::open(&path).unwrap();
+    store.begin_session().unwrap();
+    store.note_ui_revive(2, "renderer-kill", "killed renderer process(es) [42]", true).unwrap();
+    store.note_ui_revive(3, "renderer-kill", "no WebView2 renderer process found", false).unwrap();
+
+    let mut stmt = store
+        .conn()
+        .prepare("SELECT payload FROM op_log WHERE op = 'revive' ORDER BY seq")
+        .unwrap();
+    let rows: Vec<String> = stmt
+        .query_map([], |r| r.get::<_, String>(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!(rows.len(), 2, "两刀都该留痕：{rows:?}");
+    assert!(rows[0].contains("renderer-kill") && rows[0].contains("\"attempt\":2"));
+    assert!(rows[1].contains("\"alive\":false"), "拉不动也要如实记：{rows:?}");
+}

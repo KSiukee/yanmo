@@ -70,6 +70,7 @@ mod restore_swap;
 mod scene_card;
 mod search;
 mod session;
+mod session_revive;
 mod snapshot;
 mod sop;
 mod sop_store;

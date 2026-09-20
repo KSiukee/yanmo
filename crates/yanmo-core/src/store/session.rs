@@ -24,17 +24,18 @@ use crate::time::now_millis;
 const SESSION_KEY: &str = "session.last";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct Marker {
+pub(super) struct Marker {
     pid: u32,
     started_at: i64,
     heartbeat_at: i64,
-    node_id: Option<i64>,
+    // 这两栏放开给同层（`session_revive` 那本账要用）：标记本身仍只由本文件读写
+    pub(super) node_id: Option<i64>,
     fingerprint: String,
     /// 上一次是不是正常退出
     clean: bool,
     /// 界面卡死的一次现场（守护之心留下的交代；没卡过就是 `None`）
     #[serde(default)]
-    revive: Option<UiFreeze>,
+    pub(super) revive: Option<UiFreeze>,
 }
 
 /// 界面卡死的一次现场：**留给界面的交代**（重载之后要告诉作者发生了什么）。
@@ -226,7 +227,7 @@ impl Store {
 
     /// 读标记。读不出来（没写过 / JSON 坏了）时按**未正常退出**处理——
     /// 宁可多提醒一次，也不要漏报一次崩溃。
-    fn read_marker(conn: &Connection) -> Result<Option<Marker>> {
+    pub(super) fn read_marker(conn: &Connection) -> Result<Option<Marker>> {
         let raw: Option<String> = conn
             .query_row(
                 "SELECT value FROM settings WHERE key = ?1",

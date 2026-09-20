@@ -320,18 +320,6 @@ impl AppData {
         &self.watchdog
     }
 
-    /// 留"界面卡死"的证据（尽力而为、**不阻塞**看门狗线程）：库里那把锁可能正被一个
-    /// 卡住的界面调用拿着，那种时候宁可少一条证据，也不能让看门狗干等。
-    pub fn note_ui_freeze_now(&self, attempt: u32, gave_up: bool) {
-        // 英文：给开发者与体检看，不是界面文案
-        let Ok(mut slot) = self.store.try_lock() else {
-            return crate::diagnose::note("watchdog evidence skipped: store is busy");
-        };
-        if let Some(store) = slot.as_mut() {
-            let _ = store.note_ui_freeze(attempt, gave_up);
-        }
-    }
-
     /// 镜像根目录：数据目录里的 `mirror/`。
     ///
     /// 为什么放在稿库里面（而不是"文档"下另起一处）：它要**跟着稿子走**——换位置、便携模式
@@ -460,6 +448,16 @@ impl AppData {
     ///
     /// 壳只负责**串行化（一把锁）与错误转换**，业务一律在核心：
     /// 这样命令层永远不会长出第二套数据逻辑。
+    /// **试一次**：库正忙就当场放弃，返回 `None`（看门狗那条路专用，见 `guardian_wire`）。
+    ///
+    /// 与 [`AppData::with_store`] 的分别只有一个字：**等不等**。留证据、记"哪一刀动的手"
+    /// 都是"有则更好"的事——宁可少一条痕，也绝不能让看门狗卡在等库锁上（它还有更重要的活：
+    /// 把界面救回来）。
+    pub fn try_with_store<T>(&self, f: impl FnOnce(&mut Store) -> T) -> Option<T> {
+        let mut slot = self.store.try_lock().ok()?;
+        slot.as_mut().map(f)
+    }
+
     pub fn with_store<T>(
         &self,
         op: impl FnOnce(&mut Store) -> yanmo_core::Result<T>,

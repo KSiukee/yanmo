@@ -50,12 +50,20 @@ fn run(app: AppHandle) {
             }
             Action::Revive { attempt } => {
                 crate::diagnose::note(&format!(
-                    "watchdog: ui looks dead, reloading (attempt {attempt})"
+                    "watchdog: ui looks dead, pulling a lever (attempt {attempt})"
                 ));
                 data.note_ui_freeze_now(attempt, false);
-                if let Err(detail) = revive(&app, attempt) {
+                let done = revive(&app, attempt);
+                // 英文：给开发者与体检看，不是界面文案
+                crate::diagnose::note(&format!(
+                    "watchdog: attempt {attempt} used {} ({})",
+                    done.lever, done.detail
+                ));
+                // 哪一刀动的手也进库：真机演练正是靠这条才看得出"第二刀到底有没有动手"
+                data.note_ui_revive_now(attempt, done.lever, &done.detail, done.alive);
+                if !done.alive {
                     // 连这一根杠杆都调不动（窗口已经没了）：停手，别再空转
-                    crate::diagnose::note(&format!("watchdog: revive failed: {detail}"));
+                    crate::diagnose::note("watchdog: lever could not be pulled; giving up");
                     data.note_ui_freeze_now(attempt, true);
                     let _ = data.watchdog().surrender(Instant::now());
                 }
@@ -102,24 +110,55 @@ fn reload(app: &AppHandle) -> Result<(), String> {
 /// 捞进程树 / 读命令行 / 杀那几个 pid）。用的是现成的 `windows-sys`，没有新增依赖。
 ///
 /// 阶梯：**第一次软重载**（最便宜，也不动别的东西——页面卡在别的原因上时它就够用）；
-/// **第二次起杀渲染进程**（唯一能破开 JS 死循环的一根）。
+/// **第二次起"杀渲染进程 + 紧接着重载"**（唯一能破开 JS 死循环的那一下；
+/// 重载必须跟着——只杀掉的话那棵树里会连 renderer 都没有，页面要等下一次导航才回来，实测过）。
 /// 挑不出来（进程已经没了 / 命令行读不出来）就**退回软重载**，绝不"按名字乱杀"。
-fn revive(app: &AppHandle, attempt: u32) -> Result<(), String> {
+///
+/// 回来的这一份**要进库**（`ui.revive` 那条 op-log）：哪一刀、成没成、`alive` 是真是假——
+/// 只写在日志里的话，真机演练那种"日志没开"的场次就什么都查不到。
+fn revive(app: &AppHandle, attempt: u32) -> Attempt {
     if attempt <= 1 {
-        return reload(app);
+        return lever_result("reload", reload(app));
     }
     match crate::renderer_win::kill_renderers() {
         Ok(detail) => {
-            // 英文：给开发者与体检看，不是界面文案
-            crate::diagnose::note(&format!("watchdog: {detail}"));
-            Ok(())
+            // **杀掉之后要紧接着重载**——真机读数（2026-09-20）：只杀不重载，页面不会自己回来
+            // （杀掉之后那棵树里连一个 renderer 都没有了，直到下一次导航才重新拉起；
+            // 上一轮"第三刀挑不出来、退回重载"反而把页面带回来，就是这么回事）。
+            // 两下连着做，也把复活时间从 112 秒压回一个退避周期。
+            let (detail, alive) = match reload(app) {
+                Ok(()) => (format!("{detail}; reloaded"), true),
+                Err(also) => (format!("{detail}; reload failed: {also}"), false),
+            };
+            Attempt { lever: LEVER_KILL, detail, alive }
         }
         Err(detail) => {
-            crate::diagnose::note(&format!(
-                "watchdog: renderer kill unavailable ({detail}); falling back to reload"
-            ));
-            reload(app)
+            // 挑不出来：退回最便宜的那根——它拉得动就算这一刀还有救
+            let (detail, alive) = match reload(app) {
+                Ok(()) => (format!("{detail}; fell back to reload"), true),
+                Err(also) => (format!("{detail}; reload also failed: {also}"), false),
+            };
+            Attempt { lever: LEVER_KILL, detail, alive }
         }
+    }
+}
+
+/// 「精准杀渲染进程」这一根的名字（进 op-log；**别改**，演练与体检按它认）。
+const LEVER_KILL: &str = "renderer-kill";
+
+/// 这一刀的结果：用了哪根杠杆、留一句给日志与 op-log 的话、以及**界面还有没有指望**。
+struct Attempt {
+    lever: &'static str,
+    detail: String,
+    /// `false` = 这根杠杆根本拉不动（窗口已经没了）：调用方据此停手，别再空转
+    alive: bool,
+}
+
+/// 「软重载」这一根的结果。
+fn lever_result(lever: &'static str, outcome: Result<(), String>) -> Attempt {
+    match outcome {
+        Ok(()) => Attempt { lever, detail: format!("{lever} pulled"), alive: true },
+        Err(detail) => Attempt { lever, detail, alive: false },
     }
 }
 
