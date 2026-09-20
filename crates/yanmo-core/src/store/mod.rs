@@ -73,6 +73,7 @@ mod session;
 mod session_revive;
 mod snapshot;
 mod sop;
+mod sop_mech;
 mod sop_store;
 mod trash;
 mod tree_path;
@@ -85,9 +86,11 @@ mod writing;
 
 pub use appearance::{Appearance, ResolvedAppearance};
 pub use sop::{
-    ResolvedSop, ResolvedStep, Sop, SopAction, SopCheck, SopRevision, SopSource, SopStep,
+    ResolvedSop, ResolvedStep, Sop, SopAction, SopCheck, SopMech, SopRevision, SopSource, SopStep,
     ACTION_ASIDE, DEFAULT_STEP_IDS, MAX_ID_CHARS, MAX_MINUTES, MAX_STEPS, MAX_TEXT_CHARS,
+    MECH_JUDGES, MECH_SCOPES,
 };
+pub use sop_mech::{BookMechFacts, ChapterMechFacts};
 pub use backup::{
     gaps_for, has_other_volume, ledger_summary, read_ledger, read_manifest, BackupConfig,
     BackupLedger, BackupManifest, BackupReport, BackupRequest, BackupTarget, BackupVerify,

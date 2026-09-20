@@ -17,7 +17,7 @@ use tauri::State;
 
 use crate::error::ApiError;
 use crate::storage::AppData;
-use yanmo_core::store::{ResolvedSop, Sop, Store};
+use yanmo_core::store::{BookMechFacts, ChapterMechFacts, ResolvedSop, Sop, Store};
 
 /// 读流程：`work_id` 给 null 就是"我平时的写法"那份；给某本书先看它有没有单独设过。
 #[tauri::command(rename_all = "snake_case")]
@@ -49,4 +49,26 @@ pub fn sop_reset(data: State<'_, AppData>, work_id: Option<i64>) -> Result<Resol
         store.reset_sop(work_id)?;
         store.sop(work_id)
     })
+}
+
+/// 机械检查项的**本章读数**（只读；只读当前这一章的正文，不扫全书）。
+///
+/// 给的是**事实**不是句子：缺了谁、多出来谁、哪几条伏笔像被点到了——拼句子在界面字典里。
+#[tauri::command(rename_all = "snake_case")]
+pub fn sop_mech_chapter(
+    data: State<'_, AppData>,
+    node_id: i64,
+) -> Result<ChapterMechFacts, ApiError> {
+    crate::acceptance::note_command("sop_mech_chapter");
+    data.with_store(|store: &mut Store| store.chapter_mech_facts(node_id))
+}
+
+/// 机械检查项的**全书读数**（只读；要读每一章正文，所以这是界面上的一次显式动作）。
+///
+/// 判据与「计划 vs 实际」那一屏**同一套**（核心 `store::sop_mech` 直接复用
+/// `outline_actuals`），所以两处永远说得一样。
+#[tauri::command(rename_all = "snake_case")]
+pub fn sop_mech_book(data: State<'_, AppData>, work_id: i64) -> Result<BookMechFacts, ApiError> {
+    crate::acceptance::note_command("sop_mech_book");
+    data.with_store(|store: &mut Store| store.book_mech_facts(work_id))
 }

@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 
 use rusqlite::{params, OptionalExtension};
 
-use super::sop::{ResolvedSop, Sop, SopAction, SopCheck, SopRevision, SopSource, SopStep};
+use super::sop::{ResolvedSop, Sop, SopAction, SopCheck, SopMech, SopRevision, SopSource, SopStep};
 use super::sop::{ACTION_ASIDE, MAX_ID_CHARS, MAX_MINUTES, MAX_STEPS, MAX_TEXT_CHARS};
 use super::Store;
 use crate::error::{codes, Error, Result};
@@ -49,10 +49,14 @@ impl Sop {
                 if !check_ids.insert(check_id.clone()) {
                     return Err(Error::invalid_with(codes::SOP_ID_DUPLICATE, [("value", check_id)]));
                 }
+                let mech = checked_mech(check.mech)?;
                 checks.push(SopCheck {
                     id: check_id,
-                    text: tidy(clean_text(check.text))?,
-                    done: check.done,
+                    // 机械项：文案由字典给、勾不勾由核心算——这两个字段对它没有意义，
+                    // 别留在库里（同一个问题不该有两个答案）。
+                    text: if mech.is_some() { None } else { tidy(clean_text(check.text))? },
+                    done: mech.is_none() && check.done,
+                    mech,
                 });
             }
             steps.push(SopStep {
@@ -89,10 +93,26 @@ impl Sop {
                     if !id_ok(&check_id) || !check_seen.insert(check_id.clone()) {
                         return None;
                     }
+                    // 机械项认不出就**整条丢掉**：只丢掉那一半会剩下一行空检查项
+                    // （没有文字、也不能勾），那是界面上的一句假话。
+                    let mech = match check.mech {
+                        Some(mech) => {
+                            let mech = SopMech {
+                                judge: mech.judge.trim().to_string(),
+                                scope: mech.scope.trim().to_string(),
+                            };
+                            if !mech.is_known() {
+                                return None;
+                            }
+                            Some(mech)
+                        }
+                        None => None,
+                    };
                     Some(SopCheck {
                         id: check_id,
-                        text: clean_text(check.text),
-                        done: check.done,
+                        text: if mech.is_some() { None } else { clean_text(check.text) },
+                        done: mech.is_none() && check.done,
+                        mech,
                     })
                 })
                 .collect();
@@ -184,6 +204,25 @@ fn checked_action(action: Option<SopAction>) -> Result<Option<SopAction>> {
         target: ACTION_ASIDE.to_string(),
         value: value.to_string(),
     }))
+}
+
+/// 机械检查项：判据与范围都得在白名单里（认不出报它自己的码）。
+///
+/// 与 [`checked_action`] 同一条纪律：**白名单是产品面**——能挑的就那几件，
+/// 挑不出来的当场说清，别让一个拼错的码悄悄存进去、以后永远算不出读数。
+fn checked_mech(mech: Option<SopMech>) -> Result<Option<SopMech>> {
+    let Some(mech) = mech else { return Ok(None) };
+    let known = SopMech {
+        judge: mech.judge.trim().to_string(),
+        scope: mech.scope.trim().to_string(),
+    };
+    if !known.is_known() {
+        return Err(Error::invalid_with(
+            codes::SOP_MECH_UNKNOWN,
+            [("judge", known.judge.clone()), ("scope", known.scope.clone())],
+        ));
+    }
+    Ok(Some(known))
 }
 
 impl Store {

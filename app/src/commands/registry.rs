@@ -42,6 +42,8 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::sop::sop_read,
         crate::commands::sop::sop_write,
         crate::commands::sop::sop_reset,
+        crate::commands::sop::sop_mech_chapter,
+        crate::commands::sop::sop_mech_book,
         crate::commands::session::abandon_session,
         crate::commands::editor::escape_export,
         crate::commands::tree::tree_children,

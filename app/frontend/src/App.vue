@@ -67,6 +67,8 @@ function answerPushed() {
   pushedCard.value = push.take();
 }
 const { chapterTitle, workId } = session;
+// 当前这一章：流程那一栏的机械项"本章"读数看它（换章要跟着换）
+const currentNodeId = session.directory.current;
 const { visible: shelfVisible, toggle: toggleShelf, form: workForm, closeForm } = session.shelf;
 // 稿件台：书架是主入口（按作品），这里是副入口（按流转）——同一批作品，不是第二份列表
 const { visible: manuscriptVisible, toggle: toggleManuscript, overdueCount } = session.manuscript;
@@ -186,6 +188,7 @@ const hint = computed(() => {
         :tab="asideTab"
         :session="session"
         :work-id="workId"
+        :node-id="currentNodeId"
         :open-question="pushedCard"
         @update:tab="pickAside"
         @opened="pushedCard = null"

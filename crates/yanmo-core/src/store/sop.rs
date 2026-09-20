@@ -58,9 +58,10 @@ pub const ACTION_ASIDE: &str = "aside";
 /// 它只是**默认**：可以改名、改序、跳过、删掉、自己加步——核心给的是结构，不是规矩。
 pub const DEFAULT_STEP_IDS: [&str; 4] = ["core", "outline", "draft", "revise"];
 
-/// 一个检查项：作者自己写的一句话 + 勾没勾。
+/// 一个检查项：**人工那条**（作者自己写的一句话 + 勾没勾）或者**机械那条**（算出来的）。
 ///
-/// `text = None` = 没改过 → 界面用字典里这个 id 的默认文案（与步骤名同一条规矩）。
+/// 两条互斥：`mech` 有值就是机械项，`text` / `done` 对它没有意义（写库时会被清掉）；
+/// `mech` 为空就是作者自己那条，`text = None` = 没改过 → 界面按 id 去字典取默认文案。
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SopCheck {
     /// 稳定 id（界面字典键与"这一步我勾过没有"都靠它）
@@ -71,6 +72,43 @@ pub struct SopCheck {
     /// 勾没勾（`false` = 默认，与别的默认项一样**不进库**）
     #[serde(default, skip_serializing_if = "is_false")]
     pub done: bool,
+    /// 机械那条：判哪件事、看多大范围（见 [`SopMech`]）；空 = 人工那条
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mech: Option<SopMech>,
+}
+
+/// 机械检查项要判的**那一件事**——闭集，认不出的当场拒。
+///
+/// 三条都只判**字面上判得动**的东西，真正的判定在 `crate::outline::actual`
+/// （认人最长优先 / 伏笔 ≥2 个三字片段），这里只列**允许被挑的那三件**：
+/// 计划里的人都认到了、正文里的人都在计划里、还埋着的伏笔在正文里像被点到了。
+/// 判不了的（四格、一句话）不进这张单子——那要读懂正文。
+pub const MECH_JUDGES: [&str; 3] = ["cast_missing", "cast_extra", "foreshadow"];
+
+/// 机械检查项看**多大范围**：当前这一章 / 整本书。
+///
+/// 同一个判据两种看法：`chapter` 说"这一章现在过不过"，`book` 说"这本书里还有几章
+/// 没过"。作者挑哪个都行——SOP 是跟人 / 跟书的，这一点交给他。
+pub const MECH_SCOPES: [&str; 2] = ["chapter", "book"];
+
+/// 一条机械检查项：**算出来的**，不是勾出来的。
+///
+/// 与 [`SopCheck::done`] 的分工：`done` 是作者自己的记号，只对人工那条有意义；
+/// 机械项的读数由核心按当前那一章 / 整本书现算——**同一个问题不该有两个答案**，
+/// 所以带 `mech` 的检查项落库时 `done` 一律清成 `false`。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SopMech {
+    /// 判哪一件事（[`MECH_JUDGES`] 之一）
+    pub judge: String,
+    /// 看多大范围（[`MECH_SCOPES`] 之一）
+    pub scope: String,
+}
+
+impl SopMech {
+    /// 这两项都在白名单里吗（写库前那道闸与读回来的宽松都认它）。
+    pub fn is_known(&self) -> bool {
+        MECH_JUDGES.contains(&self.judge.as_str()) && MECH_SCOPES.contains(&self.scope.as_str())
+    }
 }
 
 /// 一步可以绑一个动作：这一版只认"打开哪块面板"。

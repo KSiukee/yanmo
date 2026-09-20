@@ -6,24 +6,26 @@
 // ③ **跟人走**（"我平时的写法"那份是常态），但允许这一本单独一套——两层之间是
 // 「不覆盖 / 覆盖」，不做字段级合并。
 //
-// 这一块只管长什么样：读哪一层、改一步、存回去全在 [`useSopPanel`](./sop-panel.ts)。
+// 这一块只管"页面长什么样"：读哪一层、改一步、存回去全在 [`useSopPanel`](./sop-panel.ts)；
+// 一步里那串检查项（人工的 + 机械的）在 [`SopChecks`](./SopChecks.vue)——它有自己的一小份
+// 状态（机械项的选择器），摊在这一份里就同时管三层东西了。
+//
 // 状态就地建（不挂进会话）：改一下就存一下，**换页签 / 切专注再回来重新读一遍库里那份
 // 就是对的**——唯一不记住的是"刚才在改哪一层"，那本来就该默认回"我平时的写法"。
-import { onMounted, toRef, watch } from "vue";
+import { computed, onMounted, toRef, watch } from "vue";
 
 import { t } from "../locales/index.ts";
+import SopChecks from "./SopChecks.vue";
 import { useSopPanel } from "./sop-panel.ts";
-import {
-  checkPlaceholder,
-  sourceLabel,
-  stepNamePlaceholder,
-  stepNotePlaceholder,
-} from "./sop.ts";
+import { sourceLabel, stepNamePlaceholder, stepNotePlaceholder } from "./sop.ts";
 
-const props = defineProps<{ workId: number | null }>();
+const props = defineProps<{ workId: number | null; nodeId: number | null }>();
 const emit = defineEmits<{ "open-tab": [string] }>();
 
-const sop = useSopPanel({ workId: toRef(props, "workId") });
+const sop = useSopPanel({
+  workId: toRef(props, "workId"),
+  nodeId: toRef(props, "nodeId"),
+});
 
 const {
   board,
@@ -34,6 +36,10 @@ const {
   list,
   summaryText,
   canUseWorkScope,
+  mechBusy,
+  readingOf,
+  recheck,
+  syncFacts,
   setScope,
   addStep,
   moveStep,
@@ -43,6 +49,7 @@ const {
   setNote,
   setMinutes,
   addCheck,
+  addMech,
   setCheckText,
   toggleCheck,
   removeCheck,
@@ -53,6 +60,13 @@ const {
 // 一挂上就读一次；**换了书**要回到"我平时的写法"那一层重新读
 onMounted(() => void setScope(false));
 watch(() => props.workId, () => void setScope(false));
+// 换章：机械项"本章"那一档的读数要跟着换（单子没变就不重算）
+watch(() => props.nodeId, () => void syncFacts());
+
+/** 有机械项才露"重算"那一行（没有就没什么可算的）。 */
+const hasMech = computed(() =>
+  list.value.some((step) => step.checks.some((check) => check.mech !== null)),
+);
 
 /** 输入框里的字（`@change` = 失焦或回车才写库：一处改动一条留痕）。 */
 function text(event: Event): string {
@@ -89,6 +103,14 @@ function text(event: Event): string {
       </button>
     </div>
     <p v-if="board" class="hint">{{ sourceLabel(board.source) }} · {{ summaryText }}</p>
+
+    <!-- 机械项是现算的：正文改过之后点一下"重算"（没机械项就不露这一行） -->
+    <p v-if="hasMech" class="row">
+      <span class="hint">{{ t("sop.mech.hint") }}</span>
+      <button class="link" :disabled="busy || mechBusy" @click="void recheck()">
+        {{ mechBusy ? t("sop.mech.busy") : t("sop.mech.recheck") }}
+      </button>
+    </p>
 
     <ol v-if="list.length > 0" class="steps">
       <li
@@ -146,31 +168,19 @@ function text(event: Event): string {
           <span class="hint">{{ t("sop.minutes.hint") }}</span>
         </p>
 
-        <!-- 检查项：首版就是作者自己写的一句话 + 勾没勾（纯用户数据） -->
-        <ul v-if="step.checks.length > 0" class="checks">
-          <li v-for="check in step.checks" :key="check.id" class="check">
-            <input
-              type="checkbox"
-              :checked="check.done"
-              :disabled="busy"
-              @change="void toggleCheck(step.id, check.id)"
-            />
-            <input
-              class="check__text"
-              :value="check.text ?? ''"
-              :placeholder="checkPlaceholder(check)"
-              :disabled="busy"
-              @change="void setCheckText(step.id, check.id, text($event))"
-            />
-            <button class="link" :disabled="busy" @click="void removeCheck(step.id, check.id)">
-              ✕
-            </button>
-          </li>
-        </ul>
+        <!-- 检查项：作者自己写的一句话 + 勾没勾；或者一条**机械项**（现算，不用勾） -->
+        <SopChecks
+          :step="step"
+          :busy="busy"
+          :reading="readingOf"
+          @add-check="void addCheck(step.id)"
+          @add-mech="(scope, judge) => void addMech(step.id, scope, judge)"
+          @toggle-check="(checkId) => void toggleCheck(step.id, checkId)"
+          @set-check-text="(checkId, value) => void setCheckText(step.id, checkId, value)"
+          @remove-check="(checkId) => void removeCheck(step.id, checkId)"
+        />
+
         <p class="row">
-          <button class="link" :disabled="busy" @click="void addCheck(step.id)">
-            {{ t("sop.checks.add") }}
-          </button>
           <!-- 绑一个动作：这一步打开哪块面板（去干那件事，不是"打卡"） -->
           <span class="hint">{{ t("sop.action.label") }}</span>
           <select
@@ -205,6 +215,9 @@ function text(event: Event): string {
   </section>
 </template>
 
+<!-- 与检查项清单共用的那几件（读数 / 行 / 按钮 / 下拉），见 sop.css 的头注 -->
+<style scoped src="./sop.css"></style>
+
 <style scoped>
 /* 这一片是右栏的直接子件（与叩问 / 创作流同层）：**内边距与滚动都归它自己**——
    少了这两样，内容就会贴着栏边（2026-09-20 用户一眼看出来的）。 */
@@ -214,13 +227,6 @@ function text(event: Event): string {
   padding: 12px;
   overflow: auto;
   font-size: 13px;
-}
-
-.hint {
-  margin: 0 0 6px;
-  font-size: 11px;
-  line-height: 1.5;
-  opacity: 0.7;
 }
 
 .error {
@@ -233,14 +239,6 @@ function text(event: Event): string {
   margin: 0 0 6px;
   font-size: 11px;
   opacity: 0.8;
-}
-
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  margin: 0 0 6px;
 }
 
 .chip {
@@ -259,17 +257,6 @@ function text(event: Event): string {
   color: var(--ym-accent);
 }
 
-.link {
-  padding: 2px 8px;
-  font-size: 11px;
-  border: 1px solid var(--ym-line);
-  border-radius: 4px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-
-.link:disabled,
 .chip:disabled {
   opacity: 0.5;
   cursor: default;
@@ -307,8 +294,7 @@ function text(event: Event): string {
 }
 
 .step__name,
-.step__note,
-.check__text {
+.step__note {
   box-sizing: border-box;
   padding: 2px 6px;
   border: 1px solid var(--ym-line);
@@ -339,34 +325,6 @@ function text(event: Event): string {
 
 .minutes input {
   width: 64px;
-  padding: 2px 6px;
-  border: 1px solid var(--ym-line);
-  border-radius: 4px;
-  background: var(--ym-paper);
-  color: inherit;
-  font: inherit;
-  font-size: 11px;
-}
-
-.checks {
-  margin: 0 0 4px;
-  padding: 0;
-  list-style: none;
-}
-
-.check {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  margin: 0 0 2px;
-}
-
-.check__text {
-  flex: 1 1 auto;
-  font-size: 11px;
-}
-
-select {
   padding: 2px 6px;
   border: 1px solid var(--ym-line);
   border-radius: 4px;

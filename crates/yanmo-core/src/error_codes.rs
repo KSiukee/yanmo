@@ -272,6 +272,9 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "参考时长要在 1 到 {max} 分钟之间（给的是 {value}）" : ["value", "max"],
     SOP_ACTION_UNKNOWN_TARGET => "sop.action_unknown_target"
         : "认不出的绑定动作：{value}（这一版只认 aside＝打开哪块面板）" : ["value"],
+    SOP_MECH_UNKNOWN => "sop.mech_unknown"
+        : "认不出的机械检查项：判 {judge} / 看 {scope}（判据只认那三件，范围只认本章与全书）"
+        : ["judge", "scope"],
     SOP_REVISION_NOT_FOUND => "sop.revision_not_found"
         : "找不到这条流程改动记录：{seq}" : ["seq"],
 }

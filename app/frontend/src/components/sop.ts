@@ -3,7 +3,16 @@
 // 纯函数（不碰 API、不碰组件），所以能单独测——与 `creator.ts` / `inspire.ts` 同一分工。
 // 核心零文案：名字 / 说明 / 检查项文字都是"作者改过就用他的，没改过按 id 去字典取"。
 
-import type { Sop, SopCheck, SopSource, SopStep } from "../api/sop.ts";
+import type {
+  BookMechFacts,
+  ChapterMechFacts,
+  MechCastRef,
+  Sop,
+  SopCheck,
+  SopMech,
+  SopSource,
+  SopStep,
+} from "../api/sop.ts";
 import { has, t } from "../locales/index.ts";
 
 /** 一步的名字框里那句占位：内置那几步有字典默认，自己加的没有就用通用的。 */
@@ -55,7 +64,10 @@ export function summary(steps: SopStep[]): string {
 export function cloneSteps(steps: SopStep[]): SopStep[] {
   return steps.map((step) => ({
     ...step,
-    checks: step.checks.map((check) => ({ ...check })),
+    checks: step.checks.map((check) => ({
+      ...check,
+      mech: check.mech ? { ...check.mech } : null,
+    })),
     action: step.action ? { ...step.action } : null,
   }));
 }
@@ -63,4 +75,110 @@ export function cloneSteps(steps: SopStep[]): SopStep[] {
 /** 把步骤封成写回去的那一份（核心只认整份替换）。 */
 export function toSop(steps: SopStep[]): Sop {
   return { steps: cloneSteps(steps) };
+}
+
+// ── 机械检查项 ────────────────────────────────────────────────────────────
+//
+// 机械项**是算出来的**，不是勾出来的：核心按当前这一章 / 整本书现算，这里只负责把
+// 那点事实念成一句话。三档与人工那条的勾一样好懂：过得去 / 过不去 / 没法判。
+
+/** 机械项的判据白名单（与核心 `MECH_JUDGES` 同一张单子）。 */
+export const MECH_JUDGES = ["cast_missing", "cast_extra", "foreshadow"] as const;
+/** 机械项的两个视角（与核心 `MECH_SCOPES` 同一张单子）。 */
+export const MECH_SCOPES = ["chapter", "book"] as const;
+
+/** 三档：过得去 / 过不去 / **没法判**（还没动笔、没有可判的东西）。 */
+export type MechState = "pass" | "fail" | "na";
+
+/** 一条机械项现在的读数：`state` 给颜色，`text` 是已经填好参数的那句话。 */
+export interface MechReading {
+  state: MechState;
+  text: string;
+}
+
+/** 机械项那一行怎么念：`本章 · 计划里的人都认到了`。 */
+export function mechLabel(mech: SopMech): string {
+  return t("sop.mech.label", {
+    scope: t(`sop.mech.scope.${mech.scope}`),
+    judge: t(`sop.mech.judge.${mech.judge}`),
+  });
+}
+
+/**
+ * 一条检查项现在的读数；`null` = 它不是机械项（人工那条自己勾）。
+ *
+ * `chapter` / `book` 没取到时说"读数还没到"，**不猜**——猜出来的绿点比没有更糟。
+ */
+export function mechReading(
+  check: SopCheck,
+  chapter: ChapterMechFacts | null,
+  book: BookMechFacts | null,
+): MechReading | null {
+  const mech = check.mech;
+  if (!mech) return null;
+  return mech.scope === "book" ? bookReading(mech.judge, book) : chapterReading(mech.judge, chapter);
+}
+
+function chapterReading(judge: string, facts: ChapterMechFacts | null): MechReading {
+  if (!facts) return { state: "na", text: t("sop.mech.no_chapter") };
+  if (judge === "foreshadow") {
+    if (facts.planted_open === 0) return { state: "na", text: t("sop.mech.no_foreshadow") };
+    return facts.foreshadows.length > 0
+      ? { state: "pass", text: t("sop.mech.chapter.foreshadow.pass", { count: facts.foreshadows.length }) }
+      : { state: "fail", text: t("sop.mech.chapter.foreshadow.fail") };
+  }
+  // 正文是空的：计划里的人当然一个都认不到——那是"还没轮到这一章"，不是"写漏了"
+  if (!facts.has_body) return { state: "na", text: t("sop.mech.no_body") };
+  if (judge === "cast_extra") {
+    return facts.extra.length === 0
+      ? { state: "pass", text: t("sop.mech.chapter.cast_extra.pass") }
+      : {
+          state: "fail",
+          text: t("sop.mech.chapter.cast_extra.fail", {
+            count: facts.extra.length,
+            names: nameList(facts.extra),
+          }),
+        };
+  }
+  // 计划里一个人都没挂：这条判据无从谈起（"正文里的人都在计划里"不在此列——那个照样能判）
+  if (facts.planned === 0) return { state: "na", text: t("sop.mech.no_cast") };
+  return facts.missing.length === 0
+    ? { state: "pass", text: t("sop.mech.chapter.cast_missing.pass", { planned: facts.planned }) }
+    : {
+        state: "fail",
+        text: t("sop.mech.chapter.cast_missing.fail", {
+          count: facts.missing.length,
+          names: nameList(facts.missing),
+        }),
+      };
+}
+
+function bookReading(judge: string, facts: BookMechFacts | null): MechReading {
+  if (!facts) return { state: "na", text: t("sop.mech.no_book") };
+  if (facts.chapters === 0) return { state: "na", text: t("sop.mech.no_chapter_judged") };
+  // 书太大时只对到前几章——这句话要跟着读数一起露，别让人以为全书都看过了
+  const tail = facts.truncated > 0 ? t("sop.mech.truncated", { count: facts.truncated }) : "";
+  if (judge === "foreshadow") {
+    if (facts.planted_open === 0) return { state: "na", text: t("sop.mech.no_foreshadow") };
+    return facts.foreshadow > 0
+      ? {
+          state: "pass",
+          text: t("sop.mech.book.foreshadow.pass", { chapters: facts.chapters, count: facts.foreshadow }) + tail,
+        }
+      : { state: "fail", text: t("sop.mech.book.foreshadow.fail", { chapters: facts.chapters }) + tail };
+  }
+  const pass = judge === "cast_extra" ? facts.cast_extra === 0 : facts.cast_missing === 0;
+  const count = judge === "cast_extra" ? facts.cast_extra : facts.cast_missing;
+  const key = `sop.mech.book.${judge}.${pass ? "pass" : "fail"}`;
+  return { state: pass ? "pass" : "fail", text: t(key, { chapters: facts.chapters, count }) + tail };
+}
+
+/** 摆几个名字就够看了（再多这一行就撑爆了）——多出来的说个数。 */
+const NAMES_SHOWN = 3;
+
+function nameList(refs: MechCastRef[]): string {
+  const sep = t("common.list_separator");
+  const shown = refs.slice(0, NAMES_SHOWN).map((ref) => ref.name).join(sep);
+  const rest = refs.length - NAMES_SHOWN;
+  return rest > 0 ? shown + t("sop.mech.more", { count: rest }) : shown;
 }

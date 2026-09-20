@@ -28,6 +28,8 @@ function openTab(code: string) {
 defineProps<{
   session: EditorSession;
   workId: number | null;
+  /** 当前这一章：流程那一栏的机械项"本章"读数看它 */
+  nodeId: number | null;
   tab: AsideTab;
   /** 推过来的那张卡（作者点了提示条上的「答一句」） */
   openQuestion?: SelectedQuestion | null;
@@ -78,8 +80,8 @@ const emit = defineEmits<{
     />
     <!-- 创作流那一栏的各片自己从会话里取数据（壳只管切哪一片），所以不必再传 workId -->
     <CreatorPane v-else-if="tab === 'creator'" :session="session" />
-    <!-- 流程：状态就地建（改一下就存一下），所以只把"现在开着哪本书"递进去 -->
-    <SopPane v-else :work-id="workId" @open-tab="openTab" />
+    <!-- 流程：状态就地建（改一下就存一下），所以只把"现在开着哪本书、哪一章"递进去 -->
+    <SopPane v-else :work-id="workId" :node-id="nodeId" @open-tab="openTab" />
   </aside>
 </template>
 

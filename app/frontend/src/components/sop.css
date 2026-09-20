@@ -1,0 +1,116 @@
+/* 「流程」那两件（页面 SopPane 与检查项清单 SopChecks）**共用的样式**。
+ *
+ * 两个组件各自 `<style scoped src="./sop.css">`：scoped 让同一份规则按各自的作用域属性
+ * 生效，谁也不会串到对方身上（与 `dialog.css` 被多个弹窗共用同一条路子）。
+ * 检查项那一族的规则也在这儿——它只被 SopChecks 用，但那一件本来就只服务流程，
+ * 拆成两个文件反而要把"一行检查项长什么样"分两处找。
+ */
+
+.hint {
+  margin: 0 0 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.7;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 0 0 6px;
+}
+
+.link {
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.link:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+select {
+  padding: 2px 6px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+}
+
+.checks {
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+}
+
+.check {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin: 0 0 2px;
+}
+
+.check__text {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  padding: 2px 6px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+}
+
+/* 机械项那一行：两行——上面是"看哪儿 · 看什么"，下面是**现算的读数**。 */
+.check--mech {
+  display: block;
+}
+
+.check__head {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin: 0;
+}
+
+.check__mark {
+  flex: none;
+  width: 12px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.check__label {
+  flex: 1 1 auto;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.check__reading {
+  margin: 0 0 2px 16px;
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.8;
+}
+
+/* 过不去用主题里那个"要看一眼"的颜色（与「计划 vs 实际」的偏离同一套）；没法判就淡下去 */
+.check__mark--fail,
+.check__reading--fail {
+  color: var(--ym-accent);
+  opacity: 1;
+}
+
+.check__mark--na,
+.check__reading--na {
+  opacity: 0.6;
+}

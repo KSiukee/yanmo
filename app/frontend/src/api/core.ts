@@ -656,6 +656,8 @@ export const COMMANDS = {
   sopRead: "sop_read",
   sopWrite: "sop_write",
   sopReset: "sop_reset",
+  sopMechChapter: "sop_mech_chapter",
+  sopMechBook: "sop_mech_book",
   entityList: "entity_list",
   entityCreate: "entity_create",
   entityUpdate: "entity_update",

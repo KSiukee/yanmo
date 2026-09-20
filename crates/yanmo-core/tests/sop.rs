@@ -11,7 +11,9 @@
 
 use yanmo_core::error::codes;
 use yanmo_core::model::{SideTab, WorkKind};
-use yanmo_core::store::{Sop, SopAction, SopCheck, SopSource, SopStep, Store};
+use yanmo_core::store::{
+    Sop, SopAction, SopCheck, SopMech, SopSource, SopStep, Store, MECH_JUDGES, MECH_SCOPES,
+};
 
 fn fresh() -> (tempfile::TempDir, Store) {
     let dir = tempfile::tempdir().unwrap();
@@ -54,8 +56,13 @@ fn sample() -> Sop {
                 note: Some("一句话说得出才算想清楚".into()),
                 minutes: Some(20),
                 checks: vec![
-                    SopCheck { id: "one-line".into(), text: Some("能用一句话说清".into()), done: true },
-                    SopCheck { id: "who".into(), text: None, done: false },
+                    SopCheck {
+                        id: "one-line".into(),
+                        text: Some("能用一句话说清".into()),
+                        done: true,
+                        mech: None,
+                    },
+                    SopCheck { id: "who".into(), text: None, done: false, mech: None },
                 ],
                 action: Some(SopAction { target: "aside".into(), value: "creator".into() }),
                 skipped: false,
@@ -356,12 +363,20 @@ fn the_stored_shape_has_no_scoreboard_fields() {
         .map(String::as_str)
         .collect();
     for key in &check_keys {
-        assert!(["id", "text", "done"].contains(key), "检查项多了不该有的字段：{key}");
+        assert!(
+            ["id", "text", "done", "mech"].contains(key),
+            "检查项多了不该有的字段：{key}"
+        );
     }
 
     // 顺序不设门禁：任何一步都能勾、能跳过，读回来的顺序就是作者排的顺序
     let mut sop = sample();
-    sop.steps[1].checks.push(SopCheck { id: "free".into(), text: None, done: true });
+    sop.steps[1].checks.push(SopCheck {
+        id: "free".into(),
+        text: None,
+        done: true,
+        mech: None,
+    });
     store.set_sop(None, sop).unwrap();
     let back = store.sop(None).unwrap();
     assert!(back.steps[1].checks[0].done, "第二步照样能勾");
@@ -374,3 +389,92 @@ fn the_stored_shape_has_no_scoreboard_fields() {
         store.set_sop(None, one).unwrap();
     }
 }
+
+/// 一条机械项（判据 + 范围）。
+fn mech(judge: &str, scope: &str) -> SopCheck {
+    SopCheck {
+        id: "mech-1".into(),
+        text: None,
+        done: false,
+        mech: Some(SopMech { judge: judge.into(), scope: scope.into() }),
+    }
+}
+
+/// 机械项**只认白名单里那几件**：认不出的当场拒，认得出的原样存回来。
+///
+/// 白名单是**产品面**不是实现面——能挑的就那三件 × 两个视角，别让拼错的码悄悄存进去、
+/// 以后永远算不出读数。
+#[test]
+fn a_mechanical_check_must_come_from_the_whitelist() {
+    let (_dir, mut store) = fresh();
+    for (judge, scope) in [("vibes", "chapter"), ("cast_missing", "galaxy"), ("", "")] {
+        let mut sop = sample();
+        sop.steps[0].checks.push(mech(judge, scope));
+        let error = store.set_sop(None, sop).unwrap_err();
+        assert_eq!(error.code(), codes::SOP_MECH_UNKNOWN, "{judge}/{scope} 该被拒");
+    }
+    // 三件判据 × 两个视角：每一对都进得去、也原样读得回来
+    for judge in MECH_JUDGES {
+        for scope in MECH_SCOPES {
+            let mut sop = sample();
+            sop.steps[0].checks.push(mech(judge, scope));
+            store.set_sop(None, sop).unwrap();
+            let back = store.sop(None).unwrap();
+            let stored = back.steps[0].checks.last().unwrap().mech.clone().unwrap();
+            assert_eq!((stored.judge.as_str(), stored.scope.as_str()), (judge, scope));
+        }
+    }
+}
+
+/// 机械项**只有一个答案**：写库时把它自己的 `text` / `done` 清掉。
+///
+/// 文案由界面字典给、答案由核心算；留着作者那句话或那个勾，界面上就有两处说法。
+#[test]
+fn a_mechanical_check_keeps_no_answer_of_its_own() {
+    let (_dir, mut store) = fresh();
+    let mut sop = sample();
+    sop.steps[0].checks.push(SopCheck {
+        id: "mech-1".into(),
+        text: Some("我自己写的判据".into()),
+        done: true,
+        mech: Some(SopMech { judge: "cast_extra".into(), scope: "book".into() }),
+    });
+    store.set_sop(None, sop).unwrap();
+    let back = store.sop(None).unwrap();
+    let check = back.steps[0].checks.last().unwrap();
+    assert!(check.mech.is_some(), "机械项这一头要留着");
+    assert_eq!(check.text, None, "机械项的文案由字典给，别把作者那句话留在库里");
+    assert!(!check.done, "机械项的答案是算出来的，勾不动");
+}
+
+/// 读回来那条路宽：认不出的机械项**整条丢掉**。
+///
+/// 只丢掉那一半会剩下一行既没文字、也不能勾的空检查项——那是界面上的一句假话。
+/// 同一份里的其它检查项照旧活着。
+#[test]
+fn a_mechanical_check_that_no_longer_parses_is_dropped_whole() {
+    let (_dir, store) = fresh();
+    let raw_json = serde_json::json!({
+        "steps": [{
+            "id": "core",
+            "checks": [
+                { "id": "mech-1", "mech": { "judge": "vibes", "scope": "chapter" } },
+                { "id": "human", "text": "自己能判的那条", "done": true }
+            ]
+        }]
+    });
+    store
+        .conn()
+        .execute(
+            "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES('sop', ?1, 0)",
+            [raw_json.to_string()],
+        )
+        .unwrap();
+
+    let back = store.sop(None).unwrap();
+    let checks = &back.steps[0].checks;
+    assert_eq!(checks.len(), 1, "认不出的机械项该整条丢掉：{checks:?}");
+    assert_eq!(checks[0].id, "human");
+    assert!(checks[0].done, "同一份里的其它检查项照旧活着");
+}
+

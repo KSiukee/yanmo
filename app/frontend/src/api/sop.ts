@@ -10,13 +10,24 @@
 
 import { call, COMMANDS } from "./core";
 
-/** 一个检查项：作者自己写的一句话 + 勾没勾（首版就是纯用户数据）。 */
+/** 一个检查项：**人工那条**（作者写的一句话 + 勾没勾）或**机械那条**（算出来的）。 */
 export interface SopCheck {
   /** 稳定 id（字典键与"勾过没有"都靠它） */
   id: string;
-  /** 作者改过的文字；null = 没改过，取字典默认 */
+  /** 作者改过的文字；null = 没改过，取字典默认。机械项恒为 null */
   text: string | null;
+  /** 勾没勾。**机械项恒为 false**：它的答案由核心算，作者勾不动 */
   done: boolean;
+  /** 机械那条：判哪件事、看多大范围；null = 人工那条 */
+  mech: SopMech | null;
+}
+
+/** 机械检查项：判哪一件事（闭集）+ 看多大范围。 */
+export interface SopMech {
+  /** `cast_missing`（计划里的人都认到了）/ `cast_extra`（正文里的人都在计划里）/ `foreshadow`（伏笔点到） */
+  judge: string;
+  /** `chapter`（当前这一章）/ `book`（整本书） */
+  scope: string;
 }
 
 /** 一步可以绑一个动作：这一版只认"打开哪块面板"（`aside`）。 */
@@ -72,3 +83,60 @@ export const sopWrite = (work_id: number | null, sop: Sop) =>
 /** 清掉这一层的流程（书的覆盖则是"回到继承全局"）。 */
 export const sopReset = (work_id: number | null = null) =>
   call<ResolvedSop>(COMMANDS.sopReset, { work_id });
+
+/** 被判到（或没认到）的一张设定卡——给界面摆名字。 */
+export interface MechCastRef {
+  entity_id: number;
+  /** 卡现在的名字 */
+  name: string;
+  /** 正文里命中的那个叫法（可能是别称） */
+  matched: string;
+}
+
+/** 像被点到的一条伏笔（**候选**，不是结论）。 */
+export interface MechForeshadowHit {
+  foreshadow_id: number;
+  body: string;
+  /** 命中的片段（"凭什么说像"） */
+  fragments: string[];
+  fragments_total: number;
+}
+
+/**
+ * 当前这一章的机械读数（**事实，不是句子**）。
+ *
+ * `has_body = false` 时"缺人 / 多人"这两条无从谈起（正文是空的）——界面说"还没动笔"；
+ * `planted_open = 0` 时"伏笔点到没"也无从谈起（这本书一条还埋着的伏笔都没有）。
+ */
+export interface ChapterMechFacts {
+  node_id: number;
+  title: string;
+  has_body: boolean;
+  planned: number;
+  matched: number;
+  missing: MechCastRef[];
+  extra: MechCastRef[];
+  /** 全书还埋着几条伏笔（判"这件事有没有得判"用） */
+  planted_open: number;
+  foreshadows: MechForeshadowHit[];
+}
+
+/** 整本书的机械读数（**事实，不是句子**）。 */
+export interface BookMechFacts {
+  /** 对到了几章 */
+  chapters: number;
+  /** 书太大时没对到的章数（如实说） */
+  truncated: number;
+  cast_missing: number;
+  cast_extra: number;
+  foreshadow: number;
+  planted_open: number;
+}
+
+/** 机械检查项的**本章读数**（只读；只读当前这一章的正文，不扫全书）。 */
+export const sopMechChapter = (node_id: number) =>
+  call<ChapterMechFacts>(COMMANDS.sopMechChapter, { node_id });
+
+/** 机械检查项的**全书读数**（只读；要读每一章正文，所以是一次显式动作）。 */
+export const sopMechBook = (work_id: number) =>
+  call<BookMechFacts>(COMMANDS.sopMechBook, { work_id });
