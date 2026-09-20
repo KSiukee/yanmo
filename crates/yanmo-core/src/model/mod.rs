@@ -6,6 +6,8 @@
 //! 分成两个文件——两者的变化理由不一样（加一列 vs 加一条迁移）。
 //! 碎片的**种类闭集**与"面板读到的一条长什么样"在 `fragment`；
 //! 大纲本体的两样承载（设定卡与场景卡四格）在 `entity_card` 与 `scene_card`。
+//! 稿件的**流转状态机**（`manuscript_state`）与**投稿记录 + 冷冻期判据**（`submission`）
+//! 同样分开：前者是"走到哪一步"，后者是"投过哪几家、还在等谁"。
 
 mod answer_target;
 mod card;
@@ -14,15 +16,24 @@ mod entity_card;
 mod foreshadow;
 mod fragment;
 mod input_source;
+mod manuscript_state;
 mod node;
 mod question_tone;
 mod scene_card;
 mod side_tab;
+mod submission;
 mod work;
 
 pub use answer_target::AnswerTarget;
 pub use card::{NewQuestionCard, QuestionCard};
 pub use card_state::{transition, QuestionState, Transition, TRANSITIONS};
+pub use manuscript_state::{
+    manuscript_transition, ManuscriptState, ManuscriptTransition, MANUSCRIPT_TRANSITIONS,
+};
+pub use submission::{
+    default_cooldown_until, verdict as submission_verdict, Submission, SubmissionResult,
+    SubmitVerdict, DEFAULT_COOLDOWN_DAYS,
+};
 pub use entity_card::{Attribute, EntityCard, EntityKind, NewEntityCard};
 // 行映射与「不猜着读」的解析归存储层用：不在公开面上（壳用不到，也不该用）
 pub(crate) use entity_card::{into_entity_card, RawEntityCard};

@@ -132,6 +132,8 @@
   "error.value.unknown_work_kind": "未知的作品类型：{value}",
   "error.value.unknown_work_language": "未知的作品语言：{value}",
   "error.value.unknown_question_state": "未知的问题卡状态：{value}",
+  "error.value.unknown_manuscript_state": "未知的稿件状态：{value}",
+  "error.value.unknown_submission_result": "未知的投稿结果：{value}（只有 waiting / accepted / rejected）",
   "error.backup.snapshot_failed": "做一致性快照失败（库可能有问题）：{detail}",
   "error.backup.restore_source_invalid": "这个位置不是一个备份包或库文件：{path}",
   "error.backup.restore_blocked": "这份备份不能用来恢复：{reason}",

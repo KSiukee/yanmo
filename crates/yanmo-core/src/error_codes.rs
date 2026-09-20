@@ -69,6 +69,10 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "未知的问题卡状态：{value}" : ["value"],
     UNKNOWN_DEFER_KIND => "value.unknown_defer_kind"
         : "未知的延后条件类型：{value}（只有 time / written / manual）" : ["value"],
+    UNKNOWN_MANUSCRIPT_STATE => "value.unknown_manuscript_state"
+        : "未知的稿件状态：{value}" : ["value"],
+    UNKNOWN_SUBMISSION_RESULT => "value.unknown_submission_result"
+        : "未知的投稿结果：{value}（只有 waiting / accepted / rejected）" : ["value"],
     BACKUP_SNAPSHOT_FAILED => "backup.snapshot_failed"
         : "做一致性快照失败（库可能有问题）：{detail}" : ["detail"],
     BACKUP_RESTORE_SOURCE_INVALID => "backup.restore_source_invalid"
