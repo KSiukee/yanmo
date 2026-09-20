@@ -7,6 +7,7 @@
 use serde::Serialize;
 
 use crate::error::{codes, Error, Result};
+use crate::model::AuthorBlock;
 
 /// 一次编译要产出哪种成品。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -83,7 +84,7 @@ impl Preset {
 }
 
 /// 一次编译的参数（界面给，核心不猜）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompileOptions {
     /// 投稿版正文上限（逐字口径，含标点）；`None` = 不限。
     ///
@@ -91,6 +92,11 @@ pub struct CompileOptions {
     pub body_limit: Option<i64>,
     /// 投稿版要不要附大纲。
     pub with_outline: bool,
+    /// 文末的**作者简介**（`None` = 不附）。
+    ///
+    /// 由 [`Store::author_block`](crate::store::Store::author_block) 决定要不要给、
+    /// 以及带不带身份证与银行账号——那一层管口径，这里只管把它排进稿子末尾。
+    pub author: Option<AuthorBlock>,
 }
 
 impl CompileOptions {
@@ -102,6 +108,7 @@ impl CompileOptions {
         Self {
             body_limit: preset.caps_body().then_some(Self::DEFAULT_BODY_LIMIT),
             with_outline: preset.caps_body(),
+            author: None,
         }
     }
 }

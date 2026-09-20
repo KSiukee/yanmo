@@ -14,7 +14,7 @@
 // i18n-allow-file: 本文件里的中文（"目录"）是**写进导出文件的内容**，跟稿子走、不随界面语言变。
 
 use crate::error::{codes, Error, Result};
-use crate::model::{Work, WorkKind};
+use crate::model::{AuthorBlock, Work, WorkKind};
 use crate::store::{RenderedFile, Store};
 
 use super::reading::{self, Item};
@@ -82,6 +82,7 @@ pub(crate) fn render(
     store: &Store,
     collection_id: i64,
     format: CollectionFormat,
+    author: Option<AuthorBlock>,
 ) -> Result<RenderedFile> {
     let collection = store.get_work(collection_id)?;
     if collection.kind != WorkKind::Collection {
@@ -95,7 +96,7 @@ pub(crate) fn render(
         pieces.push(Piece { items: reading::read(store, entry.id)?, work: store.get_work(entry.id)? });
     }
     // 集导出不卡字数：整本集子要的是**每篇都完整**（那不是投稿版，是成书）
-    let options = CompileOptions { body_limit: None, with_outline: false };
+    let options = CompileOptions { body_limit: None, with_outline: false, author };
 
     Ok(match format {
         CollectionFormat::Docx => super::collection_book::docx_of(&collection, &pieces, &options),

@@ -54,6 +54,10 @@ pub(crate) fn render(work: &Work, items: &[Item], options: &CompileOptions) -> R
         }
     }
 
+    if let Some(author) = &options.author {
+        body.push_str(&super::author_section(author));
+    }
+
     RenderedFile {
         relative_path: format!("{}/{}.docx", Preset::ArticleDocx.folder(), file_stem(work)),
         content: package(&body, &work.title),

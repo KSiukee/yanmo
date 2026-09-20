@@ -188,3 +188,29 @@
   color: inherit;
   overflow: hidden;
 }
+
+/* 竖排的一行（上标签 + 下输入框）：作者信息那几栏用它——
+   横排时输入框会被标签挤窄，地址与简历这种长一点的根本看不全 */
+.settings__row--stack {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+  cursor: default;
+}
+
+.settings__input,
+.settings__textarea {
+  width: 100%;
+  padding: 3px 8px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+
+.settings__textarea {
+  resize: vertical;
+  line-height: 1.6;
+}

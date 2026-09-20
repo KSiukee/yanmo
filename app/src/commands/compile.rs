@@ -66,11 +66,17 @@ pub struct CompileAckDto {
 /// 参数落定：不卡上限的预设一律按"全书"（界面给了也不算数，免得界面上多一个没用的开关）。
 ///
 /// `body_limit`：`None` = 不限（全书）。
-fn options_of(preset: Preset, body_limit: Option<i64>, with_outline: Option<bool>) -> CompileOptions {
+fn options_of(
+    preset: Preset,
+    body_limit: Option<i64>,
+    with_outline: Option<bool>,
+    author: Option<yanmo_core::model::AuthorBlock>,
+) -> CompileOptions {
     let defaults = CompileOptions::defaults_for(preset);
     CompileOptions {
         body_limit: preset.caps_body().then_some(body_limit).flatten(),
         with_outline: with_outline.unwrap_or(defaults.with_outline),
+        author,
     }
 }
 
@@ -84,7 +90,7 @@ pub fn compile_preview(
     with_outline: Option<bool>,
 ) -> Result<Vec<CompileFileDto>, ApiError> {
     let preset = Preset::parse(&preset).map_err(ApiError::from)?;
-    let options = options_of(preset, body_limit, with_outline);
+    let options = options_of(preset, body_limit, with_outline, None);
     data.with_store(|store: &mut Store| {
         Ok(compile(store, work_id, preset, &options)?
             .into_iter()
@@ -125,9 +131,10 @@ pub fn compile_work(
     with_outline: Option<bool>,
 ) -> Result<CompileAckDto, ApiError> {
     let preset = Preset::parse(&preset).map_err(ApiError::from)?;
-    let options = options_of(preset, body_limit, with_outline);
     let (title, files) = data.with_store(|store: &mut Store| {
         let title = store.get_work(work_id)?.title;
+        // 作者简介：要不要附、带不带身份证与银行账号，都由核心那一层定（见 store::author）
+        let options = options_of(preset, body_limit, with_outline, store.author_block()?);
         Ok((title, compile(store, work_id, preset, &options)?))
     })?;
     // 扩展名由核心给（它知道这一档产出什么）——清理旧产物按它认，认错就留垃圾或误删
@@ -156,7 +163,9 @@ pub fn compile_collection(
     let format = CollectionFormat::parse(&format).map_err(ApiError::from)?;
     let (title, files) = data.with_store(|store: &mut Store| {
         let title = store.get_work(collection_id)?.title;
-        Ok((title, render_collection(store, collection_id, format)?))
+        // 集子末尾也附作者简介（整本集子一篇，与单篇投稿版同一份口径）
+        let author = store.author_block()?;
+        Ok((title, render_collection(store, collection_id, format, author)?))
     })?;
     let outcome =
         data.write_compile(collection_id, &title, format.folder(), format.extension(), &files)?;

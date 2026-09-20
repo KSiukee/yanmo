@@ -175,7 +175,7 @@ fn the_submission_body_stops_at_the_limit_but_the_outline_stays_complete() {
         store.set_node_summary(chapter, &format!("第{}章的一句话", index + 1)).unwrap();
     }
 
-    let options = CompileOptions { body_limit: Some(300), with_outline: true };
+    let options = CompileOptions { body_limit: Some(300), with_outline: true, author: None };
     let files = compile(&store, work.id, Preset::SubmissionDocx, &options).unwrap();
     let mut zip = open_docx(&files[0]);
     let document = part(&mut zip, "word/document.xml");
@@ -282,4 +282,47 @@ fn article_docx_takes_the_whole_piece_and_compiles_to_the_same_bytes() {
         part(&mut zip, "word/document.xml")
     };
     assert!(document.contains("路灯亮着。"), "不卡字数：结尾那一段也得在");
+}
+
+/// 作者简介：**勾了才写在文末**，而且空着的栏不补占位。
+#[test]
+fn the_author_note_goes_to_the_end_of_a_submission_piece() {
+    use yanmo_core::model::AuthorBlock;
+
+    let (_dir, mut store) = fresh();
+    let work_id = article(&mut store);
+    let author = AuthorBlock {
+        pen_name: "南岸".into(),
+        phone: "13800000000".into(),
+        // 没填的栏一律空：稿子里不该出现"邮箱："这样的空行
+        ..AuthorBlock::default()
+    };
+
+    let with = CompileOptions {
+        body_limit: None,
+        with_outline: false,
+        author: Some(author.clone()),
+    };
+    let files = compile(&store, work_id, Preset::ArticleDocx, &with).unwrap();
+    let document = {
+        let mut zip = open_docx(&files[0]);
+        part(&mut zip, "word/document.xml")
+    };
+    assert!(document.contains("作者简介"), "文末要有这一节");
+    assert!(document.contains("笔名：南岸"));
+    assert!(document.contains("电话：13800000000"));
+    assert!(!document.contains("邮箱："), "没填的栏不补占位");
+    assert!(
+        document.find("路灯亮着。").unwrap() < document.find("作者简介").unwrap(),
+        "作者简介在正文之后（期刊惯例是文末）"
+    );
+
+    // 不勾：一个字节都不写
+    let without = CompileOptions { body_limit: None, with_outline: false, author: None };
+    let files = compile(&store, work_id, Preset::ArticleDocx, &without).unwrap();
+    let document = {
+        let mut zip = open_docx(&files[0]);
+        part(&mut zip, "word/document.xml")
+    };
+    assert!(!document.contains("作者简介"));
 }

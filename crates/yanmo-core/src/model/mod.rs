@@ -10,6 +10,7 @@
 //! 同样分开：前者是"走到哪一步"，后者是"投过哪几家、还在等谁"。
 
 mod answer_target;
+mod author;
 mod card;
 mod card_state;
 mod entity_card;
@@ -25,6 +26,7 @@ mod submission;
 mod work;
 
 pub use answer_target::AnswerTarget;
+pub use author::{Author, AuthorBlock, ResolvedAuthor};
 pub use card::{NewQuestionCard, QuestionCard};
 pub use card_state::{transition, QuestionState, Transition, TRANSITIONS};
 pub use manuscript_state::{

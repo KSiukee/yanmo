@@ -19,11 +19,58 @@ mod merged;
 mod reading;
 mod zip;
 
+// i18n-allow-file: 本文件与下面那几个渲染件里的中文（"作者简介""笔名"等）是
+// **写进导出文件的内容**，跟稿子走、不随界面语言变；界面文案在 locales/zh-Hans.json。
+
 use crate::error::Result;
+use crate::model::AuthorBlock;
 use crate::store::{ExportFormat, RenderedFile, Store};
 
 pub use collection::CollectionFormat;
 pub use preset::{CompileOptions, Preset};
+
+/// 文末那一节作者简介的标题（**写进文件的内容**，不随界面语言变）。
+pub(crate) const AUTHOR_HEADING: &str = "作者简介";
+
+/// 作者简介那几行**文字**（docx 与纯文本共用同一份口径）。
+///
+/// 空着的栏**不写、也不补占位**：作者没填电话，稿子里就绝不该出现一行"电话："。
+/// 标签是给编辑看的固定写法（与《胶东文学》征稿启事里那串"笔名、真名、电话…"对齐）。
+pub(crate) fn author_lines(author: &AuthorBlock) -> Vec<String> {
+    let mut out = Vec::new();
+    match (author.pen_name.trim(), author.real_name.trim()) {
+        ("", "") => {}
+        (pen, "") => out.push(format!("笔名：{pen}")),
+        ("", real) => out.push(format!("作者：{real}")),
+        (pen, real) => out.push(format!("笔名：{pen}　本名：{real}")),
+    }
+    if !author.phone.trim().is_empty() {
+        out.push(format!("电话：{}", author.phone.trim()));
+    }
+    if !author.email.trim().is_empty() {
+        out.push(format!("邮箱：{}", author.email.trim()));
+    }
+    match (author.address.trim(), author.postcode.trim()) {
+        ("", "") => {}
+        (address, "") => out.push(format!("通联：{address}")),
+        ("", postcode) => out.push(format!("邮编：{postcode}")),
+        (address, postcode) => out.push(format!("通联：{address}（邮编 {postcode}）")),
+    }
+    // 敏感两项（只有作者在设置里勾了"带身份证与银行账号"才会走到这里）
+    if !author.id_number.trim().is_empty() {
+        out.push(format!("身份证号：{}", author.id_number.trim()));
+    }
+    if !author.bank.trim().is_empty() {
+        out.push(format!("银行账号：{}", author.bank.trim()));
+    }
+    // 文学简历：几行就几段（作者自己怎么分行就怎么排）
+    for line in author.bio.split('\n') {
+        if !line.trim().is_empty() {
+            out.push(line.trim().to_string());
+        }
+    }
+    out
+}
 
 /// 把一个集导出成一份成品（`docx` / 合并 `txt`），返回要写出去的那组文件。
 ///
@@ -33,8 +80,9 @@ pub fn compile_collection(
     store: &Store,
     collection_id: i64,
     format: CollectionFormat,
+    author: Option<AuthorBlock>,
 ) -> Result<Vec<RenderedFile>> {
-    Ok(vec![collection::render(store, collection_id, format)?])
+    Ok(vec![collection::render(store, collection_id, format, author)?])
 }
 
 /// 按预设编译一本书，返回要写出去的那组文件。

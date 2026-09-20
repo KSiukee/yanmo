@@ -11,6 +11,8 @@
 
 pub mod appearance;
 /// 多处备份：备份、体检、备份列表与设置。
+/// 作者信息：投稿时随稿子走的那点身份（笔名/真名/联系方式/简历；敏感项默认不写进稿件）。
+pub mod author;
 pub mod backup;
 /// 编译：投稿版 docx / 分章 txt / 合并 txt。
 pub mod compile;

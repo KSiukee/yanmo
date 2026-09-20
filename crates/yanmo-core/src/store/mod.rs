@@ -16,6 +16,7 @@
 //! 问题卡同理：**读写**与**状态迁移**分开（迁移要留可核对的证据，理由不一样）。
 
 mod appearance;
+mod author;
 mod backup;
 mod card;
 mod card_move;

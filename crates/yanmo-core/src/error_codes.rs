@@ -91,6 +91,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     COLLECTION_REORDER_MISMATCH => "collection.reorder_mismatch"
         : "重排的清单与集里的篇目对不上（集里该有 {expected} 篇，给了 {got} 篇）"
         : ["expected", "got"],
+    AUTHOR_TOO_LONG => "author.too_long"
+        : "作者信息那一栏太长了（{field} 最多 {max} 字）" : ["field", "max"],
     UNKNOWN_COLLECTION_FORMAT => "value.unknown_collection_format"
         : "不认识的集导出格式：{value}（只有 docx / collection_txt）" : ["value"],
     BACKUP_SNAPSHOT_FAILED => "backup.snapshot_failed"

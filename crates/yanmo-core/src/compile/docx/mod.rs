@@ -69,10 +69,25 @@ pub(crate) fn render(work: &Work, items: &[Item], options: &CompileOptions) -> R
         }
     }
 
+    if let Some(author) = &options.author {
+        body.push_str(&author_section(author));
+    }
+
     RenderedFile {
         relative_path: format!("{}/{}.docx", Preset::SubmissionDocx.folder(), file_stem(work)),
         content: package(&body, &work.title),
     }
+}
+
+/// 文末那一节**作者简介**（作者在设置里勾了"附"才有这一段）。
+///
+/// 文字口径在 [`super::author_lines`]（与集导出的纯文本共用一份），这里只负责排成段落。
+pub(super) fn author_section(author: &crate::model::AuthorBlock) -> String {
+    let mut out = x::paragraph(Some("YanmoTitle"), super::AUTHOR_HEADING);
+    for line in super::author_lines(author) {
+        out.push_str(&x::paragraph(Some("YanmoPlain"), &line));
+    }
+    out
 }
 
 /// 把一段 `document.xml` 的正文打成一个 docx 包。

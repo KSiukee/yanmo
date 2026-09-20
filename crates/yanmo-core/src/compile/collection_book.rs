@@ -62,6 +62,10 @@ pub(super) fn docx_of(collection: &Work, pieces: &[Piece], options: &CompileOpti
         body.push_str(&body_of(piece, options));
     }
 
+    if let Some(author) = &options.author {
+        body.push_str(&super::docx::author_section(author));
+    }
+
     RenderedFile {
         relative_path: format!(
             "{}/{}.docx",
@@ -107,6 +111,14 @@ pub(super) fn text_of(collection: &Work, pieces: &[Piece], options: &CompileOpti
                     }
                 }
             }
+        }
+    }
+    if let Some(author) = &options.author {
+        lines.push(String::new());
+        lines.push(super::AUTHOR_HEADING.to_string());
+        lines.push(String::new());
+        for line in super::author_lines(author) {
+            lines.push(line);
         }
     }
     RenderedFile::text(

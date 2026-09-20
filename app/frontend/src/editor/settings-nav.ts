@@ -24,6 +24,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "asking", labelKey: "settings.nav_asking" },
   { id: "typography", labelKey: "settings.nav_typography" },
   { id: "naming", labelKey: "settings.nav_naming" },
+  { id: "author", labelKey: "settings.nav_author" },
   { id: "location", labelKey: "settings.nav_location" },
   { id: "about", labelKey: "settings.nav_about" },
 ];

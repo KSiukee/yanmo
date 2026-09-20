@@ -139,7 +139,7 @@ fn exporting_a_collection_keeps_the_order_and_adds_a_contents_page() {
     store.add_to_collection(anthology, b).unwrap();
     store.reorder_collection(anthology, &[b, a]).unwrap();
 
-    let docx = compile_collection(&store, anthology, CollectionFormat::Docx).unwrap();
+    let docx = compile_collection(&store, anthology, CollectionFormat::Docx, None).unwrap();
     assert_eq!(docx.len(), 1);
     assert_eq!(docx[0].relative_path, "collection/年度自选.docx");
     // docx 是压缩包：正文里看不到明文，这里只钉"它真的是个能打开的 ZIP"
@@ -156,7 +156,7 @@ fn exporting_a_collection_keeps_the_order_and_adds_a_contents_page() {
     assert!(first < second, "正文也按集内顺序排");
     assert!(document.contains("w:br w:type=\"page\""), "每篇各起一页");
 
-    let txt = compile_collection(&store, anthology, CollectionFormat::MergedTxt).unwrap();
+    let txt = compile_collection(&store, anthology, CollectionFormat::MergedTxt, None).unwrap();
     let plain = String::from_utf8(txt[0].content.clone()).unwrap();
     assert!(plain.contains("目录"));
     assert!(plain.find("1. 乙篇").unwrap() < plain.find("2. 甲篇").unwrap());
@@ -164,7 +164,7 @@ fn exporting_a_collection_keeps_the_order_and_adds_a_contents_page() {
     assert_eq!(txt[0].relative_path, "collection_txt/年度自选.txt");
 
     // 渲染两遍逐字节一样（与别的预设同一条纪律）
-    let again = compile_collection(&store, anthology, CollectionFormat::MergedTxt).unwrap();
+    let again = compile_collection(&store, anthology, CollectionFormat::MergedTxt, None).unwrap();
     assert_eq!(txt, again);
 }
 
@@ -174,7 +174,7 @@ fn an_empty_collection_still_gets_a_file_with_a_sentence() {
 
     let (_dir, mut store) = fresh();
     let empty = collection(&mut store, "还没编的集");
-    let txt = compile_collection(&store, empty, CollectionFormat::MergedTxt).unwrap();
+    let txt = compile_collection(&store, empty, CollectionFormat::MergedTxt, None).unwrap();
     let plain = String::from_utf8(txt[0].content.clone()).unwrap();
     assert!(plain.contains("还没编的集"));
     assert!(plain.contains("目录"));
