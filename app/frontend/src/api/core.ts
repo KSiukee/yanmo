@@ -687,6 +687,7 @@ export const COMMANDS = {
   abandonSession: "abandon_session",
   escapeExport: "escape_export",
   listShelf: "list_shelf",
+  workBrief: "work_brief",
   createWork: "create_work",
   renameWork: "rename_work",
   setWorkLanguage: "set_work_language",
@@ -800,6 +801,21 @@ export const openWorkTarget = (work_id: number) =>
 
 /** 书架：最近打开的书在前，带每本书的章数与字数。 */
 export const listShelf = () => call<ShelfEntry[]>(COMMANDS.listShelf);
+
+/** 一本书的一眼信息：类型 / 标题 / 语言 / 落定后的字数口径（顺手记一次"打开"）。 */
+export interface WorkBrief {
+  id: number;
+  /** novel / article / collection */
+  kind: string;
+  title: string;
+  language: string;
+  /** chars / chars_no_punct / words */
+  word_caliber: string;
+}
+
+/** 切作品之前先问这一眼：**集没有正文**，切到集不该去开编辑器目标（那会补一章）。 */
+export const workBrief = (work_id: number) =>
+  call<WorkBrief>(COMMANDS.workBrief, { work_id });
 
 /** 新建一本书，返回它的 id。 */
 export const createWork = (kind: string, title: string) =>

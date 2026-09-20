@@ -52,11 +52,13 @@ pub struct CollectionViewDto {
     pub pieces: i64,
     pub words: i64,
     pub chars: i64,
+    pub chars_no_punct: i64,
 }
 
 fn to_dto(view: CollectionView) -> CollectionViewDto {
     // 汇总先在移动 `entries` 之前算好（`pieces()` 那几个方法读的是它）
-    let (pieces, words, chars) = (view.pieces(), view.words(), view.chars());
+    let (pieces, words, chars, chars_no_punct) =
+        (view.pieces(), view.words(), view.chars(), view.chars_no_punct());
     CollectionViewDto {
         id: view.collection.id,
         title: view.collection.title,
@@ -66,6 +68,7 @@ fn to_dto(view: CollectionView) -> CollectionViewDto {
         pieces,
         words,
         chars,
+        chars_no_punct,
     }
 }
 

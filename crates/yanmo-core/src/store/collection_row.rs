@@ -54,6 +54,11 @@ impl CollectionView {
     pub fn chars(&self) -> i64 {
         self.entries.iter().map(|entry| entry.char_count).sum()
     }
+
+    /// 集里现有的字数合计（逐字不含标点）——界面按字数口径挑一格显示。
+    pub fn chars_no_punct(&self) -> i64 {
+        self.entries.iter().map(|entry| entry.chars_no_punct).sum()
+    }
 }
 
 impl Store {

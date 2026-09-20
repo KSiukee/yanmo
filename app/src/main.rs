@@ -304,6 +304,7 @@ fn main() {
             commands::snapshot::snapshot_drop,
             commands::snapshot::snapshot_restore,
             commands::work::list_shelf,
+            commands::work::work_brief,
             commands::work::create_work,
             commands::work::rename_work,
             commands::work::set_work_language,

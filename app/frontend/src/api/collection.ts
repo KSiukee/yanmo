@@ -34,6 +34,8 @@ export interface CollectionView {
   pieces: number;
   words: number;
   chars: number;
+  /** 逐字（不含标点）——界面按作品字数口径挑一格显示 */
+  chars_no_punct: number;
 }
 
 /** 一个集的一屏（篇目按集内顺序）。 */

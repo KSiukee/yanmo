@@ -77,6 +77,7 @@ import {
   saveNodeFields,
   setWorkSummary,
   treeSetVolumeTarget,
+  workBrief,
   typesetApply,
   typesetRules,
   typesetScan,
@@ -89,6 +90,15 @@ import {
   type SnapshotRestoreAck,
 } from "../api/core";
 import { resolveMirrorIssue } from "../api/mirror";
+import {
+  collectionAdd,
+  collectionCreate,
+  collectionLooseArticles,
+  collectionRemove,
+  collectionReorder,
+  collectionSetTarget,
+  collectionView,
+} from "../api/collection";
 import {
   manuscriptBoard,
   manuscriptDeleteSubmission,
@@ -124,6 +134,7 @@ import { ExitGate, type ExitGateState } from "./exitguard";
 import { focusPlan } from "./focus";
 import { useShelf, type Shelf } from "./shelf";
 import { useManuscript, type ManuscriptBoardState } from "./manuscript-board";
+import { useCollection, type CollectionState } from "./collection-view";
 import { useCompile, type CompileState } from "./compile";
 import { useChapterNote, type ChapterNote } from "./note";
 import { useSceneFields, type SceneState } from "./scene";
@@ -159,6 +170,15 @@ export interface EditorSession {
   shelf: Shelf;
   /** 稿件台：按状态看稿子、记一次投稿、改状态（与书架同源同一批作品） */
   manuscript: ManuscriptBoardState;
+  /** 集视图：打开一个集时这一屏当家（集是引用，没有正文） */
+  collection: CollectionState;
+  /**
+   * 当前作品的类型（novel / article / collection）。
+   *
+   * 只用来决定**主区露哪一屏**：是集就露集视图，不开编辑器目标
+   *（那会白白给集补一章）。别的作品一律当"有正文"处理。
+   */
+  workKind: Ref<string>;
   /** 回收站：删错了能捞回来（恢复与真删的语义全在核心） */
   trash: Trash;
   /** 版本历史：这一章留过哪些版本，看看差异、回滚（滚动保留与"回滚先留底"全在核心） */
@@ -263,6 +283,8 @@ export function useEditorSession(): EditorSession {
   /** 作品语言（跟书走）与**落定后的**字数口径（作者选过 → 它；没选过 → 语言默认） */
   const language = ref<WorkLanguage>("zh");
   const caliber = ref<Caliber>("chars");
+  /** 当前作品的类型：只用来决定主区露哪一屏（集没有正文） */
+  const workKind = ref<string>("novel");
   const currentNodeId = ref<number | null>(null);
   /** 专注模式（不落盘：重开软件回到常规三栏）与全屏（窗口真实状态，启动时对一次表） */
   const zen = useZen();
@@ -710,6 +732,24 @@ export function useEditorSession(): EditorSession {
     switching.value = true;
     failure.value = null;
     try {
+      // 切作品之前先问一眼"这是什么"：**集没有正文**——切到集若走"给我一个可写落点"
+      // 那条路，核心会好心给集补一章（作者眼里的集根本没有"这一集写什么"）。
+      // 所以是集就只切"当前作品"、主区换成集视图，编辑器让位。
+      if (work_id !== null) {
+        const brief = await workBrief(work_id);
+        workKind.value = brief.kind;
+        if (brief.kind === "collection") {
+          // 与切章同一条纪律：手上这一章先落盘，再换地方
+          await flushCurrent();
+          workId.value = work_id;
+          language.value = asLanguage(brief.language);
+          caliber.value = asCaliber(brief.word_caliber);
+          await collection.enter(work_id);
+          return true;
+        }
+      }
+      // 不是集（或回到默认落点）：编辑器仍当家，集视图收起来
+      collection.leave();
       const snapshot = work_id === null ? await openEditorTarget() : await openWorkTarget(work_id);
       if ((await switcher.to(snapshot)) === "blocked") return false;
       await refreshNeighbors();
@@ -894,6 +934,23 @@ export function useEditorSession(): EditorSession {
       },
     });
 
+    // 集视图：打开一个集时主区就是它。**集没有正文**——所以只与引用表打交道，
+    // "打开某一篇"仍然走稿件台那条（同一个切作品纪律）。
+    const collection = useCollection({
+      transport: {
+        view: collectionView,
+        add: collectionAdd,
+        remove: collectionRemove,
+        reorder: collectionReorder,
+        setTarget: collectionSetTarget,
+        create: collectionCreate,
+        loose: collectionLooseArticles,
+      },
+      onError: (message) => {
+        failure.value = t("session.collection_failed", { detail: message });
+      },
+    });
+
     // 版本历史：列 / 比 / 留一版 / 删一版 / 回滚（滚动保留、回滚先留底全在核心）。
     // 回滚前先落盘：**存不下去就不覆盖**——这条纪律与"删章之前先存"是同一条。
     const snapshots = useSnapshots({
@@ -1022,6 +1079,7 @@ export function useEditorSession(): EditorSession {
       trash,
       shelf,
       manuscript,
+      collection,
       snapshots,
       typeset,
       note,
@@ -1048,6 +1106,7 @@ export function useEditorSession(): EditorSession {
     trash,
     shelf,
     manuscript,
+    collection,
     snapshots,
     typeset,
     note,
@@ -1204,6 +1263,8 @@ export function useEditorSession(): EditorSession {
     writing,
     shelf,
     manuscript,
+    collection,
+    workKind,
     trash,
     snapshots,
     typeset,

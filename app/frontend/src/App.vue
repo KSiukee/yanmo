@@ -26,6 +26,7 @@ import RestoreDialog from "./components/RestoreDialog.vue";
 import SettingsDialog from "./components/SettingsDialog.vue";
 import ShelfDialog from "./components/ShelfDialog.vue";
 import ManuscriptDialog from "./components/ManuscriptDialog.vue";
+import CollectionPane from "./components/CollectionPane.vue";
 import WorkFormDialog from "./components/WorkFormDialog.vue";
 import SnapshotDialog from "./components/SnapshotDialog.vue";
 import TrashDialog from "./components/TrashDialog.vue";
@@ -69,6 +70,9 @@ const { chapterTitle, workId } = session;
 const { visible: shelfVisible, toggle: toggleShelf, form: workForm, closeForm } = session.shelf;
 // 稿件台：书架是主入口（按作品），这里是副入口（按流转）——同一批作品，不是第二份列表
 const { visible: manuscriptVisible, toggle: toggleManuscript, overdueCount } = session.manuscript;
+// 集视图：打开的是**集**时主区就是它（集没有正文，编辑器与两侧栏都让位）
+const isCollection = computed(() => session.workKind.value === "collection");
+const collectionTitle = computed(() => session.collection.view.value?.title ?? "");
 // 开机预热一次看板：**顶栏那个徽标要在打开稿件台之前就有数**
 // （超期未回的投稿是"该管一管了"的信号，藏在弹窗里等于没有）
 void session.manuscript.refresh();
@@ -95,8 +99,9 @@ const { visible: restoreVisible } = session.restore;
 // 稿子放在哪：第一次用才引导（壳说"这是第一次"才亮），之后要换位置去「设置」
 const { visible: locationVisible, info: locationInfo } = session.location;
 
-// 顶栏那行小字：有章名就显示章名；开着书但还没起名就显示占位；没有书才说立场那句话
+// 顶栏那行小字：集就说集名；有章名就显示章名；开着书但还没起名就显示占位；没有书才说立场那句话
 const hint = computed(() => {
+  if (isCollection.value) return collectionTitle.value || t("common.untitled");
   if (chapterTitle.value) return chapterTitle.value;
   return workId.value ? t("common.untitled") : t("app.tagline");
 });
@@ -119,8 +124,9 @@ const hint = computed(() => {
     />
 
     <!-- 提醒**只有这一个出口**：一次只显示一条（软件不该抢自己的话头）。
-         叩问的推优先——它跟"当下正在写的东西"直接相关；备份提醒排在后面。 -->
-    <p v-if="push.tip.value" class="shell__nudge">
+         叩问的推优先——它跟"当下正在写的东西"直接相关；备份提醒排在后面。
+         集视图下不推叩问：那会儿没有"正在写的那一章"。 -->
+    <p v-if="push.tip.value && !isCollection" class="shell__nudge">
       <span>{{ t("flow.push.tip", { body: push.tip.value.body }) }}</span>
       <button type="button" class="shell__nudge-go" @click="answerPushed()">
         {{ t("flow.push.answer") }}
@@ -140,7 +146,7 @@ const hint = computed(() => {
     </p>
 
     <main class="shell__body" :class="{ 'shell__body--zen': zenOn }">
-      <DirectoryPane v-if="zenChrome.directory" :session="session" />
+      <DirectoryPane v-if="zenChrome.directory && !isCollection" :session="session" />
 
       <!-- 专注时：两侧栏换成"唤出来看一眼"的卡片（同一批组件，不写第二份树）。
            ⚠️ 卡片**浮在常驻留白里**，不占列、也不挤压正文：
@@ -171,10 +177,12 @@ const hint = computed(() => {
         </section>
       </template>
 
-      <EditorPane :session="session" />
-      <!-- 第二栏（右侧）：叩问与创作流共用，顶上页签切——整块在 AsidePane 里 -->
+      <CollectionPane v-if="isCollection" :session="session" />
+      <EditorPane v-else :session="session" />
+      <!-- 第二栏（右侧）：叩问与创作流共用，顶上页签切——整块在 AsidePane 里。
+           集视图下这一栏让位（集没有章节，叩问也没有可问的那一章）。 -->
       <AsidePane
-        v-if="zenChrome.flow"
+        v-if="zenChrome.flow && !isCollection"
         :tab="asideTab"
         :session="session"
         :work-id="workId"

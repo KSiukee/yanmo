@@ -71,6 +71,7 @@ mod trash;
 mod tree_path;
 mod volume;
 mod work;
+mod work_brief;
 mod work_goal;
 mod work_text;
 mod writing;
@@ -126,6 +127,7 @@ pub use snapshot::{SnapshotSummary, AUTO_SNAPSHOTS_KEPT};
 pub use trash::{TrashEntry, TrashKind};
 pub use volume::{CloseReceipt, DissolveReceipt};
 pub use work::ShelfEntry;
+pub use work_brief::WorkBrief;
 pub use writing::WritingDay;
 
 use std::path::Path;

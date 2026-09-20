@@ -73,6 +73,35 @@ pub fn create_work(
     })
 }
 
+/// 一本书的"一眼信息"：类型 / 标题 / 语言 / **落定后的字数口径**（顺手记一次"打开"）。
+///
+/// 界面切作品时先问它：**集没有正文**——切到集不该去开编辑器目标（那会白白给集补一章）。
+#[derive(Debug, Serialize)]
+pub struct WorkBriefDto {
+    pub id: i64,
+    /// novel / article / collection
+    pub kind: String,
+    pub title: String,
+    pub language: String,
+    /// 落定后的字数口径（chars / chars_no_punct / words）
+    pub word_caliber: &'static str,
+}
+
+/// 切作品之前的那一眼（顺手记一次打开，书架排序看它）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn work_brief(data: State<'_, AppData>, work_id: i64) -> Result<WorkBriefDto, ApiError> {
+    data.with_store(|store: &mut Store| {
+        let brief = store.work_brief(work_id)?;
+        Ok(WorkBriefDto {
+            id: brief.work.id,
+            kind: brief.work.kind.as_str().to_string(),
+            title: brief.work.title,
+            language: brief.work.language.as_str().to_string(),
+            word_caliber: brief.caliber.as_str(),
+        })
+    })
+}
+
 /// 给书改名。
 #[tauri::command(rename_all = "snake_case")]
 pub fn rename_work(

@@ -10,15 +10,13 @@
 import { computed, ref } from "vue";
 
 import type { EditorSession } from "../editor/session";
-import type { ManuscriptRow, ManuscriptStatus, Submission } from "../api/manuscript";
+import type { ManuscriptRow, ManuscriptStatus } from "../api/manuscript";
 import type { SubmitDraft } from "../editor/manuscript-board";
 import {
   BOARD_COLUMNS,
   canDrop,
   daysUntil,
   groupByStatus,
-  msToDateInput,
-  nextStatuses,
   overdue,
   remainingWords,
   statusKey,
@@ -42,17 +40,29 @@ const {
   close,
   select,
   openSubmit,
-  openEdit,
   closeForm,
   save,
   saveEdit,
   confirmWarned,
   move,
-  removeSubmission,
-  setTarget,
   openWork,
 } = props.session.manuscript;
 const { workId, caliber } = props.session;
+/** 集那一族：攒集提示与"一键建集"读它（够 N 篇没归集的散篇就提一句） */
+const collection = props.session.collection;
+/** 正在给新集起名（null = 还没点"编成一个集"） */
+const mintTitle = ref<string | null>(null);
+
+/** 一键建集：把还没归集的散篇按时间排好装进新集，建好就切过去看它。 */
+function mint() {
+  const title = (mintTitle.value ?? "").trim();
+  if (!title) return;
+  void (async () => {
+    const id = await collection.createFromLoose(title);
+    mintTitle.value = null;
+    if (id !== null) await openWork(id);
+  })();
+}
 
 /** 这一屏现在看哪一块：看板（按状态）/ 未完成散篇（开了坑没填的那种）。 */
 const view = ref<"board" | "unfinished">("board");
@@ -60,7 +70,6 @@ const view = ref<"board" | "unfinished">("board");
 const columns = computed(() => groupByStatus(rows.value));
 const unfinished = computed(() => unfinishedRows(rows.value));
 const untargeted = computed(() => untargetedRows(rows.value));
-const selectedRow = computed(() => rows.value.find((row) => row.id === detail.value?.work_id) ?? null);
 
 function workLabel(title: string): string {
   return title || t("common.untitled");
@@ -122,10 +131,6 @@ function startSubmit(work_id: number) {
   openSubmit(work_id);
 }
 
-function startEdit(work_id: number, submission: Submission) {
-  openEdit(work_id, submission);
-}
-
 /** 表单点了「记下」：新的一次 vs 改某一条，落点不同 */
 function onSave(draft: SubmitDraft) {
   const target = form.value;
@@ -134,47 +139,9 @@ function onSave(draft: SubmitDraft) {
   else void save(target.work_id, draft);
 }
 
-// ── 详情面板：看历史、定完稿目标 ────────────────────────────────────────
-const targetInput = ref("");
-
+/** 点一张卡片：选中它（右栏由 `ManuscriptDetailPane` 显示）。 */
 function pick(row: ManuscriptRow) {
-  targetInput.value = row.target_words === null ? "" : String(row.target_words);
   void select(row.id);
-}
-
-function closeDetail() {
-  detail.value = null;
-}
-
-function saveTarget() {
-  const row = selectedRow.value;
-  if (!row) return;
-  const text = targetInput.value.trim();
-  const words = text === "" ? null : Number(text);
-  void setTarget(row.id, Number.isFinite(words) ? words : null);
-}
-
-function confirmRemove(submission: Submission) {
-  if (window.confirm(t("manuscript.delete_record_confirm", { venue: submission.venue }))) {
-    void removeSubmission(submission.id);
-  }
-}
-
-/** 改详情里那一条（用选中的那一篇，免得模板里到处写 `detail.work_id`）。 */
-function editRecord(record: Submission) {
-  const row = selectedRow.value;
-  if (row) startEdit(row.id, record);
-}
-
-/**
- * 「改到哪一态」的可点入口：拖拽是鼠标专属，这一排按钮让每一步都点得到
- * （键盘、触控板、以及自动化验收都靠它；合法性仍与核心迁移表同源）。
- */
-const moves = computed(() => (detail.value ? nextStatuses(detail.value.status) : []));
-
-function moveSelected(to: ManuscriptStatus) {
-  const row = detail.value;
-  if (row) void move(row.work_id, to);
 }
 
 /** 判词看过了、想回去改一改：收起警告，表单还能改。 */
@@ -214,6 +181,27 @@ function dismissWarn() {
       <!-- 超期未回：**一条提示**，不弹窗、不挡路——点卡片就能改投别家 -->
       <p v-if="overdueCount > 0" class="manuscript__note dialog__note">
         {{ t("manuscript.overdue_tip", { count: overdueCount }) }}
+      </p>
+      <!-- 攒集提示：没归集的散篇够数了，安安静静提一句 + 一键建集（够数不是门槛，没到也能自己建） -->
+      <p v-if="collection.nudge.value" class="manuscript__note dialog__note">
+        {{ t("collection.nudge", { count: collection.loose.value.length }) }}
+        <button
+          v-if="mintTitle === null"
+          type="button"
+          class="manuscript__button dialog__button"
+          @click="mintTitle = ''"
+        >
+          {{ t("collection.mint") }}
+        </button>
+        <template v-else>
+          <input v-model="mintTitle" class="manuscript__input" :placeholder="t('collection.mint_title')" />
+          <button type="button" class="manuscript__button dialog__button" :disabled="busy" @click="mint()">
+            {{ t("collection.mint_confirm") }}
+          </button>
+          <button type="button" class="manuscript__button dialog__button" @click="mintTitle = null">
+            {{ t("common.cancel") }}
+          </button>
+        </template>
       </p>
 
       <div class="manuscript__body">
@@ -301,71 +289,7 @@ function dismissWarn() {
           </p>
         </div>
 
-        <!-- 详情：选中那一篇的状态、完稿目标、全部投稿记录 -->
-        <aside v-if="detail && selectedRow" class="manuscript__side">
-          <header class="manuscript__side-head">
-            <span class="manuscript__name">{{ workLabel(selectedRow.title) }}</span>
-            <span class="manuscript__meta">{{ t(statusKey(detail.status)) }}</span>
-            <button type="button" class="manuscript__button dialog__button" @click="closeDetail">
-              {{ t("common.close") }}
-            </button>
-          </header>
-          <p class="manuscript__field">
-            <span>{{ t("manuscript.target_words") }}</span>
-            <input v-model="targetInput" type="number" min="0" class="manuscript__input" />
-            <button type="button" class="manuscript__button dialog__button" :disabled="busy" @click="saveTarget">
-              {{ t("common.save") }}
-            </button>
-          </p>
-          <p class="manuscript__hint">{{ t("manuscript.target_hint") }}</p>
-          <p v-if="moves.length > 0" class="manuscript__moves">
-            <span class="manuscript__hint">{{ t("manuscript.move_to") }}</span>
-            <button
-              v-for="to in moves"
-              :key="to"
-              type="button"
-              class="manuscript__button dialog__button"
-              :disabled="busy"
-              @click="moveSelected(to)"
-            >
-              {{ t(statusKey(to)) }}
-            </button>
-          </p>
-          <ul class="manuscript__history">
-            <li v-for="record in detail.submissions" :key="record.id" class="manuscript__record">
-              <span class="manuscript__meta">
-                {{ t("manuscript.record_line", {
-                  venue: record.venue,
-                  at: msToDateInput(record.submitted_at),
-                  result: t(`manuscript.result.${record.result}`),
-                }) }}
-                <template v-if="record.cooldown_until !== null">
-                  · {{ t("manuscript.record_until", { until: msToDateInput(record.cooldown_until) }) }}
-                </template>
-              </span>
-              <span v-if="record.notes" class="manuscript__notes">{{ record.notes }}</span>
-              <span class="manuscript__actions">
-                <button
-                  type="button"
-                  class="manuscript__button dialog__button"
-                  @click="editRecord(record)"
-                >
-                  {{ t("manuscript.edit_record") }}
-                </button>
-                <button
-                  type="button"
-                  class="manuscript__button manuscript__button--danger dialog__button"
-                  @click="confirmRemove(record)"
-                >
-                  {{ t("manuscript.delete_record") }}
-                </button>
-              </span>
-            </li>
-            <li v-if="detail.submissions.length === 0" class="manuscript__hint">
-              {{ t("manuscript.no_records") }}
-            </li>
-          </ul>
-        </aside>
+        <ManuscriptDetailPane v-if="detail" :session="session" />
       </div>
 
       <!-- 记一次投稿 / 改一条记录：同一个表单（字段与软拦都在它自己那一件里） -->
