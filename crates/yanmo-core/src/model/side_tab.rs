@@ -1,7 +1,8 @@
-//! 右侧第二栏**露哪一块**：叩问 / 创作流。
+//! 右侧第二栏**露哪一块**：叩问 / 创作流 / 流程。
 //!
-//! 那一栏同时住着两条线（[`SideTab::Flow`] 是"机制挑问题问你"、[`SideTab::Creator`]
-//! 是"你自己记下的碎片"），栏顶两片页签切——这个取值就是"**上次你停在哪一块**"。
+//! 那一栏同时住着三条线（[`SideTab::Flow`] 是"机制挑问题问你"、[`SideTab::Creator`]
+//! 是"你自己记下的碎片"、[`SideTab::Sop`] 是"你自己的写作流程"），栏顶几片页签切——
+//! 这个取值就是"**上次你停在哪一块**"。
 //!
 //! 它是**作者的偏好**（存 `appearance`，跟人不跟书），不是数据的属性：
 //! 换一块只是换个地方看，一个字节的稿子都不动，也没有任何后台行为跟着变。
@@ -19,6 +20,9 @@ pub enum SideTab {
     Flow,
     /// 创作流：你自己记下的灵感 / 事件 / 口述段落。
     Creator,
+    /// 流程：你自己的写作流程（先干什么后干什么）——**不是打卡清单**，
+    /// 可以任意跳步 / 回退 / 并行（见 [`crate::store::Sop`]）。
+    Sop,
 }
 
 /// 进 JSON 就用**稳定码本身**。
@@ -34,13 +38,14 @@ impl serde::Serialize for SideTab {
 
 impl SideTab {
     /// 全部取值（页签的顺序；穷举测试拿它对表）。
-    pub const ALL: [SideTab; 2] = [SideTab::Flow, SideTab::Creator];
+    pub const ALL: [SideTab; 3] = [SideTab::Flow, SideTab::Creator, SideTab::Sop];
 
     /// 稳定码（进库 / 进 JSON；**别改**）。
     pub const fn as_str(self) -> &'static str {
         match self {
             SideTab::Flow => "flow",
             SideTab::Creator => "creator",
+            SideTab::Sop => "sop",
         }
     }
 

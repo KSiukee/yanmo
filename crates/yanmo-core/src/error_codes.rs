@@ -187,7 +187,7 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     UNKNOWN_QUESTION_TONE => "value.unknown_question_tone"
         : "认不出的问话语气：{value}（只认 warm / neutral / direct）" : ["value"],
     UNKNOWN_ASIDE_TAB => "value.unknown_aside_tab"
-        : "认不出的第二栏分区：{value}（只认 flow / creator）" : ["value"],
+        : "认不出的第二栏分区：{value}（只认 flow / creator / sop）" : ["value"],
     UNKNOWN_ENTITY_KIND => "value.unknown_entity_kind"
         : "认不出的设定卡类型：{value}（只认 person / setting）" : ["value"],
     UNKNOWN_SCENE_FIELD => "value.unknown_scene_field"

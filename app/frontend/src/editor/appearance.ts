@@ -15,7 +15,12 @@ import type { Appearance, AppearancePatch, NamingRewrite } from "../api/core";
 import type { TypographyField } from "./typography";
 
 /** 右侧第二栏露哪一块（与核心 `ASIDE_TABS` 的稳定码一致）。 */
-export type AsideTab = "flow" | "creator";
+export type AsideTab = "flow" | "creator" | "sop";
+
+/** 识别第二栏分区码（认不出的给 null）——**闭集只此一处**，别处不许再写一份。 */
+export function parseAsideTab(value: string): AsideTab | null {
+  return value === "flow" || value === "creator" || value === "sop" ? value : null;
+}
 
 /** 偏好要用的几个动作（会话层注入真命令，测试注入替身）。 */
 export interface AppearanceTransport {

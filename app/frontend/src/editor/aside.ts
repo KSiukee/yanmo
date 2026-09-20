@@ -12,7 +12,7 @@
 
 import { ref, watch, type Ref } from "vue";
 
-import type { AppearanceState, AsideTab } from "./appearance.ts";
+import { parseAsideTab, type AppearanceState, type AsideTab } from "./appearance.ts";
 
 /** 没设过 / 读不出来时露哪一块（与核心的 `DEFAULT_ASIDE_TAB` 一致）。 */
 export const DEFAULT_ASIDE_TAB: AsideTab = "flow";
@@ -32,7 +32,8 @@ export function useAsideTab(appearance: AppearanceState): AsideState {
   watch(
     () => appearance.workValues.value?.aside_tab,
     (value) => {
-      if (value === "flow" || value === "creator") tab.value = value;
+      const known = value === undefined ? null : parseAsideTab(value);
+      if (known) tab.value = known;
     },
     { immediate: true, flush: "sync" },
   );

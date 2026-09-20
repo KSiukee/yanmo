@@ -48,6 +48,8 @@ pub mod restore;
 pub mod scene;
 /// 会话与退出闸门：心跳 / 上次会话的交代 / 关窗回话与收尾（**壳自己的那一族**）。
 pub mod session;
+/// 流程（SOP）：作者自己的写作流程（两层继承，**不强制顺序、不打卡**）。
+pub mod sop;
 /// 每章版本快照：列表、对照、回滚。
 pub mod snapshot;
 /// 系统信息：版本、数据目录、验收与诊断。

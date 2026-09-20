@@ -189,6 +189,7 @@ const hint = computed(() => {
         :open-question="pushedCard"
         @update:tab="pickAside"
         @opened="pushedCard = null"
+        @open-tab="pickAside"
       />
     </main>
 
