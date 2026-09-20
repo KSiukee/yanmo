@@ -270,6 +270,8 @@
   "editor.scene.outcome": "结果（结束时落到哪儿）",
   "editor.scene.save": "存下这四格",
   "editor.scene.saved": "四格存下了",
+  "editor.scene.collapse": "收起",
+  "editor.scene.expand": "展开",
   "lore.title": "资料",
   "lore.tab.persons": "人物",
   "lore.tab.settings": "设定",
