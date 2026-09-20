@@ -163,6 +163,16 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     ROUND_EMPTY => "round.empty" : "这一轮一条答案都没有，没什么可落的" : [],
     ROUND_CARD_FOREIGN => "round.card_foreign"
         : "这一条不属于这本书：卡 {card_id} 不在作品 {work_id} 里" : ["card_id", "work_id"],
+    SPARK_NOT_FOUND => "spark.not_found"
+        : "这条灵感不在了（或者它根本不是随手记的那几种）：{spark_id}" : ["spark_id"],
+    SPARK_LAND_NODE_INVALID => "spark.land_node_invalid"
+        : "不能把这条灵感落到这一段：{node_id} 不在这一本书里，或不承载正文 / 章纲" : ["node_id"],
+    SPARK_NEEDS_CHAPTER => "spark.needs_chapter"
+        : "这一档落点得说清是哪一章：{target}" : ["target"],
+    SPARK_ALREADY_EVENT => "spark.already_event"
+        : "这条已经是事件了——它就在事件池里：{spark_id}" : ["spark_id"],
+    SPARK_TARGET_UNKNOWN => "value.unknown_spark_target"
+        : "认不出的采纳落点：{value}（只认 body / outline / scene / event）" : ["value"],
     UNKNOWN_QUESTION_TONE => "value.unknown_question_tone"
         : "认不出的问话语气：{value}（只认 warm / neutral / direct）" : ["value"],
     UNKNOWN_ASIDE_TAB => "value.unknown_aside_tab"

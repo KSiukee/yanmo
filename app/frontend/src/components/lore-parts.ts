@@ -12,6 +12,7 @@ import type { Ref } from "vue";
 import { useCreatorPanel, type CreatorPanelState } from "./creator-panel.ts";
 import { useEntityPanel, type EntityPanelState } from "./entity-panel.ts";
 import { useForeshadowPanel, type ForeshadowPanelState } from "./foreshadow-panel.ts";
+import { useInspirePanel, type InspirePanelState } from "./inspire-panel.ts";
 import { useLore, type LoreState } from "./lore.ts";
 import { useStorylinePanel, type StorylinePanelState } from "./storyline-panel.ts";
 
@@ -24,6 +25,8 @@ export interface LoreParts {
   foreshadows: ForeshadowPanelState;
   /** 事件那页用的是创作流那一份碎片状态（两处共用） */
   creator: CreatorPanelState;
+  /** 灵感：同一批碎片按引力排出来的那一屏（创建流那一栏的第二片） */
+  inspire: InspirePanelState;
   /** 面板外壳：开着没有、停在哪个页签 */
   lore: LoreState;
 }
@@ -32,6 +35,8 @@ export interface LorePartsOptions {
   workId: Ref<number | null>;
   /** "当前这一章"：记伏笔 / 记事件的锚点、新建场景卡挂在它下面 */
   currentChapter: Ref<number | null>;
+  /** 往编辑会话里插字的把手（灵感落正文那条路要用；与叩问落答案同一条） */
+  insertText: (text: string, at: "cursor" | "end") => boolean;
 }
 
 export function useLoreParts(deps: LorePartsOptions): LoreParts {
@@ -39,6 +44,11 @@ export function useLoreParts(deps: LorePartsOptions): LoreParts {
   const entities = useEntityPanel({ workId: deps.workId });
   const foreshadows = useForeshadowPanel({ workId: deps.workId, currentChapter: deps.currentChapter });
   const creator = useCreatorPanel({ workId: deps.workId, currentChapter: deps.currentChapter });
+  const inspire = useInspirePanel({
+    workId: deps.workId,
+    currentChapter: deps.currentChapter,
+    insertText: deps.insertText,
+  });
   const lore = useLore({
     entities,
     foreshadows,
@@ -50,5 +60,5 @@ export function useLoreParts(deps: LorePartsOptions): LoreParts {
       foreshadows.cancelEdit();
     },
   });
-  return { storyline, entities, foreshadows, creator, lore };
+  return { storyline, entities, foreshadows, creator, inspire, lore };
 }

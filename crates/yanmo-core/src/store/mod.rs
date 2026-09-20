@@ -34,6 +34,7 @@ mod export;
 mod foreshadow;
 mod fragment;
 mod import;
+mod inspire;
 mod manuscript;
 mod manuscript_row;
 mod manuscript_submit;
@@ -101,6 +102,7 @@ pub use outline_grid::OutlineRow;
 pub use outline_paste::{OutlineCell, MAX_PASTE_CELLS};
 pub use draft::{parse_work_json, DraftScale, NodeDraft, StampMismatch, WorkDraft};
 pub use import::{find_drafts, manifest_near, ImportReport};
+pub use inspire::{AdoptReceipt, Spark, SPARKS_PER_BOARD};
 pub use mirror::{mirror_body_of, REASON_ADOPT};
 pub use mirror_plan::{
     plan_mirror, ConflictReason, DiskState, MirrorAction, MirrorConflict, MirrorEntry, MirrorFile,

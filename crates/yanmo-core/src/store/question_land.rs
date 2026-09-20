@@ -19,7 +19,7 @@ use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::question_answer::{Answer, KIND_ANSWER};
+use super::question_answer::KIND_ANSWER;
 use super::Store;
 use crate::error::{codes, Error, Result};
 use crate::model::{AnswerTarget, NodeKind, QuestionCard};
@@ -147,7 +147,12 @@ impl Store {
         }
 
         // 章纲：**合并成一行**（原有的 + 新的，用「；」接）
-        let outline = merged_outline(self, node_id, &planned)?;
+        let outline_bodies: Vec<String> = planned
+            .iter()
+            .filter(|(_, _, _, target, _)| *target == AnswerTarget::Outline)
+            .map(|(_, _, body, _, _)| body.clone())
+            .collect();
+        let outline = merged_outline(self, node_id, &outline_bodies)?;
         // 命名规则也在事务外先问好：事务里已经借着 `self.conn`，不能再借一次 `self`
         // （见 `node_edit::create_node_in` 的说明）
         let naming = self.naming_style(work_id)?;
@@ -259,20 +264,14 @@ impl Store {
 // 它跟着数据走、不随界面语言变（与默认章节名、磁盘目录名同一类）
 const OUTLINE_JOINER: &str = "；";
 
-/// 把这一轮里投章纲的那几条合到"这一章的一句话"上：原有在前、新的按顺序接在后面。
+/// 把这几段字合到"这一章的一句话"上：原有在前、新的按顺序接在后面。
 ///
-/// 返回 `None`＝这一轮没人投章纲（那就一个字都不动，连留痕也不留）。
+/// 返回 `None`＝`added` 是空的（那就一个字都不动，连留痕也不留）。
 /// **已经在那句话里的不重复接**：同一句落两回不该在章纲里出现两遍。
-fn merged_outline(
-    store: &Store,
-    node_id: i64,
-    planned: &[(i64, Answer, String, AnswerTarget, String)],
-) -> Result<Option<String>> {
-    let added: Vec<&str> = planned
-        .iter()
-        .filter(|(_, _, _, target, _)| *target == AnswerTarget::Outline)
-        .map(|(_, _, body, _, _)| body.as_str())
-        .collect();
+///
+/// 两个调用方：叩问落答案（[`Store::apply_answer_round`] 那条路）与灵感采纳
+/// （[`super::inspire`]）——**章纲只有这一种接法**，不各写一份。
+pub(super) fn merged_outline(store: &Store, node_id: i64, added: &[String]) -> Result<Option<String>> {
     if added.is_empty() {
         return Ok(None);
     }
@@ -300,7 +299,7 @@ fn merged_outline(
 /// 三种不对分别报错（"没了"用既有的 `node.gone`；"不是这本书的 / 不是正文节点"合成一条，
 /// 因为对作者来说是同一件事：这一段放不了）。节点那一列的读法走 [`super::node`]，
 /// 不在这边另写一份 SELECT。
-fn check_landing_node(store: &Store, work_id: i64, node_id: i64) -> Result<()> {
+pub(super) fn check_landing_node(store: &Store, work_id: i64, node_id: i64) -> Result<()> {
     let owner = super::node::node_work_in(store.conn(), node_id)?;
     let holds_body = super::node::node_kind_in(store.conn(), node_id)?.holds_body();
     if owner != work_id || !holds_body {

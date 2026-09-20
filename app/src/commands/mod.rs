@@ -26,6 +26,8 @@ pub mod entity;
 pub mod foreshadow;
 /// 创作流：碎片池的记 / 看 / 删 / 捞回（**作者自己记下的东西**）。
 pub mod fragment;
+/// 灵感：把碎片按引力排出来，并采纳 / 丢弃（**机制排，不生成字**）。
+pub mod inspire;
 /// 稿子放哪：位置查询、换位置、打开文件夹。
 pub mod location;
 /// 稿件台：按状态看稿子、记一次投稿、改状态（一稿多投只拦不禁止）。

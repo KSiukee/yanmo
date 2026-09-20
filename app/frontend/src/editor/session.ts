@@ -144,6 +144,7 @@ import type { EntityPanelState } from "../components/entity-panel";
 import type { StorylinePanelState } from "../components/storyline-panel";
 import type { ForeshadowPanelState } from "../components/foreshadow-panel";
 import type { CreatorPanelState } from "../components/creator-panel";
+import type { InspirePanelState } from "../components/inspire-panel";
 import type { LoreState } from "../components/lore";
 import { useSnapshots, type Snapshots } from "./snapshots";
 import { DEFAULT_QUOTE_STYLE, useTypeset, type TypesetState } from "./typeset";
@@ -197,6 +198,8 @@ export interface EditorSession {
   foreshadows: ForeshadowPanelState;
   /** 创作流碎片池：灵感 / 事件 / 口述（创作流那一栏与「大纲」的事件页共用同一份） */
   creator: CreatorPanelState;
+  /** 灵感：同一批碎片按引力排出来的那一屏（创作流那一栏的第二片，落点有四种） */
+  inspire: InspirePanelState;
   /** 「资料」弹窗的外壳：开着没有、停在哪个页签 */
   lore: LoreState;
   /** 「大纲」表：整块主区上的那一张大表（一章一行，要素在格子里填） */
@@ -1055,9 +1058,11 @@ export function useEditorSession(): EditorSession {
 
     // 「大纲」那一族（人物与设定 / 事件 / 场景卡 / 伏笔）整块在 lore-parts.ts 里装配：
     // 会话是唯一装配处，这里只留"把这一族接上"这一句（不然每加一页这里就长十行）。
-    const { storyline, entities, foreshadows, creator, lore } = useLoreParts({
+    const { storyline, entities, foreshadows, creator, inspire, lore } = useLoreParts({
       workId,
       currentChapter: currentNodeId,
+      // 灵感落正文那条路要往编辑会话里插字（与叩问落答案共用同一个把手）
+      insertText,
     });
     // 大纲表：**整块主区**上的那一层（点章名跳正文、表尾能加一章）
     const grid = useOutlineGrid({
@@ -1088,6 +1093,7 @@ export function useEditorSession(): EditorSession {
       entities,
       foreshadows,
       creator,
+      inspire,
       lore,
       grid,
       compile,
@@ -1115,6 +1121,7 @@ export function useEditorSession(): EditorSession {
     entities,
     foreshadows,
     creator,
+    inspire,
     lore,
     grid,
     compile,
@@ -1274,6 +1281,7 @@ export function useEditorSession(): EditorSession {
     entities,
     foreshadows,
     creator,
+    inspire,
     lore,
     grid,
     compile,

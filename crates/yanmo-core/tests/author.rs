@@ -62,7 +62,7 @@ fn clearing_one_field_is_explicit() {
 
 #[test]
 fn a_broken_record_is_treated_as_unset() {
-    let (_dir, mut store) = fresh();
+    let (_dir, store) = fresh();
     store
         .conn()
         .execute(

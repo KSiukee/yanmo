@@ -59,7 +59,8 @@ const emit = defineEmits<{
       :open-question="openQuestion"
       @opened="emit('opened')"
     />
-    <CreatorPane v-else :session="session" :work-id="workId" />
+    <!-- 创作流那一栏的各片自己从会话里取数据（壳只管切哪一片），所以不必再传 workId -->
+    <CreatorPane v-else :session="session" />
   </aside>
 </template>
 
