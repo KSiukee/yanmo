@@ -35,6 +35,8 @@ mod mirror_headless;
 mod mirror_sync;
 mod open_folder;
 mod pick_dir;
+mod renderer;
+mod renderer_win;
 mod single;
 mod storage;
 mod volume;

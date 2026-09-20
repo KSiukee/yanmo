@@ -31,7 +31,12 @@ windows-sys = { version = "0.59", features = [
     "Win32_Storage_FileSystem",
     # 验收报告要写清"这台机器是谁"（内存总量）
     "Win32_System_SystemInformation",
+    # 精准挑渲染进程：进程树（ToolHelp）+ 读另一个进程的命令行（`NtQueryInformationProcess`，
+    # 在 Wdk 那一族下；杀进程的 TerminateProcess 本来就在上面那个 Threading 里）。
+    # 两样都在既有的 windows-sys 里——不必新增依赖，也不必手工绑 ntdll。
+    "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Threading",
+    "Wdk_System_Threading",
     "Win32_UI_Controls_Dialogs",
     "Win32_UI_Shell",
     # 选文件夹对话框（SHBrowseForFolderW + PIDL 释放）要用到 Shell 的 Common 子集

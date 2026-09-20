@@ -1,4 +1,4 @@
-//! 守护之心的**壳侧**：看门狗线程（探活 → 留证据 → 重载 WebView）。
+//! 守护之心的**壳侧**：看门狗线程（探活 → 留证据 → 重载 WebView / 精准杀渲染进程）。
 //!
 //! 状态机在 [`crate::watchdog`]（纯逻辑、可假时钟单测）；这里只做三件事：
 //! 按秒问它"该做什么"、把 `Action` 变成真动作、把每一步记进体检日志。
@@ -84,7 +84,7 @@ fn reload(app: &AppHandle) -> Result<(), String> {
     window.reload().map_err(|error| error.to_string())
 }
 
-/// 第几次判死用哪根杠杆。**现在只有一根：软重载。**
+/// 第几次判死用哪根杠杆。
 ///
 /// # 剩下这几根都试过了（2026-09-17 真机演练：往真页面注入一个死循环，再从外面看反应）
 ///
@@ -97,11 +97,29 @@ fn reload(app: &AppHandle) -> Result<(), String> {
 /// | 杀掉浏览器下面**所有**子进程 | ❌ 反而救不回来（GPU / 网络那些也被捎带杀了） |
 /// | **只杀 `--type=renderer` 那一个** | ✅ **10 秒内页面就回来了**（浏览器自己拉起新渲染进程） |
 ///
-/// 结论：有效的那一根要**精准挑出渲染进程**，而"挑"要读进程命令行（现在这版依赖里没有）。
-/// 在补上它之前，这里只做软重载：**能救的救，救不了就如实停手**（证据与告知照旧），
-/// 绝不拿"杀一堆进程"去赌——实测那是把界面弄得更难救。
+/// 结论：**有效的那一根是"精准挑出渲染进程并杀掉"**——它已经补上了，见
+/// [`crate::renderer`]（挑的规则，纯逻辑可测）与 [`crate::renderer_win`]（Windows 那一半：
+/// 捞进程树 / 读命令行 / 杀那几个 pid）。用的是现成的 `windows-sys`，没有新增依赖。
+///
+/// 阶梯：**第一次软重载**（最便宜，也不动别的东西——页面卡在别的原因上时它就够用）；
+/// **第二次起杀渲染进程**（唯一能破开 JS 死循环的一根）。
+/// 挑不出来（进程已经没了 / 命令行读不出来）就**退回软重载**，绝不"按名字乱杀"。
 fn revive(app: &AppHandle, attempt: u32) -> Result<(), String> {
-    let _ = attempt;
-    reload(app)
+    if attempt <= 1 {
+        return reload(app);
+    }
+    match crate::renderer_win::kill_renderers() {
+        Ok(detail) => {
+            // 英文：给开发者与体检看，不是界面文案
+            crate::diagnose::note(&format!("watchdog: {detail}"));
+            Ok(())
+        }
+        Err(detail) => {
+            crate::diagnose::note(&format!(
+                "watchdog: renderer kill unavailable ({detail}); falling back to reload"
+            ));
+            reload(app)
+        }
+    }
 }
 
