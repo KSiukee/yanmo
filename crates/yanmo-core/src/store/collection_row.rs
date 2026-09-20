@@ -123,7 +123,7 @@ impl Store {
             .conn
             .query_row(
                 "SELECT value FROM settings WHERE key = ?1",
-                params![super::collection::target_key(collection_id, which)],
+                params![super::collection_mint::target_key(collection_id, which)],
                 |r| r.get(0),
             )
             .optional()?;

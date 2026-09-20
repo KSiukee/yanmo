@@ -22,6 +22,7 @@ mod card_move;
 mod card_row;
 mod cast;
 mod collection;
+mod collection_mint;
 mod collection_row;
 mod defer_condition;
 mod content;

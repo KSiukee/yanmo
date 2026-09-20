@@ -1,7 +1,8 @@
-//! 短篇集的**写入口**：往集里加一篇、拿掉一篇、重排、定集目标。
+//! 短篇集的**成员与顺序**：往集里加一篇、拿掉一篇、重排。
 //!
 //! 集是**引用聚合**（`collection_items`：集 → 篇 + 排序），不是一个装着篇的容器：
 //! 所以这里只动引用表，**从不碰正文**——一篇稿子仍然是一等作品，书架与稿件台照旧管它。
+//! 集自己的那两件事（**建集**与**定集目标**）在 [`super::collection_mint`]：变化理由不一样。
 //!
 //! # 留痕
 //!
@@ -12,7 +13,7 @@
 //!
 //! - **加两次是幂等的**（`(集, 篇)` 唯一）：界面从清单里挑，手抖点两次不该报错；
 //! - **拿掉不删正文**：只是把引用去掉（正文还在书架 / 稿件台上）；
-//! - **重排拒绝"对不上"的清单**：给的名单必须与集里现有的篇目**正好一样**，
+//! - **重排拒绝"对不上"的清单**：给的名单必须与集里现有的篇目**正好一样**（不重不漏），
 //!   少一篇多一篇都当场拒绝、一个字节都不写（那多半是界面拿着过期的清单来写）。
 
 use rusqlite::{params, OptionalExtension};
@@ -125,54 +126,6 @@ impl Store {
         tx.commit()?;
         Ok(())
     }
-
-    /// 定集目标：篇数与总字数（`None` 或 ≤0 = 清掉那一项，回到"没设过"）。
-    ///
-    /// 目标只是**作者给自己定的一根线**（够 N 篇就能编成一个集了、或者这本集子想出到多少字），
-    /// 不进任何达标判据——所以只做最朴素的校验。
-    pub fn set_collection_target(
-        &mut self,
-        collection_id: i64,
-        pieces: Option<i64>,
-        words: Option<i64>,
-    ) -> Result<()> {
-        ensure_collection(&self.conn, collection_id)?;
-        let pieces = pieces.filter(|n| *n > 0);
-        let words = words.filter(|n| *n > 0);
-        let tx = self.conn.transaction()?;
-        write_target(&tx, &target_key(collection_id, "pieces"), pieces)?;
-        write_target(&tx, &target_key(collection_id, "words"), words)?;
-        Store::record_in(
-            &self.device_id,
-            &tx,
-            "works",
-            collection_id,
-            "set_collection_target",
-            json!({ "pieces": pieces, "words": words }),
-        )?;
-        tx.commit()?;
-        Ok(())
-    }
-}
-
-/// 集目标在 `settings` 里的键（按集分开，互不干扰；与每卷目标章数同一套做法）。
-pub(super) fn target_key(collection_id: i64, which: &str) -> String {
-    format!("work.{collection_id}.collection_{which}")
-}
-
-fn write_target(tx: &rusqlite::Transaction<'_>, key: &str, value: Option<i64>) -> Result<()> {
-    match value {
-        Some(n) => {
-            tx.execute(
-                "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES(?1, ?2, ?3)",
-                params![key, n.to_string(), now_millis()],
-            )?;
-        }
-        None => {
-            tx.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
-        }
-    }
-    Ok(())
 }
 
 /// 集内现有的篇目 id（升序；顺序在这里不重要，只用来对账）。
@@ -189,7 +142,7 @@ fn member_ids(conn: &rusqlite::Connection, collection_id: i64) -> Result<Vec<i64
 }
 
 /// 这真的是一个**活着的集**吗。
-fn ensure_collection(conn: &rusqlite::Connection, work_id: i64) -> Result<()> {
+pub(super) fn ensure_collection(conn: &rusqlite::Connection, work_id: i64) -> Result<()> {
     let kind: Option<String> = conn
         .query_row(
             "SELECT kind FROM works WHERE id = ?1 AND deleted_at IS NULL",
@@ -207,7 +160,7 @@ fn ensure_collection(conn: &rusqlite::Connection, work_id: i64) -> Result<()> {
 }
 
 /// 这真的是一篇**活着的单篇文章**吗（长篇 / 短篇集自己都不能被归集）。
-fn ensure_article(conn: &rusqlite::Connection, work_id: i64) -> Result<()> {
+pub(super) fn ensure_article(conn: &rusqlite::Connection, work_id: i64) -> Result<()> {
     let kind: Option<String> = conn
         .query_row(
             "SELECT kind FROM works WHERE id = ?1 AND deleted_at IS NULL",

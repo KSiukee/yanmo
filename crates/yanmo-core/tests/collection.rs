@@ -128,6 +128,25 @@ fn reordering_follows_the_given_order_and_refuses_a_stale_list() {
 }
 
 #[test]
+fn creating_a_collection_from_a_pile_puts_them_in_the_given_order() {
+    let (_dir, mut store) = fresh();
+    let a = article(&mut store, "甲", "正文");
+    let b = article(&mut store, "乙", "正文");
+    let c = article(&mut store, "丙", "正文");
+
+    // 攒集提示那条路：按"时间 / 字数"排好的顺序一次装齐
+    let anthology = store.create_collection_from("年度自选", &[c, a, b]).unwrap();
+    assert_eq!(anthology.kind, WorkKind::Collection);
+    assert_eq!(titles(&store, anthology.id), vec!["丙", "甲", "乙"]);
+    assert!(uncollected(&store).is_empty());
+
+    // 名单里混进一篇长篇：拒绝，而且**集已经建出来了**（如实：集还在、只是空的）
+    let novel = store.create_work(WorkKind::Novel, "长夜").unwrap().id;
+    let bad = store.create_collection_from("混进来的", &[novel]).unwrap_err();
+    assert_eq!(bad.code(), codes::COLLECTION_MEMBER_NOT_ARTICLE);
+}
+
+#[test]
 fn the_collection_target_can_be_set_changed_and_cleared() {
     let (_dir, mut store) = fresh();
     let anthology = collection(&mut store, "自选");

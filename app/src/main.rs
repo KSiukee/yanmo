@@ -349,7 +349,15 @@ fn main() {
             commands::manuscript::manuscript_submit,
             commands::manuscript::manuscript_move,
             commands::manuscript::manuscript_update_submission,
-            commands::manuscript::manuscript_delete_submission
+            commands::manuscript::manuscript_delete_submission,
+            commands::collection::collection_view,
+            commands::collection::collection_add,
+            commands::collection::collection_remove,
+            commands::collection::collection_reorder,
+            commands::collection::collection_set_target,
+            commands::collection::collection_create,
+            commands::collection::collection_loose_articles,
+            commands::collection::collection_of
         ])
         .run(tauri::generate_context!())
         // i18n-allow-next-line: 进程级 panic 文本（开发者看），应用起不来时界面还不存在

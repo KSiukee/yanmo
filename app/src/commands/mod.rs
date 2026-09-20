@@ -14,6 +14,8 @@ pub mod appearance;
 pub mod backup;
 /// 编译：投稿版 docx / 分章 txt / 合并 txt。
 pub mod compile;
+/// 短篇集：引用聚合（往集里加篇 / 拿掉 / 重排 / 定目标 / 一键建集），**从不碰正文**。
+pub mod collection;
 /// 编辑器：打开章节、落盘、光标与检索。
 pub mod editor;
 /// 设定卡：人物与设定（大纲冲突检测的数据源之一）。
