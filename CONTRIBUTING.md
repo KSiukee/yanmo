@@ -93,6 +93,8 @@
 ### 四、最后：怎么改才不会被守卫拦
 
 ```bash
+cargo build --release -p yanmo-cli  # 新克隆的仓库跑这一次：安装包要随包带命令行工具，
+                                    # 而 app 的构建脚本在编译期就要求它躺在 app/binaries/ 里
 cargo test --workspace            # 核心 + 壳 + 命令行
 cd app/frontend && node --test src/**/*.test.ts   # 前端纯逻辑
 ```
@@ -158,12 +160,14 @@ cd ..            && cargo tauri dev
 **跑测试**（提交前请都跑一遍）：
 
 ```bash
+cargo build --release -p yanmo-cli  # 新克隆的仓库只需这一次：命令行工具是随包资源，
+                                    # app 编译期就要它（`app/build.rs` 之后会替你搬到位）
 cargo test --workspace        # 核心与桌面壳；含边界机械检查（界面不碰文件系统、权限集最小化、零出网等）
 cd app/frontend && npm test   # 前端（纯 node 测试，不需要浏览器）
 ```
 
-**出安装包**：仓库根目录 `tools\build-release.bat`——工具链自检 → 版本一致 → 前端构建 →
-**跑测试（失败就不出包）** → 打包 → 产物与校验和归集到 `dist\`。
+**出安装包**：仓库根目录 `tools\build-release.bat`——工具链自检 → 版本一致 →
+**命令行工具随包** → 前端构建 → **跑测试（失败就不出包）** → 打包 → 产物与校验和归集到 `dist\`。
 本地反复出包可用 `--no-bundle`（只出可执行文件）与 `--skip-tests`（**正式出包别用**）。
 
 **提交前**：确认 `git status` 中没有构建产物与本地临时文件（详见 `.gitignore`）。

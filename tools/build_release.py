@@ -16,16 +16,18 @@
 必须走 Tauri 自己的构建路径——`cargo tauri build` 会带上生产协议、把前端打进二进制，
 再打成安装包。这条纪律**写进脚本**（脚本只走那条路），也写进 README。
 
-# 六步，任一步失败就不出包
+# 七步，任一步失败就不出包
 
 1. **工具链自检**：cargo / rustc / node / npm / tauri CLI 逐项检查，缺了给人话提示；
    WebView2 只提示不拦（它没装的话，安装包会带联网引导）。
 2. **版本一致**：Cargo 工作区、应用配置、更新日志首条三处必须一致。
-3. **前端依赖与构建**：`node_modules` 缺失才装；再跑一次生产构建。
-4. **跑测试**：优先跑仓库自带的 QA 门（它更全）；没有就退到公开的两件
+3. **命令行工具随包**：编 `yanmo-cli` 放到 `app/binaries/`（`externalBin` 认的位置）。**必须在
+   跑测试之前做**——`app` 的构建脚本在编译期就要那个资源；理由与细节见 `tools/cli_package.py`。
+4. **前端依赖与构建**：`node_modules` 缺失才装；再跑一次生产构建。
+5. **跑测试**：优先跑仓库自带的 QA 门（它更全）；没有就退到公开的两件
    （Rust 全仓测试 + 前端测试）。**失败就不出包**——宁可不发，也不发一个没测过的包。
-5. **打包**：`cargo tauri build`（只出 NSIS 安装器）。
-6. **归集与自检**：产物拷进 `dist/`，文件名带版本号，附 SHA256；结尾验证产物存在、不为空。
+6. **打包**：`cargo tauri build`（只出 NSIS 安装器；命令行工具由第 3 步放进包）。
+7. **归集与自检**：产物拷进 `dist/`，文件名带版本号，附 SHA256；结尾验证产物存在、不为空。
 
 退出码：全过 0；任一步失败 1（并把失败那一步的输出尾巴打出来，不用去翻日志）。
 """
@@ -44,6 +46,7 @@ import sys
 import time
 from pathlib import Path
 import green_package  # 绿色版打包（本体拆在 tools/green_package.py）
+import cli_package  # 命令行工具随包（本体拆在 tools/cli_package.py）
 
 # 控制台编码**不由我们决定**：GitHub 的 Windows 跑手默认代码页是 cp1252，直接打印中文会
 # UnicodeEncodeError（真踩过：出包六步全绿，卡在下一步的发布说明上，Release 一步都没走到）。
@@ -163,6 +166,7 @@ def check_toolchain() -> tuple[bool, dict[str, str]]:
     if cargo:
         code, out = run([cargo, "--version"], timeout=60)
         tools["cargo"] = out.strip() if code == 0 else ""
+        tools["cargo_cmd"] = cargo  # 路径（`tools["cargo"]` 存的是版本号文本，别混用）
         say(code == 0, "cargo", tools["cargo"])
         ok = ok and code == 0
     else:
@@ -413,13 +417,13 @@ def main() -> int:
 
     print("研墨 · 一键构建")
     print("─" * 64)
-    print("[1/6] 工具链自检")
+    print("[1/7] 工具链自检")
     toolchain_ok, tools = check_toolchain()
     if not toolchain_ok:
         print("\n构建停下：工具链不全（上面的提示逐条照做即可）。")
         return 1
 
-    print("[2/6] 版本一致")
+    print("[2/7] 版本一致")
     version, problems = project_version()
     if problems:
         say(False, "版本一致", "；".join(problems))
@@ -428,7 +432,14 @@ def main() -> int:
     if not check_no_data_in_bundle():
         return 1
 
-    print("[3/6] 前端依赖与构建")
+    # 第 3 步必须在跑测试之前：app 的构建脚本**编译期**就要 `externalBin` 那个资源存在
+    print("[3/7] 命令行工具（随包）")
+    ok, out = cli_package.build_and_stage(ROOT, tools.get("cargo_cmd", ""))
+    say(ok, "命令行工具", out if ok else "编出来 / 放到位失败")
+    if not ok:
+        return fail("命令行工具（cargo build -p yanmo-cli → app/binaries）", out)
+
+    print("[4/7] 前端依赖与构建")
     npm = find_tool("npm", "npm.cmd", "npm.exe", env="NPM")
     ok, out = ensure_frontend_deps(npm)
     say(ok, "前端依赖", out if ok else "装依赖失败")
@@ -439,19 +450,19 @@ def main() -> int:
     if not ok:
         return fail("前端构建（npm run build）", out)
 
-    print("[4/6] 跑测试")
+    print("[5/7] 跑测试")
     ok, label, out = run_tests(args.skip_tests)
     say(ok, "测试", label if ok else f"{label} 失败")
     if not ok:
         return fail(f"测试（{label}）", out)
 
-    print("[5/6] 打包" + ("（不生成安装包）" if args.no_bundle else "（NSIS 安装器）"))
+    print("[6/7] 打包" + ("（不生成安装包）" if args.no_bundle else "（NSIS 安装器）"))
     ok, out = bundle(tools.get("tauri_cmd", []), args.no_bundle)
     if not ok:
         return fail("打包（cargo tauri build）", out)
     say(True, "打包", "完成")
 
-    print("[6/6] 归集与自检")
+    print("[7/7] 归集与自检")
     artifact, detail = collect(Path(args.out), version, args.no_bundle)
     if artifact is None:
         say(False, "归集", detail)
@@ -468,7 +479,9 @@ def main() -> int:
         green, zip_why = (
             (None, "便携版没出来，绿色包也就无从谈起")
             if portable is None
-            else green_package.green_zip(Path(args.out), version, portable, ROOT / "LICENSE")
+            else green_package.green_zip(
+                Path(args.out), version, portable, ROOT / "LICENSE", ROOT / cli_package.CLI_REL
+            )
         )
         if portable is None or green is None:
             say(False, "便携版 / 绿色版", why if portable is None else zip_why)
@@ -484,6 +497,7 @@ def main() -> int:
         print("下一步：双击这个可执行文件（它是生产模式，不会去连开发服务器）。")
     else:
         print(f"三种形态都在 {args.out}：安装包（装机冒烟按 RELEASING 清单）/ 便携 exe / 绿色版 zip。")
+        print("命令行工具（yanmo-cli.exe）在**安装包与绿色版**里；单文件便携版装不下第二个程序。")
         print("绿色版解压即用；**更新＝解压到同一个文件夹、别动 data\\**（见包内「一页怎么用.txt」）。")
     return 0
 

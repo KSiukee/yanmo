@@ -5,6 +5,8 @@ node_modules
 **/node_modules
 app/frontend/dist
 app/gen
+# 出包脚本现编现放到这里、供 Tauri 的 externalBin 取（命令行工具随包用）——是产物，不是源码
+app/binaries/
 
 # 交接系统内部资料（禁提交，铁律）
 .codex/

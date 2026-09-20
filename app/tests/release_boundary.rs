@@ -141,14 +141,45 @@ fn installer_cannot_ship_internal_tools() {
         serde_json::from_str(&read(&app.join("tauri.conf.json"))).expect("配置应当是合法 JSON");
 
     // ① 打包配置里不许有"把仓库别处的东西一起打进安装包"的口子
+    //    `resources` / `files`：**一律不许有**（至今没有正当用途）。
+    //    `externalBin`：有一个**受控例外**——命令行工具 `yanmo-cli`。它是本仓公开源码
+    //    （`crates/yanmo-cli`，不在 TOOL_MARKERS 里），而 README / SECURITY 都承诺
+    //    "随发行包附带"（界面打不开时唯一的取稿路）。放行的条件写死在这里：
+    //    只能指 `binaries/` 下、名字以 `yanmo-cli` 开头的产物，且不许有 `..`。
     let bundle = conf.get("bundle").expect("bundle 段");
-    for key in ["resources", "externalBin", "files"] {
+    for key in ["resources", "files"] {
         let value = bundle.get(key);
         assert!(
             value.is_none() || value == Some(&serde_json::Value::Object(Default::default())),
             "bundle.{key} 会把仓库里的别处文件打进安装包（内部工具就是这么漏出去的）：{value:?}"
         );
     }
+    let externals = bundle
+        .get("externalBin")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    for entry in &externals {
+        let path = entry.as_str().unwrap_or_default();
+        assert!(
+            path.starts_with("binaries/yanmo-cli") && !path.contains(".."),
+            "bundle.externalBin 只放行命令行工具（binaries/yanmo-cli*），出现了别的：{path:?}"
+        );
+    }
+    assert!(
+        externals
+            .iter()
+            .any(|entry| entry.as_str() == Some("binaries/yanmo-cli")),
+        "bundle.externalBin 里少了命令行工具：界面打不开时它是唯一的取稿路，\
+         而 README 与 SECURITY 都写着「随包附带」——承诺得由这条守卫钉住"
+    );
+
+    // ①b 随包的 CLI 是**构建产物**（出包脚本现编现放）：它必须待在 .gitignore 里
+    let ignore = read(&workspace_root().join(".gitignore"));
+    assert!(
+        ignore.contains("app/binaries/"),
+        "`.gitignore` 里缺了 `app/binaries/`——那是构建出来的二进制，跟踪进公开仓就撤不回来了"
+    );
 
     // ② 图标这类资源必须待在 app/ 里，不许用 `..` 指向仓库别处
     let icon = bundle
