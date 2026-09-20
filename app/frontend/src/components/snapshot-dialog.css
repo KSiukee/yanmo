@@ -121,11 +121,11 @@
 }
 
 .snapshots__line--added {
-  background: #eaf6ec;
+  background: var(--ym-ok-bg);
 }
 
 .snapshots__line--removed {
-  background: #fdecea;
+  background: var(--ym-err-bg);
 }
 
 .snapshots__line--skipped {

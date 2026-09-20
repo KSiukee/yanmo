@@ -58,7 +58,7 @@
 }
 
 .tree__row:hover {
-  background: rgba(0, 0, 0, 0.035);
+  background: var(--ym-hover);
 }
 
 /* 当前章：左侧一道朱线，扫一眼就知道"人在这儿" */
@@ -77,7 +77,7 @@
 }
 
 .tree__row--inside {
-  background: rgba(138, 90, 59, 0.14);
+  background: var(--ym-accent-soft);
 }
 
 .tree__arrow {
@@ -176,7 +176,7 @@
 }
 
 .tree__del:hover {
-  color: #b3261e;
+  color: var(--ym-danger);
 }
 
 .pane__empty {

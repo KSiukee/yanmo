@@ -46,7 +46,7 @@ const emit = defineEmits<{ retry: []; escape: []; force: [] }>();
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(24, 20, 16, 0.45);
+  background: var(--ym-overlay-strong);
   z-index: 20;
 }
 
@@ -56,7 +56,7 @@ const emit = defineEmits<{ retry: []; escape: []; force: [] }>();
   border: 1px solid var(--ym-line);
   border-radius: 10px;
   background: var(--ym-paper);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 18px 48px var(--ym-shadow-strong);
   font-size: 13px;
   line-height: 1.7;
 }
@@ -69,7 +69,7 @@ const emit = defineEmits<{ retry: []; escape: []; force: [] }>();
 
 .card__message {
   margin: 0 0 6px;
-  color: #b3261e;
+  color: var(--ym-danger);
 }
 
 .card__lead {
@@ -86,7 +86,7 @@ const emit = defineEmits<{ retry: []; escape: []; force: [] }>();
 }
 
 .card__path code {
-  font-family: var(--ym-font-mono, monospace);
+  font-family: var(--ym-font-mono);
   font-size: 12px;
 }
 
@@ -112,7 +112,7 @@ const emit = defineEmits<{ retry: []; escape: []; force: [] }>();
 }
 
 .card__danger {
-  color: #b3261e;
+  color: var(--ym-danger);
 }
 
 .card__note {

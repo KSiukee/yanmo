@@ -301,7 +301,7 @@ function openRestore(): void {
 
 .backup__bad {
   font-size: 12px;
-  color: #b3261e;
+  color: var(--ym-danger);
 }
 
 .backup__options {
@@ -351,6 +351,6 @@ function openRestore(): void {
 }
 
 .dialog__note--warn {
-  color: #8a5a00;
+  color: var(--ym-warn);
 }
 </style>

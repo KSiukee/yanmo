@@ -116,6 +116,6 @@ onMounted(async () => {
 }
 
 .badge__bad {
-  color: #b3261e;
+  color: var(--ym-danger);
 }
 </style>

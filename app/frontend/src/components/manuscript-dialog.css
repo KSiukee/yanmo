@@ -16,7 +16,7 @@
 }
 
 .manuscript__button--danger {
-  color: #b3261e;
+  color: var(--ym-danger);
 }
 
 .manuscript__body {
@@ -225,11 +225,11 @@
 .manuscript__warn {
   margin: 0;
   padding: 6px 8px;
-  border: 1px solid #d9a441;
+  border: 1px solid var(--ym-warn-line);
   border-radius: 4px;
-  background: #fdf6e6;
+  background: var(--ym-warn-bg);
   font-size: 12px;
-  color: #7a5a12;
+  color: var(--ym-warn);
 }
 
 /* 「改到哪一态」那一排按钮：拖拽之外的等价入口（键盘 / 触控板 / 自动化验收） */

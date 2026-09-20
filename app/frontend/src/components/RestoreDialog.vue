@@ -250,7 +250,7 @@ async function chooseFromDisk(): Promise<void> {
 }
 
 .restore__problems {
-  color: #b3261e;
+  color: var(--ym-danger);
 }
 
 .restore__ok {
@@ -263,7 +263,7 @@ async function chooseFromDisk(): Promise<void> {
   margin: 0 0 8px;
   overflow-wrap: anywhere;
   font-size: 12px;
-  color: #b3261e;
+  color: var(--ym-danger);
 }
 
 .restore__warn {
@@ -273,7 +273,7 @@ async function chooseFromDisk(): Promise<void> {
   background: var(--ym-paper-dim);
   font-size: 12px;
   font-weight: 600;
-  color: #b3261e;
+  color: var(--ym-danger);
 }
 
 .restore__confirm {

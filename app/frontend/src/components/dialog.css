@@ -12,7 +12,7 @@
   align-items: center;
   justify-content: center;
   padding: 32px;
-  background: rgba(28, 26, 23, 0.35);
+  background: var(--ym-overlay);
 }
 
 /* 需要压在别的弹窗之上时用（例如从目录里弹出来的那一问） */
@@ -29,7 +29,7 @@
   border: 1px solid var(--ym-line);
   border-radius: 8px;
   background: var(--ym-paper);
-  box-shadow: 0 12px 40px rgba(28, 26, 23, 0.18);
+  box-shadow: 0 12px 40px var(--ym-shadow);
 }
 
 .dialog__head {
@@ -64,7 +64,7 @@
 }
 
 .dialog__button--danger {
-  color: #b3261e;
+  color: var(--ym-danger);
 }
 
 .dialog__note {

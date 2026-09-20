@@ -25,6 +25,7 @@ mod scene_card;
 mod side_tab;
 mod spark_target;
 mod submission;
+mod theme;
 mod work;
 
 pub use answer_target::AnswerTarget;
@@ -50,4 +51,5 @@ pub use question_tone::QuestionTone;
 pub use scene_card::{SceneField, SceneFields};
 pub use side_tab::SideTab;
 pub use spark_target::SparkTarget;
+pub use theme::Theme;
 pub use work::{Work, WorkKind, WorkLanguage};

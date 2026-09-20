@@ -189,16 +189,220 @@ fn the_shell_keeps_the_page_still_when_the_prose_gets_long() {
     );
     let area = rule_block(&css, ".editor__area");
     assert!(area.contains("overflow: auto"), "正文区自己滚：{area}");
+}
 
-    // 界面目前只有亮色一套：color-scheme 写 `light dark` 会让系统深色偏好把**默认滚动条**
-    // 画成深色（浅色稿纸配黑滚动条，真报过）。等暗色模式那条任务落地时，这条要跟着改。
+/// 界面配色只有**一处出口**。
+///
+/// 两条一起钉：
+///
+/// 1. **两套色板必须给同一组变量**——深色漏一个，那一处就悄悄沿用浅色的值（在深底上不是
+///    刺眼就是看不见）。这类毛病静态读代码看不出来，只有真机在深色下逐屏走一遍才会发现，
+///    所以让机器对表；
+/// 2. **组件里不许出现颜色字面量**（`#rrggbb` / `rgb()` / `hsl()` 这类）——写死一个色，
+///    另一套配色下必然"格格不入"；而且将来调色板也没人记得回来改它。色板只在 style.css。
+///
+/// 顺带钉住 `color-scheme`：`:root` 只能写 `light`（写 `light dark` 会让系统深色偏好把
+/// **默认滚动条**画成深色——浅色稿纸配黑滚动条，真报过），深色那一套**自己明确**写 `dark`。
+///
+/// 与整个文件同一条取舍：读的是源文件文本，不追求完整解析语法，要的是"一眼看懂、破了就拦"。
+#[test]
+fn colors_come_from_one_place_and_both_palettes_cover_the_same_variables() {
     let base = read(&package_root().join("frontend/src/style.css"));
+
+    // ① color-scheme：浅色那套明说 light，深色那套明说 dark；任何地方都不许写 `light dark`
     let root = rule_block(&base, ":root");
-    // 盯的是**声明**本身，不是注释里出现的字样（注释里解释这件事时会提到那个写法）
     assert!(
         root.contains("color-scheme: light;") && !root.contains("color-scheme: light dark"),
-        "界面只有亮色一套：:root 的 color-scheme 要写 light（别写 light dark）：{root}"
+        ":root 的 color-scheme 要写 light（写 `light dark` 会让系统深色偏好把滚动条画成深色）：{root}"
     );
+    let dark = rule_block(&base, ":root[data-theme=\"dark\"]");
+    assert!(
+        dark.contains("color-scheme: dark;"),
+        "深色那一套要自己明确写 color-scheme: dark（表单控件与滚动条都看它）：{dark}"
+    );
+
+    // ② 两套色板逐名对表
+    let light_vars = css_variables(&root);
+    let dark_vars = css_variables(&dark);
+    assert!(!light_vars.is_empty(), "没解析出浅色色板，守卫会假绿——检查 style.css");
+    let missing: Vec<&String> = light_vars.difference(&dark_vars).collect();
+    let extra: Vec<&String> = dark_vars.difference(&light_vars).collect();
+    assert!(
+        missing.is_empty() && extra.is_empty(),
+        "两套色板必须给同一组变量（深色漏了 {missing:?}，多出 {extra:?}）——\
+         漏掉的那个会悄悄沿用另一套的值，在深底上不是刺眼就是看不见"
+    );
+
+    // ③ 组件里不许写颜色；色板自己的家（style.css）除外
+    let src = package_root().join("frontend/src");
+    let base_name = "style.css";
+    let mut offenders: Vec<String> = Vec::new();
+    for file in source_files(&src, &["css", "vue", "ts"]) {
+        if file.file_name().is_some_and(|name| name == std::ffi::OsStr::new(base_name)) {
+            continue; // 色板就在这一份里，颜色字面量只许出现在这儿
+        }
+        if file.to_string_lossy().contains(".test.") {
+            continue; // 测试里出现的颜色是测试数据，不是界面配色
+        }
+        let text = read(&file);
+        for (index, line) in text.lines().enumerate() {
+            let code = strip_comments(line);
+            let found = color_literals(&code);
+            if !found.is_empty() {
+                offenders.push(format!(
+                    "{}:{} 有 {}",
+                    file.strip_prefix(&src).unwrap_or(&file).display(),
+                    index + 1,
+                    found.join(" / ")
+                ));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "界面颜色只有一处出口（style.css 的两套色板），组件里要写 `var(--ym-...)`：\n{}",
+        offenders.join("\n")
+    );
+}
+
+/// 两套配色**都得住人**（对比度）——深色不是"把浅色反过来"就完事，反不好就是灰字糊在黑底上。
+///
+/// 挨个量 WCAG 对比度（前景 / 底色），正文一档要求 ≥ 4.5:1。挑的都是**真会用到的搭配**：
+/// 正文与提示行压在稿纸（与浅底）上、提醒与危险那两族字色压在自己的底纹上、以及
+/// "朱底配纸色字"那几个徽标。这类毛病只有真机在深色下逐屏看才发现，所以让机器算——
+/// 它挡不住"不好看"，但挡得住"看不清"。
+#[test]
+fn both_palettes_stay_readable() {
+    let base = read(&package_root().join("frontend/src/style.css"));
+    let palettes = [
+        ("浅色", rule_block(&base, ":root")),
+        ("深色", rule_block(&base, ":root[data-theme=\"dark\"]")),
+    ];
+    // (前景, 底色)：两两都是界面上真会叠在一起的搭配
+    let pairs = [
+        ("--ym-ink", "--ym-paper"),
+        ("--ym-ink", "--ym-paper-dim"),
+        ("--ym-ink-soft", "--ym-paper"),
+        ("--ym-ink-soft", "--ym-paper-dim"),
+        ("--ym-text-weak", "--ym-paper"),
+        ("--ym-accent", "--ym-paper"),
+        ("--ym-accent", "--ym-paper-dim"),
+        ("--ym-paper", "--ym-accent"),
+        ("--ym-danger", "--ym-paper"),
+        ("--ym-danger", "--ym-err-bg"),
+        ("--ym-warn", "--ym-warn-bg"),
+        ("--ym-ink", "--ym-warn-bg"),
+        ("--ym-ink", "--ym-ok-bg"),
+        ("--ym-ink", "--ym-err-bg"),
+    ];
+    for (label, block) in &palettes {
+        for (front, back) in pairs {
+            let ratio = contrast(palette_hex(block, front), palette_hex(block, back));
+            assert!(
+                ratio >= 4.5,
+                "{label}配色里 `{front}` 压在 `{back}` 上只有 {ratio:.2}:1——夜里看这种字最费眼（要求 ≥ 4.5）"
+            );
+        }
+    }
+}
+
+/// 从一条色板块里取某个变量的颜色（**只认 `#rrggbb`**；带透明度的取值这个守卫量不了）。
+fn palette_hex(block: &str, name: &str) -> (u8, u8, u8) {
+    let value = block
+        .lines()
+        .find_map(|line| {
+            let rest = line.trim().strip_prefix(name)?;
+            rest.trim_start().strip_prefix(':')
+        })
+        .unwrap_or_else(|| panic!("色板里找不到变量 {name}"))
+        .trim()
+        .trim_end_matches(';')
+        .trim();
+    let hex = value
+        .strip_prefix('#')
+        .unwrap_or_else(|| panic!("{name} 要是 #rrggbb 才能量对比度：{value}"));
+    assert_eq!(hex.len(), 6, "{name} 要是 #rrggbb：{value}");
+    let channel = |at: usize| {
+        u8::from_str_radix(&hex[at..at + 2], 16)
+            .unwrap_or_else(|_| panic!("{name} 解不出颜色：{value}"))
+    };
+    (channel(0), channel(2), channel(4))
+}
+
+/// WCAG 相对亮度。
+fn relative_luminance((r, g, b): (u8, u8, u8)) -> f64 {
+    fn channel(value: u8) -> f64 {
+        let c = f64::from(value) / 255.0;
+        if c <= 0.039_28 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    }
+    0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+}
+
+/// 两个颜色的对比度（1:1 到 21:1）。
+fn contrast(front: (u8, u8, u8), back: (u8, u8, u8)) -> f64 {
+    let (a, b) = (relative_luminance(front), relative_luminance(back));
+    let (bright, dark) = if a > b { (a, b) } else { (b, a) };
+    (bright + 0.05) / (dark + 0.05)
+}
+
+/// 取一条规则块里声明的 CSS 变量名（`--ym-ink: ...` 里的 `--ym-ink`）。
+fn css_variables(block: &str) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    for line in block.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("--") {
+            if let Some((name, _)) = rest.split_once(':') {
+                out.insert(format!("--{name}"));
+            }
+        }
+    }
+    out
+}
+
+/// 去掉一行的注释（够用就行：这里只要别把注释里提到的颜色当代码）。
+fn strip_comments(line: &str) -> String {
+    let without_block = match line.find("/*") {
+        Some(at) => &line[..at],
+        None => line,
+    };
+    match without_block.find("//") {
+        Some(at) => without_block[..at].to_string(),
+        None => without_block.to_string(),
+    }
+}
+
+/// 一行里出现的颜色字面量（十六进制 / `rgb()` / `hsl()` 这类色彩函数）。
+///
+/// 十六进制那一条要**数位数**：`#app`（挂载点）、`url(#clip)` 这种不该误报——
+/// 只有连着 3 / 4 / 6 / 8 位十六进制才算一个颜色。
+fn color_literals(line: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for func in ["rgb(", "rgba(", "hsl(", "hsla(", "oklch(", "oklab(", "lab(", "lch("] {
+        if line.contains(func) {
+            out.push(func.trim_end_matches('(').to_string());
+        }
+    }
+    let bytes = line.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'#' {
+            index += 1;
+            continue;
+        }
+        let mut digits = 0;
+        while index + 1 + digits < bytes.len() && bytes[index + 1 + digits].is_ascii_hexdigit() {
+            digits += 1;
+        }
+        if matches!(digits, 3 | 4 | 6 | 8) {
+            out.push(line[index..index + 1 + digits].to_string());
+        }
+        index += 1 + digits.max(1);
+    }
+    out
 }
 
 /// 状态栏右边那一组：**只钉住"爱变的那一格"**，其余按内容自然排。

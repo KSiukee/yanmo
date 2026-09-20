@@ -120,7 +120,7 @@ function chapterOf(anchors: string[]): number | null {
 .events__error {
   margin: 0 0 8px;
   font-size: 12px;
-  color: var(--ym-danger, #c0392b);
+  color: var(--ym-danger);
 }
 
 .events__saved {

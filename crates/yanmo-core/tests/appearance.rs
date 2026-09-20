@@ -470,3 +470,67 @@ fn the_second_column_remembers_which_block_was_showing() {
         .unwrap();
     assert_eq!(store.appearance(None).unwrap().aside_tab, SideTab::Flow);
 }
+
+/// 界面配色：**默认浅色、换过就记住、认不出的码当没设过**，
+/// 而且★**只走全局**——每书覆盖机制对它无效（"跟眼睛与房间光线有关，跟哪本书无关"）。
+#[test]
+fn the_theme_is_global_only_and_defaults_to_light() {
+    use yanmo_core::model::Theme;
+
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+
+    // 没设过 → 浅色（与研墨一直以来的样子一致，不给没提过的人换底子）
+    assert_eq!(store.appearance(None).unwrap().theme, Theme::Light);
+    assert_eq!(store.appearance(Some(work.id)).unwrap().theme, Theme::Light);
+
+    // 换到深色：记住；"跟随系统"也存得下（系统到底是深是浅由界面当场问，核心不存）
+    store
+        .set_appearance(None, &Appearance { theme: Some("dark".into()), ..Default::default() })
+        .unwrap();
+    assert_eq!(store.appearance(None).unwrap().theme, Theme::Dark);
+    store
+        .set_appearance(None, &Appearance { theme: Some("system".into()), ..Default::default() })
+        .unwrap();
+    assert_eq!(store.appearance(None).unwrap().theme, Theme::System);
+
+    // ★ 只走全局：往某本书写主题**不该**改变这本书生效的那一份，
+    //   也不该在每书记录里留一个永远没人读的死键
+    store
+        .set_appearance(None, &Appearance { theme: Some("dark".into()), ..Default::default() })
+        .unwrap();
+    store
+        .set_appearance(Some(work.id), &Appearance { theme: Some("light".into()), ..Default::default() })
+        .unwrap();
+    assert_eq!(
+        store.appearance(Some(work.id)).unwrap().theme,
+        Theme::Dark,
+        "配色不参与每书覆盖：这本书跟全局（深色）"
+    );
+    let book_raw = raw(&store, &format!("work.{}.appearance", work.id));
+    assert!(
+        book_raw.as_deref().is_none_or(|json| !json.contains("theme")),
+        "每书的记录里不该落一个永远不被读的 theme 死键：{book_raw:?}"
+    );
+
+    // "auto" = 清掉这一层（回默认浅色），与命名 / 语气 / 第二栏同一条路
+    store
+        .set_appearance(None, &Appearance { theme: Some("auto".into()), ..Default::default() })
+        .unwrap();
+    assert_eq!(store.appearance(None).unwrap().theme, Theme::Light);
+
+    // 认不出的码当场拒、且不落库；库里已有的坏码当没设过（跟坏 JSON 一条规矩）
+    let err = store
+        .set_appearance(None, &Appearance { theme: Some("sepia".into()), ..Default::default() })
+        .unwrap_err();
+    assert_eq!(err.code(), "value.unknown_theme");
+    store
+        .conn()
+        .execute(
+            "INSERT OR REPLACE INTO settings(key, value, updated_at)
+             VALUES('appearance', '{\"theme\":\"sepia\"}', 0)",
+            [],
+        )
+        .unwrap();
+    assert_eq!(store.appearance(None).unwrap().theme, Theme::Light);
+}

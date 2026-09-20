@@ -188,6 +188,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "认不出的问话语气：{value}（只认 warm / neutral / direct）" : ["value"],
     UNKNOWN_ASIDE_TAB => "value.unknown_aside_tab"
         : "认不出的第二栏分区：{value}（只认 flow / creator / sop）" : ["value"],
+    UNKNOWN_THEME => "value.unknown_theme"
+        : "认不出的配色：{value}（只认 light / dark / system）" : ["value"],
     UNKNOWN_ENTITY_KIND => "value.unknown_entity_kind"
         : "认不出的设定卡类型：{value}（只认 person / setting）" : ["value"],
     UNKNOWN_SCENE_FIELD => "value.unknown_scene_field"

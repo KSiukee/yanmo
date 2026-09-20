@@ -154,6 +154,8 @@ export interface Appearance {
   question_push_cooldown_minutes: number;
   /** 右侧第二栏先露哪一块（`flow` / `creator`）——"记住上次"的就是它 */
   aside_tab: string;
+  /** 界面配色（light / dark / system）；**只走全局**这一层 */
+  theme: string;
 }
 
 /** 要改的偏好项：**只写传进来的**，没传的保持原样。 */
@@ -178,6 +180,8 @@ export interface AppearancePatch {
   question_push_cooldown_minutes?: number;
   /** flow / creator；传 "auto" 就是**清掉这一层**（回默认：叩问） */
   aside_tab?: string;
+  /** light / dark / system；传 "auto" 就是**清掉这一层**（回默认：浅色）。**只写全局那一层** */
+  theme?: string;
 }
 
 /** 某一天的字数（三个口径都给，界面按当前口径显示）。 */

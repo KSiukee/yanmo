@@ -78,8 +78,27 @@
   color: var(--ym-ink-soft);
 }
 
+/* 「外观」那一栏的三选一（浅色 / 深色 / 跟随系统）：横着摆，各自可点。
+   单选圈用朱色（`accent-color`），深浅两套下都跟主题一致。 */
+.settings__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.settings__choice {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.settings__choice input {
+  accent-color: var(--ym-accent);
+}
+
 .settings__hint--bad {
-  color: #b3261e;
+  color: var(--ym-danger);
 }
 
 /* 设置面板里的下拉（比如新建条目的命名规则）：与输入框同一套长相 */
@@ -145,7 +164,7 @@
 
 /* 危险动作（恢复默认）：红一点，但不到"警告色块"那么吵 */
 .settings__button--danger {
-  color: #b3261e;
+  color: var(--ym-danger);
 }
 
 .settings__actions {

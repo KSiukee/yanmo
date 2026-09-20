@@ -15,6 +15,7 @@ import MirrorSettings from "./MirrorSettings.vue";
 import SettingsResetConfirm from "./SettingsResetConfirm.vue";
 import TypographySettings from "./TypographySettings.vue";
 import AskingSettings from "./AskingSettings.vue";
+import AppearanceSettings from "./AppearanceSettings.vue";
 import AuthorSettings from "./AuthorSettings.vue";
 import AboutSettings from "./AboutSettings.vue";
 
@@ -194,6 +195,9 @@ async function runRewrite() {
 
       <!-- 正文排版：**显示层**（只改观感，不进导出、不动正文一个字节）。
            档位、范围、换算全在 editor/typography.ts，这一栏自己一个组件（见 TypographySettings.vue）。 -->
+      </section>
+      <section v-if="activeSection === 'appearance'" class="settings__section">
+        <AppearanceSettings :session="session" />
       </section>
       <section v-if="activeSection === 'asking'" class="settings__section">
         <AskingSettings :session="session" />

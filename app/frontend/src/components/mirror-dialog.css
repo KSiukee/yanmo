@@ -12,7 +12,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--line, #e5e0d8);
+  border-bottom: 1px solid var(--ym-line);
 }
 
 .mirror__row:last-child {

@@ -121,7 +121,7 @@
 }
 
 .collection__button--danger {
-  color: #b3261e;
+  color: var(--ym-danger);
 }
 
 .collection__input {

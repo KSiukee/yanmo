@@ -11,6 +11,7 @@ import { computed, ref } from "vue";
 import { t } from "./locales/index.ts";
 import { useEditorSession } from "./editor/session";
 import { useAsideTab } from "./editor/aside";
+import { useTheme } from "./editor/theme.ts";
 import { useMirrorReview, watchMirrorAtStartup } from "./editor/mirror-review.ts";
 import { useQuestionPush } from "./editor/question-push.ts";
 import type { SelectedQuestion } from "./api/question.ts";
@@ -61,6 +62,12 @@ const pushedCard = ref<SelectedQuestion | null>(null);
 // 第二栏现在露哪一块：叩问还是创作流。**记住上次**（存偏好，跟人不跟书）——
 // 取与存都在 editor/aside.ts，布局层只拿"现在露哪块"和"换一块"。
 const { tab: asideTab, pick: pickAside } = useAsideTab(session.appearance);
+
+// 界面配色（浅色 / 深色 / 跟随系统）：**读回来就画上、改了立刻换**。
+// 判断与落地都在 editor/theme.ts；这里只接一次线（它写的是 <html data-theme>，
+// 不需要往下传任何值，所以不接它的返回值）。
+useTheme(session.appearance);
+
 function answerPushed() {
   // 提示条上的「答一句」要落到叩问那一块：先把那一块露出来，再把卡交过去
   pickAside("flow");
@@ -294,7 +301,7 @@ const hint = computed(() => {
   font: inherit;
   font-size: 12px;
   cursor: pointer;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 10%);
+  box-shadow: 0 1px 4px var(--ym-shadow-soft);
 }
 
 .shell__float:hover {
@@ -317,7 +324,7 @@ const hint = computed(() => {
   border: 1px solid var(--ym-line);
   border-radius: 8px;
   background: var(--ym-paper-dim);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 14%);
+  box-shadow: 0 4px 16px var(--ym-shadow);
   overflow: hidden;
 }
 

@@ -5,21 +5,88 @@
  * 并登记进 THIRD_PARTY_NOTICES。
  */
 
+/* ── 色板：**界面颜色的唯一出处**（浅色一套，深色一套）────────────────────────
+ *
+ * 规矩（新增一处颜色前先读这段）：
+ * - 组件里**只许用变量**，不许写死 `#rrggbb` / `rgb()` / `rgba()`——
+ *   这条有机械守卫盯着（app/tests/boundary.rs「界面颜色只有一处出口」）；
+ * - 两套色板**必须给同一组变量**（深色漏一个，那处就会悄悄沿用浅色值，在深底上要么刺眼
+ *   要么看不见）——同一条守卫也盯着这件事；
+ * - 深色是**暖黑**（`#1b1917` 起步），不是纯黑：夜里对着它写字，纯黑配白字最扎眼。
+ *
+ * 深色怎么生效：`<html data-theme="dark">`。谁来决定这个属性见 `frontend/src/editor/theme.ts`
+ * （作者的档存在核心，跟人不跟书；"跟随系统"由界面当场问系统，核心不存这件事）。
+ */
 :root {
   --ym-ink: #1c1a17;
   --ym-ink-soft: #5b554d;
+  /* 比 ink-soft 再淡一档的说明文字（只读值、占位提示） */
+  --ym-text-weak: #6b6b6b;
   --ym-paper: #faf7f2;
   --ym-paper-dim: #f1ece3;
   --ym-line: #ddd5c8;
   --ym-accent: #8a5a3b;
+  /* 朱色的淡淡一层：拖到哪儿 / 选中在哪一层的底纹 */
+  --ym-accent-soft: rgb(138 90 59 / 14%);
+  /* 划过一行时那点底纹（不抢眼，但看得见"光标在这儿"） */
+  --ym-hover: rgb(0 0 0 / 3.5%);
+  /* 出错 / 危险动作的字色（**不是**色块，色块见下面的 -bg） */
+  --ym-danger: #b3261e;
+  /* 提醒那一族的字色、底纹与描边（改稿提示 / 结构提示 / 投稿软拦） */
+  --ym-warn: #8a5a00;
+  --ym-warn-bg: #fff7e6;
+  --ym-warn-bg-strong: #fdf1d8;
+  --ym-warn-line: #d9a441;
+  /* 差异对照的底纹：新的是绿、旧的是红（改稿前后那两栏用） */
+  --ym-ok-bg: #eaf6ec;
+  --ym-err-bg: #fdecea;
+  /* 弹窗背后那层 / 抽屉背后那层 */
+  --ym-overlay: rgb(28 26 23 / 35%);
+  --ym-overlay-strong: rgb(24 20 16 / 45%);
+  /* 投影：小浮块 / 弹窗 / 最高那层（退出确认） */
+  --ym-shadow-soft: rgb(0 0 0 / 10%);
+  --ym-shadow: rgb(28 26 23 / 18%);
+  --ym-shadow-strong: rgb(0 0 0 / 28%);
 
-  --ym-font-ui: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-  --ym-font-body: "Songti SC", "SimSun", "Source Han Serif SC", serif;
-
+  /* ⚠️ 这一块里**只放颜色**：字体栈不随配色变，在 `body` 那一条里（见下）——
+     两套色板"逐名对齐"那条守卫靠的正是这个边界。 */
   /* ⚠️ 只能写 light，不能写 `light dark`：那样系统一开深色，WebView 就把**默认滚动条**
-     按深色画——浅色稿纸配一条黑滚动条，又丑又跳（用户真报过）。暗色模式是另一条任务，
-     等它落地时这里要跟着改成动态的。守卫见 app/tests/boundary.rs。 */
+     按深色画——浅色稿纸配一条黑滚动条，又丑又跳（用户真报过）。深色由
+     `[data-theme="dark"]` 那一块**明确**宣布（见下），"跟随系统"也是界面自己算的。
+     守卫见 app/tests/boundary.rs。 */
   color-scheme: light;
+}
+
+/* 深色那一套：**变量名一个一个对齐上面**（守卫会逐名对表）。
+ *
+ * 特异性写成 `:root[data-theme=...]`（0,2,0）而不是 `[data-theme=...]`：与 `:root` 同分时
+ * 只能靠"谁写在后面"决胜，那种胜负关系一挪动就会静默失效。 */
+:root[data-theme="dark"] {
+  --ym-ink: #e6e1d8;
+  --ym-ink-soft: #a49c90;
+  --ym-text-weak: #8d857a;
+  --ym-paper: #1b1917;
+  --ym-paper-dim: #232120;
+  --ym-line: #3b3733;
+  --ym-accent: #c9946b;
+  --ym-accent-soft: rgb(201 148 107 / 18%);
+  --ym-hover: rgb(255 255 255 / 5%);
+  --ym-danger: #f08a80;
+  --ym-warn: #ddb16a;
+  --ym-warn-bg: #33291a;
+  --ym-warn-bg-strong: #3d321f;
+  --ym-warn-line: #6b5528;
+  --ym-ok-bg: #1f3226;
+  --ym-err-bg: #38231f;
+  --ym-overlay: rgb(0 0 0 / 55%);
+  --ym-overlay-strong: rgb(0 0 0 / 62%);
+  --ym-shadow-soft: rgb(0 0 0 / 35%);
+  --ym-shadow: rgb(0 0 0 / 50%);
+  --ym-shadow-strong: rgb(0 0 0 / 65%);
+
+  /* 深色下也把滚动条与表单控件（勾选框 / 下拉 / 滑杆）交给系统按深色画——
+     它们的长相本来就该由系统管，我们只管配一个对的 scheme。 */
+  color-scheme: dark;
 }
 
 /* 滚动条：细一点、跟稿纸同色系。默认那根又粗又灰，配这套纸色很跳。
@@ -42,6 +109,12 @@ body,
 }
 
 body {
+  /* 字体栈：**不随配色变**，所以不放在上面那两块色板里（字体纪律见文件头）。 */
+  --ym-font-ui: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  --ym-font-body: "Songti SC", "SimSun", "Source Han Serif SC", serif;
+  /* 只在"给你照抄的一段原文"上用（退出确认里的原话、错误码），不当正文字体 */
+  --ym-font-mono: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+
   font-family: var(--ym-font-ui);
   color: var(--ym-ink);
   background: var(--ym-paper);

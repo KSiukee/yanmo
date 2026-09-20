@@ -171,7 +171,7 @@ async function save() {
 .error {
   margin: 0 0 8px;
   font-size: 11px;
-  color: var(--ym-danger, #c0392b);
+  color: var(--ym-danger);
 }
 
 .sec {

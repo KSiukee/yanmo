@@ -170,11 +170,11 @@
 }
 
 .editor__status--error {
-  color: #b3261e;
+  color: var(--ym-danger);
 }
 
 .editor__status--desync {
-  color: #8a5a00;
+  color: var(--ym-warn);
 }
 
 .editor__bad {
@@ -182,16 +182,16 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  color: #b3261e;
+  color: var(--ym-danger);
 }
 
 .editor__notice {
   margin: 0;
   padding: 6px 16px;
   border-bottom: 1px solid var(--ym-line);
-  background: #fff7e6;
+  background: var(--ym-warn-bg);
   font-size: 12px;
-  color: #8a5a00;
+  color: var(--ym-warn);
 }
 
 /* 首启那条提示上挂着两个入口（「建一本书」/「就在这一本里写」）：做成小而明确的按钮，
@@ -206,16 +206,16 @@
 
 .editor__notice-action {
   padding: 2px 10px;
-  border: 1px solid #d9a441;
+  border: 1px solid var(--ym-warn-line);
   border-radius: 3px;
-  background: #fffdf7;
-  color: #8a5a00;
+  background: var(--ym-paper);
+  color: var(--ym-warn);
   font: inherit;
   cursor: pointer;
 }
 
 .editor__notice-action:hover {
-  background: #fdf1d8;
+  background: var(--ym-warn-bg-strong);
 }
 
 .editor__area {

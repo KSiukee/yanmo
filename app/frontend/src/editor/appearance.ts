@@ -79,6 +79,13 @@ export interface AppearanceState {
    * 它只决定那一栏先露哪一块，不影响任何数据。
    */
   setAsideTab: (value: string) => Promise<void>;
+  /**
+   * 换一档界面配色（`light` / `dark` / `system`；传 `"auto"` = 清掉这一层、回默认浅色）。
+   *
+   * **只写全局那一层**（跟眼睛与房间光线有关，跟哪本书无关）——
+   * 核心那边这项不参与每书覆盖，所以这里也不给"只设这本书"的口子。
+   */
+  setTheme: (value: string) => Promise<void>;
   /** 回到默认（核心的默认值） */
   resetToDefault: () => Promise<void>;
   /** 跟当前作品重读一次（打开章节、换书时用） */
@@ -203,6 +210,12 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
       act(() =>
         // "auto" 在核心那边就是"清掉这一层"（回默认叩问）；别的取值核心会校验
         options.transport.write(null, { aside_tab: value }),
+      ),
+    setTheme: (value) =>
+      act(() =>
+        // "auto" 在核心那边就是"清掉这一层"（回默认浅色）；别的取值核心会校验。
+        // 只写全局（null）：配色不进每书覆盖。
+        options.transport.write(null, { theme: value }),
       ),
     loadWork: async () => {
       const work_id = options.workId.value;

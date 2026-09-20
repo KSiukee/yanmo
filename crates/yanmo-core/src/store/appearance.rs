@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use super::Store;
 use crate::error::Result;
-use crate::model::{ChapterNumbering, NamingStyle, QuestionTone, SideTab};
+use crate::model::{ChapterNumbering, NamingStyle, QuestionTone, SideTab, Theme};
 use crate::text::WordCaliber;
 use crate::time::now_millis;
 use crate::typeset::QuoteStyle;
@@ -107,6 +107,14 @@ pub struct Appearance {
     /// "记住上次"这一类偏好：它只决定**那一栏先露哪一块**，不影响任何数据。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aside_tab: Option<String>,
+    /// 界面配色（`Theme` 的稳定码：`light` / `dark` / `system`）。
+    ///
+    /// `None` = 没改过 → **浅色**（与研墨一直以来的样子一致）。
+    ///
+    /// ★ 本项**只走全局**、不参与每书覆盖（跟眼睛与房间光线有关，跟哪本书无关）——
+    /// 所以它不出现在 `Appearance::overridden_by` 里，写也只在全局那一层落库。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
 }
 
 /// 正文排版的**可读范围**：超出就夹住（手滑打 1000 号字不该把版面炸了，也不该报错挡人）。
@@ -137,6 +145,7 @@ impl Appearance {
             && self.question_push_per_day.is_none()
             && self.question_push_cooldown_minutes.is_none()
             && self.aside_tab.is_none()
+            && self.theme.is_none()
     }
 
     /// 把 `over`（书的覆盖）盖在 `self`（全局）上：**只覆盖它真设过的项**。
@@ -164,6 +173,10 @@ impl Appearance {
                 .question_push_cooldown_minutes
                 .or(self.question_push_cooldown_minutes),
             aside_tab: over.aside_tab.clone().or_else(|| self.aside_tab.clone()),
+            // 配色：**只认全局那一层**（跟眼睛与房间光线有关，跟哪本书无关）。
+            // 于是 `over`（书的覆盖）里的 theme 在这里被**有意丢掉**——就算哪本书的记录里
+            // 真写了它，也翻不动界面；`set_appearance` 那边也不再往每书记录里写（见那里）。
+            theme: self.theme.clone(),
         }
     }
 }
@@ -196,6 +209,8 @@ pub struct ResolvedAppearance {
     pub question_push_cooldown_minutes: i64,
     /// 右侧第二栏先露哪一块——"记住上次"的就是它。
     pub aside_tab: SideTab,
+    /// 界面配色（没改过就是浅色）。**只走全局**这一层。
+    pub theme: Theme,
 }
 
 impl Default for ResolvedAppearance {
@@ -218,6 +233,8 @@ impl Default for ResolvedAppearance {
             question_push_per_day: DEFAULT_PUSH_PER_DAY,
             question_push_cooldown_minutes: DEFAULT_PUSH_COOLDOWN_MINUTES,
             aside_tab: SideTab::default(),
+            // 配色：默认浅色（不给没提过这件事的人换底子）
+            theme: Theme::default(),
         }
     }
 }
@@ -290,6 +307,12 @@ impl Store {
                 .aside_tab
                 .as_deref()
                 .and_then(|code| SideTab::parse(code).ok())
+                .unwrap_or_default(),
+            // 配色：同上，认不出来的当没设过，回浅色
+            theme: merged
+                .theme
+                .as_deref()
+                .and_then(|code| Theme::parse(code).ok())
                 .unwrap_or_default(),
         })
     }
@@ -431,6 +454,19 @@ impl Store {
                 stored.aside_tab = Some(parsed.as_str().to_string());
             }
         }
+        // 配色：**只落全局那一层**（跟眼睛与房间光线有关，跟哪本书无关）。
+        // 每书传上来的 theme 有意不写——读那边的合并本来就不认它，写下去只会在每书记录里
+        // 留一个永远没人读的死键。`"auto"` = 清掉这一层（回默认浅色），与命名 / 语气同一条路。
+        if let Some(value) = patch.theme.as_deref() {
+            if work_id.is_none() {
+                if value == "auto" {
+                    stored.theme = None;
+                } else {
+                    let parsed = Theme::parse(value)?;
+                    stored.theme = Some(parsed.as_str().to_string());
+                }
+            }
+        }
         let tx = self.conn.transaction()?;
         write_appearance(&tx, work_id, &stored)?;
         Self::record_in(
@@ -450,6 +486,7 @@ impl Store {
                 "question_push_per_day": patch.question_push_per_day,
                 "question_push_cooldown_minutes": patch.question_push_cooldown_minutes,
                 "aside_tab": patch.aside_tab,
+                "theme": patch.theme,
                 "editor_font_size": patch.editor_font_size,
                 "editor_line_height": patch.editor_line_height,
                 "editor_letter_spacing": patch.editor_letter_spacing,

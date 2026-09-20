@@ -232,7 +232,7 @@ function text(event: Event): string {
 .error {
   margin: 0 0 6px;
   font-size: 11px;
-  color: var(--ym-danger, #c0392b);
+  color: var(--ym-danger);
 }
 
 .saved {

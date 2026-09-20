@@ -67,10 +67,12 @@ computer means copying the folder (the built-in backup and restore tools are the
 - Statistics: daily progress, daily goal, writing calendar, streaks
 - Comfort: focus mode (`F9`), outline hover cards, shortcuts (`Ctrl+S`, `Ctrl+Alt+←/→` to switch chapter)
 - Typesetting panel: font size / line height / letter spacing for reading only, never touching the text
+- Appearance: **light / dark / follow-the-system** theme (applies to the whole window — panes, shelf,
+  dialogs and the editor — takes effect at once and is remembered across restarts)
 
 **Planned, not shipped yet:** the "questions" panel (it asks *you* questions about what happens next;
 rules produce the question, AI only polishes the wording), a writing-trail record that can show a
-manuscript is your own, full-text search UI, dark mode, and an `.md` mirror of every chapter on disk.
+manuscript is your own, full-text search UI, and an `.md` mirror of every chapter on disk.
 
 ## Download
 

@@ -153,7 +153,7 @@ async function goScene(node_id: number) {
 .check__error {
   margin: 0 0 6px;
   font-size: 11px;
-  color: var(--ym-danger, #c0392b);
+  color: var(--ym-danger);
 }
 
 .check__count {

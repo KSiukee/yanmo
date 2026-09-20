@@ -28,7 +28,7 @@
   padding: 8px 10px;
   border: 1px solid var(--ym-line);
   border-radius: 6px;
-  background: #fff7e6;
+  background: var(--ym-warn-bg);
 }
 
 .typeset__notices-title {
@@ -38,7 +38,7 @@
   margin: 0 0 6px;
   font-size: 12px;
   font-weight: 600;
-  color: #8a5a00;
+  color: var(--ym-warn);
 }
 
 .typeset__notice-list {
@@ -61,7 +61,7 @@
 .typeset__hole {
   padding: 0 2px;
   border-radius: 2px;
-  background: #fdecea;
+  background: var(--ym-err-bg);
 }
 
 .typeset__groups,
@@ -137,12 +137,12 @@
 
 .typeset__old {
   padding: 0 2px;
-  background: #fdecea;
+  background: var(--ym-err-bg);
 }
 
 .typeset__new {
   padding: 0 2px;
-  background: #eaf6ec;
+  background: var(--ym-ok-bg);
 }
 
 .typeset__arrow {

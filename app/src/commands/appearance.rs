@@ -36,6 +36,8 @@ pub struct AppearanceDto {
     pub question_push_cooldown_minutes: i64,
     /// 右侧第二栏先露哪一块（`flow` / `creator`）——"记住上次"的就是它
     pub aside_tab: String,
+    /// 界面配色（`light` / `dark` / `system`）；**只走全局**这一层
+    pub theme: String,
 }
 
 impl From<ResolvedAppearance> for AppearanceDto {
@@ -54,6 +56,7 @@ impl From<ResolvedAppearance> for AppearanceDto {
             question_push_per_day: value.question_push_per_day,
             question_push_cooldown_minutes: value.question_push_cooldown_minutes,
             aside_tab: value.aside_tab.as_str().to_string(),
+            theme: value.theme.as_str().to_string(),
         }
     }
 }
@@ -82,6 +85,9 @@ pub struct AppearancePatch {
     pub question_push_cooldown_minutes: Option<i64>,
     /// 第二栏露哪一块（`flow` / `creator`）；传 `"auto"` = 清掉这一层（回默认：叩问）
     pub aside_tab: Option<String>,
+    /// 界面配色：`light` / `dark` / `system`；传 `"auto"` = 清掉这一层（回默认：浅色）。
+    /// **只落全局那一层**（传了 `work_id` 也不会写进每书记录，见核心 `store::appearance`）
+    pub theme: Option<String>,
 }
 
 impl From<AppearancePatch> for Appearance {
@@ -100,6 +106,7 @@ impl From<AppearancePatch> for Appearance {
             question_push_per_day: patch.question_push_per_day,
             question_push_cooldown_minutes: patch.question_push_cooldown_minutes,
             aside_tab: patch.aside_tab,
+            theme: patch.theme,
         }
     }
 }
