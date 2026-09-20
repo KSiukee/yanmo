@@ -49,6 +49,8 @@ pub struct ManuscriptRowDto {
     pub status: String,
     pub word_count: i64,
     pub char_count: i64,
+    /// 逐字（不含标点）——界面按作品的字数口径挑一格显示（与书架同一份口径）
+    pub chars_no_punct: i64,
     /// 目标字数（null = 没设过）——「未完成散篇」比的就是它
     pub target_words: Option<i64>,
     /// 投过几家（软删的不算）
@@ -71,6 +73,7 @@ fn to_row_dto(row: ManuscriptRow) -> ManuscriptRowDto {
         status: row.work.status.as_str().to_string(),
         word_count: row.word_count,
         char_count: row.char_count,
+        chars_no_punct: row.chars_no_punct,
         target_words: row.work.target_words,
         submissions: row.submissions,
         active_venue: active.map(|s| s.venue.clone()),

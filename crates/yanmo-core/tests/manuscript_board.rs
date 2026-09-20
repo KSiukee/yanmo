@@ -40,6 +40,7 @@ fn the_board_shows_every_piece_with_its_state_scale_and_pending_venue() {
     assert_eq!(half_row.work.status, ManuscriptState::Draft);
     assert_eq!(half_row.work.target_words, Some(10_000), "「未完成散篇」比的就是它");
     assert_eq!(half_row.char_count, 3);
+    assert_eq!(half_row.chars_no_punct, 3, "界面按字数口径挑一格显示，得跟书架同一份口径");
     assert!(half_row.active.is_none(), "没投过就没有在等的");
     assert_eq!(half_row.submissions, 0);
 

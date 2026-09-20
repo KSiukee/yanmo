@@ -23,6 +23,8 @@ pub struct ManuscriptRow {
     pub word_count: i64,
     /// 同上，逐字（含标点）。
     pub char_count: i64,
+    /// 同上，逐字（不含标点）——界面按作品的字数口径挑一格显示，与书架同一份口径。
+    pub chars_no_punct: i64,
     /// 投过几家（软删的不算）。
     pub submissions: i64,
     /// 还在等回音的那条——卡片上"在等甲刊 · 还差 12 天"就靠它。
@@ -69,6 +71,7 @@ impl Store {
             out.push(ManuscriptRow {
                 word_count: entry.word_count,
                 char_count: entry.char_count,
+                chars_no_punct: entry.chars_no_punct,
                 submissions: mine.map_or(0, |rows| rows.len() as i64),
                 active: mine.and_then(|rows| rows.iter().find(|s| s.is_open()).cloned()),
                 last_venue: mine.and_then(|rows| rows.first().map(|s| s.venue.clone())),

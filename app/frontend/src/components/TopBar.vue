@@ -4,7 +4,7 @@
 // 单独成件是因为它跟"三栏怎么摆"是两个变化理由：顶栏会长按钮（每加一个入口就多一个），
 // 而布局的骨架基本不动。抽出来之后布局那一份只说"露不露"，不必跟着按钮一起长。
 //
-// 按钮**只有这一排**（顺序就是作者找它的顺序）：书架 → 专注 → 设定 → 备份 → 设置。
+// 按钮**只有这一排**（顺序就是作者找它的顺序）：书架 → 稿件台 → 专注 → 设定 → 备份 → 设置。
 // 它不做任何业务：点哪个都只是把意图报给布局层（那边才知道这些弹窗归谁管）。
 import { t } from "../locales/index.ts";
 import { shortcutKeys } from "../editor/shortcuts.ts";
@@ -19,6 +19,7 @@ defineProps<{
 
 const emit = defineEmits<{
   shelf: [];
+  manuscript: [];
   zen: [];
   grid: [];
   entities: [];
@@ -38,6 +39,14 @@ const emit = defineEmits<{
       @click="emit('shelf')"
     >
       {{ t("app.shelf") }}
+    </button>
+    <button
+      type="button"
+      class="bar__button"
+      :title="t('app.manuscript_title')"
+      @click="emit('manuscript')"
+    >
+      {{ t("app.manuscript") }}
     </button>
     <button
       type="button"

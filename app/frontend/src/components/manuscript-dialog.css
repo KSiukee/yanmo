@@ -1,0 +1,247 @@
+/* 稿件台：七列看板 + 右边一块详情。
+ *
+ * 公共壳（遮罩 / 盒子 / 标题 / 按钮 / 交代条）在 dialog.css；这里只留本弹窗自己的东西。
+ *
+ * 宽度：看板天生要横向铺开（七列各留 150px 上下），所以盒子比别的弹窗宽，
+ * 并且**列自己横滚**——窄窗口下宁可让看板横着滚，也别把七列挤成一堆看不清的窄条。
+ */
+
+.manuscript__box {
+  width: min(1180px, 100%);
+}
+
+.manuscript__button--on {
+  border-color: var(--ym-accent);
+  color: var(--ym-accent);
+}
+
+.manuscript__button--danger {
+  color: #b3261e;
+}
+
+.manuscript__body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 12px;
+  min-height: 0;
+}
+
+/* ── 看板 ───────────────────────────────────────────────────────────── */
+
+.manuscript__board {
+  display: flex;
+  gap: 8px;
+  min-height: 0;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.manuscript__col {
+  flex: 0 0 168px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--ym-line);
+  border-radius: 6px;
+  background: var(--ym-paper-dim);
+}
+
+.manuscript__col-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--ym-line);
+  font-size: 12px;
+  color: var(--ym-ink-soft);
+}
+
+.manuscript__count {
+  font-variant-numeric: tabular-nums;
+}
+
+.manuscript__cards {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+}
+
+.manuscript__card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--ym-line);
+  border-radius: 6px;
+  background: var(--ym-paper);
+  cursor: grab;
+}
+
+.manuscript__card--current {
+  border-color: var(--ym-accent);
+}
+
+.manuscript__card--picked {
+  box-shadow: 0 0 0 1px var(--ym-accent) inset;
+}
+
+.manuscript__name {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manuscript__meta,
+.manuscript__active,
+.manuscript__hint {
+  font-size: 11px;
+  color: var(--ym-ink-soft);
+}
+
+.manuscript__active {
+  color: var(--ym-accent);
+}
+
+.manuscript__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+/* ── 未完成散篇 ─────────────────────────────────────────────────────── */
+
+.manuscript__unfinished {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.manuscript__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.manuscript__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--ym-line);
+  cursor: pointer;
+}
+
+.manuscript__row .manuscript__name {
+  flex: 1;
+}
+
+/* ── 详情：选中的那一篇 ─────────────────────────────────────────────── */
+
+.manuscript__side {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 8px;
+  border: 1px solid var(--ym-line);
+  border-radius: 6px;
+  background: var(--ym-paper-dim);
+  overflow-y: auto;
+}
+
+.manuscript__side-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.manuscript__history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.manuscript__record {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 0;
+  border-top: 1px solid var(--ym-line);
+}
+
+.manuscript__notes {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* ── 表单（记一次投稿 / 改一条记录）─────────────────────────────────── */
+
+.manuscript__form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--ym-line);
+  border-radius: 6px;
+  background: var(--ym-paper-dim);
+}
+
+.manuscript__form-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.manuscript__field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.manuscript__field .manuscript__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.manuscript__input {
+  padding: 2px 8px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+
+.manuscript__warn {
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid #d9a441;
+  border-radius: 4px;
+  background: #fdf6e6;
+  font-size: 12px;
+  color: #7a5a12;
+}
+
+/* 「改到哪一态」那一排按钮：拖拽之外的等价入口（键盘 / 触控板 / 自动化验收） */
+.manuscript__moves {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+}
+
+.manuscript__form-actions {
+  display: flex;
+  gap: 6px;
+}

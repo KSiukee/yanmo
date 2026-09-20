@@ -25,6 +25,7 @@ import LocationDialog from "./components/LocationDialog.vue";
 import RestoreDialog from "./components/RestoreDialog.vue";
 import SettingsDialog from "./components/SettingsDialog.vue";
 import ShelfDialog from "./components/ShelfDialog.vue";
+import ManuscriptDialog from "./components/ManuscriptDialog.vue";
 import WorkFormDialog from "./components/WorkFormDialog.vue";
 import SnapshotDialog from "./components/SnapshotDialog.vue";
 import TrashDialog from "./components/TrashDialog.vue";
@@ -66,6 +67,8 @@ function answerPushed() {
 }
 const { chapterTitle, workId } = session;
 const { visible: shelfVisible, toggle: toggleShelf, form: workForm, closeForm } = session.shelf;
+// 稿件台：书架是主入口（按作品），这里是副入口（按流转）——同一批作品，不是第二份列表
+const { visible: manuscriptVisible, toggle: toggleManuscript } = session.manuscript;
 const { visible: trashVisible } = session.trash;
 const { visible: snapshotsVisible } = session.snapshots;
 const { visible: typesetVisible } = session.typeset;
@@ -103,6 +106,7 @@ const hint = computed(() => {
       :work-id="workId"
       :hint="hint"
       @shelf="toggleShelf()"
+      @manuscript="toggleManuscript()"
       @zen="toggleZen()"
       @grid="toggleGrid()"
       @entities="showLore()"
@@ -177,6 +181,7 @@ const hint = computed(() => {
     </main>
 
     <ShelfDialog v-if="shelfVisible" :session="session" />
+    <ManuscriptDialog v-if="manuscriptVisible" :session="session" />
     <WorkFormDialog v-if="workForm" :session="session" :form="workForm" @close="closeForm" />
     <TrashDialog v-if="trashVisible" :session="session" />
     <SnapshotDialog v-if="snapshotsVisible" :session="session" />

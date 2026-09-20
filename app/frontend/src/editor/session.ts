@@ -89,6 +89,16 @@ import {
   type SnapshotRestoreAck,
 } from "../api/core";
 import { resolveMirrorIssue } from "../api/mirror";
+import {
+  manuscriptBoard,
+  manuscriptDeleteSubmission,
+  manuscriptDetail,
+  manuscriptMove,
+  manuscriptSubmit,
+  manuscriptUpdateSubmission,
+  manuscriptVerdict,
+  setWorkTargetWords,
+} from "../api/manuscript";
 import { Autosave, type AutosaveState } from "./autosave";
 import { useAddChapter, type AddChapter } from "./add-chapter";
 import { useAppearance, type AppearanceState } from "./appearance";
@@ -113,6 +123,7 @@ import { primeImeThen } from "./ime-prime";
 import { ExitGate, type ExitGateState } from "./exitguard";
 import { focusPlan } from "./focus";
 import { useShelf, type Shelf } from "./shelf";
+import { useManuscript, type ManuscriptBoardState } from "./manuscript-board";
 import { useCompile, type CompileState } from "./compile";
 import { useChapterNote, type ChapterNote } from "./note";
 import { useSceneFields, type SceneState } from "./scene";
@@ -146,6 +157,8 @@ export interface EditorSession {
   directory: Directory;
   /** 书架：多作品是默认形态（切书同样先落盘再切） */
   shelf: Shelf;
+  /** 稿件台：按状态看稿子、记一次投稿、改状态（与书架同源同一批作品） */
+  manuscript: ManuscriptBoardState;
   /** 回收站：删错了能捞回来（恢复与真删的语义全在核心） */
   trash: Trash;
   /** 版本历史：这一章留过哪些版本，看看差异、回滚（滚动保留与"回滚先留底"全在核心） */
@@ -862,6 +875,25 @@ export function useEditorSession(): EditorSession {
       },
     });
 
+    // 稿件台：按状态看稿子、记一次投稿、改状态。**与书架同源**——
+    // "打开这一篇"走的还是上面那条切书纪律（先落盘再切），不是第二份列表。
+    const manuscript = useManuscript({
+      transport: {
+        board: manuscriptBoard,
+        detail: manuscriptDetail,
+        verdict: manuscriptVerdict,
+        submit: manuscriptSubmit,
+        move: manuscriptMove,
+        updateSubmission: manuscriptUpdateSubmission,
+        deleteSubmission: manuscriptDeleteSubmission,
+        setTarget: setWorkTargetWords,
+      },
+      openWork: (target) => switchWork(target),
+      onError: (message) => {
+        failure.value = t("session.manuscript_failed", { detail: message });
+      },
+    });
+
     // 版本历史：列 / 比 / 留一版 / 删一版 / 回滚（滚动保留、回滚先留底全在核心）。
     // 回滚前先落盘：**存不下去就不覆盖**——这条纪律与"删章之前先存"是同一条。
     const snapshots = useSnapshots({
@@ -989,6 +1021,7 @@ export function useEditorSession(): EditorSession {
       adding,
       trash,
       shelf,
+      manuscript,
       snapshots,
       typeset,
       note,
@@ -1014,6 +1047,7 @@ export function useEditorSession(): EditorSession {
     adding,
     trash,
     shelf,
+    manuscript,
     snapshots,
     typeset,
     note,
@@ -1169,6 +1203,7 @@ export function useEditorSession(): EditorSession {
     appearance,
     writing,
     shelf,
+    manuscript,
     trash,
     snapshots,
     typeset,

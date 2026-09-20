@@ -19,16 +19,7 @@ export type ManuscriptStatus =
   | "rejected"
   | "published";
 
-/** 看板的列顺序（与核心 `ManuscriptState::ALL` 同源：界面不再自己排一遍）。 */
-export const BOARD_COLUMNS: ManuscriptStatus[] = [
-  "draft",
-  "finished",
-  "ready",
-  "submitted",
-  "accepted",
-  "rejected",
-  "published",
-];
+/** 看板的列顺序与"拖拽能去哪几个态"在 `editor/manuscript.ts`（纯规则，能脱离界面单测）。 */
 
 /** 一次投稿的结果（与核心 `SubmissionResult` 的稳定码一致）。 */
 export type SubmissionResultCode = "waiting" | "accepted" | "rejected" | "withdrawn";
@@ -53,6 +44,8 @@ export interface ManuscriptRow {
   status: ManuscriptStatus;
   word_count: number;
   char_count: number;
+  /** 逐字（不含标点）——与书架同一份口径，按作品的字数口径挑一格显示 */
+  chars_no_punct: number;
   /** 目标字数（null = 没设过）——「未完成散篇」比的就是它 */
   target_words: number | null;
   /** 投过几家（软删的不算） */
