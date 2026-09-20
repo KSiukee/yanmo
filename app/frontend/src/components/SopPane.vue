@@ -206,8 +206,14 @@ function text(event: Event): string {
 </template>
 
 <style scoped>
+/* 这一片是右栏的直接子件（与叩问 / 创作流同层）：**内边距与滚动都归它自己**——
+   少了这两样，内容就会贴着栏边（2026-09-20 用户一眼看出来的）。 */
 .sop {
-  margin: 0 0 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 12px;
+  overflow: auto;
+  font-size: 13px;
 }
 
 .hint {
