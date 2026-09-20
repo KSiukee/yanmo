@@ -125,3 +125,60 @@ fn migration_eighteen_is_idempotent_on_an_existing_library() {
     );
     assert_eq!(store.collection_view(anthology).unwrap().entries[0].id, piece);
 }
+
+/// 集导出：**按集内顺序**合成一份成品，自带目录；空集也给一句话。
+#[test]
+fn exporting_a_collection_keeps_the_order_and_adds_a_contents_page() {
+    use yanmo_core::compile::{compile_collection, CollectionFormat};
+
+    let (_dir, mut store) = fresh();
+    let anthology = collection(&mut store, "年度自选");
+    let a = article(&mut store, "甲篇", "甲的第一段。\n\n甲的第二段。");
+    let b = article(&mut store, "乙篇", "乙只有一段。");
+    store.add_to_collection(anthology, a).unwrap();
+    store.add_to_collection(anthology, b).unwrap();
+    store.reorder_collection(anthology, &[b, a]).unwrap();
+
+    let docx = compile_collection(&store, anthology, CollectionFormat::Docx).unwrap();
+    assert_eq!(docx.len(), 1);
+    assert_eq!(docx[0].relative_path, "collection/年度自选.docx");
+    // docx 是压缩包：正文里看不到明文，这里只钉"它真的是个能打开的 ZIP"
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(docx[0].content.clone())).unwrap();
+    let mut document = String::new();
+    {
+        use std::io::Read;
+        zip.by_name("word/document.xml").unwrap().read_to_string(&mut document).unwrap();
+    }
+    assert!(document.contains("目录"), "集导出自带目录");
+    assert!(document.contains("1. 乙篇") && document.contains("2. 甲篇"), "目录按集内顺序编号：{document}");
+    let first = document.find("乙只有一段。").unwrap();
+    let second = document.find("甲的第一段。").unwrap();
+    assert!(first < second, "正文也按集内顺序排");
+    assert!(document.contains("w:br w:type=\"page\""), "每篇各起一页");
+
+    let txt = compile_collection(&store, anthology, CollectionFormat::MergedTxt).unwrap();
+    let plain = String::from_utf8(txt[0].content.clone()).unwrap();
+    assert!(plain.contains("目录"));
+    assert!(plain.find("1. 乙篇").unwrap() < plain.find("2. 甲篇").unwrap());
+    assert!(plain.find("乙只有一段。").unwrap() < plain.find("甲的第一段。").unwrap());
+    assert_eq!(txt[0].relative_path, "collection_txt/年度自选.txt");
+
+    // 渲染两遍逐字节一样（与别的预设同一条纪律）
+    let again = compile_collection(&store, anthology, CollectionFormat::MergedTxt).unwrap();
+    assert_eq!(txt, again);
+}
+
+#[test]
+fn an_empty_collection_still_gets_a_file_with_a_sentence() {
+    use yanmo_core::compile::{compile_collection, CollectionFormat};
+
+    let (_dir, mut store) = fresh();
+    let empty = collection(&mut store, "还没编的集");
+    let txt = compile_collection(&store, empty, CollectionFormat::MergedTxt).unwrap();
+    let plain = String::from_utf8(txt[0].content.clone()).unwrap();
+    assert!(plain.contains("还没编的集"));
+    assert!(plain.contains("目录"));
+
+    // 传错格式：明确报错，不悄悄给一份别的
+    assert!(CollectionFormat::parse("epub").is_err());
+}

@@ -15,7 +15,8 @@ use super::{preset::Preset, CompileOptions};
 use ooxml as x;
 
 mod article;
-mod ooxml;
+// 同层的集导出（compile/collection.rs）也要用这几个 XML 片段
+pub(super) mod ooxml;
 
 pub(crate) use article::render as render_article;
 

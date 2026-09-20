@@ -732,6 +732,8 @@ export const COMMANDS = {
   compilePreview: "compile_preview",
   compileWork: "compile_work",
   compileOpenFolder: "compile_open_folder",
+  compileCollection: "compile_collection",
+  compileCollectionOpenFolder: "compile_collection_open_folder",
 } as const;
 
 export async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {

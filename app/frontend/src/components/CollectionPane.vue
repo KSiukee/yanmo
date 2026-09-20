@@ -6,6 +6,7 @@
 import { computed, ref, watch } from "vue";
 
 import type { EditorSession } from "../editor/session";
+import { compileCollection, compileCollectionOpenFolder, type CollectionFormat } from "../api/collection";
 import { pieceProgress, wordProgress } from "../editor/collection";
 import { formatCaliberNumber, formatWhen, formatWords } from "../editor/display";
 import { t } from "../locales/index.ts";
@@ -59,6 +60,8 @@ const progressText = computed(() => {
 
 /** 加入清单：还没归集的散篇 */
 const picked = ref<number | null>(null);
+/** 上一次导出的交代（落点）——与编译弹窗同一句话 */
+const exportNote = ref("");
 
 function addPicked() {
   const id = picked.value ?? loose.value[0]?.id ?? null;
@@ -71,6 +74,24 @@ function addPicked() {
 /** 这一篇的字数（按当前口径，与集汇总同一个数法） */
 function wordsOf(entry: { word_count: number; char_count: number; chars_no_punct: number }): string {
   return formatCaliberNumber(entry, caliber.value);
+}
+
+/** 导出这一本集子：**按集内顺序**合成一份成品（核心渲染 + 壳落盘）。 */
+async function exportCollection(format: CollectionFormat) {
+  const id = view.value?.id;
+  if (id === undefined) return;
+  try {
+    const ack = await compileCollection(id, format);
+    exportNote.value = t("compile.done", { count: ack.files.length, path: ack.path });
+  } catch (error) {
+    exportNote.value = error instanceof Error ? error.message : String(error);
+  }
+}
+
+/** 打开这一本集子的产物目录。 */
+function openExportFolder(format: CollectionFormat) {
+  const id = view.value?.id;
+  if (id !== undefined) void compileCollectionOpenFolder(id, format);
 }
 
 /** 打开这一篇：走稿件台那条"打开"（同一个切作品纪律，先落盘再切） */
@@ -156,7 +177,20 @@ function openArticle(id: number) {
         {{ t("collection.add") }}
       </button>
       <span v-if="loose.length === 0" class="collection__meta">{{ t("collection.no_loose") }}</span>
+      <!-- 导出这一本集子：按集内顺序合成一份成品（目录自动生成） -->
+      <span class="collection__export">
+        <button type="button" class="collection__button" :disabled="busy" @click="exportCollection('collection_docx')">
+          {{ t("collection.export_docx") }}
+        </button>
+        <button type="button" class="collection__button" :disabled="busy" @click="exportCollection('collection_txt')">
+          {{ t("collection.export_txt") }}
+        </button>
+        <button type="button" class="collection__button" @click="openExportFolder('collection_docx')">
+          {{ t("compile.open_folder") }}
+        </button>
+      </span>
     </footer>
+    <p v-if="exportNote" class="collection__note">{{ exportNote }}</p>
   </section>
 </template>
 

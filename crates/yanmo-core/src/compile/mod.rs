@@ -12,6 +12,8 @@
 //! 顺序一律照阅读顺序。这样"再编译一次"不会在同步盘或版本工具里冒出一堆噪声。
 
 pub mod preset;
+mod collection;
+mod collection_book;
 mod docx;
 mod merged;
 mod reading;
@@ -20,7 +22,20 @@ mod zip;
 use crate::error::Result;
 use crate::store::{ExportFormat, RenderedFile, Store};
 
+pub use collection::CollectionFormat;
 pub use preset::{CompileOptions, Preset};
+
+/// 把一个集导出成一份成品（`docx` / 合并 `txt`），返回要写出去的那组文件。
+///
+/// 与 [`compile`] 分开：集不是书（它没有正文，只有一串引用），
+/// 编排方式也不一样——**按集内顺序拼、自带目录、每篇各起一页**。
+pub fn compile_collection(
+    store: &Store,
+    collection_id: i64,
+    format: CollectionFormat,
+) -> Result<Vec<RenderedFile>> {
+    Ok(vec![collection::render(store, collection_id, format)?])
+}
 
 /// 按预设编译一本书，返回要写出去的那组文件。
 pub fn compile(

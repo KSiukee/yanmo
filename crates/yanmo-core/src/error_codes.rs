@@ -91,6 +91,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     COLLECTION_REORDER_MISMATCH => "collection.reorder_mismatch"
         : "重排的清单与集里的篇目对不上（集里该有 {expected} 篇，给了 {got} 篇）"
         : ["expected", "got"],
+    UNKNOWN_COLLECTION_FORMAT => "value.unknown_collection_format"
+        : "不认识的集导出格式：{value}（只有 docx / collection_txt）" : ["value"],
     BACKUP_SNAPSHOT_FAILED => "backup.snapshot_failed"
         : "做一致性快照失败（库可能有问题）：{detail}" : ["detail"],
     BACKUP_RESTORE_SOURCE_INVALID => "backup.restore_source_invalid"

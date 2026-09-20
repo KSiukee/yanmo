@@ -11,7 +11,9 @@ use tauri::State;
 
 use crate::error::ApiError;
 use crate::storage::AppData;
-use yanmo_core::compile::{compile, CompileOptions, Preset};
+use yanmo_core::compile::{
+    compile, compile_collection as render_collection, CollectionFormat, CompileOptions, Preset,
+};
 use yanmo_core::store::Store;
 
 /// 预设清单：界面按码取名字，也按这里给的默认值填参数（**默认值只有核心一处**）。
@@ -138,5 +140,52 @@ pub fn compile_work(
             .map(|file| CompileFileDto { path: file.relative_path.clone(), bytes: file.content.len() })
             .collect(),
         removed: outcome.removed,
+    })
+}
+
+/// 把一个集导出成一份成品（`docx` / 合并 `txt`）：渲染 + 落盘。
+///
+/// 与 [`compile_work`] 分开：集不是书——**按集内顺序拼、自带目录、每篇各起一页**，
+/// 而且这一档不卡字数（要的是每篇都完整）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn compile_collection(
+    data: State<'_, AppData>,
+    collection_id: i64,
+    format: String,
+) -> Result<CompileAckDto, ApiError> {
+    let format = CollectionFormat::parse(&format).map_err(ApiError::from)?;
+    let (title, files) = data.with_store(|store: &mut Store| {
+        let title = store.get_work(collection_id)?.title;
+        Ok((title, render_collection(store, collection_id, format)?))
+    })?;
+    let outcome =
+        data.write_compile(collection_id, &title, format.folder(), format.extension(), &files)?;
+    Ok(CompileAckDto {
+        path: outcome.dir.display().to_string(),
+        files: files
+            .iter()
+            .map(|file| CompileFileDto { path: file.relative_path.clone(), bytes: file.content.len() })
+            .collect(),
+        removed: outcome.removed,
+    })
+}
+
+/// 打开集导出产物所在的目录（**路径由壳自己算**，界面不传路径）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn compile_collection_open_folder(
+    data: State<'_, AppData>,
+    collection_id: i64,
+    format: String,
+) -> Result<(), ApiError> {
+    let format = CollectionFormat::parse(&format).map_err(ApiError::from)?;
+    let title = data.with_store(|store: &mut Store| Ok(store.get_work(collection_id)?.title))?;
+    let dir = data.compile_dir(collection_id, &title, format.folder());
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        ApiError::with("shell.export_dir_create_failed", [("path", dir.display().to_string())])
+            .caused_by(e)
+    })?;
+    crate::open_folder::open(&dir).map_err(|detail| {
+        ApiError::with("shell.open_dir_failed", [("path", dir.display().to_string())])
+            .caused_by(detail)
     })
 }

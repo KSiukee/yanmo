@@ -72,3 +72,23 @@ export const collectionLooseArticles = () =>
 /** 这一篇属于哪几个（活着的）集。 */
 export const collectionOf = (article_id: number) =>
   call<number[]>(COMMANDS.collectionOf, { article_id });
+
+/** 集导出的两种格式（与核心 `CollectionFormat` 的稳定码一致）。 */
+export type CollectionFormat = "collection_docx" | "collection_txt";
+
+/** 一次导出的回执（与编译那一族同一个形状）。 */
+export interface CollectionExportAck {
+  /** 落在哪个文件夹（界面只展示） */
+  path: string;
+  files: { path: string; bytes: number }[];
+  /** 顺手清掉了几个上次留下的旧产物 */
+  removed: number;
+}
+
+/** 把一个集按集内顺序合成一份成品（目录 + 每篇各起一页）。 */
+export const compileCollection = (collection_id: number, format: CollectionFormat) =>
+  call<CollectionExportAck>(COMMANDS.compileCollection, { collection_id, format });
+
+/** 打开集导出产物所在的目录。 */
+export const compileCollectionOpenFolder = (collection_id: number, format: CollectionFormat) =>
+  call<void>(COMMANDS.compileCollectionOpenFolder, { collection_id, format });

@@ -337,6 +337,8 @@ fn main() {
             commands::compile::compile_preview,
             commands::compile::compile_work,
             commands::compile::compile_open_folder,
+            commands::compile::compile_collection,
+            commands::compile::compile_collection_open_folder,
             commands::trash::list_trash,
             commands::trash::restore_work,
             commands::trash::restore_preview,
