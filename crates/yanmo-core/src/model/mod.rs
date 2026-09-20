@@ -13,6 +13,7 @@ mod answer_target;
 mod author;
 mod card;
 mod card_state;
+mod collision_side;
 mod entity_card;
 mod foreshadow;
 mod fragment;
@@ -29,6 +30,7 @@ mod work;
 pub use answer_target::AnswerTarget;
 pub use author::{Author, AuthorBlock, ResolvedAuthor};
 pub use card::{NewQuestionCard, QuestionCard};
+pub use collision_side::{canonical_order, CollisionKind, CollisionSide};
 pub use card_state::{transition, QuestionState, Transition, TRANSITIONS};
 pub use manuscript_state::{
     manuscript_transition, ManuscriptState, ManuscriptTransition, MANUSCRIPT_TRANSITIONS,

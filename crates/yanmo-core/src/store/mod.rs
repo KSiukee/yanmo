@@ -37,6 +37,8 @@ mod import;
 mod inspire;
 mod inspire_adopt;
 mod inspire_collide;
+mod inspire_elements;
+mod inspire_skips;
 mod manuscript;
 mod manuscript_row;
 mod manuscript_submit;
@@ -106,7 +108,9 @@ pub use draft::{parse_work_json, DraftScale, NodeDraft, StampMismatch, WorkDraft
 pub use import::{find_drafts, manifest_near, ImportReport};
 pub use inspire::{Spark, SPARKS_PER_BOARD};
 pub use inspire_adopt::AdoptReceipt;
-pub use inspire_collide::{Collision, CollisionReceipt, COLLISIONS_PER_BOARD};
+pub use inspire_collide::{
+    Collision, CollisionReceipt, CollisionSideView, COLLISIONS_PER_BOARD,
+};
 pub use mirror::{mirror_body_of, REASON_ADOPT};
 pub use mirror_plan::{
     plan_mirror, ConflictReason, DiskState, MirrorAction, MirrorConflict, MirrorEntry, MirrorFile,

@@ -87,13 +87,33 @@ export const inspireAdopt = (
 export const inspireDiscard = (id: number, node_id: number | null = null) =>
   call<Spark[]>(COMMANDS.inspireDiscard, { id, node_id });
 
-/** 两条碎片的关系（与核心 `CollisionRelation` 的稳定码一致）。 */
+/** 碰撞的一头是什么（与核心 `CollisionKind` 的稳定码一致）。 */
+export type CollisionKind = "spark" | "plan" | "foreshadow" | "entity";
+
+/** 两头的关系（与核心 `CollisionRelation` 的稳定码一致）。 */
 export type CollisionRelation = "together" | "apart";
 
-/** 一对碰撞建议：两条碎片本身 + 关系 + 分数。 */
+/**
+ * 碰撞的一头给界面看的那一份。
+ *
+ * `key` 是核心给的**规范标识**（`spark:12` / `plan:3`）：保存与跳过时**原样交回去**，
+ * 界面不自己拼（拼错就是"认不出的碰撞对象"）。
+ */
+export interface CollisionSideView {
+  key: string;
+  kind: CollisionKind;
+  /** 要嵌进引子的那段字（碎片 / 章纲 / 伏笔是正文，人物卡是名字） */
+  text: string;
+  /** 人物卡的备注（其余是空串） */
+  note: string;
+  /** 碎片那一头带着碎片本身；元素那一头是 null */
+  spark: Spark | null;
+}
+
+/** 一对碰撞建议：两头 + 关系 + 分数。 */
 export interface Collision {
-  left: Spark;
-  right: Spark;
+  left: CollisionSideView;
+  right: CollisionSideView;
   relation: CollisionRelation;
   /** 共用的那几条锚点（相隔时是空的） */
   shared_anchors: string[];
@@ -108,26 +128,34 @@ export interface CollisionReceipt {
   collisions: Collision[];
 }
 
-/** 看一眼碰撞：这一池里哪几条值得放一起撞一下。 */
+/** 看一眼碰撞：碎片与大纲元素里，哪两头值得放一起撞一下。 */
 export const inspireCollisions = (work_id: number, node_id: number | null = null) =>
   call<Collision[]>(COMMANDS.inspireCollisions, { work_id, node_id });
 
-/** 存下撞出来的那一句（写成一张双源溯源的灵感卡）。 */
-export const inspireCollide = (left: number, right: number, body: string) =>
-  call<CollisionReceipt>(COMMANDS.inspireCollide, { left, right, body });
+/**
+ * 存下撞出来的那一句（写成一张双源溯源的灵感卡）。
+ *
+ * `left` / `right` 用核心给的规范标识（`spark:12` / `plan:3`）原样交回。
+ */
+export const inspireCollide = (
+  left: string,
+  right: string,
+  body: string,
+  node_id: number | null = null,
+) => call<CollisionReceipt>(COMMANDS.inspireCollide, { left, right, body, node_id });
 
 /** 跳过这一对（落盘：下一次挑对还认它）。 */
 export const inspireSkipCollision = (
   work_id: number,
-  left: number,
-  right: number,
+  left: string,
+  right: string,
   node_id: number | null = null,
 ) => call<Collision[]>(COMMANDS.inspireSkipCollision, { work_id, left, right, node_id });
 
 /** 撤销一次跳过。 */
 export const inspireUnskipCollision = (
   work_id: number,
-  left: number,
-  right: number,
+  left: string,
+  right: string,
   node_id: number | null = null,
 ) => call<Collision[]>(COMMANDS.inspireUnskipCollision, { work_id, left, right, node_id });

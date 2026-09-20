@@ -173,10 +173,17 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "这条已经是事件了——它就在事件池里：{spark_id}" : ["spark_id"],
     SPARK_TARGET_UNKNOWN => "value.unknown_spark_target"
         : "认不出的采纳落点：{value}（只认 body / outline / scene / event）" : ["value"],
-    COLLISION_SAME_SPARK => "collision.same_spark"
-        : "不能拿同一条跟自己撞：{spark_id}" : ["spark_id"],
+    COLLISION_SAME_SIDE => "collision.same_side"
+        : "不能拿同一个对象跟自己撞：{side}" : ["side"],
     COLLISION_FOREIGN => "collision.foreign"
-        : "这两条不属于同一本书：{left} 与 {right}" : ["left", "right"],
+        : "这两头不属于同一本书：{left} 与 {right}" : ["left", "right"],
+    COLLISION_NEEDS_SPARK => "collision.needs_spark"
+        : "撞一下至少得有一头是你记的碎片：{left} 与 {right}" : ["left", "right"],
+    COLLISION_SIDE_NOT_FOUND => "collision.side_not_found"
+        : "这一头不在了（删了，或者已经不是能撞的样子）：{side}" : ["side"],
+    COLLISION_SIDE_UNKNOWN => "value.unknown_collision_side"
+        : "认不出的碰撞对象：{value}（写法是 种类:编号，种类只认 spark / plan / foreshadow / entity）"
+        : ["value"],
     UNKNOWN_QUESTION_TONE => "value.unknown_question_tone"
         : "认不出的问话语气：{value}（只认 warm / neutral / direct）" : ["value"],
     UNKNOWN_ASIDE_TAB => "value.unknown_aside_tab"

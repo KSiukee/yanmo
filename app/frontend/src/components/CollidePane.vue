@@ -9,10 +9,8 @@
 import { onMounted, watch } from "vue";
 
 import type { EditorSession } from "../editor/session.ts";
-import { formatWhen } from "../editor/display.ts";
 import { t } from "../locales/index.ts";
-import { kindLabel } from "./creator.ts";
-import { excerpt, pairKey, relationLabel } from "./collide.ts";
+import { excerpt, pairKey, relationLabel, sideLabel, sideWhenText } from "./collide.ts";
 
 const props = defineProps<{ session: EditorSession }>();
 
@@ -55,16 +53,15 @@ watch(currentChapter, () => void refresh());
     <ul v-if="board.length > 0" class="pairs">
       <li v-for="pair in board" :key="pairKey(pair)" class="pair">
         <p class="pair__why">{{ relationLabel(pair.relation) }}</p>
-        <p class="pair__side">
-          <span class="badge">{{ kindLabel(pair.left.kind) }}</span>
-          <span class="pair__when">{{ formatWhen(pair.left.created_at) }}</span>
-        </p>
-        <p class="pair__body">{{ excerpt(pair.left.body) }}</p>
-        <p class="pair__side">
-          <span class="badge">{{ kindLabel(pair.right.kind) }}</span>
-          <span class="pair__when">{{ formatWhen(pair.right.created_at) }}</span>
-        </p>
-        <p class="pair__body">{{ excerpt(pair.right.body) }}</p>
+        <!-- 两头可能是碎片，也可能是大纲元素：种类徽标说清撞的是什么 -->
+        <template v-for="side in [pair.left, pair.right]" :key="side.key">
+          <p class="pair__side">
+            <span class="badge">{{ sideLabel(side.kind) }}</span>
+            <span v-if="sideWhenText(side)" class="pair__when">{{ sideWhenText(side) }}</span>
+          </p>
+          <p class="pair__body">{{ excerpt(side.text) }}</p>
+          <p v-if="side.note" class="pair__note">{{ side.note }}</p>
+        </template>
 
         <!-- 引子只是骨架：这句问话可以改、也可以删光了重写（引子里嵌的是你自己的两条原文） -->
         <textarea
@@ -157,6 +154,12 @@ watch(currentChapter, () => void refresh());
   font-size: 12px;
   line-height: 1.5;
   word-break: break-word;
+}
+
+.pair__note {
+  margin: 0 0 4px;
+  font-size: 11px;
+  opacity: 0.7;
 }
 
 .pair__draft {

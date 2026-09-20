@@ -88,10 +88,10 @@ pub fn inspire_discard(
     data.with_store(|store| store.discard_spark(id, node_id, "author"))
 }
 
-/// 看一眼**碰撞**：这一池碎片里，哪几条值得放一起撞一下。
+/// 看一眼**碰撞**：碎片与大纲元素（章纲 / 伏笔 / 人物卡）里，哪两头值得放一起撞一下。
 ///
 /// 规则是确定性的（同输入同输出）：同处的（有共用锚点）优先，其次相隔的；
-/// 一屏里同一条只上一场；撞过的组合与作者跳过的不再出现。
+/// 一屏里一头只上一场；撞过的组合与作者跳过的不再出现；元素×元素不摆。
 #[tauri::command(rename_all = "snake_case")]
 pub fn inspire_collisions(
     data: State<'_, AppData>,
@@ -104,17 +104,20 @@ pub fn inspire_collisions(
 
 /// **存下撞出来的那一句**：写成一张双源溯源的灵感卡。
 ///
+/// `left` / `right` 是**规范写法**（`spark:12` / `plan:3` / `foreshadow:5` / `entity:7`）——
+/// 界面把核心给的那份原样交回来，不自己拼。
 /// 关系（同处 / 相隔）由核心自己算——界面不必报，也就报不错。
-/// 空句子 / 拿自己撞自己 / 两条不属于同一本书，都当场拒。
+/// 空句子 / 拿自己撞自己 / 两头都是元素 / 不属于同一本书，都当场拒。
 #[tauri::command(rename_all = "snake_case")]
 pub fn inspire_collide(
     data: State<'_, AppData>,
-    left: i64,
-    right: i64,
+    left: String,
+    right: String,
     body: String,
+    node_id: Option<i64>,
 ) -> Result<CollisionReceipt, ApiError> {
     crate::acceptance::note_command("inspire_collide");
-    data.with_store(|store| store.save_collision(left, right, &body, "author"))
+    data.with_store(|store| store.save_collision(&left, &right, &body, node_id, "author"))
 }
 
 /// 跳过这一对（**落盘**：下一次挑对还认它）。
@@ -122,12 +125,12 @@ pub fn inspire_collide(
 pub fn inspire_skip_collision(
     data: State<'_, AppData>,
     work_id: i64,
-    left: i64,
-    right: i64,
+    left: String,
+    right: String,
     node_id: Option<i64>,
 ) -> Result<Vec<Collision>, ApiError> {
     crate::acceptance::note_command("inspire_skip_collision");
-    data.with_store(|store| store.skip_collision(work_id, left, right, node_id, "author"))
+    data.with_store(|store| store.skip_collision(work_id, &left, &right, node_id, "author"))
 }
 
 /// 撤销一次跳过（跳错了要能捡回来）。
@@ -135,10 +138,10 @@ pub fn inspire_skip_collision(
 pub fn inspire_unskip_collision(
     data: State<'_, AppData>,
     work_id: i64,
-    left: i64,
-    right: i64,
+    left: String,
+    right: String,
     node_id: Option<i64>,
 ) -> Result<Vec<Collision>, ApiError> {
     crate::acceptance::note_command("inspire_unskip_collision");
-    data.with_store(|store| store.unskip_collision(work_id, left, right, node_id, "author"))
+    data.with_store(|store| store.unskip_collision(work_id, &left, &right, node_id, "author"))
 }

@@ -20,7 +20,7 @@
 //!            \            /
 //!             attractor（问哪个：时机 × 重要度 × 新颖度 × 派生折扣 × 模板权重）
 //!             inspire  （先看哪条：重要度 × 热度 × 关联度 × 新颖度）
-//!             collide  （哪两条撞一下：共用锚点 / 离得远，只挑对不写字）
+//!             collide  （哪两头撞一下：碎片或大纲元素，只挑对不写字）
 //!             preference（作者怎么处置，就怎么教同类模板）
 //! ```
 //!
@@ -38,7 +38,9 @@ pub mod preference;
 pub mod state_machine;
 
 pub use attractor::{allowed_auto_derivation, gravity, rank, AttractorParams, Candidate, Gravity};
-pub use collide::{pick_pairs, relation_of, CollideParams, CollisionFact, CollisionPair, CollisionRelation};
+pub use collide::{
+    pick_pairs, relation_of, CollideParams, CollisionFact, CollisionPair, CollisionRelation,
+};
 pub use inspire::{spark_gravity, SparkCandidate, SparkGravity, SparkParams};
 pub use novelty::{days_between, is_cooled, novelty};
 pub use forgetting::{decayed_strength, reinforce, should_sink, ForgettingParams};

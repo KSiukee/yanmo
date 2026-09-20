@@ -1,5 +1,8 @@
 // 碰撞那一屏的**状态与命令编排**：摆出来、写一句存下、跳过、撤销跳过。
 //
+// 两头可能是碎片，也可能是大纲元素（章纲 / 伏笔 / 人物卡）——这一层不必知道差别：
+// 核心给的是**规范标识**（`spark:12` / `plan:3`），保存与跳过都原样交回去。
+//
 // 单独成文件的原因与 `inspire-panel.ts` 同一条：这一整块是"会发生什么"，
 // `.vue` 那一份是"长什么样"，组件那一层于是**一个 API 都不直接调**。
 //
@@ -112,7 +115,7 @@ export function useCollidePanel(deps: CollidePanelOptions): CollidePanelState {
       busy.value = true;
       errorText.value = "";
       receipt.value = "";
-      const done = await inspireCollide(pair.left.id, pair.right.id, body);
+      const done = await inspireCollide(pair.left.key, pair.right.key, body, deps.currentChapter.value);
       board.value = done.collisions;
       fillDrafts(done.collisions);
       lastSkipped.value = null;
@@ -134,8 +137,8 @@ export function useCollidePanel(deps: CollidePanelOptions): CollidePanelState {
       receipt.value = "";
       board.value = await inspireSkipCollision(
         work,
-        pair.left.id,
-        pair.right.id,
+        pair.left.key,
+        pair.right.key,
         deps.currentChapter.value,
       );
       lastSkipped.value = pairKey(pair);
@@ -151,7 +154,7 @@ export function useCollidePanel(deps: CollidePanelOptions): CollidePanelState {
     const work = deps.workId.value;
     const key = lastSkipped.value;
     if (!work || key === null) return;
-    const [left, right] = key.split(":").map((piece) => Number(piece));
+    const [left, right] = key.split("|");
     try {
       busy.value = true;
       errorText.value = "";
