@@ -31,8 +31,8 @@ pub use manuscript_state::{
     manuscript_transition, ManuscriptState, ManuscriptTransition, MANUSCRIPT_TRANSITIONS,
 };
 pub use submission::{
-    default_cooldown_until, verdict as submission_verdict, Submission, SubmissionResult,
-    SubmitVerdict, DEFAULT_COOLDOWN_DAYS,
+    verdict as submission_verdict, Submission, SubmissionResult, SubmitVerdict,
+    DEFAULT_COOLDOWN_DAYS,
 };
 pub use entity_card::{Attribute, EntityCard, EntityKind, NewEntityCard};
 // 行映射与「不猜着读」的解析归存储层用：不在公开面上（壳用不到，也不该用）

@@ -13,15 +13,8 @@
 use crate::error::{codes, Error, Result};
 
 /// 填表用的默认冷冻期：90 天（"三个月未回复可自行处理"是文学期刊的常见惯例）。
-/// 只是**界面预填值**，不进任何判据、不写进库；作者一改就按他的来。
+/// 只是**界面预填值**（随看板下发），不进任何判据、不写进库；作者一改就按他的来。
 pub const DEFAULT_COOLDOWN_DAYS: i64 = 90;
-
-const DAY_MS: i64 = 86_400_000;
-
-/// 从投稿时刻推出的默认冷冻期截止（作者随时可改）。
-pub fn default_cooldown_until(submitted_at: i64) -> i64 {
-    submitted_at + DEFAULT_COOLDOWN_DAYS * DAY_MS
-}
 
 /// 一次投稿的**结果**。
 ///
@@ -195,6 +188,6 @@ mod tests {
 
     #[test]
     fn default_cooldown_is_ninety_days() {
-        assert_eq!(default_cooldown_until(0), 90 * DAY_MS);
+        assert_eq!(DEFAULT_COOLDOWN_DAYS, 90);
     }
 }

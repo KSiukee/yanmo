@@ -141,6 +141,22 @@ pub fn set_work_summary(
     data.with_store(|store: &mut Store| store.set_work_summary(work_id, &summary))
 }
 
+/// 设定 / 清除**目标字数**（这本书打算写多少字）。
+///
+/// 它是「未完成散篇」判据里那个"该写多少"；`words` 传 null（或 ≤0）= 清掉，回到没设过。
+/// 写完**回读**一次，界面显示的永远是库里那份。
+#[tauri::command(rename_all = "snake_case")]
+pub fn set_work_target_words(
+    data: State<'_, AppData>,
+    work_id: i64,
+    words: Option<i64>,
+) -> Result<Option<i64>, ApiError> {
+    data.with_store(|store: &mut Store| {
+        store.set_work_target_words(work_id, words)?;
+        store.work_target_words(work_id)
+    })
+}
+
 /// 读 / 写故事总纲（**整本书讲什么**：立意 / 主线 / 卖点）。
 ///
 /// 与作品简介分开两格：简介是给编辑看的（投稿 docx 里摆在书名下），总纲是给自己看的

@@ -308,6 +308,7 @@ fn main() {
             commands::work::rename_work,
             commands::work::set_work_language,
             commands::work::set_work_summary,
+            commands::work::set_work_target_words,
             commands::work::work_storyline,
             commands::work::work_set_storyline,
             commands::work::naming_rewrite_preview,
@@ -341,7 +342,14 @@ fn main() {
             commands::trash::restore_node,
             commands::trash::purge_node,
             commands::trash::purge_work,
-            commands::trash::empty_trash
+            commands::trash::empty_trash,
+            commands::manuscript::manuscript_board,
+            commands::manuscript::manuscript_detail,
+            commands::manuscript::manuscript_verdict,
+            commands::manuscript::manuscript_submit,
+            commands::manuscript::manuscript_move,
+            commands::manuscript::manuscript_update_submission,
+            commands::manuscript::manuscript_delete_submission
         ])
         .run(tauri::generate_context!())
         // i18n-allow-next-line: 进程级 panic 文本（开发者看），应用起不来时界面还不存在

@@ -115,7 +115,8 @@ impl Store {
         })
     }
 
-    /// 改一条投稿记录（记错目标 / 补期限 / 添备注）。
+    /// 改一条投稿记录（记错目标 / 补期限 / 添备注）。返回它属于哪篇稿子
+    /// （调用方多半要接着回读那一篇）。
     ///
     /// **结果**不在这里改：它与稿子状态是一回事，得走
     /// [`Store::move_manuscript`](Store::move_manuscript) 一起动。
@@ -126,11 +127,21 @@ impl Store {
         submitted_at: i64,
         cooldown_until: Option<i64>,
         notes: &str,
-    ) -> Result<()> {
+    ) -> Result<i64> {
         let venue = venue.trim();
         if venue.is_empty() {
             return Err(Error::invalid(codes::SUBMISSION_VENUE_EMPTY));
         }
+        let work_id: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT work_id FROM submissions WHERE id = ?1 AND deleted_at IS NULL",
+                params![submission_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let work_id = work_id.ok_or_else(|| not_found(submission_id))?;
+
         let notes = notes.trim();
         let now = now_millis();
         let tx = self.conn.transaction()?;
@@ -141,6 +152,7 @@ impl Store {
             params![venue, submitted_at, cooldown_until, notes, now, submission_id],
         )?;
         if affected == 0 {
+            // 读它到写它之间被人删了——照实报"找不到"，不假装改成功
             return Err(not_found(submission_id));
         }
         Store::record_in(
@@ -152,12 +164,13 @@ impl Store {
             json!({ "venue": venue, "submitted_at": submitted_at, "cooldown_until": cooldown_until }),
         )?;
         tx.commit()?;
-        Ok(())
+        Ok(work_id)
     }
 
-    /// 软删一条投稿记录（记错了）。**还在等回音的那条不许删**——先撤稿再删，
-    /// 否则会剩下"状态是已投、却没有对应记录"的空账。
-    pub fn delete_submission(&mut self, submission_id: i64) -> Result<()> {
+    /// 软删一条投稿记录（记错了），返回它属于哪篇稿子。
+    ///
+    /// **还在等回音的那条不许删**——先撤稿再删，否则会剩下"状态是已投、却没有对应记录"的空账。
+    pub fn delete_submission(&mut self, submission_id: i64) -> Result<i64> {
         let row: Option<(i64, String)> = self
             .conn
             .query_row(
@@ -179,6 +192,6 @@ impl Store {
         )?;
         Store::record_in(&self.device_id, &tx, "submissions", submission_id, "delete", json!({}))?;
         tx.commit()?;
-        Ok(())
+        Ok(work_id)
     }
 }
