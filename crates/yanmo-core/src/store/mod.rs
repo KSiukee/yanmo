@@ -21,6 +21,8 @@ mod card;
 mod card_move;
 mod card_row;
 mod cast;
+mod collection;
+mod collection_row;
 mod defer_condition;
 mod content;
 mod device;
@@ -85,6 +87,7 @@ pub use backup::{
 pub use card::KIND_QUESTION;
 pub use card_move::CardEvent;
 pub use cast::CastMember;
+pub use collection_row::{ArticleEntry, CollectionView};
 pub use content::ContentStats;
 pub use export::{ExportFormat, RenderedFile};
 pub use fragment::{FragmentEdit, NewFragment, FRAGMENTS_PER_BOARD};

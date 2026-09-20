@@ -84,6 +84,13 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "找不到这条投稿记录：{submission_id}" : ["submission_id"],
     SUBMISSION_IN_USE => "submission.in_use"
         : "这条投稿还在等回音（这篇稿子的状态是「已投」）——先撤稿，再删记录" : [],
+    COLLECTION_NOT_A_COLLECTION => "collection.not_a_collection"
+        : "「{work_id}」不是一个集——只有短篇集才装篇目" : ["work_id"],
+    COLLECTION_MEMBER_NOT_ARTICLE => "collection.member_not_article"
+        : "只有单篇文章能归集（长篇在书架上管）：{work_id}" : ["work_id"],
+    COLLECTION_REORDER_MISMATCH => "collection.reorder_mismatch"
+        : "重排的清单与集里的篇目对不上（集里该有 {expected} 篇，给了 {got} 篇）"
+        : ["expected", "got"],
     BACKUP_SNAPSHOT_FAILED => "backup.snapshot_failed"
         : "做一致性快照失败（库可能有问题）：{detail}" : ["detail"],
     BACKUP_RESTORE_SOURCE_INVALID => "backup.restore_source_invalid"
