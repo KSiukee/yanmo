@@ -272,26 +272,15 @@ fn placeholders(text: &str) -> Vec<String> {
     ///
     /// 这一条守的是最容易漏的一处：文案里有 `{detail}`、调用点却忘了把底层原因交上来，
     /// 界面就会显示成「无法创建目录 {path}：{detail}」——不报错，只是把内部占位符露给作者。
-    ///
     /// 扫的是**整个壳**（不只 `storage.rs`）：命令域里的失败同样要守这条规矩。
     #[test]
     fn every_shell_code_is_used_and_hands_over_its_reason() {
-        let sources = shell_sources();
-        let dict = dictionary();
+        let (sources, dict) = (shell_sources(), dictionary());
         for (code, _) in SHELL_CODES {
-            let needle = format!("{code}\"");
-            let mut hit: Option<(usize, usize)> = None;
-            for (index, (_, text)) in sources.iter().enumerate() {
-                if let Some(at) = text.find(&needle) {
-                    hit = Some((index, at));
-                    break;
-                }
-            }
-            let (index, at) = hit
+            let (index, at) = construction_site(&sources, code)
                 .unwrap_or_else(|| panic!("壳层错误码 {code} 没人用——要么补上，要么从码表里删掉"));
             let (where_, text) = &sources[index];
-            // 取这一句（到分号为止）看它有没有接上底层原因。
-            // 注意按**字符**截断：按字节切会把中文切成半个字（UTF-8 边界）
+            // 取这一句（到分号为止）看有没有接上底层原因；按**字符**截断（按字节切会把中文切半）
             let tail: String = text[at..].chars().take(400).collect();
             let statement = tail.split(';').next().unwrap_or(&tail);
             if dict[&format!("error.{code}")].contains("{detail}") {
@@ -301,6 +290,18 @@ fn placeholders(text: &str) -> Vec<String> {
                 );
             }
         }
+    }
+
+    /// 这个码在壳里的**构造点**（`ApiError::with("码"` / `ApiError::new("码"`，含换行缩进）。
+    /// 只认构造点：文案表与匹配分支里提到码字符串不算——那里既不产出错误、也没处接原因。
+    fn construction_site(sources: &[(String, String)], code: &str) -> Option<(usize, usize)> {
+        let needle = format!("\"{code}\"");
+        sources.iter().enumerate().find_map(|(index, (_, text))| {
+            text.match_indices(&needle).map(|(at, _)| at).find(|at| {
+                let head = text[..*at].trim_end();
+                head.ends_with("ApiError::with(") || head.ends_with("ApiError::new(")
+            }).map(|at| (index, at))
+        })
     }
 
     /// **问题模板对表**：核心给的每条模板，界面字典里都得有一句，而且要填得上它声明的槽位。

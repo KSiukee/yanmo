@@ -39,6 +39,7 @@ mod pick_dir;
 mod renderer;
 mod renderer_win;
 mod single;
+mod startup;
 mod storage;
 mod volume;
 mod watchdog;
@@ -138,13 +139,16 @@ fn main() {
             let data = match opened {
                 Ok(data) => data,
                 Err(error) => {
-                    // 「这个数据目录已经开着一个研墨了」是唯一要在启动期单独辨出来的失败：
-                    // 界面还没起来，得弹一句人话，而不是静默退出（绝不静默失败）。
-                    if error.code == "shell.already_running" {
-                        let dir = error.params.get("path").cloned().unwrap_or_default();
-                        crate::single::announce_already_running(&dir);
+                    // 界面还没起来（这一句就是启动失败的最后一站）：能跟作者说话的只有原生对话框。
+                    // **任何一档都要说人话，然后干净退出**——不许静默、也不许往下掉进 panic
+                    //（release 版没有控制台，panic 等于"双击没反应"）。
+                    // 验收/演练那条路只写 stderr：弹一个要人点的框会把自动化挂在半路。
+                    if acceptance::ui_plan().is_some() {
+                        startup::print_failure(&error);
+                    } else {
+                        startup::announce_failure(&error);
                     }
-                    return Err(Box::new(error));
+                    std::process::exit(1);
                 }
             };
             app.manage(data);

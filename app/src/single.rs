@@ -57,13 +57,6 @@ impl InstanceLock {
     }
 }
 
-/// 告诉作者「这个数据目录已经开着一个研墨了」。
-///
-/// 应用起不来时**界面还不存在**，只能弹系统对话框——与 `main.rs` 里那句启动失败文本同理。
-pub fn announce_already_running(data_dir: &str) {
-    imp::announce(data_dir);
-}
-
 #[cfg(windows)]
 impl Drop for InstanceLock {
     fn drop(&mut self) {
@@ -77,9 +70,6 @@ mod imp {
 
     use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS};
     use windows_sys::Win32::System::Threading::CreateMutexW;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        MessageBoxW, MB_ICONINFORMATION, MB_OK, MB_SETFOREGROUND,
-    };
 
     use super::InstanceLock;
 
@@ -118,26 +108,6 @@ mod imp {
             lock.handle = std::ptr::null_mut();
         }
     }
-
-    pub(super) fn announce(data_dir: &str) {
-        let wide =
-            |text: &str| -> Vec<u16> { text.encode_utf16().chain(std::iter::once(0)).collect() };
-        // i18n-allow-next-line: 启动期系统对话框——前端还没起来，没有字典可查（与 main.rs 的启动失败文本同理）
-        let message = format!(
-            "研墨已经在这个数据目录里开着了：\n{data_dir}\n\n请用已经打开的那个窗口。如果只想在这里再开一个，先把那一个关掉。"
-        );
-        // i18n-allow-next-line: 产品名（品牌），不翻译
-        let title = wide("研墨");
-        let body = wide(&message);
-        unsafe {
-            MessageBoxW(
-                std::ptr::null_mut(),
-                body.as_ptr(),
-                title.as_ptr(),
-                MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND,
-            );
-        }
-    }
 }
 
 #[cfg(not(windows))]
@@ -151,8 +121,6 @@ mod imp {
         // 在这里换成对应的文件锁/命名内核对象即可，接口这一层不用动。
         Ok(InstanceLock {})
     }
-
-    pub(super) fn announce(_data_dir: &str) {}
 }
 
 #[cfg(all(test, windows))]
