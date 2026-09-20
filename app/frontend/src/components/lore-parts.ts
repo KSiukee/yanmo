@@ -9,6 +9,7 @@
 
 import type { Ref } from "vue";
 
+import { useCollidePanel, type CollidePanelState } from "./collide-panel.ts";
 import { useCreatorPanel, type CreatorPanelState } from "./creator-panel.ts";
 import { useEntityPanel, type EntityPanelState } from "./entity-panel.ts";
 import { useForeshadowPanel, type ForeshadowPanelState } from "./foreshadow-panel.ts";
@@ -25,8 +26,10 @@ export interface LoreParts {
   foreshadows: ForeshadowPanelState;
   /** 事件那页用的是创作流那一份碎片状态（两处共用） */
   creator: CreatorPanelState;
-  /** 灵感：同一批碎片按引力排出来的那一屏（创建流那一栏的第二片） */
+  /** 灵感：同一批碎片按引力排出来的那一屏（创作流那一栏的第二片） */
   inspire: InspirePanelState;
+  /** 碰撞：机制挑两条摆一起，作者写下撞出来的那句（创作流那一栏的第三片） */
+  collide: CollidePanelState;
   /** 面板外壳：开着没有、停在哪个页签 */
   lore: LoreState;
 }
@@ -49,6 +52,7 @@ export function useLoreParts(deps: LorePartsOptions): LoreParts {
     currentChapter: deps.currentChapter,
     insertText: deps.insertText,
   });
+  const collide = useCollidePanel({ workId: deps.workId, currentChapter: deps.currentChapter });
   const lore = useLore({
     entities,
     foreshadows,
@@ -60,5 +64,5 @@ export function useLoreParts(deps: LorePartsOptions): LoreParts {
       foreshadows.cancelEdit();
     },
   });
-  return { storyline, entities, foreshadows, creator, inspire, lore };
+  return { storyline, entities, foreshadows, creator, inspire, collide, lore };
 }

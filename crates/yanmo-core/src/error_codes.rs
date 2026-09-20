@@ -173,6 +173,10 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "这条已经是事件了——它就在事件池里：{spark_id}" : ["spark_id"],
     SPARK_TARGET_UNKNOWN => "value.unknown_spark_target"
         : "认不出的采纳落点：{value}（只认 body / outline / scene / event）" : ["value"],
+    COLLISION_SAME_SPARK => "collision.same_spark"
+        : "不能拿同一条跟自己撞：{spark_id}" : ["spark_id"],
+    COLLISION_FOREIGN => "collision.foreign"
+        : "这两条不属于同一本书：{left} 与 {right}" : ["left", "right"],
     UNKNOWN_QUESTION_TONE => "value.unknown_question_tone"
         : "认不出的问话语气：{value}（只认 warm / neutral / direct）" : ["value"],
     UNKNOWN_ASIDE_TAB => "value.unknown_aside_tab"

@@ -416,10 +416,20 @@ fn every_declared_command_is_registered_and_reachable_from_the_gateway() {
     let declared = declared_commands(&commands_dir);
     assert!(!declared.is_empty(), "没扫到命令声明，守卫会假绿——检查扫描目录");
 
-    let registered = registered_commands(&read(&package_root().join("src/main.rs")));
+    // 登记清单住在 `src/commands/registry.rs`（0.78.0 起从入口搬出来的：
+    // 那张清单每加一个功能就长一行，入口该是薄入口）。
+    let registry = read(&package_root().join("src/commands/registry.rs"));
+    let registered = registered_commands(&registry);
     assert_eq!(
         declared, registered,
         "声明的命令与注册的命令必须一一对应：漏注册 = 界面调不到，注册了不实现 = 启动就崩"
+    );
+
+    // 清单还在、入口没接上：命令一条都通不了，界面全废（这条守住"接上"那一步）
+    let main_rs = read(&package_root().join("src/main.rs"));
+    assert!(
+        main_rs.contains("commands::registry::app_handlers()"),
+        "入口没有接上命令登记处（src/commands/registry.rs）"
     );
 
     // 命令都要有界面出口，否则就是没人用的死代码

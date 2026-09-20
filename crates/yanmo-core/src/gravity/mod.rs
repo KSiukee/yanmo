@@ -10,7 +10,8 @@
 //! 对齐基准是源仓的跨语言测试向量（见 `tests/gravity_vectors.rs`）。
 //!
 //! [`crate::gravity::attractor`]（叩问的引力公式与排序）、[`crate::gravity::inspire`]
-//! （灵感的引力公式与排序）与 [`crate::gravity::preference`]（偏好学习闭环）是本项目自写。
+//! （灵感的引力公式与排序）、[`crate::gravity::collide`]（两条碎片撞一下的挑对规则）
+//! 与 [`crate::gravity::preference`]（偏好学习闭环）是本项目自写。
 //!
 //! # 分层
 //!
@@ -19,6 +20,7 @@
 //!            \            /
 //!             attractor（问哪个：时机 × 重要度 × 新颖度 × 派生折扣 × 模板权重）
 //!             inspire  （先看哪条：重要度 × 热度 × 关联度 × 新颖度）
+//!             collide  （哪两条撞一下：共用锚点 / 离得远，只挑对不写字）
 //!             preference（作者怎么处置，就怎么教同类模板）
 //! ```
 //!
@@ -28,6 +30,7 @@
 //! 业务语义（模板池、从要素生候选）在 [`crate::question`]；读写数据库在 [`crate::store`]。
 
 pub mod attractor;
+pub mod collide;
 pub mod forgetting;
 pub mod inspire;
 pub mod novelty;
@@ -35,6 +38,7 @@ pub mod preference;
 pub mod state_machine;
 
 pub use attractor::{allowed_auto_derivation, gravity, rank, AttractorParams, Candidate, Gravity};
+pub use collide::{pick_pairs, relation_of, CollideParams, CollisionFact, CollisionPair, CollisionRelation};
 pub use inspire::{spark_gravity, SparkCandidate, SparkGravity, SparkParams};
 pub use novelty::{days_between, is_cooled, novelty};
 pub use forgetting::{decayed_strength, reinforce, should_sink, ForgettingParams};

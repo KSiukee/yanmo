@@ -7,7 +7,8 @@
 //! 与叩问那条线的分工：那边是"机制挑问题问你"，这边是"机制替你把这堆碎片排个序"。
 //! 两条线的落点集合**故意不同**（灵感多一档"事件池"，见 [`SparkTarget`]）。
 //!
-//! 命令粒度守则（与 [`crate::commands`] 一致）：三个就够——看一眼、采纳、丢弃。
+//! 命令粒度守则（与 [`crate::commands`] 一致）：看一眼、采纳、丢弃，
+//! 外加碰撞那三下（看一眼、存下、跳过 / 撤销跳过）。
 //! "采纳"是一个动作而不是四个命令：落点是它的参数（四种落点共用一条实现）。
 
 use serde::Serialize;
@@ -16,7 +17,10 @@ use tauri::State;
 use crate::error::ApiError;
 use crate::storage::AppData;
 use yanmo_core::model::SparkTarget;
-use yanmo_core::store::{AdoptReceipt, Spark, Store, SPARKS_PER_BOARD};
+use yanmo_core::store::{
+    AdoptReceipt, Collision, CollisionReceipt, Spark, Store, COLLISIONS_PER_BOARD,
+    SPARKS_PER_BOARD,
+};
 
 /// 一屏灵感：**排好序的那几条**。
 ///
@@ -82,4 +86,59 @@ pub fn inspire_discard(
 ) -> Result<Vec<Spark>, ApiError> {
     crate::acceptance::note_command("inspire_discard");
     data.with_store(|store| store.discard_spark(id, node_id, "author"))
+}
+
+/// 看一眼**碰撞**：这一池碎片里，哪几条值得放一起撞一下。
+///
+/// 规则是确定性的（同输入同输出）：同处的（有共用锚点）优先，其次相隔的；
+/// 一屏里同一条只上一场；撞过的组合与作者跳过的不再出现。
+#[tauri::command(rename_all = "snake_case")]
+pub fn inspire_collisions(
+    data: State<'_, AppData>,
+    work_id: i64,
+    node_id: Option<i64>,
+) -> Result<Vec<Collision>, ApiError> {
+    crate::acceptance::note_command("inspire_collisions");
+    data.with_store(|store| store.spark_collisions(work_id, node_id, COLLISIONS_PER_BOARD))
+}
+
+/// **存下撞出来的那一句**：写成一张双源溯源的灵感卡。
+///
+/// 关系（同处 / 相隔）由核心自己算——界面不必报，也就报不错。
+/// 空句子 / 拿自己撞自己 / 两条不属于同一本书，都当场拒。
+#[tauri::command(rename_all = "snake_case")]
+pub fn inspire_collide(
+    data: State<'_, AppData>,
+    left: i64,
+    right: i64,
+    body: String,
+) -> Result<CollisionReceipt, ApiError> {
+    crate::acceptance::note_command("inspire_collide");
+    data.with_store(|store| store.save_collision(left, right, &body, "author"))
+}
+
+/// 跳过这一对（**落盘**：下一次挑对还认它）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn inspire_skip_collision(
+    data: State<'_, AppData>,
+    work_id: i64,
+    left: i64,
+    right: i64,
+    node_id: Option<i64>,
+) -> Result<Vec<Collision>, ApiError> {
+    crate::acceptance::note_command("inspire_skip_collision");
+    data.with_store(|store| store.skip_collision(work_id, left, right, node_id, "author"))
+}
+
+/// 撤销一次跳过（跳错了要能捡回来）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn inspire_unskip_collision(
+    data: State<'_, AppData>,
+    work_id: i64,
+    left: i64,
+    right: i64,
+    node_id: Option<i64>,
+) -> Result<Vec<Collision>, ApiError> {
+    crate::acceptance::note_command("inspire_unskip_collision");
+    data.with_store(|store| store.unskip_collision(work_id, left, right, node_id, "author"))
 }

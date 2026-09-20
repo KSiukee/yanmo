@@ -86,3 +86,48 @@ export const inspireAdopt = (
 /** 丢弃一条（软删，能捞回；不动"被采纳过几次"那本账）。 */
 export const inspireDiscard = (id: number, node_id: number | null = null) =>
   call<Spark[]>(COMMANDS.inspireDiscard, { id, node_id });
+
+/** 两条碎片的关系（与核心 `CollisionRelation` 的稳定码一致）。 */
+export type CollisionRelation = "together" | "apart";
+
+/** 一对碰撞建议：两条碎片本身 + 关系 + 分数。 */
+export interface Collision {
+  left: Spark;
+  right: Spark;
+  relation: CollisionRelation;
+  /** 共用的那几条锚点（相隔时是空的） */
+  shared_anchors: string[];
+  score: number;
+}
+
+/** 存下一条碰撞卡的回执。 */
+export interface CollisionReceipt {
+  /** 新写下的那张灵感卡（双源溯源已经在它身上） */
+  spark_id: number;
+  /** 撞完之后这一屏该是什么（撞过的那对自动不再出现） */
+  collisions: Collision[];
+}
+
+/** 看一眼碰撞：这一池里哪几条值得放一起撞一下。 */
+export const inspireCollisions = (work_id: number, node_id: number | null = null) =>
+  call<Collision[]>(COMMANDS.inspireCollisions, { work_id, node_id });
+
+/** 存下撞出来的那一句（写成一张双源溯源的灵感卡）。 */
+export const inspireCollide = (left: number, right: number, body: string) =>
+  call<CollisionReceipt>(COMMANDS.inspireCollide, { left, right, body });
+
+/** 跳过这一对（落盘：下一次挑对还认它）。 */
+export const inspireSkipCollision = (
+  work_id: number,
+  left: number,
+  right: number,
+  node_id: number | null = null,
+) => call<Collision[]>(COMMANDS.inspireSkipCollision, { work_id, left, right, node_id });
+
+/** 撤销一次跳过。 */
+export const inspireUnskipCollision = (
+  work_id: number,
+  left: number,
+  right: number,
+  node_id: number | null = null,
+) => call<Collision[]>(COMMANDS.inspireUnskipCollision, { work_id, left, right, node_id });
