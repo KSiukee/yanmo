@@ -36,6 +36,13 @@ CLI_REL = Path("target/release/yanmo-cli.exe")
 # Tauri 取它的位置：`app/binaries/`，文件名必须带主机三元组
 STAGE_REL = Path("app/binaries")
 
+# 控制台编码**不由我们决定**：中文 Windows 上是 GBK，最后那行 ✅/❌ 会当场 UnicodeEncodeError
+# ——活已经干完了，却以一个吓人的报错收场（真踩过）。与 `build_release.py` 同一条处置：
+# 统一切到 UTF-8，编不出的字符退成 `?`；**打印失败绝不该让这条命令看起来是失败的**。
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 
 def _run(cmd: list, cwd: Path, timeout: int) -> tuple[int, str]:
     """跑一条命令，拿 `(退出码, 输出)`。
