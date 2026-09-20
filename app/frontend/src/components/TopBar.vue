@@ -15,6 +15,8 @@ defineProps<{
   workId: number | null;
   /** 顶栏那行小字：有章名就章名；开着书没起名就占位；没书才说立场那句话 */
   hint: string;
+  /** 投稿已超期、可以改投的篇数（0 = 不显示徽标） */
+  manuscriptOverdue: number;
 }>();
 
 const emit = defineEmits<{
@@ -43,10 +45,16 @@ const emit = defineEmits<{
     <button
       type="button"
       class="bar__button"
-      :title="t('app.manuscript_title')"
+      :title="
+        manuscriptOverdue > 0
+          ? t('app.manuscript_overdue_title', { count: manuscriptOverdue })
+          : t('app.manuscript_title')
+      "
       @click="emit('manuscript')"
     >
       {{ t("app.manuscript") }}
+      <!-- 超期未回的投稿：**安安静静一个数字**，不弹窗、不打断（点开才说详情） -->
+      <span v-if="manuscriptOverdue > 0" class="bar__badge">{{ manuscriptOverdue }}</span>
     </button>
     <button
       type="button"
@@ -127,5 +135,16 @@ const emit = defineEmits<{
 .bar__hint {
   font-size: 12px;
   color: var(--ym-ink-soft);
+}
+
+/* 徽标：数字贴着按钮右边，不占布局（按钮自己开着 gap） */
+.bar__badge {
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--ym-accent);
+  color: var(--ym-paper);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 </style>

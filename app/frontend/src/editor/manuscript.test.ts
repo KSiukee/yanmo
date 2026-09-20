@@ -19,6 +19,7 @@ import {
   needsTarget,
   nextStatuses,
   overdue,
+  overdueRows,
   remainingWords,
   unfinishedRows,
   untargetedRows,
@@ -147,6 +148,19 @@ test("超期只认「期限已过」：没定期限不算超期", () => {
   assert.equal(overdue(now - 1, now), true);
   assert.equal(overdue(now + 1, now), false);
   assert.equal(overdue(null, now), false);
+});
+
+test("超期未回的那几篇：只算定过期限、且期限已过的", () => {
+  const now = 1_000_000_000;
+  const stale = row({ id: 1, active_venue: "甲刊", active_cooldown_until: now - 1 });
+  const waiting = row({ id: 2, active_venue: "乙刊", active_cooldown_until: now + 1 });
+  const noDeadline = row({ id: 3, active_venue: "丙刊", active_cooldown_until: null });
+  const idle = row({ id: 4 });
+  assert.deepEqual(
+    overdueRows([waiting, idle, stale, noDeadline], now).map((item) => item.id),
+    [1],
+  );
+  assert.deepEqual(overdueRows([waiting, idle, noDeadline], now), []);
 });
 
 test("日期输入框与毫秒来回换算（本地日历日）", () => {

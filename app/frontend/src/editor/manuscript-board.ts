@@ -6,7 +6,7 @@
 // - 一条纪律与核心一致：**一稿多投是软拦**——判词不是 clear 时先把后果摆出来，
 //   作者点过"仍然记下"才真的写；这里不替作者做决定。
 
-import { ref, type Ref } from "vue";
+import { computed, ref, type ComputedRef, type Ref } from "vue";
 
 import type {
   ManuscriptBoard,
@@ -17,7 +17,7 @@ import type {
   Submission,
   SubmitVerdict,
 } from "../api/manuscript";
-import { statusKey } from "./manuscript";
+import { overdueRows, statusKey } from "./manuscript";
 import { t } from "../locales/index.ts";
 
 /** 稿件台要用的动作（会话层注入真命令，测试注入替身）。 */
@@ -80,6 +80,13 @@ export interface ManuscriptBoardState {
   rows: Ref<ManuscriptRow[]>;
   /** 界面填表要用的默认冷冻期（核心给的，界面不自己抄一个 90 天） */
   defaultCooldownDays: Ref<number>;
+  /**
+   * 投稿已超期、可以改投的篇数。
+   *
+   * 它是**顶栏那个数字徽标**与稿件台里那条提示唯一的源——一处算、两处读，
+   * 免得徽标说 2 篇、打开一看只有 1 篇（两份口径迟早分家）。
+   */
+  overdueCount: ComputedRef<number>;
   /** 正在看详情的那一篇（null = 没选） */
   detail: Ref<ManuscriptDetail | null>;
   form: Ref<ManuscriptForm | null>;
@@ -112,6 +119,9 @@ export function useManuscript(options: ManuscriptOptions): ManuscriptBoardState 
   const detail = ref<ManuscriptDetail | null>(null);
   const form = ref<ManuscriptForm | null>(null);
   const warned = ref<WarnedSubmit | null>(null);
+
+  /** 超期未回的篇数：打开稿件台之前也能在顶栏看到（见 `refresh` 那次开机预热）。 */
+  const overdueCount = computed(() => overdueRows(rows.value).length);
 
   const report = (error: unknown) => {
     options.onError?.(error instanceof Error ? error.message : String(error));
@@ -166,6 +176,7 @@ export function useManuscript(options: ManuscriptOptions): ManuscriptBoardState 
     note,
     rows,
     defaultCooldownDays,
+    overdueCount,
     detail,
     form,
     warned,

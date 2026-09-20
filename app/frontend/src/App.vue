@@ -68,7 +68,10 @@ function answerPushed() {
 const { chapterTitle, workId } = session;
 const { visible: shelfVisible, toggle: toggleShelf, form: workForm, closeForm } = session.shelf;
 // 稿件台：书架是主入口（按作品），这里是副入口（按流转）——同一批作品，不是第二份列表
-const { visible: manuscriptVisible, toggle: toggleManuscript } = session.manuscript;
+const { visible: manuscriptVisible, toggle: toggleManuscript, overdueCount } = session.manuscript;
+// 开机预热一次看板：**顶栏那个徽标要在打开稿件台之前就有数**
+// （超期未回的投稿是"该管一管了"的信号，藏在弹窗里等于没有）
+void session.manuscript.refresh();
 const { visible: trashVisible } = session.trash;
 const { visible: snapshotsVisible } = session.snapshots;
 const { visible: typesetVisible } = session.typeset;
@@ -105,6 +108,7 @@ const hint = computed(() => {
       v-if="zenChrome.topbar"
       :work-id="workId"
       :hint="hint"
+      :manuscript-overdue="overdueCount"
       @shelf="toggleShelf()"
       @manuscript="toggleManuscript()"
       @zen="toggleZen()"

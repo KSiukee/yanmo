@@ -35,6 +35,7 @@ const {
   note,
   rows,
   defaultCooldownDays,
+  overdueCount,
   detail,
   form,
   warned,
@@ -210,6 +211,10 @@ function dismissWarn() {
 
       <p v-if="note" class="manuscript__note dialog__note">{{ note }}</p>
       <p v-if="dropHint" class="manuscript__note dialog__note">{{ dropHint }}</p>
+      <!-- 超期未回：**一条提示**，不弹窗、不挡路——点卡片就能改投别家 -->
+      <p v-if="overdueCount > 0" class="manuscript__note dialog__note">
+        {{ t("manuscript.overdue_tip", { count: overdueCount }) }}
+      </p>
 
       <div class="manuscript__body">
         <!-- 看板：七列，一列一个状态；卡片可以拖到别的列 -->

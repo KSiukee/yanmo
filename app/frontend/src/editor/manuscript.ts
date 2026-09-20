@@ -113,6 +113,16 @@ export function overdue(cooldown_until: number | null, now: number = Date.now())
   return cooldown_until !== null && cooldown_until <= now;
 }
 
+/**
+ * 投稿已超期、可以改投的那些（顶栏那个数字徽标与稿件台里那条提示都读它）。
+ *
+ * 只算"在等回音、而且**定过期限**、期限已经过"的：没定期限的不算超期（作者没说等多久，
+ * 不替他假设）——与核心的判据同一条口径。
+ */
+export function overdueRows(rows: ManuscriptRow[], now: number = Date.now()): ManuscriptRow[] {
+  return rows.filter((row) => overdue(row.active_cooldown_until, now));
+}
+
 /** 日期输入框（`YYYY-MM-DD`，本地日历日）→ 当天零点的毫秒；空串 / 坏值给 null。 */
 export function dateInputToMs(text: string): number | null {
   const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text.trim());
