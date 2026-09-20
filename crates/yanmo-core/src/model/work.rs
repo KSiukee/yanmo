@@ -125,6 +125,11 @@ pub struct Work {
     pub updated_at: i64,
     /// 最近打开时间（书架排序用）。
     pub opened_at: Option<i64>,
+    /// 稿件流转状态（v17 起）——短篇的生命周期看它，不是"进度"。
+    ///
+    /// 长篇也有这一列（默认草稿）：投稿这件事与作品类型无关，
+    /// 而"书架与稿件台是同一批作品"这条要求，在数据上就是同一个字段。
+    pub status: super::ManuscriptState,
 }
 
 #[cfg(test)]

@@ -79,14 +79,24 @@ fn the_main_path_speaks_in_stable_action_codes() {
     assert_eq!(actions, vec!["ready", "submit", "accept", "publish"]);
 }
 
-/// 终态的入口要说得清：过稿从"已投"来、已发从"过稿"来。
+/// 终态的入口要说得清：过稿从"已投"或"待投"来、已发从"过稿"来。
 #[test]
 fn terminal_states_have_a_declared_entry() {
     let into = |to: ManuscriptState| {
         MANUSCRIPT_TRANSITIONS.iter().filter(|t| t.to == to).map(|t| t.from).collect::<Vec<_>>()
     };
-    assert_eq!(into(ManuscriptState::Accepted), vec![ManuscriptState::Submitted]);
+    let accepted = into(ManuscriptState::Accepted);
+    assert!(accepted.contains(&ManuscriptState::Submitted), "过稿从已投来");
+    assert!(accepted.contains(&ManuscriptState::Ready), "撤稿/超期之后回的信也要能记");
     assert_eq!(into(ManuscriptState::Published), vec![ManuscriptState::Accepted]);
+}
+
+/// 撤稿（或超期先标回待投）之后编辑才回信——**结果随时可能来**，这条路得通。
+#[test]
+fn a_late_reply_can_still_be_recorded() {
+    use ManuscriptState::*;
+    assert_eq!(manuscript_transition(Ready, Accepted).map(|e| e.action), Some("accept"));
+    assert_eq!(manuscript_transition(Ready, Rejected).map(|e| e.action), Some("reject"));
 }
 
 /// **重出路径**：被拒不是终点——冷冻期结束可以改投别家。

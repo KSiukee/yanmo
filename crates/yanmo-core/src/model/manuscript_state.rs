@@ -143,6 +143,9 @@ pub const MANUSCRIPT_TRANSITIONS: &[Edge] = &[
     Edge { from: State::Submitted, to: State::Accepted, action: "accept" },
     Edge { from: State::Submitted, to: State::Rejected, action: "reject" },
     Edge { from: State::Submitted, to: State::Ready, action: "withdraw" },
+    // 撤稿 / 超期先标回待投之后，编辑才回信——**结果随时可能来**，这条路得通
+    Edge { from: State::Ready, to: State::Accepted, action: "accept" },
+    Edge { from: State::Ready, to: State::Rejected, action: "reject" },
     // 冷冻期结束改投别家（这条重出路径正是本状态机存在的理由）；退稿后回炉重写
     Edge { from: State::Rejected, to: State::Ready, action: "revive" },
     Edge { from: State::Rejected, to: State::Finished, action: "rework" },

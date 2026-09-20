@@ -1,25 +1,18 @@
 //! 一次**投稿**的记录与两条纯判据：冷冻期到没到、这一投会不会撞上一稿多投。
 //!
-//! 「投过哪几家、还在等回、哪天可改投」是短篇管理真正的价值——
-//! 它要的是**历史**（一次投稿一行，见 `submissions` 表），不是作品上的某个字段。
-//! 这里只放**数据形状与纯规则**；建表、读写与留痕在 `store::manuscript`（还没接）。
+//! 「投过哪几家、还在等回、哪天可改投」是短篇管理真正的价值——它要的是**历史**
+//! （一次投稿一行，见 `submissions` 表），不是作品上的某个字段。这里只放数据形状与
+//! 纯规则；建表、读写与留痕在 `store::manuscript`。
 //!
-//! # 冷冻期是什么
-//!
-//! 投出去之后，到"这篇可以再投别家"之间隔着一段**等回音的窗口**：`cooldown_until`，
-//! 由作者定（界面填表默认 [`DEFAULT_COOLDOWN_DAYS`] 天）。到点仍没回音就**视为可改投**
-//! ——但不改写历史：那条记录还是 `waiting`，只是界面显示「已超期」（编辑后来回了话，
-//! 历史不能自己先替他说"没回"）。
-//!
-//! # 拦是软拦
-//!
+//! 冷冻期：投出去之后到"可以再投别家"之间隔着一段**等回音的窗口**（`cooldown_until`，
+//! 界面填表默认 [`DEFAULT_COOLDOWN_DAYS`] 天）。到点仍没回音就**视为可改投**——但
+//! **不改写历史**：那条记录还是 `waiting`，界面显示「已超期」。
 //! [`verdict`] 给的是**判词**不是判决：不是 [`SubmitVerdict::Clear`] 时，界面把后果说清楚
 //! （投给谁、还在等谁、冷冻到哪天），作者确认后**仍然可以投**并留痕——他是主人。
 
 use crate::error::{codes, Error, Result};
 
 /// 填表用的默认冷冻期：90 天（"三个月未回复可自行处理"是文学期刊的常见惯例）。
-///
 /// 只是**界面预填值**，不进任何判据、不写进库；作者一改就按他的来。
 pub const DEFAULT_COOLDOWN_DAYS: i64 = 90;
 
@@ -33,7 +26,8 @@ pub fn default_cooldown_until(submitted_at: i64) -> i64 {
 /// 一次投稿的**结果**。
 ///
 /// `Waiting` 不是"还没填"，而是"投出去了，正在等回音"——冷冻期与一稿多投判据都读它。
-/// 「超期未回」**不是一个取值**：它是 `Waiting` + 时间过了截止（[`Submission::is_stale`]）。
+/// 「超期未回」**不是一个取值**：它是 `Waiting` + 时间过了截止（[`Submission::is_stale`]）；
+/// 而 [`SubmissionResult::Withdrawn`] 是**作者的主动动作**，与"没回音"不是一回事。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubmissionResult {
     /// 等回音（尚未有结果）。
@@ -42,6 +36,8 @@ pub enum SubmissionResult {
     Accepted,
     /// 退稿。
     Rejected,
+    /// 自己撤回（不等了 / 撤稿改投）——历史里要留下这一笔。
+    Withdrawn,
 }
 
 /// 进 JSON 就用稳定码本身（理由同 [`super::ManuscriptState`]）。
@@ -53,8 +49,12 @@ impl serde::Serialize for SubmissionResult {
 
 impl SubmissionResult {
     /// 全部取值（穷举测试拿它对表）。
-    pub const ALL: [SubmissionResult; 3] =
-        [SubmissionResult::Waiting, SubmissionResult::Accepted, SubmissionResult::Rejected];
+    pub const ALL: [SubmissionResult; 4] = [
+        SubmissionResult::Waiting,
+        SubmissionResult::Accepted,
+        SubmissionResult::Rejected,
+        SubmissionResult::Withdrawn,
+    ];
 
     /// 稳定代码（写库；别改）。
     pub const fn as_str(self) -> &'static str {
@@ -62,6 +62,7 @@ impl SubmissionResult {
             SubmissionResult::Waiting => "waiting",
             SubmissionResult::Accepted => "accepted",
             SubmissionResult::Rejected => "rejected",
+            SubmissionResult::Withdrawn => "withdrawn",
         }
     }
 
@@ -102,7 +103,6 @@ impl Submission {
     }
 
     /// 超期：还在等，但冷冻期已经过了——**视为可改投**（历史不改写，界面显示"已超期"）。
-    ///
     /// 没定期限（`cooldown_until` 为空）不算超期：作者没说等多久，就不替他假设。
     pub fn is_stale(&self, now: i64) -> bool {
         self.is_open() && self.cooldown_until.is_some_and(|until| now >= until)

@@ -5,15 +5,16 @@ use serde_json::json;
 
 use super::Store;
 use crate::error::{codes, Error, Result};
-use crate::model::{NodeKind, Work, WorkKind, WorkLanguage};
+use crate::model::{ManuscriptState, NodeKind, Work, WorkKind, WorkLanguage};
 use crate::time::now_millis;
 
 /// 作品字段列表（顺序与 [`WorkRow`] 对应）。
 ///
-/// `storyline`（v14）**加在末尾**而不是插在 `summary` 旁边：这一个列表的下标与
-/// [`WorkRow`] 一一对应，插在中间就要把后面每一个下标都挪一遍——那是纯手滑的机会。
+/// `storyline`（v14）与 `status`（v17）都**加在末尾**而不是插在语义相近的列旁边：
+/// 这一个列表的下标与 [`WorkRow`] 一一对应，插在中间就要把后面每一个下标都挪一遍
+/// ——那是纯手滑的机会（加列只加在末尾，这一条从 v14 起就没破过）。
 const COLS: &str = "id, kind, title, language, target_words, summary, created_at, updated_at, \
-                     opened_at, storyline";
+                     opened_at, storyline, status";
 
 /// 书架排序口径：**最近打开的在前**；没打开过的按最近编辑。
 ///
@@ -22,7 +23,8 @@ const ORDER_BY_OPENED: &str =
     "ORDER BY opened_at IS NULL, opened_at DESC, updated_at DESC, id DESC";
 
 /// 一行的原始取值——先取成朴素类型，再**在 Rust 侧校验**（不在 SQL 里猜着读）。
-type WorkRow = (i64, String, String, String, Option<i64>, String, i64, i64, Option<i64>, String);
+type WorkRow =
+    (i64, String, String, String, Option<i64>, String, i64, i64, Option<i64>, String, String);
 
 /// 书架的一行：作品本身 + 它的规模。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,6 +52,7 @@ fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkRow> {
         row.get(7)?,
         row.get(8)?,
         row.get(9)?,
+        row.get(10)?,
     ))
 }
 
@@ -65,6 +68,7 @@ fn build(row: WorkRow) -> Result<Work> {
         updated_at: row.7,
         opened_at: row.8,
         storyline: row.9,
+        status: ManuscriptState::parse(&row.10)?,
     })
 }
 
@@ -147,6 +151,8 @@ impl Store {
             created_at: now,
             updated_at: now,
             opened_at: Some(now),
+            // 新稿子都是草稿（v17）：状态从此归作者自己标
+            status: ManuscriptState::Draft,
         })
     }
 
@@ -194,11 +200,12 @@ impl Store {
                     row.get(7)?,
                     row.get(8)?,
                     row.get(9)?,
+                    row.get(10)?,
                 ),
-                row.get::<_, i64>(10)?,
                 row.get::<_, i64>(11)?,
                 row.get::<_, i64>(12)?,
                 row.get::<_, i64>(13)?,
+                row.get::<_, i64>(14)?,
             ))
         })?;
         let mut out = Vec::new();

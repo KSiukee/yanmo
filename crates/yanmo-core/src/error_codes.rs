@@ -72,7 +72,18 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     UNKNOWN_MANUSCRIPT_STATE => "value.unknown_manuscript_state"
         : "未知的稿件状态：{value}" : ["value"],
     UNKNOWN_SUBMISSION_RESULT => "value.unknown_submission_result"
-        : "未知的投稿结果：{value}（只有 waiting / accepted / rejected）" : ["value"],
+        : "未知的投稿结果：{value}（只有 waiting / accepted / rejected / withdrawn）" : ["value"],
+    MANUSCRIPT_ILLEGAL_TRANSITION => "manuscript.illegal_transition"
+        : "稿件不能从 {from} 走到 {to}（不是一条合法迁移）" : ["from", "to"],
+    MANUSCRIPT_SUBMIT_NEEDS_RECORD => "manuscript.submit_needs_record"
+        : "进「已投」必须记一次投稿（投给谁、何时）" : [],
+    MANUSCRIPT_NO_OPEN_SUBMISSION => "manuscript.no_open_submission"
+        : "这篇没有可结的投稿记录（没投过，或记录已被删）" : [],
+    SUBMISSION_VENUE_EMPTY => "submission.venue_empty" : "投稿目标不能为空" : [],
+    SUBMISSION_NOT_FOUND => "submission.not_found"
+        : "找不到这条投稿记录：{submission_id}" : ["submission_id"],
+    SUBMISSION_IN_USE => "submission.in_use"
+        : "这条投稿还在等回音（这篇稿子的状态是「已投」）——先撤稿，再删记录" : [],
     BACKUP_SNAPSHOT_FAILED => "backup.snapshot_failed"
         : "做一致性快照失败（库可能有问题）：{detail}" : ["detail"],
     BACKUP_RESTORE_SOURCE_INVALID => "backup.restore_source_invalid"
