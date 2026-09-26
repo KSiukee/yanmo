@@ -18,6 +18,7 @@
 mod appearance;
 mod author;
 mod backup;
+mod backup_seal;
 mod card;
 mod card_move;
 mod card_row;
@@ -96,6 +97,7 @@ pub use backup::{
     BackupLedger, BackupManifest, BackupReport, BackupRequest, BackupTarget, BackupVerify,
     LedgerEntry, TargetOutcome, WorkStamp,
 };
+pub use backup_seal::{open_sealed, seal_dir};
 pub use card::KIND_QUESTION;
 pub use card_move::CardEvent;
 pub use cast::CastMember;

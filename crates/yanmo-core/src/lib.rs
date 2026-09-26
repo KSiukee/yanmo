@@ -34,6 +34,8 @@ pub mod outline;
 pub mod paths;
 /// 叩问的机制侧：问题模板池与「从已有数据生候选草稿」（核心零文案）。
 pub mod question;
+/// 备份包封印：口令 / 恢复码 → Argon2id → XChaCha20-Poly1305，整包加密成一个文件。
+pub mod seal;
 /// 存储层：作品 / 节点树 / 正文 / 检索的唯一读写入口。
 pub mod store;
 /// 文本口径：字数三口径、内容指纹、换行归一。

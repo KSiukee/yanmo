@@ -103,6 +103,18 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "这份备份不能用来恢复：{reason}" : ["reason"],
     BACKUP_RESTORE_SWAP_FAILED => "backup.restore_swap_failed"
         : "换库没成功（原库已放回原处）：{detail}" : ["detail"],
+    SEAL_OPEN_FAILED => "seal.open_failed"
+        : "这份备份包打不开（钥匙不对，或者包被改动/损坏了）" : [],
+    SEAL_UNSUPPORTED_VERSION => "seal.unsupported_version"
+        : "这份备份包是更新的版本做的（{version}），这一版认不得" : ["version"],
+    SEAL_EMPTY_SECRET => "seal.empty_secret" : "口令不能空着" : [],
+    SEAL_BAD_RECOVERY_CODE => "seal.bad_recovery_code"
+        : "恢复码不认：长度或字符对不上（24 位，字母与数字）" : [],
+    SEAL_BAD_PACKAGE => "seal.bad_package"
+        : "这个封包里的文件清单不合格（包被改动或损坏了）" : [],
+    SEAL_BAD_PATH => "seal.bad_path" : "封包里的文件路径不合格：{path}" : ["path"],
+    SEAL_RANDOM_FAILED => "seal.random_failed"
+        : "这台机器现在取不到随机数，做不了加密" : [],
     IMPORT_DRAFT_INVALID => "import.draft_invalid"
         : "这份成稿 JSON 不合格（{field}）：{detail}" : ["field", "detail"],
     UNKNOWN_WORD_CALIBER => "value.unknown_word_caliber"

@@ -14,6 +14,10 @@
 | [TypeScript](https://www.typescriptlang.org/) | Apache-2.0 | 前端类型检查 | 开发期依赖 |
 | [vue-tsc](https://github.com/vuejs/language-tools) | MIT | 单文件组件（`.vue`）的类型检查 | 开发期依赖；随它进来的 @volar/typescript 与 @vue/language-core 也是 MIT |
 | [TipTap](https://tiptap.dev/) / [ProseMirror](https://prosemirror.net/) | MIT | 正文编辑器内核 | — |
+| [argon2](https://github.com/RustCrypto/KDFs) | MIT 或 Apache-2.0 | 口令 → 密钥派生（备份包加密，可选） | 传递依赖 password-hash / blake2 / cpufeatures 同为 MIT 或 Apache-2.0 |
+| [chacha20poly1305](https://github.com/RustCrypto/AEADs) | MIT 或 Apache-2.0 | XChaCha20-Poly1305 内容加密（备份包加密，可选） | 传递依赖 aead / chacha20 / universal-hash / hybrid-array 同为 MIT 或 Apache-2.0 |
+| [zeroize](https://github.com/RustCrypto/utils) | Apache-2.0 或 MIT | 用完抹掉密钥内存 | — |
+| [getrandom](https://github.com/rust-random/getrandom) | MIT 或 Apache-2.0 | 系统随机数（盐、随机数、数据钥匙） | 传递依赖 subtle 为 BSD-3-Clause |
 
 ## 测试依赖（不随产品分发）
 
