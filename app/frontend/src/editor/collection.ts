@@ -85,3 +85,25 @@ export function byLength(entries: ArticleEntry[], caliber: string): ArticleEntry
 export function entryWords(entry: ArticleEntry, caliber: string): number {
   return entryCount(entry, caliber);
 }
+
+/** 集内排序的两种走法（**按主题**那种要先有体裁/标签，属于分类维度那一摊，不在这里）。 */
+export type SortMode = "written" | "length";
+
+/**
+ * 集内一键排序：按给定走法排一排，**不动原来那份**。
+ *
+ * - `written`：写成先后（早的在前）——集子的目录要的是这个，所以用 `created_at`
+ *   而不是「最后动过」（刚改过的那篇不该窜到目录头上去）；
+ * - `length`：字多的在前（按当前口径，与集汇总同一个数法）。
+ *
+ * 并列时保持现在的相对先后（排序是稳定的）：手拖过的顺序不会被无谓打乱。
+ */
+export function sortEntries(entries: ArticleEntry[], mode: SortMode, caliber: string): ArticleEntry[] {
+  if (mode === "length") return byLength(entries, caliber);
+  return entries.slice().sort((a, b) => a.created_at - b.created_at);
+}
+
+/** 排完之后的 id 清单（重排那条命令要的就是它）。 */
+export function sortedIds(entries: ArticleEntry[], mode: SortMode, caliber: string): number[] {
+  return sortEntries(entries, mode, caliber).map((entry) => entry.id);
+}

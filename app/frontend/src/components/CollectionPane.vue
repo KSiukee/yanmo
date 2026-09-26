@@ -7,12 +7,12 @@ import { computed, ref, watch } from "vue";
 
 import type { EditorSession } from "../editor/session";
 import { compileCollection, compileCollectionOpenFolder, type CollectionFormat } from "../api/collection";
-import { pieceProgress, wordProgress } from "../editor/collection";
+import { pieceProgress, wordProgress, type SortMode } from "../editor/collection";
 import { formatCaliberNumber, formatWhen, formatWords } from "../editor/display";
 import { t } from "../locales/index.ts";
 
 const props = defineProps<{ session: EditorSession }>();
-const { view, loose, busy, note, add, remove, move, setTarget } = props.session.collection;
+const { view, loose, busy, note, add, remove, move, sort, setTarget } = props.session.collection;
 const { caliber } = props.session;
 
 const targetPieces = ref("");
@@ -71,6 +71,11 @@ function addPicked() {
   }
 }
 
+/** 集内一键排序：排出来的顺序**真的写回**（走重排那条命令，之后还能手动挪）。 */
+function applySort(mode: SortMode) {
+  void sort(mode, caliber.value);
+}
+
 /** 这一篇的字数（按当前口径，与集汇总同一个数法） */
 function wordsOf(entry: { word_count: number; char_count: number; chars_no_punct: number }): string {
   return formatCaliberNumber(entry, caliber.value);
@@ -121,6 +126,15 @@ function openArticle(id: number) {
 
     <p v-if="note" class="collection__note">{{ note }}</p>
 
+    <div class="collection__sort">
+      <span class="collection__meta">{{ t("collection.sort") }}</span>
+      <button type="button" class="collection__button" :disabled="busy" @click="applySort('written')">
+        {{ t("collection.sort_written") }}
+      </button>
+      <button type="button" class="collection__button" :disabled="busy" @click="applySort('length')">
+        {{ t("collection.sort_length") }}
+      </button>
+    </div>
     <ol class="collection__list">
       <li v-for="(entry, index) in view?.entries ?? []" :key="entry.id" class="collection__row">
         <span class="collection__index">{{ index + 1 }}</span>

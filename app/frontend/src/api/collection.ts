@@ -19,6 +19,8 @@ export interface ArticleEntry {
   word_count: number;
   char_count: number;
   chars_no_punct: number;
+  /** 这一篇什么时候写成的（集内「按时间排」用它） */
+  created_at: number;
   updated_at: number;
 }
 

@@ -24,6 +24,8 @@ pub struct ArticleEntry {
     pub word_count: i64,
     pub char_count: i64,
     pub chars_no_punct: i64,
+    /// 这一篇什么时候写成的（`created_at`）——集内「按时间排」用它，不是最后改动那一下。
+    pub created_at: i64,
     pub updated_at: i64,
 }
 
@@ -151,11 +153,12 @@ impl Store {
                 row.get::<_, i64>(4)?,
                 row.get::<_, i64>(5)?,
                 row.get::<_, i64>(6)?,
+                row.get::<_, i64>(7)?,
             ))
         })?;
         let mut out = Vec::new();
         for row in rows {
-            let (id, title, status, words, chars, chars_no_punct, updated_at) = row?;
+            let (id, title, status, words, chars, chars_no_punct, created_at, updated_at) = row?;
             out.push(ArticleEntry {
                 id,
                 title,
@@ -163,6 +166,7 @@ impl Store {
                 word_count: words,
                 char_count: chars,
                 chars_no_punct,
+                created_at,
                 updated_at,
             });
         }
@@ -177,4 +181,5 @@ const ARTICLE_COLS: &str = "w.id, w.title, w.status,
         COALESCE(SUM(n.word_count), 0),
         COALESCE(SUM(n.char_count), 0),
         COALESCE(SUM(n.chars_no_punct), 0),
+        w.created_at,
         w.updated_at";

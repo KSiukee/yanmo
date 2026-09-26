@@ -9,7 +9,7 @@
 import { computed, ref, type ComputedRef, type Ref } from "vue";
 
 import type { ArticleEntry, CollectionView } from "../api/collection";
-import { byTime, moveId, nudgeReady } from "./collection";
+import { byTime, moveId, nudgeReady, sortedIds, type SortMode } from "./collection.ts";
 import { t } from "../locales/index.ts";
 
 /** 集视图要用的动作（会话层注入真命令，测试注入替身）。 */
@@ -41,6 +41,8 @@ export interface CollectionState {
   remove: (article_id: number) => Promise<void>;
   /** 上移 / 下移一格（`delta` 为 -1 / +1） */
   move: (article_id: number, delta: number) => Promise<void>;
+  /** 集内一键排序（走法见 `SortMode`）；顺序没变就什么都不做 */
+  sort: (mode: SortMode, caliber: string) => Promise<void>;
   setTarget: (pieces: number | null, words: number | null) => Promise<void>;
   /** 一键建集：把**还没归集的散篇**按时间排好一次装齐；返回新集的 id */
   createFromLoose: (title: string) => Promise<number | null>;
@@ -122,6 +124,19 @@ export function useCollection(options: CollectionOptions): CollectionState {
           ? Promise.resolve(null)
           : options.transport.reorder(work_id, next).then((fresh) => {
               note.value = t("collection.note_moved");
+              return fresh;
+            });
+      }),
+    sort: (mode, caliber) =>
+      act((work_id) => {
+        const current = ids();
+        const next = sortedIds(view.value?.entries ?? [], mode, caliber);
+        // 已经是这个顺序就别白跑一趟（重排那次写也省了）
+        const same = next.length === current.length && next.every((id, index) => id === current[index]);
+        return same
+          ? Promise.resolve(null)
+          : options.transport.reorder(work_id, next).then((fresh) => {
+              note.value = t("collection.note_sorted");
               return fresh;
             });
       }),

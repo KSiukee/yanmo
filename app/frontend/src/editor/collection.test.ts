@@ -15,6 +15,8 @@ import {
   moveId,
   nudgeReady,
   pieceProgress,
+  sortEntries,
+  sortedIds,
   wordProgress,
 } from "./collection.ts";
 
@@ -41,6 +43,7 @@ function entry(partial: Partial<ArticleEntry> = {}): ArticleEntry {
     word_count: 10,
     char_count: 20,
     chars_no_punct: 18,
+    created_at: 0,
     updated_at: 0,
     ...partial,
   };
@@ -97,4 +100,24 @@ test("篇目那一行的字数也按当前口径取", () => {
   assert.equal(entryWords(one, "chars"), 30);
   assert.equal(entryWords(one, "chars_no_punct"), 27);
   assert.equal(entryWords(one, "words"), 3);
+});
+
+test("集内排序：按写成先后（早的在前），并列时保持原来的先后", () => {
+  const first = entry({ id: 1, created_at: 100, updated_at: 900 });
+  const second = entry({ id: 2, created_at: 200, updated_at: 100 });
+  const twin = entry({ id: 3, created_at: 200, updated_at: 500 });
+  // 刚改过的那篇（id 1，updated_at 最大）不该窜到目录头上去：这一档只看写成的先后
+  assert.deepEqual(sortedIds([twin, first, second], "written", "chars"), [1, 3, 2], "早的在前；并列保持原来先后");
+  assert.deepEqual(sortedIds([second, twin, first], "written", "chars"), [1, 2, 3], "换个摆放顺序，并列也跟着换");
+});
+
+test("集内排序：按字数（多的在前，按当前口径），且不动原来那份", () => {
+  const short = entry({ id: 1, created_at: 1, char_count: 100, chars_no_punct: 90, word_count: 10 });
+  const long = entry({ id: 2, created_at: 2, char_count: 900, chars_no_punct: 5, word_count: 99 });
+  const list = [short, long];
+  assert.deepEqual(sortedIds(list, "length", "chars"), [2, 1]);
+  assert.deepEqual(sortedIds(list, "length", "words"), [2, 1]);
+  assert.deepEqual(sortedIds(list, "length", "chars_no_punct"), [1, 2], "口径换了名次就换");
+  assert.deepEqual(list.map((item) => item.id), [1, 2], "原数组不许被改（界面那份还在用）");
+  assert.deepEqual(sortEntries(list, "written", "chars").map((item) => item.id), [1, 2], "写成先后那一档也走同一个入口");
 });

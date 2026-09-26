@@ -21,6 +21,7 @@ pub struct ArticleEntryDto {
     pub word_count: i64,
     pub char_count: i64,
     pub chars_no_punct: i64,
+    pub created_at: i64,
     pub updated_at: i64,
 }
 
@@ -33,6 +34,7 @@ impl From<ArticleEntry> for ArticleEntryDto {
             word_count: entry.word_count,
             char_count: entry.char_count,
             chars_no_punct: entry.chars_no_punct,
+            created_at: entry.created_at,
             updated_at: entry.updated_at,
         }
     }

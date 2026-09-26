@@ -134,3 +134,9 @@
   font-size: 12px;
   max-width: 220px;
 }
+
+.collection__sort {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
