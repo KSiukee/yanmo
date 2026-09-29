@@ -24,7 +24,7 @@
 //! 节拍在 [`crate::guardian`]。
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// 跑过它就留痕：5 秒。作者点一下到看见反应，超过这个数就是"卡了"。
@@ -42,6 +42,7 @@ pub struct SlowSample {
 }
 
 /// 一条**还在飞**的命令：界面很可能正卡在这条上。
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Inflight {
     pub command: String,
@@ -184,53 +185,6 @@ impl SlowWatch {
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
-}
-
-// ── 进程一处的那个实例 ─────────────────────────────────────────────────────
-//
-// 命令边界（登记处）与看门狗线程是**两条互不相识的路**：前者每条命令都要打点、
-// 后者每秒扫一遍。它们共用这一个实例——放全局是刻意的（同 [`crate::diagnose`] 的写法）：
-// 这是"这个进程此刻在忙什么"，与哪个窗口、哪本书都无关。
-
-static WATCH: OnceLock<SlowWatch> = OnceLock::new();
-
-fn watch() -> &'static SlowWatch {
-    WATCH.get_or_init(SlowWatch::new)
-}
-
-/// 一条命令进来了（命令边界调用）。
-pub fn begin(command: &str) -> u64 {
-    watch().begin(command, Instant::now())
-}
-
-/// 一条命令跑完了（命令边界调用）。
-pub fn end(token: u64) -> Option<SlowSample> {
-    watch().end(token, Instant::now())
-}
-
-/// 到点了：还在飞而且太久的都有谁（看门狗线程调用）。
-pub fn sweep() -> Vec<Inflight> {
-    watch().sweep(Instant::now())
-}
-
-/// 此刻还在飞的命令（诊断面板调用）。
-pub fn inflight() -> Vec<Inflight> {
-    watch().inflight(Instant::now())
-}
-
-/// 最近跑完的慢命令（新的在前）。
-pub fn recent() -> Vec<SlowSample> {
-    watch().recent()
-}
-
-/// 还没落库的慢命令（旧的在先）。
-pub fn pending() -> Vec<SlowSample> {
-    watch().pending()
-}
-
-/// 落库成功，那条翻成写过了。
-pub fn confirm(seq: u64) {
-    watch().confirm(seq)
 }
 
 #[cfg(test)]

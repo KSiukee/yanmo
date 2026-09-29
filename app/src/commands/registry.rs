@@ -213,9 +213,8 @@ where
 {
     move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
         let command = invoke.message.command().to_string();
-        let token = crate::slowcmd::begin(&command);
-        let handled = inner(invoke);
-        crate::slowcmd::end(token);
-        handled
+        // 守卫：离开这段就结账（连命令 panic 展开也收得干净，见 `slowcmd_wire::Timer`）
+        let _timer = crate::slowcmd_wire::start(&command);
+        inner(invoke)
     }
 }

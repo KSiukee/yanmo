@@ -40,6 +40,7 @@ mod renderer;
 mod renderer_win;
 mod single;
 mod slowcmd;
+mod slowcmd_wire;
 mod startup;
 mod storage;
 mod volume;

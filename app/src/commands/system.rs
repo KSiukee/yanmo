@@ -118,8 +118,8 @@ pub struct SlowReport {
 pub fn slow_report(data: State<'_, AppData>) -> SlowReport {
     let pairs = |command: String, ms: u64| SlowCommandDto { command, ms };
     SlowReport {
-        recent: crate::slowcmd::recent().into_iter().map(|s| pairs(s.command, s.ms)).collect(),
-        inflight: crate::slowcmd::inflight().into_iter().map(|s| pairs(s.command, s.ms)).collect(),
+        recent: crate::slowcmd_wire::recent().into_iter().map(|s| pairs(s.command, s.ms)).collect(),
+        inflight: crate::slowcmd_wire::inflight().into_iter().map(|s| pairs(s.command, s.ms)).collect(),
         last_in_db: data.live_slow_command().map(|slow| PersistedSlowCommandDto {
             command: slow.command,
             ms: slow.ms,

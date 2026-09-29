@@ -83,18 +83,18 @@ fn run(app: AppHandle) {
 ///
 /// 两件事分开的原因：写库要过库锁，而**慢命令多半正握着它**（它就是在本进程里干着活）。
 /// 日志不受影响，所以"界面正卡在哪条命令上"这一句仍然当场留得下；库里那本账晚一拍补上
-/// （[`crate::slowcmd::pending`] 会把还没写进去的欠着，等锁空了再写）。
+/// （[`crate::slowcmd_wire::pending`] 会把还没写进去的欠着，等锁空了再写）。
 fn sweep_slow_commands(data: &crate::storage::AppData) {
-    for flying in crate::slowcmd::sweep() {
+    for flying in crate::slowcmd_wire::sweep() {
         // 英文：给开发者与体检看，不是界面文案
         crate::diagnose::note(&format!(
             "slow command: {} still running after {}ms",
             flying.command, flying.ms
         ));
     }
-    for sample in crate::slowcmd::pending() {
+    for sample in crate::slowcmd_wire::pending() {
         if data.note_slow_command_now(&sample.command, sample.ms) {
-            crate::slowcmd::confirm(sample.seq);
+            crate::slowcmd_wire::confirm(sample.seq);
         } else {
             // 这一趟写不进（库锁正被它占着 / 库关着）：下一拍再试。**绝不因为写不进就丢掉现场。**
             crate::diagnose::note("slow command: evidence deferred (store busy)");
