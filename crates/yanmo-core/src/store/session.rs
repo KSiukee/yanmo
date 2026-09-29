@@ -36,6 +36,9 @@ pub(super) struct Marker {
     /// 界面卡死的一次现场（守护之心留下的交代；没卡过就是 `None`）
     #[serde(default)]
     pub(super) revive: Option<UiFreeze>,
+    /// 最近一条跑得太久的命令（慢命令看门狗留下的现场；没慢过就是 `None`）
+    #[serde(default)]
+    pub(super) slow: Option<SlowCommand>,
 }
 
 /// 界面卡死的一次现场：**留给界面的交代**（重载之后要告诉作者发生了什么）。
@@ -54,6 +57,20 @@ pub struct UiFreeze {
     pub attempt: u32,
     /// 自动重载也没救回来（停手了）：界面下次起来要说得更明白
     pub gave_up: bool,
+}
+
+/// 一条**跑得太久**的命令的现场：谁、多久、什么时候。
+///
+/// 与 [`UiFreeze`] 是两件事：那个说"界面不在了"，这个说"界面还在、只是等了很久"。
+/// 判"多久算久"的机器在壳里（命令边界那一对括号），核心只把它记下来。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlowCommand {
+    /// 记下这一刻（unix 毫秒）
+    pub at: i64,
+    /// 命令名（壳里那份登记处的名字，如 `backup_now`）
+    pub command: String,
+    /// 这条命令跑了多久
+    pub ms: u64,
 }
 
 /// 上一次会话留下的交代。
@@ -90,6 +107,7 @@ impl Store {
             fingerprint: String::new(),
             clean: false,
             revive: None,
+            slow: None,
         })?;
         Ok(report)
     }
@@ -244,11 +262,12 @@ impl Store {
                 fingerprint: String::new(),
                 clean: false,
                 revive: None,
+                slow: None,
             })
         }))
     }
 
-    fn write_marker(conn: &Connection, marker: &Marker) -> Result<()> {
+    pub(super) fn write_marker(conn: &Connection, marker: &Marker) -> Result<()> {
         let json = serde_json::to_string(marker).unwrap_or_default();
         conn.execute(
             "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES(?1, ?2, ?3)",

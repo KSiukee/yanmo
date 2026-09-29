@@ -39,6 +39,7 @@ mod pick_dir;
 mod renderer;
 mod renderer_win;
 mod single;
+mod slowcmd;
 mod startup;
 mod storage;
 mod volume;

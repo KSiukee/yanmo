@@ -309,3 +309,15 @@
   margin-right: 4px;
   color: var(--ym-accent);
 }
+
+/* 卡顿读数：界面被占住过多久。
+   与字数 / 语言 / 今日 / 保存状态同一行，但**单独成一条规则**：
+   那一组（`.editor__count, .editor__lang, .editor__today, .editor__status`）是
+   「点了会换档」的按钮，这一个是纯读数——不可点，也不该长得像能点。 */
+.editor__stall {
+  flex: none;
+  padding: 0 4px;
+  white-space: nowrap;
+  color: var(--ym-ink-soft);
+  cursor: default;
+}

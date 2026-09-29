@@ -14,6 +14,7 @@ import { useAsideTab } from "./editor/aside";
 import { useTheme } from "./editor/theme.ts";
 import { useMirrorReview, watchMirrorAtStartup } from "./editor/mirror-review.ts";
 import { useQuestionPush } from "./editor/question-push.ts";
+import { watchForStalls } from "./editor/stall-watch.ts";
 import type { SelectedQuestion } from "./api/question.ts";
 import DirectoryPane from "./components/DirectoryPane.vue";
 import EditorPane from "./components/EditorPane.vue";
@@ -43,6 +44,10 @@ const session = useEditorSession();
 // 看一眼是异步的（后台那趟对账要几秒），看不到就算了——那是真的没有要对的事。
 const { open: mirrorReviewOpen } = useMirrorReview();
 watchMirrorAtStartup();
+
+// 界面卡顿度量：每秒量一次主线程的漂移，迟到整整一拍记一次。
+// 挂在布局层（而不是编辑器里）——切章会重建编辑器，读数就断了。
+watchForStalls();
 
 // 叩问的「推」：门槛（每天几次 / 冷却）在核心算，这里只管三个时机——
 // 开新章 / 卡住一会儿 / 刚写完一章（判据见 editor/question-push.ts）。

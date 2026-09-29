@@ -83,6 +83,62 @@ pub fn diagnose_note(text: String) {
     crate::diagnose::note(&text);
 }
 
+/// 一条命令的耗时现场（给设置里那块"运行诊断"看；**只是读数**）。
+#[derive(Debug, Serialize)]
+pub struct SlowCommandDto {
+    pub command: String,
+    pub ms: u64,
+}
+
+/// 库里记着的那一条（界面被重载过之后，壳里那份内存记录就没了，只有它还在）。
+#[derive(Debug, Serialize)]
+pub struct PersistedSlowCommandDto {
+    pub command: String,
+    pub ms: u64,
+    /// 记下那一刻（unix 毫秒）
+    pub at: i64,
+}
+
+/// 慢命令的一份读数：跑完的、还在飞的、以及库里那一条。
+#[derive(Debug, Serialize)]
+pub struct SlowReport {
+    /// 这一趟会话里跑完的慢命令（**新的在前**）
+    pub recent: Vec<SlowCommandDto>,
+    /// **此刻还在飞**的命令（界面正等在哪一条上；慢的在前）
+    pub inflight: Vec<SlowCommandDto>,
+    /// 库里记着的最近一条（没有就是 null）
+    pub last_in_db: Option<PersistedSlowCommandDto>,
+}
+
+/// 慢命令的现场（**只读报告**）：判据与留档在 [`crate::slowcmd`]。
+///
+/// 为什么界面能问：一条命令跑了十几秒之后，作者想知道"刚才卡在哪儿"——
+/// 界面上那个读数（编辑器状态栏）只说"卡过"，完整清单要有个地方看。
+#[tauri::command(rename_all = "snake_case")]
+pub fn slow_report(data: State<'_, AppData>) -> SlowReport {
+    let pairs = |command: String, ms: u64| SlowCommandDto { command, ms };
+    SlowReport {
+        recent: crate::slowcmd::recent().into_iter().map(|s| pairs(s.command, s.ms)).collect(),
+        inflight: crate::slowcmd::inflight().into_iter().map(|s| pairs(s.command, s.ms)).collect(),
+        last_in_db: data.live_slow_command().map(|slow| PersistedSlowCommandDto {
+            command: slow.command,
+            ms: slow.ms,
+            at: slow.at,
+        }),
+    }
+}
+
+/// 界面自己量到的一次卡顿（1 秒定时器迟了多久）：**只留痕，什么都不做**。
+///
+/// 界面上那句读数由界面自己说（它当场就量到了，不必再往返一趟）；这一条是给事后查的：
+/// 诊断日志里一句 + 库里一条（诊断日志多半没开，而"当时卡了多久"要能翻得到）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn ui_lag(ms: u64, data: State<'_, AppData>) {
+    // 英文：给开发者与体检看，不是界面文案
+    crate::diagnose::note(&format!("ui stall: the main thread was blocked for about {ms}ms"));
+    data.note_ui_lag_now(ms);
+}
+
 /// 退出应用。
 ///
 /// **只由退出闸门通过后调用**：关窗那一步已经先落盘、并留好了关窗快照；

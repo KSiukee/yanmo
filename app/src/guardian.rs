@@ -41,6 +41,9 @@ fn run(app: AppHandle) {
         if !data.exit_gate_armed() {
             continue;
         }
+        // 慢命令那一半：**与心跳无关**，所以在"界面还没报到就绪"那道 continue 之前
+        // ——启动期的一条慢命令（打开大库、首次迁移）照样要留痕。
+        sweep_slow_commands(&data);
         match data.watchdog().tick(Instant::now()) {
             Action::None => {}
             Action::Probe => {
@@ -72,6 +75,29 @@ fn run(app: AppHandle) {
                 crate::diagnose::note(&format!("watchdog: gave up after {attempts} reloads"));
                 data.note_ui_freeze_now(attempts, true);
             }
+        }
+    }
+}
+
+/// 慢命令那一趟：**还在飞的**写进诊断日志（只报一次），**跑完了的**补进库。
+///
+/// 两件事分开的原因：写库要过库锁，而**慢命令多半正握着它**（它就是在本进程里干着活）。
+/// 日志不受影响，所以"界面正卡在哪条命令上"这一句仍然当场留得下；库里那本账晚一拍补上
+/// （[`crate::slowcmd::pending`] 会把还没写进去的欠着，等锁空了再写）。
+fn sweep_slow_commands(data: &crate::storage::AppData) {
+    for flying in crate::slowcmd::sweep() {
+        // 英文：给开发者与体检看，不是界面文案
+        crate::diagnose::note(&format!(
+            "slow command: {} still running after {}ms",
+            flying.command, flying.ms
+        ));
+    }
+    for sample in crate::slowcmd::pending() {
+        if data.note_slow_command_now(&sample.command, sample.ms) {
+            crate::slowcmd::confirm(sample.seq);
+        } else {
+            // 这一趟写不进（库锁正被它占着 / 库关着）：下一拍再试。**绝不因为写不进就丢掉现场。**
+            crate::diagnose::note("slow command: evidence deferred (store busy)");
         }
     }
 }

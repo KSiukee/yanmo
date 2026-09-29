@@ -16,14 +16,24 @@
 //! - 路径写成 `crate::commands::...`：这一份不在 crate 根，写 `commands::...` 认不出来；
 //! - 运行时泛型写死 `tauri::Wry`：与入口那个 Builder 是同一个（换运行时两处一起换）。
 
-/// 全部命令的处理器（`generate_handler!` 展开出来的那个闭包）。
+/// 全部命令的处理器（`generate_handler!` 展开出来的那个闭包），**外面包一层计时**。
+///
+/// # 为什么计时包在这里
+///
+/// 壳上的命令全是**同步**的：登记处这一对括号从参数解析一路框到回包序列化
+/// （也就是"作者从点下去到看见反应"的那段等待）——这是唯一一处**不用改 170 条命令**
+/// 就能量全的地方。超过 5 秒的那条会由看门狗线程留痕（日志 + 库里那本账），
+/// 判据与现场在 [`crate::slowcmd`]，**只为诊断，一个字都不改行为**。
 pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
-    tauri::generate_handler![
+    timed(tauri::generate_handler![
         crate::commands::system::engine_info,
         crate::commands::system::diagnose_note,
         crate::commands::system::data_home,
         crate::commands::system::open_data_dir,
         crate::commands::system::exit_app,
+        // 慢命令与卡顿的现场（守护之心"慢"那一半的读数）
+        crate::commands::system::slow_report,
+        crate::commands::system::ui_lag,
         crate::commands::editor::open_editor_target,
         crate::commands::editor::open_chapter,
         crate::commands::editor::open_work_target,
@@ -183,5 +193,29 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::collection::collection_create,
         crate::commands::collection::collection_loose_articles,
         crate::commands::collection::collection_of,
-    ]
+    ])
+}
+
+/// 给整张命令表包一层计时。
+///
+/// 为什么写成"收一个处理器、返回一个处理器"：`generate_handler!` 展开出来的是一个闭包，
+/// 直接 `let inner = ...` 编译器认不出它的签名（没有期待的类型）；当成实参递给这里，
+/// 签名由 `F` 这个约束定住，才推得出来。
+///
+/// 计时只用来看"哪条命令让作者等了很久"：进出这一对括号就是那段等待
+///（同步命令在登记处这一层是**行内执行**的，`inner` 返回时它已经干完了）。
+/// **只留痕，绝不因此改任何行为**（判据与现场见 [`crate::slowcmd`]）。
+fn timed<F>(
+    inner: F,
+) -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static
+where
+    F: Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static,
+{
+    move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
+        let command = invoke.message.command().to_string();
+        let token = crate::slowcmd::begin(&command);
+        let handled = inner(invoke);
+        crate::slowcmd::end(token);
+        handled
+    }
 }

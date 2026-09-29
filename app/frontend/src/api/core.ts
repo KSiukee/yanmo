@@ -593,6 +593,9 @@ export const COMMANDS = {
   dataHome: "data_home",
   openDataDir: "open_data_dir",
   diagnoseNote: "diagnose_note",
+  // 慢命令与界面卡顿（诊断读数；封装与类型在 api/perf.ts）
+  slowReport: "slow_report",
+  uiLag: "ui_lag",
   locationInfo: "data_location_info",
   locationConfirm: "data_location_confirm",
   locationPick: "data_location_pick",

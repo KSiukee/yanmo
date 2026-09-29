@@ -224,8 +224,8 @@ fn opened_chapter_is_remembered_even_before_any_save() {
 //   ② 正常退出把它清掉——它是给"这一次重载"看的，不该下次开窗还念；
 //   ③ 真被杀了（没有正常退出）时它**必须还在**：那正是作者最需要知道的一次。
 
-/// op-log 里的卡死记录（新的在前）。
-fn freeze_log(store: &Store) -> Vec<(String, serde_json::Value)> {
+/// op-log 里**界面那一本账**的记录（卡死 / 复活 / 慢命令 / 卡顿，新的在前）。
+fn ui_log(store: &Store) -> Vec<(String, serde_json::Value)> {
     let mut stmt = store
         .conn()
         .prepare("SELECT op, payload FROM op_log WHERE entity = 'ui' ORDER BY seq")
@@ -262,7 +262,7 @@ fn a_freeze_leaves_its_scene_in_the_marker_and_the_op_log() {
     assert_eq!(revive.fingerprint, written, "最后一版的指纹也要记下");
     assert!(revive.at > 0);
 
-    let log = freeze_log(&store);
+    let log = ui_log(&store);
     assert_eq!(log.len(), 1, "同一次事务里还要在 op-log 留一条");
     assert_eq!(log[0].0, "freeze");
     assert_eq!(log[0].1["attempt"], 1);
@@ -273,7 +273,7 @@ fn a_freeze_leaves_its_scene_in_the_marker_and_the_op_log() {
     let revive = store.peek_session().unwrap().revive.unwrap();
     assert_eq!(revive.attempt, 3);
     assert!(revive.gave_up);
-    let log = freeze_log(&store);
+    let log = ui_log(&store);
     assert_eq!(log.len(), 2);
     assert_eq!(log[1].0, "freeze_gave_up");
 }
@@ -369,4 +369,94 @@ fn every_lever_that_was_pulled_is_recorded() {
     assert_eq!(rows.len(), 2, "两刀都该留痕：{rows:?}");
     assert!(rows[0].contains("renderer-kill") && rows[0].contains("\"attempt\":2"));
     assert!(rows[1].contains("\"alive\":false"), "拉不动也要如实记：{rows:?}");
+}
+
+/// **一条命令跑得太久**（界面还在、只是等了很久）：会话标记里一条现场、op-log 里一条账。
+///
+/// 两样都要：标记回答"**最近**一次是谁"（界面被重载之后壳里那份内存记录就没了，只有它还在），
+/// op-log 回答"一共慢过几次、分别多久"（append-only，不会被后来那条盖掉）。
+#[test]
+fn a_slow_command_leaves_its_trace_in_the_marker_and_the_op_log() {
+    let (_dir, path) = fresh();
+    let mut store = Store::open(&path).unwrap();
+    store.begin_session().unwrap();
+    store.ensure_editor_target().unwrap();
+    let beat = marker(&store)["heartbeat_at"].as_i64().unwrap();
+
+    assert!(store.session_slow_command().unwrap().is_none(), "没慢过就不该有现场");
+
+    store.note_slow_command("backup_now", 12_345).unwrap();
+    let slow = store.session_slow_command().unwrap().expect("慢过就要留现场");
+    assert_eq!(slow.command, "backup_now");
+    assert_eq!(slow.ms, 12_345);
+    assert!(slow.at > 0, "要记下这一刻");
+    assert_eq!(marker(&store)["slow"]["command"], "backup_now", "标记里也要有一份");
+
+    // ⚠️ **慢命令不许冒充心跳**：心跳的含义是"界面对话了"，慢命令恰恰是"界面正等在那儿"。
+    // 顺手推进去，守护之心会把一条卡住的命令当成界面还活着。
+    assert_eq!(marker(&store)["heartbeat_at"].as_i64().unwrap(), beat);
+
+    let log = ui_log(&store);
+    assert_eq!(log.len(), 1);
+    assert_eq!(log[0].0, "slow_command");
+    assert_eq!(log[0].1["command"], "backup_now");
+    assert_eq!(log[0].1["ms"], 12_345);
+}
+
+/// **两条慢命令各留一条账**（后来那条只盖标记、不盖流水）。
+#[test]
+fn every_slow_command_is_recorded_on_its_own() {
+    let (_dir, path) = fresh();
+    let mut store = Store::open(&path).unwrap();
+    store.begin_session().unwrap();
+    store.note_slow_command("compile_work", 6_000).unwrap();
+    store.note_slow_command("backup_now", 21_000).unwrap();
+
+    assert_eq!(store.session_slow_command().unwrap().unwrap().command, "backup_now");
+    let log = ui_log(&store);
+    assert_eq!(log.len(), 2, "两条都要留在流水里：{log:?}");
+    assert_eq!(log[0].1["ms"], 6_000);
+    assert_eq!(log[1].1["ms"], 21_000);
+}
+
+/// 界面自己量到的一次卡顿：**只进流水**（标记是"下一次开窗要读的那几格"，卡顿不进那儿）。
+///
+/// 为什么卡顿也留一条：界面上那句读数当场就看得见，但"当时到底卡了多久"要事后可查。
+#[test]
+fn a_ui_stall_is_recorded_in_the_op_log_only() {
+    let (_dir, path) = fresh();
+    let mut store = Store::open(&path).unwrap();
+    store.begin_session().unwrap();
+    store.note_ui_lag(3_200).unwrap();
+
+    assert!(store.session_slow_command().unwrap().is_none(), "卡顿不是慢命令，别混进那一栏");
+    let log = ui_log(&store);
+    assert_eq!(log.len(), 1);
+    assert_eq!(log[0].0, "lag");
+    assert_eq!(log[0].1["ms"], 3_200);
+}
+
+/// 会话标记还没登记时**不凭空造一个**（同卡死那笔账）：那会让"上次是不是正常退出"失去依据。
+#[test]
+fn slow_evidence_is_not_invented_without_a_session_marker() {
+    let (_dir, path) = fresh();
+    let mut store = Store::open(&path).unwrap();
+    // ⚠️ 故意不 begin_session
+    store.note_slow_command("backup_now", 9_000).unwrap();
+    store.note_ui_lag(2_000).unwrap();
+
+    assert!(store.session_slow_command().unwrap().is_none(), "没有标记就没地方记现场");
+    // 流水里**不许有 slow_command 那一条**（它要同事务写进标记，标记不在就只能不做）；
+    // 界面卡顿那一条不带标记、照记（它本来就是"事后可查"的材料，见 `note_ui_lag`）。
+    let log = ui_log(&store);
+    assert!(
+        log.iter().all(|(op, _)| op != "slow_command"),
+        "没登记会话就不该有慢命令的账：{log:?}"
+    );
+    // 而且**没有把标记造出来**（"上次退得干不干净"这句话必须仍有依据）
+    let count: i64 = store
+        .conn()
+        .query_row("SELECT count(*) FROM settings WHERE key = 'session.last'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 0);
 }

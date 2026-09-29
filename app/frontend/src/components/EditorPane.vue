@@ -21,6 +21,8 @@ import type { AutosaveState } from "../editor/autosave";
 import ExitDialog from "./ExitDialog.vue";
 import SceneFields from "./SceneFields.vue";
 import { looksLikeFirstRun } from "../editor/shelf";
+import { secondsText } from "../editor/drift.ts";
+import { stallStats } from "../editor/stall-watch.ts";
 
 const props = defineProps<{ session: EditorSession }>();
 // 摊开之后每一项都是顶层绑定，模板里照常自动解包
@@ -95,6 +97,24 @@ const firstRun = computed(
     looksLikeFirstRun(props.session.shelf.entries.value) &&
     !props.session.shelf.visible.value &&
     !props.session.shelf.form.value,
+);
+
+// 卡顿读数：**界面被占住过多久**——不是"稿子出问题了"，所以它只是一个读数，
+// 不弹窗、不打断、也不做任何动作。每秒量一次（见 editor/stall-watch.ts）。
+const stallText = computed(() =>
+  stallStats.value.count === 0
+    ? ""
+    : t("editor.stall", {
+        count: stallStats.value.count,
+        seconds: secondsText(stallStats.value.maxMs),
+      }),
+);
+const stallTitle = computed(() =>
+  t("editor.stall_title", {
+    count: stallStats.value.count,
+    max: secondsText(stallStats.value.maxMs),
+    total: secondsText(stallStats.value.totalMs),
+  }),
 );
 // 排版清理：同一条思路——一次动作、只作用于当前章（状态机在 editor/typeset.ts）
 const { open: openTypeset } = props.session.typeset;
@@ -221,6 +241,11 @@ function statusText(status: AutosaveState["status"]): string {
             :title="saveState.detail"
           >
             {{ statusText(saveState.status) }}
+          </span>
+          <!-- 卡顿读数：**只有真卡过才出现**——它是一份事实，不是待办事项，
+               所以不提醒、不可点、不占位置（没卡过时这条根本没有）。 -->
+          <span v-if="stallText" class="editor__stall" :title="stallTitle">
+            {{ stallText }}
           </span>
         </template>
       </span>
