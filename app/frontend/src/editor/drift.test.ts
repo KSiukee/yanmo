@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { DriftWatch, STALL_MS, TICK_MS, secondsText } from "./drift.ts";
+import { DriftWatch, STALL_MS, TICK_MS, reportMs, secondsText } from "./drift.ts";
 
 /** 按拍喂：第 `n` 拍的时刻是 `n * TICK_MS`（准时）。 */
 function feed(watch: DriftWatch, beats: number): number[] {
@@ -117,4 +117,13 @@ test("秒数写在界面上：整数不拖 `.0`，零头保留一位", () => {
   assert.equal(secondsText(3_200), "3.2");
   assert.equal(secondsText(12_000), "12");
   assert.equal(secondsText(360), "0.4", "不足一秒也照实说（不出 0——那看着像没卡）");
+});
+
+test("送给壳的毫秒必须是整数（小数会被那边拒收，真机走查逮到过）", () => {
+  assert.equal(reportMs(2260.3999), 2260);
+  assert.equal(reportMs(1500.5), 1501, "四舍五入");
+  assert.equal(reportMs(-3), 0, "负数不是卡顿");
+  assert.equal(reportMs(Number.NaN), 0, "坏数不发出去");
+  assert.equal(reportMs(Number.POSITIVE_INFINITY), 0);
+  assert.ok(Number.isInteger(reportMs(1000.7)));
 });

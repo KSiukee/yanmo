@@ -10,7 +10,7 @@
 import { ref, type Ref } from "vue";
 
 import { reportUiLag } from "../api/perf";
-import { DriftWatch, TICK_MS, type DriftStats } from "./drift";
+import { DriftWatch, TICK_MS, reportMs, type DriftStats } from "./drift";
 
 /** 一次都没卡过（界面上的空态与初值）。 */
 const NO_STALLS: DriftStats = { count: 0, maxMs: 0, totalMs: 0, last: null };
@@ -29,8 +29,11 @@ function beat(): void {
     return;
   }
   const lag = watch.tick(performance.now());
-  // 递给壳只是"留痕"（日志一句 + 库里一条），失败不影响任何事——所以直接吞掉
-  if (lag > 0) void reportUiLag(lag).catch(() => undefined);
+  // 递给壳只是"留痕"（诊断日志一句 + 库里一条）——**送整数**（小数会被那边拒收，
+  // 真机走查逮到过：界面有读数、库里一条都没有）；失败也不影响任何事
+  //（界面上那句读数照旧由本地说），所以直接吞掉错误。
+  const reported = reportMs(lag);
+  if (reported > 0) void reportUiLag(reported).catch(() => undefined);
   stallStats.value = watch.read();
 }
 

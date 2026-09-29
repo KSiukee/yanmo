@@ -60,6 +60,9 @@ struct Entry {
     sample: SlowSample,
     /// 落库没有（写库那条路可能正被这条慢命令自己占着，见 [`SlowWatch::pending`]）
     persisted: bool,
+    /// 「这一笔还欠着」有没有写进过日志（**每笔只骂一次**：真机走查逮到过——
+    /// 库锁连着十几秒被占着时，按秒记一句会把那份日志刷得没法读）
+    deferral_noted: bool,
 }
 
 #[derive(Default)]
@@ -106,7 +109,11 @@ impl SlowWatch {
             command: record.command,
             ms: elapsed.as_millis() as u64,
         };
-        inner.recent.push_back(Entry { sample: sample.clone(), persisted: false });
+        inner.recent.push_back(Entry {
+            sample: sample.clone(),
+            persisted: false,
+            deferral_noted: false,
+        });
         // 有界：挤掉最老的那条。这是现场不是账本——真正的账在库里的 op-log。
         while inner.recent.len() > KEEP {
             inner.recent.pop_front();
@@ -169,6 +176,33 @@ impl SlowWatch {
             .filter(|entry| !entry.persisted)
             .map(|entry| entry.sample.clone())
             .collect()
+    }
+
+    /// 落库成功：这一条翻成"写过了"（按流水号认，不按命令名——同一条慢两次也不会认错）。
+    ///
+    /// 已经被挤出留档区的那条（`seq` 找不到）就当它写过了：它本来也只是现场，
+    /// 超出的条数自己会被挤掉，不值得为它留着内存。
+
+    /// **还欠着、而且这一笔还没骂过**的（旧的在先）：给「写不进库」那句日志用。
+    ///
+    /// 为什么单独一条：真机走查逮到过——库锁连着十几秒被占着时（那条慢命令自己攥着它），
+    /// 按秒记一句会把诊断日志刷得没法读。要的是"**这一笔**还欠着"说过一次就够，
+    /// 而"欠着几笔"在 [`SlowWatch::pending`] 那条路上照旧一拍试一次。
+    pub fn pending_to_note(&self) -> Vec<SlowSample> {
+        self.lock()
+            .recent
+            .iter()
+            .filter(|entry| !entry.persisted && !entry.deferral_noted)
+            .map(|entry| entry.sample.clone())
+            .collect()
+    }
+
+    /// 这一笔的"还欠着"已经说过一次了（说过之后不再重复报）。
+    pub fn note_deferral(&self, seq: u64) {
+        let mut inner = self.lock();
+        if let Some(entry) = inner.recent.iter_mut().find(|entry| entry.sample.seq == seq) {
+            entry.deferral_noted = true;
+        }
     }
 
     /// 落库成功：这一条翻成"写过了"（按流水号认，不按命令名——同一条慢两次也不会认错）。
@@ -326,5 +360,27 @@ mod tests {
             watch.pending().iter().all(|sample| sample.command == "compile_work"),
             "认不出就放过，绝不误标别人"
         );
+    }
+
+    /// 「这一笔还欠着」**每笔只说一次**（真机走查逮到过：库锁被那条慢命令攥着时，
+    /// 按秒记一句会把日志刷得没法读——十几秒里刷了十几条）。
+    #[test]
+    fn a_deferred_write_is_only_complained_about_once() {
+        let at = clock(Instant::now());
+        let watch = SlowWatch::new();
+        let token = watch.begin("backup_now", at(0));
+        let sample = watch.end(token, at(12_000)).unwrap();
+
+        // 第一拍：还没落库，该说一句
+        assert_eq!(watch.pending_to_note(), vec![sample.clone()]);
+        watch.note_deferral(sample.seq);
+        // 后面每一拍都还欠着，但**不再重复说**（写库那条路照旧一拍试一次）
+        assert!(watch.pending_to_note().is_empty(), "同一笔只报一次");
+        assert_eq!(watch.pending().len(), 1, "欠着这件事本身还在");
+
+        // 落库成功之后：既不在"待报"里，也不在"欠着"里
+        watch.confirm(sample.seq);
+        assert!(watch.pending_to_note().is_empty());
+        assert!(watch.pending().is_empty());
     }
 }

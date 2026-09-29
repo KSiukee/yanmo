@@ -92,12 +92,23 @@ fn sweep_slow_commands(data: &crate::storage::AppData) {
             flying.command, flying.ms
         ));
     }
+    // 「这一笔还欠着」**每笔只说一次**：真机走查逮到过——库锁被那条慢命令攥着时，
+    // 按秒记一句会把诊断日志刷得没法读（十几秒里刷了十几条）。
+    for stuck in crate::slowcmd_wire::pending_to_note() {
+        // 英文：给开发者与体检看，不是界面文案
+        crate::diagnose::note(&format!(
+            "slow command: evidence for {} ({}ms) is still pending; store is busy",
+            stuck.command, stuck.ms
+        ));
+        crate::slowcmd_wire::note_deferral(stuck.seq);
+    }
     for sample in crate::slowcmd_wire::pending() {
         if data.note_slow_command_now(&sample.command, sample.ms) {
             crate::slowcmd_wire::confirm(sample.seq);
         } else {
-            // 这一趟写不进（库锁正被它占着 / 库关着）：下一拍再试。**绝不因为写不进就丢掉现场。**
-            crate::diagnose::note("slow command: evidence deferred (store busy)");
+            // 这一趟写不进（库锁正被它占着 / 库关着）：下一拍再试。
+            // **绝不因为写不进就丢掉现场**，也绝不在这里按秒刷一句（上面那句已经说过了）。
+            break;
         }
     }
 }

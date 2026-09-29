@@ -70,6 +70,16 @@ pub fn confirm(seq: u64) {
     watch().confirm(seq)
 }
 
+/// 还欠着库、而且这一笔还没说过一次的（看门狗线程用它写日志，每笔只说一次）。
+pub fn pending_to_note() -> Vec<SlowSample> {
+    watch().pending_to_note()
+}
+
+/// 这一笔的"还欠着"说过了（说过不再重复报）。
+pub fn note_deferral(seq: u64) {
+    watch().note_deferral(seq)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,6 +89,7 @@ mod tests {
     #[test]
     fn the_timer_closes_the_account_when_it_goes_out_of_scope() {
         assert!(inflight().is_empty(), "这之前没有在飞的命令");
+
         let timer = start("probe");
         assert_eq!(inflight().len(), 1, "计上之后就该看得见它在飞");
         drop(timer);

@@ -108,3 +108,16 @@ export function secondsText(ms: number): string {
   const seconds = ms / 1_000;
   return Number.isInteger(seconds) ? String(seconds) : seconds.toFixed(1);
 }
+
+/**
+ * 送给壳的毫秒数：**必须是整数**。
+ *
+ * 真机走查逮到过：漂移是 `performance.now()` 相减出来的**小数**（如 2260.3999…），
+ * 直接递给壳的话，那边的 `u64` 反序列化当场失败——而这条上报是"有则更好"的账，
+ * 失败被吞掉，于是界面上有读数、库里一条都没有（最难查的那种"看起来在工作"）。
+ * 非有限值（NaN / Infinity，理论上不该出现）一律按 0 处理：**别把坏数递给壳**。
+ */
+export function reportMs(lag: number): number {
+  if (!Number.isFinite(lag)) return 0;
+  return Math.max(0, Math.round(lag));
+}
