@@ -2,20 +2,32 @@
 //!
 //! 三件事都在这儿，因为它们共用同一份"书此刻长什么样"：
 //!
-//! 1. [读要素](Store::writing_elements)：按阅读顺序、承载正文的节点（L1 只用这些）；
+//! 1. [读要素](Store::writing_elements)：三路事实——按阅读顺序的节点（承载正文的）、
+//!    伏笔那本账（埋点换算成阅读顺序里的下标）、碎片池里引力最高的前几条；
 //! 2. [生草稿](Store::question_drafts)：按规则产出模板 + 槽位，**滤掉已经问过的**；
 //! 3. 派生关系的守门（[`validate_derivation`]）：来源必须同书、自动派生不许无限套娃。
 //!
 //! 草稿里没有一个字的句子——句子由界面按语言渲染（核心零文案），作者点头才落成卡。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::Store;
 use crate::error::{codes, Error, Result};
 use crate::gravity::allowed_auto_derivation;
-use crate::question::{generate, ChapterFacts, QuestionDraft, RhythmParams, WritingElements};
+use crate::question::{
+    generate, ChapterFacts, ForeshadowFacts, QuestionDraft, RhythmParams, SparkFacts,
+    WritingElements,
+};
+
+/// 生成叩问候选时，取**引力最高的前几条**灵感碎片（旋钮，3~5 之间都好用）。
+///
+/// 3 的理由：碎片这条线一屏只摆一条（`store::question_select` 的"同类不扎堆"），
+/// 多出来的草稿只是在队列里排着；而每次刷新都会把新草稿**落成卡**，
+/// 取太多会让卡池悄悄涨起来（作者没答过的问题堆一库）。取 3 条：
+/// 头一条最该问，另外两条是"它已经问过 / 被过滤"时的后备，再多的边际价值很小。
+pub const SPARK_ELEMENTS: usize = 3;
 
 /// 派生链最多往回追这么多跳——环与手改出来的深链都不许让它转到天荒地老。
 const MAX_DERIVATION_WALK: usize = 16;
@@ -87,7 +99,17 @@ pub(super) fn validate_derivation(
 }
 
 impl Store {
-    /// 读一本书的写作要素（L1：按阅读顺序、承载正文的那些节点）。
+    /// 读一本书的写作要素：三路事实各读各的。
+    ///
+    /// 1. **章节**：按阅读顺序、承载正文的那些节点（容器节点滤掉）；
+    /// 2. **伏笔**：埋点换算成**阅读顺序里的下标**（判"隔了多少章"靠它；埋点不在
+    ///    这份章节清单里的——删了、指向别处——就是 `None`，规则会跳过，绝不猜）；
+    /// 3. **灵感碎片**：作者随手记的那几种里**引力最高的前 [`SPARK_ELEMENTS`] 条**
+    ///    （引力用现成的 [`Store::spark_candidates`]——同一套公式、同一个排序，不另算一份）。
+    ///
+    /// 焦点给 `None`：这一层答的是"这本书此刻长什么样"，而"作者正打开着哪一章"是
+    /// 每次**选题**时才知道的事（见 [`Store::select_questions_for_chapter`]）——
+    /// 于是关联度一律 1.0，谁上场跟作者此刻在哪一章无关。
     pub fn writing_elements(&self, work_id: i64) -> Result<WritingElements> {
         let mut chapters = Vec::new();
         for node in self.list_nodes(work_id)? {
@@ -103,13 +125,45 @@ impl Store {
                 summary: node.summary,
             });
         }
-        Ok(WritingElements { chapters })
+
+        // 埋点 → 下标：拿刚读出来的这份清单当坐标（规则算"隔了多少章"用的也是它，
+        // 两处同一个坐标系，不会一个按章数、一个按节点数）
+        let index_of: HashMap<i64, usize> =
+            chapters.iter().enumerate().map(|(at, chapter)| (chapter.node_id, at)).collect();
+        let foreshadows = self
+            .foreshadows(work_id, None)?
+            .into_iter()
+            .map(|item| ForeshadowFacts {
+                id: item.id,
+                body: item.body,
+                state: item.state,
+                planted_index: item.planted_node.and_then(|node| index_of.get(&node).copied()),
+            })
+            .collect();
+
+        let sparks = self
+            .spark_candidates(work_id, None, SPARK_ELEMENTS)?
+            .into_iter()
+            .map(|spark| SparkFacts {
+                fragment_id: spark.id,
+                body: spark.body,
+                total: spark.gravity.total,
+                anchors: spark.anchors,
+            })
+            .collect();
+
+        Ok(WritingElements { chapters, foreshadows, sparks })
     }
 
     /// 一本书此刻的候选草稿：按规则生成，**滤掉已经问过的**（同模板 + 同锚点）。
     ///
-    /// "已经问过"= 库里有一张同模板、同锚点的卡——**任何状态都算**（含舍弃与静音）：
+    /// "已经问过"= 库里有一张同模板、**这些锚点全在**的卡——**任何状态都算**（含舍弃与静音）：
     /// 冷却库里的卡可以捞回，但不该在下次生成时又冒出一张重复的。
+    ///
+    /// ⚠️ 判据是"**全部锚点都问过**"而不是"任意一个锚点问过"：一条草稿可能带两个锚点
+    /// （灵感碎片＝`fragment:<id>` + 它挂的 `chapter:<id>`）。按"任意一个"算的话，
+    /// 挂在同一章上的第二条灵感会被第一条的章节锚点连坐——**同一条碎片问过没有**才是身份，
+    /// 章只是它顺便带的落点。（单锚点的草稿两种写法等价，老规矩没变。）
     pub fn question_drafts(&self, work_id: i64) -> Result<Vec<QuestionDraft>> {
         let elements = self.writing_elements(work_id)?;
         let drafts = generate(&elements, &RhythmParams::default());
@@ -117,10 +171,11 @@ impl Store {
         Ok(drafts
             .into_iter()
             .filter(|draft| {
-                !draft
-                    .anchors
-                    .iter()
-                    .any(|anchor| known.contains(&(draft.template_key.to_string(), anchor.clone())))
+                // 保留条件是"**还没问过**"：至少有一个锚点没在库里出现过
+                !draft.anchors.is_empty()
+                    && draft.anchors.iter().any(|anchor| {
+                        !known.contains(&(draft.template_key.to_string(), anchor.clone()))
+                    })
             })
             .collect())
     }

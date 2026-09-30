@@ -7,7 +7,7 @@
 use serde_json::{json, Value};
 use yanmo_core::model::{NewQuestionCard, QuestionState};
 use yanmo_core::question::{DeferCondition, DeferKind, DeferPreset, DAY_MS};
-use yanmo_core::question::PushQuota;
+use yanmo_core::question::{PushQuota, PushReason};
 use yanmo_core::store::{PushOutcome, RoundItem, Store};
 
 use crate::args::{Args, Usage};
@@ -347,9 +347,9 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
                         .map_err(|_| Usage::from("算不出今天是哪一天，请直接给 --today"))?
                 }
             };
-            let reason = args.optional("reason").unwrap_or("cli").to_string();
-            let outcome =
-                store.push_question(work, node, PushQuota { per_day, cooldown_minutes: cooldown }, today, &reason)?;
+            let outcome = store.push_question(work, node,
+                PushQuota { per_day, cooldown_minutes: cooldown }, today,
+                PushReason::parse(&args.optional("reason").unwrap_or("cli")))?;
             let code = outcome.as_str().to_string();
             let question = match outcome {
                 PushOutcome::Pushed { question } => Some(question),

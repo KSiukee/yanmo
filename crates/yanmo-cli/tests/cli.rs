@@ -1100,6 +1100,9 @@ fn answers_land_in_the_three_places_from_the_command_line() {
 }
 
 /// 主动问一句（推）：**过了门槛才开口，开口就算问过**——配额只限推，面板不受它管。
+///
+/// `--reason` 显式给 `new_chapter`：这一章还是空的（`seed` 只建节点、不写正文），
+/// 而空章里只有"这一章从哪儿开始"这个时机成立（空章不问那条判据见核心 `question::push`）。
 #[test]
 fn question_push_is_drivable_from_the_command_line() {
     let dir = tempfile::tempdir().unwrap();
@@ -1123,7 +1126,14 @@ fn question_push_is_drivable_from_the_command_line() {
         let pushed = ok(
             dir.path(),
             "question-push",
-            &[("work", &work), ("node", &node), ("per-day", "2"), ("cooldown", "0"), ("today", "20260916")],
+            &[
+                ("work", &work),
+                ("node", &node),
+                ("per-day", "2"),
+                ("cooldown", "0"),
+                ("today", "20260916"),
+                ("reason", "new_chapter"),
+            ],
         );
         assert_eq!(pushed["code"], "push.asked", "{pushed}");
         seen.push(pushed["question"]["card_id"].as_i64().unwrap());
@@ -1133,7 +1143,14 @@ fn question_push_is_drivable_from_the_command_line() {
     let blocked = ok(
         dir.path(),
         "question-push",
-        &[("work", &work), ("node", &node), ("per-day", "2"), ("cooldown", "0"), ("today", "20260916")],
+        &[
+            ("work", &work),
+            ("node", &node),
+            ("per-day", "2"),
+            ("cooldown", "0"),
+            ("today", "20260916"),
+            ("reason", "new_chapter"),
+        ],
     );
     assert_eq!(blocked["code"], "push.quota_used", "{blocked}");
 
@@ -1141,15 +1158,37 @@ fn question_push_is_drivable_from_the_command_line() {
     let tomorrow = ok(
         dir.path(),
         "question-push",
-        &[("work", &work), ("node", &node), ("per-day", "2"), ("cooldown", "0"), ("today", "20260917")],
+        &[
+            ("work", &work),
+            ("node", &node),
+            ("per-day", "2"),
+            ("cooldown", "0"),
+            ("today", "20260917"),
+            ("reason", "new_chapter"),
+        ],
     );
     assert_eq!(tomorrow["code"], "push.asked", "跨天重置：{tomorrow}");
+
+    // 空章里别急着按下"卡住"：不给时机（默认按 idle 算）时当场被拦，且不记账
+    let idle_on_empty = ok(
+        dir.path(),
+        "question-push",
+        &[("work", &work), ("node", &node), ("per-day", "2"), ("cooldown", "0"), ("today", "20260918")],
+    );
+    assert_eq!(idle_on_empty["code"], "push.empty_chapter", "{idle_on_empty}");
 
     // 0 次 = 不打扰：一次都不问
     let quiet = ok(
         dir.path(),
         "question-push",
-        &[("work", &work), ("node", &node), ("per-day", "0"), ("cooldown", "0"), ("today", "20260917")],
+        &[
+            ("work", &work),
+            ("node", &node),
+            ("per-day", "0"),
+            ("cooldown", "0"),
+            ("today", "20260917"),
+            ("reason", "new_chapter"),
+        ],
     );
     assert_eq!(quiet["code"], "push.quota_used", "{quiet}");
 

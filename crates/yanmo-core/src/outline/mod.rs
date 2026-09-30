@@ -35,4 +35,4 @@ mod rules;
 pub use actual::{chapter_state, foreshadow_candidates, mentioned_cards, plan_is_empty,
     CastRef, ChapterActual, ChapterState, ForeshadowHit};
 pub use issue::{IssueRule, OutlineIssue};
-pub use rules::{scan, OutlineData};
+pub use rules::{scan, OutlineData, UNCOLLECTED_CHAPTERS};

@@ -7,9 +7,13 @@
 use std::collections::BTreeSet;
 
 use yanmo_core::gravity::{signal_for_action, FeedbackSignal, FragmentLevel};
-use yanmo_core::model::{NewQuestionCard, NodeKind, QuestionState, WorkKind, TRANSITIONS};
-use yanmo_core::question::TEMPLATES;
-use yanmo_core::store::Store;
+use yanmo_core::model::{
+    ForeshadowState, FragmentKind, NewForeshadow, NewQuestionCard, NodeKind, QuestionState,
+    WorkKind, TRANSITIONS,
+};
+use yanmo_core::outline::UNCOLLECTED_CHAPTERS;
+use yanmo_core::question::{ElementKind, TEMPLATES};
+use yanmo_core::store::{NewFragment, Store, SPARK_ELEMENTS};
 
 fn fresh() -> (tempfile::TempDir, Store) {
     let dir = tempfile::tempdir().unwrap();
@@ -420,4 +424,173 @@ fn one_screen_does_not_pile_up_the_same_kind_of_question() {
     assert_eq!(all.len(), 7, "七条都在池子里");
     assert_eq!(all.iter().filter(|q| q.template_key == "chapter.empty_body").count(), 5);
     assert_eq!(store.count_pending_questions(work).unwrap(), 7, "池子里的总数不受一屏上限影响");
+}
+
+// ── 三路真实信号接进叩问：伏笔超期（A）与灵感碎片引力（B） ────────────────────
+
+/// 一本有 `chapters` 章的书；返回（作品 id, 这些章的节点 id 按顺序）。
+///
+/// ⚠️ 不给 `list_nodes()` 的下标：`create_work` 会先建一个根卷节点，卷不承载正文、
+/// 不算"章"——伏笔的埋点换算成下标时正是拿"承载正文的节点"这一份清单当坐标。
+fn book_with_chapters(store: &mut Store, chapters: usize) -> (i64, Vec<i64>) {
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let mut ids = Vec::new();
+    for index in 1..=chapters {
+        ids.push(
+            store
+                .create_node(work.id, None, NodeKind::Chapter, &format!("第{index}章"))
+                .unwrap(),
+        );
+    }
+    (work.id, ids)
+}
+
+fn planted_foreshadow(store: &mut Store, work: i64, body: &str, planted: Option<i64>) -> i64 {
+    store
+        .create_foreshadow(
+            &NewForeshadow {
+                work_id: work,
+                body: body.to_string(),
+                planted_node: planted,
+                note: String::new(),
+            },
+            "test",
+        )
+        .unwrap()
+}
+
+fn jot(store: &mut Store, work: i64, body: &str, anchors: Vec<String>) -> i64 {
+    store
+        .create_fragment(
+            &NewFragment {
+                work_id: work,
+                kind: FragmentKind::Idea,
+                body: body.to_string(),
+                source: "typed".to_string(),
+                anchors,
+            },
+            "test",
+        )
+        .unwrap()
+}
+
+/// 伏笔那条线：埋点换成**阅读顺序里的下标**，"隔了多少章"与大纲体检同一个阈值。
+#[test]
+fn an_overdue_foreshadow_becomes_a_draft_and_a_fresh_one_does_not() {
+    let (_dir, mut store) = fresh();
+    let threshold = UNCOLLECTED_CHAPTERS.max(1) as usize;
+    let (work, chapters) = book_with_chapters(&mut store, threshold + 1);
+    let first = chapters[0]; // 下标 0 → 隔了 threshold 章（够久）
+    let second = chapters[1]; // 下标 1 → 差一章
+
+    let overdue = planted_foreshadow(&mut store, work, "老张的怀表", Some(first));
+    planted_foreshadow(&mut store, work, "那封信", Some(second));
+    planted_foreshadow(&mut store, work, "没记埋点", None);
+
+    let drafts = store.question_drafts(work).unwrap();
+    let overdue_drafts: Vec<_> =
+        drafts.iter().filter(|d| d.template_key == "foreshadow.overdue").collect();
+    assert_eq!(overdue_drafts.len(), 1, "只有够久的那一条该问：{drafts:?}");
+    assert_eq!(overdue_drafts[0].anchors, vec![format!("foreshadow:{overdue}")]);
+    assert_eq!(overdue_drafts[0].slots["foreshadow"], "老张的怀表");
+    assert_eq!(overdue_drafts[0].slots["chapters"], threshold.to_string());
+    assert_eq!(overdue_drafts[0].element, ElementKind::Foreshadow);
+
+    // 收掉它：不再问（"埋着"才问，与大纲体检同一个口径）
+    store.move_foreshadow(overdue, ForeshadowState::Collected, Some(first), "test").unwrap();
+    let after = store.question_drafts(work).unwrap();
+    assert!(
+        !after.iter().any(|d| d.template_key == "foreshadow.overdue"),
+        "收了的线头别再念：{after:?}"
+    );
+}
+
+/// 「同模板 + 同锚点已经问过 ⇒ 不再生成」：新模板也走同一条链。
+#[test]
+fn an_asked_foreshadow_is_not_generated_twice() {
+    let (_dir, mut store) = fresh();
+    let threshold = UNCOLLECTED_CHAPTERS.max(1) as usize;
+    let (work, chapters) = book_with_chapters(&mut store, threshold + 1);
+    let id = planted_foreshadow(&mut store, work, "怀表", Some(chapters[0]));
+    let anchor = format!("foreshadow:{id}");
+
+    store.create_question_card(&card(work, "foreshadow.overdue", &[&anchor])).unwrap();
+    let drafts = store.question_drafts(work).unwrap();
+    assert!(
+        !drafts.iter().any(|d| d.anchors.contains(&anchor)),
+        "同一条伏笔不该再产草稿：{drafts:?}"
+    );
+}
+
+/// 灵感那条线：**取引力最高的前几条**，锚点带两个（碎片自己 + 它挂的章节）。
+#[test]
+fn only_the_top_sparks_become_drafts_with_both_anchors() {
+    let (_dir, mut store) = fresh();
+    let (work, chapter) = seeded_book(&mut store);
+    // 四条随手记的碎片，重要度拉开（同一天记下、都没用过，引力就由它说了算）
+    let mut ids = Vec::new();
+    for (body, importance) in
+        [("最亮的一句", 0.9), ("次亮的一句", 0.7), ("还行的一句", 0.5), ("最暗的一句", 0.1)]
+    {
+        let id = jot(&mut store, work, body, vec![format!("chapter:{chapter}")]);
+        store
+            .conn()
+            .execute("UPDATE fragments SET importance = ?1 WHERE id = ?2", (importance, id))
+            .unwrap();
+        ids.push(id);
+    }
+
+    let drafts = store.question_drafts(work).unwrap();
+    let sparks: Vec<_> =
+        drafts.iter().filter(|d| d.template_key == "spark.high_gravity").collect();
+    assert_eq!(sparks.len(), SPARK_ELEMENTS, "取前 {SPARK_ELEMENTS} 条：{drafts:?}");
+    for (draft, id) in sparks.iter().zip(&ids) {
+        assert_eq!(
+            draft.anchors,
+            vec![format!("fragment:{id}"), format!("chapter:{chapter}")],
+            "碎片锚点 + 它自己的章节锚点"
+        );
+        assert_eq!(draft.element, ElementKind::Spark);
+    }
+    assert!(
+        !sparks.iter().any(|d| d.anchors.contains(&format!("fragment:{}", ids[3]))),
+        "引力最低的那条不该进来：{drafts:?}"
+    );
+    // 重要度跟着引力走（同一天记下的，热度与新颖度一模一样）
+    assert!(
+        sparks[0].importance > sparks[1].importance && sparks[1].importance > sparks[2].importance,
+        "重要度要跟着引力走：{:?}",
+        sparks.iter().map(|d| d.importance).collect::<Vec<_>>()
+    );
+}
+
+/// 挂在同一章上的第二条灵感**不会被第一条连坐**：去重认的是"这条碎片问过没有"。
+///
+/// （判据是"锚点全都在库里"而不是"任意一个在"——按"任意一个"算的话，
+/// 第一章问过一次以后，所有挂在这一章上的灵感都会静默消失。）
+#[test]
+fn a_second_spark_on_the_same_chapter_still_gets_a_draft() {
+    let (_dir, mut store) = fresh();
+    let (work, chapter) = seeded_book(&mut store);
+    let first = jot(&mut store, work, "第一句", vec![format!("chapter:{chapter}")]);
+    let second = jot(&mut store, work, "第二句", vec![format!("chapter:{chapter}")]);
+
+    // 第一条已经问过了（卡上带着它那两个锚点）
+    store
+        .create_question_card(&card(
+            work,
+            "spark.high_gravity",
+            &[&format!("fragment:{first}"), &format!("chapter:{chapter}")],
+        ))
+        .unwrap();
+
+    let drafts = store.question_drafts(work).unwrap();
+    assert!(
+        drafts.iter().any(|d| d.anchors.contains(&format!("fragment:{second}"))),
+        "第二条碎片照样该问：{drafts:?}"
+    );
+    assert!(
+        !drafts.iter().any(|d| d.anchors.contains(&format!("fragment:{first}"))),
+        "问过的那条不该再产：{drafts:?}"
+    );
 }

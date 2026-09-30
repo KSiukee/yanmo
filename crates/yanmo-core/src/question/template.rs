@@ -27,15 +27,25 @@ pub enum ElementKind {
     Rhythm,
     /// 承上启下：上一章刚写完，接下来往哪走
     Continuity,
+    /// 伏笔：埋下去的线头该不该收了（读 `foreshadows` 那本账）
+    Foreshadow,
+    /// 灵感碎片：作者自己记下的句子，此刻最亮的几条（读碎片池的引力）
+    Spark,
 }
 
 impl ElementKind {
     /// 全部取值（界面按这个顺序分组列；穷举测试拿它对表）。
-    pub const ALL: [ElementKind; 4] = [
+    ///
+    /// 顺序＝**从"这一章自己"到"从别处的账里读来的"**：先章节自生的四类（章 / 计划 /
+    /// 节奏 / 承上启下），再伏笔与灵感这两类跨章节的。后来加类就加在末尾——
+    /// 顺序是界面上的分组次序，插在中间会让作者眼里的位置突然变一次。
+    pub const ALL: [ElementKind; 6] = [
         ElementKind::Chapter,
         ElementKind::Plan,
         ElementKind::Rhythm,
         ElementKind::Continuity,
+        ElementKind::Foreshadow,
+        ElementKind::Spark,
     ];
 }
 
@@ -53,10 +63,12 @@ pub struct QuestionTemplate {
     pub importance: f64,
 }
 
-/// L1 起步池——只用**已经有的数据**（章节树、每章一句话、字数）就能问出来的问题。
+/// 起步池——只用**这本书已经有的数据**就能问出来的问题。
 ///
-/// 池子会长大：智能版会把伏笔超期、五线推进度、灵感碎片引力接进同一个引力公式，
-/// 那时加模板即可，引擎一行不用改。
+/// 三路要素各出几条：章节树 / 每章一句话 / 字数（章 / 计划 / 节奏 / 承上启下四类），
+/// 伏笔那本账（埋了多久没收），碎片池的引力（作者自己记下的句子）。
+/// 池子还会长大：**加模板即可**，引力公式与排序一行不用改——新要素接进来只是
+/// 多一类事实（`super::elements`）+ 多一条生成规则（`super::generate`）。
 pub const TEMPLATES: &[QuestionTemplate] = &[
     QuestionTemplate {
         key: "chapter.empty_body",
@@ -108,6 +120,25 @@ pub const TEMPLATES: &[QuestionTemplate] = &[
         element: ElementKind::Continuity,
         slots: &["chapter"],
         base_urgency: 0.7,
+        importance: 0.6,
+    },
+    // 伏笔超期：埋下、还没收、且隔了**大纲体检用的那个阈值**那么多章（同一个来源，
+    // 见 `question::generate` 与 `outline::UNCOLLECTED_CHAPTERS`）。
+    // 紧迫度给得高（0.85）：这条线搁着不接，读者先忘掉它。
+    QuestionTemplate {
+        key: "foreshadow.overdue",
+        element: ElementKind::Foreshadow,
+        slots: &["foreshadow", "chapters"],
+        base_urgency: 0.85,
+        importance: 0.8,
+    },
+    // 灵感碎片：作者自己记下的句子，引力排到前头的几条。
+    // 基准紧迫度 0.6：它不催（不用也不会烂掉），但"这一句是你自己记的"值得被看见。
+    QuestionTemplate {
+        key: "spark.high_gravity",
+        element: ElementKind::Spark,
+        slots: &["spark"],
+        base_urgency: 0.6,
         importance: 0.6,
     },
 ];

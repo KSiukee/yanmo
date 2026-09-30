@@ -16,7 +16,11 @@ use crate::model::{EntityCard, Foreshadow, ForeshadowState, Fragment, SceneField
 /// 20 章：一部长篇（100 章上下）里，一条线头搁了五分之一本书还没动静，
 /// 作者多半是真忘了——而那正是"伏笔未回收"要提醒的事。
 /// 短篇（十章以内）永远报不出来，这没关系：它本来就不是给短篇用的。
-const UNCOLLECTED_CHAPTERS: i64 = 20;
+///
+/// **公开**给叩问那条线用（`question::generate` 的伏笔超期规则）：大纲体检说"该看看了"、
+/// 叩问问"这条线往哪儿收"，是**同一个判据的两张面孔**——两处各写一个数迟早会分家
+/// （改了一处忘了另一处，作者会在体检里看不到、却在叩问里被问，或者反过来）。
+pub const UNCOLLECTED_CHAPTERS: i64 = 20;
 
 /// 跑一遍规则要的那点数据（**纯值**：读库在 `store::outline_scan`）。
 pub struct OutlineData<'a> {

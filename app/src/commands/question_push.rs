@@ -9,18 +9,24 @@ use tauri::State;
 
 use crate::error::ApiError;
 use crate::storage::AppData;
-use yanmo_core::question::PushQuota;
+use yanmo_core::question::{PushQuota, PushReason};
 use yanmo_core::store::{PushOutcome, SelectedQuestion};
 
 /// 主动问一句（推）：过了门槛才开口，开口就算"问过"。
 ///
-/// 门槛（每天几次 / 冷却多久）由界面把**当前生效的偏好**传进来——核心按它算，
-/// 并**在同一笔里**把卡迁到「已问」+ 记下今天的账（见核心 `store::question_push`）。
+/// 门槛（每天几次 / 冷却多久 / 空章不问 / 挑哪张卡）由核心算，界面把**当前生效的偏好**
+/// 与"现在是什么时机"传进来；核心在**同一笔**里把卡迁到「已问」+ 记下今天的账
+/// （见核心 `store::question_push`）。
 /// `today` 是作者本地那一天（`YYYYMMDD`），由界面按本地时区算好；`reason` 是
 /// 为什么现在开口（`new_chapter` / `idle` / `chapter_done`），它进 op-log 的 trigger。
 ///
+/// `reason` 在**这里**换成核心的枚举（[`PushReason`]）：**认不出的字符串按 `Idle` 算**，
+/// 不静默当"开新章"——`NewChapter` 是唯一在空章里也能问的时机，认错方向会让
+/// "空章不问"那条判据形同虚设（少问一次是静默的，误问一次却是在空章里说了句假话）。
+///
 /// 返回 `code`：`push.asked`（问出去了）/ `push.quota_used` / `push.too_soon` /
-/// `push.nothing_to_ask`——**错过一次推是静默的**，界面只在 `push.asked` 时冒头。
+/// `push.empty_chapter`（这一章还空着，这条时机不成立）/ `push.nothing_to_ask`——
+/// **错过一次推是静默的**，界面只在 `push.asked` 时冒头。
 #[tauri::command(rename_all = "snake_case")]
 pub fn question_push(
     data: State<'_, AppData>,
@@ -38,7 +44,7 @@ pub fn question_push(
             node_id,
             PushQuota { per_day, cooldown_minutes },
             today,
-            &reason,
+            PushReason::parse(&reason),
         )?;
         let code = outcome.as_str().to_string();
         let question = match outcome {

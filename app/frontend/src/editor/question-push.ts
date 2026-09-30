@@ -21,8 +21,9 @@ import { questionPush, type PushDone, type SelectedQuestion } from "../api/quest
 import type { EditorSession } from "../editor/session.ts";
 import { localDay } from "./display.ts";
 
-/** 为什么现在开口（进留痕的 trigger，事后看得出是哪条时机触发的）。 */
-export type PushReason = "new_chapter" | "idle" | "chapter_done";
+// 时机的定义与"时机 ↔ 哪一章"的配对在 question-timing.ts（纯逻辑，能单独测）
+import { switchPush, type PushReason } from "./question-timing.ts";
+export type { PushReason };
 
 /** 卡住多久算卡住（分钟）——固定判据，不进设置（要调再给它开一栏）。 */
 export const IDLE_MINUTES = 15;
@@ -68,8 +69,15 @@ export function useQuestionPush(options: QuestionPushOptions): QuestionPush {
   /** 第一次观察不算时机（刚打开软件/刚开一章，不该立刻冒头） */
   let ready = false;
 
-  /** 问一次；成了就把条摆出来。没成（配额/冷却/没得问）**什么都不做**。 */
-  async function consider(reason: PushReason) {
+  /** 问一次；成了就把条摆出来。没成（配额/冷却/没得问）**什么都不做**。
+   *
+   * `about` 是这次时机**说的那一章**（见 [`switchPush`]）：判"这一章有没有正文"用的是它，
+   * 问题记的也是它。
+   */
+  async function consider(
+    reason: PushReason,
+    about: number | null = options.session.directory.current.value,
+  ) {
     if (tip.value !== null) return;
     const work = options.session.workId.value;
     if (work === null) return;
@@ -78,7 +86,7 @@ export function useQuestionPush(options: QuestionPushOptions): QuestionPush {
     try {
       const done = await ask(
         work,
-        options.session.directory.current.value,
+        about,
         perDay,
         cooldownMinutes,
         localDay(),
@@ -119,12 +127,9 @@ export function useQuestionPush(options: QuestionPushOptions): QuestionPush {
         lastActivityAt = Date.now();
         return;
       }
-      if (left.node === node) return; // 同一章里字数变了，不算"切章"
-      if (left.node !== null && left.chars > 0) {
-        void consider("chapter_done"); // 刚写完一章就走
-      } else if (chars === 0) {
-        void consider("new_chapter"); // 到了一章还没写字的地方
-      }
+      // 该按哪个时机问、问的是哪一章：**配对**那件事在纯函数里（好测，见 `switchPush`）
+      const intent = switchPush(left, { node, chars });
+      if (intent) void consider(intent.reason, intent.about);
       lastActivityAt = Date.now();
     },
     { immediate: true },

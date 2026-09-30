@@ -138,6 +138,7 @@ pub use question_land::{LandReceipt, RoundItem};
 pub use question_defer::Deferral;
 pub use question_dispose::CooledCard;
 pub use question_inspire::Inspiration;
+pub use question_pool::SPARK_ELEMENTS;
 pub use question_push::PushOutcome;
 pub use question_select::SelectedQuestion;
 pub use question_weights::TemplateLearning;

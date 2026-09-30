@@ -1,4 +1,4 @@
-//! 从**已写下的东西**里生成候选问题草稿（L1 规则版）：机制产问题。
+//! 从**已写下的东西**里生成候选问题草稿：机制产问题。
 //!
 //! # 为什么是"草稿"而不是"卡"
 //!
@@ -6,11 +6,12 @@
 //! （文案在界面字典里，核心零文案），作者点头之后再落成卡。这一层因此是纯函数：
 //! 给一份「这本书此刻长什么样」，给回一串草稿——好测、可复现、可被命令行直接驱动。
 //!
-//! # L1 只用已有的数据
+//! # 三路要素
 //!
-//! 章节树（有没有这一章、动笔没有）、每章一句话（计划要点）、字数（节奏）。
-//! 伏笔超期 / 五线推进度 / 灵感碎片引力这些要素是智能版的事——它们接进来时，
-//! 只需多几条模板与规则，引力公式与排序一行都不用改。
+//! 章节树（有没有这一章、动笔没有）、每章一句话（计划要点）、字数（节奏），
+//! 加上后来接进来的两路：伏笔那本账（埋了多久还没收）与碎片池的引力
+//! （作者自己记下的句子，此刻最亮的几条）。**三路只是三份事实**：
+//! 每接一路就是多一条规则，引力公式与排序一行都不用改。
 //!
 //! # 去重不在这里
 //!
@@ -21,6 +22,8 @@ use std::collections::BTreeMap;
 
 use super::elements::{WritingElements, ChapterFacts, RhythmParams};
 use super::template::{template, ElementKind, QuestionTemplate};
+use crate::model::ForeshadowState;
+use crate::outline::UNCOLLECTED_CHAPTERS;
 
 /// 一条候选问题草稿。
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -34,11 +37,15 @@ pub struct QuestionDraft {
     pub importance: f64,
 }
 
-/// 照模板产一条草稿（模板键一定在池子里，故用 `expect` 而不是悄悄跳过）。
+/// 模板池里那一条。走到这里键不在池子里说明 generate 与 `TEMPLATES` 走散了：
+/// **开发期当场炸**，别静默少产一条问题。
+fn spec_of(key: &'static str) -> &'static QuestionTemplate {
+    template(key).unwrap_or_else(|| panic!("template {key} is missing from TEMPLATES"))
+}
+
+/// 照模板产一条草稿。
 fn draft(key: &'static str, slots: &[(&str, String)], anchor: String) -> QuestionDraft {
-    let spec: &'static QuestionTemplate =
-        // 走到这里说明 generate 与 TEMPLATES 走散了：开发期当场炸，别静默少产一条问题
-        template(key).unwrap_or_else(|| panic!("template {key} is missing from TEMPLATES"));
+    let spec = spec_of(key);
     QuestionDraft {
         template_key: spec.key,
         element: spec.element,
@@ -46,6 +53,24 @@ fn draft(key: &'static str, slots: &[(&str, String)], anchor: String) -> Questio
         anchors: vec![anchor],
         importance: spec.importance,
     }
+}
+
+/// 槽位里的作者原文最多几个字（**按字符数**：中文按字算，别按字节切）。
+///
+/// 24 字：一句话的槽位取值要能跟模板句子一起读完——太长会把问题本身淹掉，
+/// 太短又认不出是哪条伏笔 / 哪句灵感。截断只加省略号，**一个字都不改**。
+const SLOT_TEXT_CHARS: usize = 24;
+
+/// 槽位取值：抹平换行（作者原文可能是好几行）→ 截到 [`SLOT_TEXT_CHARS`] → 超出加省略号。
+fn slot_text(raw: &str) -> String {
+    let flat = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() <= SLOT_TEXT_CHARS {
+        return flat;
+    }
+    let mut out: String = flat.chars().take(SLOT_TEXT_CHARS).collect();
+    // 省略号是**排版符号**，不是文案：任何语言下都长这样，不进字典
+    out.push('…');
+    out
 }
 
 /// 照 L1 规则生成候选草稿（顺序稳定：章节顺序 → 要素顺序）。
@@ -113,9 +138,107 @@ pub fn generate(elements: &WritingElements, p: &RhythmParams) -> Vec<QuestionDra
         }
     }
 
+    // ⑦ 埋了很久还没收的伏笔：这条线该收了（**阈值与大纲体检同一个来源**）
+    out.extend(overdue_foreshadows(elements));
+
+    // ⑧ 引力排到前头的那几条灵感碎片：你自己记下的句子，要不要用掉
+    out.extend(high_gravity_sparks(elements));
+
     out
 }
 
+/// 每再拖一个阈值，超期草稿的重要度涨这么多。
+///
+/// 取 0.2 的理由：伏笔模板的基准重要度是 0.8（见 `super::template::TEMPLATES`），
+/// 加上 0.2 刚好封顶 1.0——也就是"拖到阈值的两倍"算拖到底。**踩线那一刻额外量是 0**：
+/// 刚够格就问的那一条按基准 0.8 排队，让位给拖得更久的那些（不最高，也不被埋掉）。
+const OVERDUE_IMPORTANCE_STEP: f64 = 0.2;
+
+/// 超期程度 → 这条草稿的重要度：`基准 + 超出的比例 × 步长`，封顶 1.0。
+///
+/// 为什么按**比例**而不是按绝对章数：阈值本身就是"多少章算久"，章节规模不同的书
+/// （短篇 20 章 vs 长篇 200 章）用同一个比例才公平——`gap = 阈值` 时是 0，
+/// `gap = 2 × 阈值` 时到顶。
+fn overdue_importance(base: f64, gap: i64, threshold: i64) -> f64 {
+    if threshold <= 0 {
+        return base.clamp(0.0, 1.0);
+    }
+    let overdue = (gap - threshold).max(0) as f64 / threshold as f64;
+    (base + overdue * OVERDUE_IMPORTANCE_STEP).clamp(0.0, 1.0)
+}
+
+/// 埋下、还没收、且隔了**大纲体检那个阈值**那么多章的伏笔各产一条草稿。
+///
+/// 四条分寸：
+///
+/// 1. **只看 `Planted`**：收了的不再问；"不写了"是正经结局（作者说过不走了，就别再念）——
+///    与 `outline::rules` 的口径一致；
+/// 2. **没记埋点的不产**（`planted_index` 是 `None`）：判不了"隔了多少章"，绝不猜；
+/// 3. **阈值与大纲体检是同一个数**（[`UNCOLLECTED_CHAPTERS`]）：体检说"该看看了"、
+///    叩问问"往哪儿收"，是同一个判据的两张面孔，各写一个数迟早会分家；
+/// 4. **一条伏笔只产一条**：锚点 `foreshadow:<id>` 就是它的身份（同一条伏笔的两个埋点
+///    不存在，状态机只记一个埋点）。
+///
+/// 顺序＝ `elements.foreshadows` 的顺序（读库那一层给的稳定序），两次调用结果一样。
+fn overdue_foreshadows(elements: &WritingElements) -> Vec<QuestionDraft> {
+    let Some(last_index) = elements.chapters.len().checked_sub(1) else {
+        return Vec::new(); // 一章都没有：没有"隔了多少章"这回事
+    };
+    let base = spec_of("foreshadow.overdue").importance;
+    let mut out = Vec::new();
+    for item in &elements.foreshadows {
+        if item.state != ForeshadowState::Planted {
+            continue;
+        }
+        let Some(planted) = item.planted_index else { continue };
+        // 隔了多少章 = 阅读顺序里**最后一章**的下标 − 埋点下标
+        // （与 `outline::rules` 那条"20 章还没收"同一个算法：那边用的是 1 起的章号，
+        //  `章号 = 下标 + 1`，两边算出来的差值一样）
+        let gap = last_index as i64 - planted as i64;
+        if gap < UNCOLLECTED_CHAPTERS {
+            continue;
+        }
+        let mut made = draft(
+            "foreshadow.overdue",
+            &[("foreshadow", slot_text(&item.body)), ("chapters", gap.to_string())],
+            format!("foreshadow:{}", item.id),
+        );
+        // 提紧迫度：拖得越久越靠前（封顶 1.0，见 `overdue_importance`）
+        made.importance = overdue_importance(base, gap, UNCOLLECTED_CHAPTERS);
+        out.push(made);
+    }
+    out
+}
+
+/// 引力排到前头的那几条灵感碎片各产一条草稿。
+///
+/// 锚点给**两个**：`fragment:<碎片 id>`（这条碎片自己的身份）＋ 碎片自己的锚点原样并进去
+/// （`chapter:12` 这种）——于是"跟着这一章走"（`store::question_select` 的按章优先）
+/// 对灵感问题同样生效：作者正写着哪一章，挂在那一章上的灵感就先冒头。
+///
+/// 重要度＝**引力公式自己算出来的总分**（钳到 0~1）：不另立一套"叩问里的灵感权重"。
+/// 引力大的先冒头，而分数的来源只有一个（`gravity::inspire`）。
+fn high_gravity_sparks(elements: &WritingElements) -> Vec<QuestionDraft> {
+    elements
+        .sparks
+        .iter()
+        .map(|spark| {
+            let mut made = draft(
+                "spark.high_gravity",
+                &[("spark", slot_text(&spark.body))],
+                format!("fragment:{}", spark.fragment_id),
+            );
+            for anchor in &spark.anchors {
+                // 碎片自己挂的锚点照抄；与碎片锚点重复时不写两遍（锚点是身份，不重复记）
+                if !made.anchors.contains(anchor) {
+                    made.anchors.push(anchor.clone());
+                }
+            }
+            made.importance = spark.total.clamp(0.0, 1.0);
+            made
+        })
+        .collect()
+}
 /// 最近 `swing_window` 章**都写了**、且字数极差在均值的一小截之内 → 返回（章数、均值、末章 id）。
 fn same_length_run(chapters: &[ChapterFacts], p: &RhythmParams) -> Option<(usize, i64, i64)> {
     if p.swing_window < 2 {

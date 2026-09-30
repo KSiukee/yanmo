@@ -12,7 +12,7 @@ import { call, COMMANDS } from "./core";
 /** 一条候选**草稿**：模板键 + 槽位取值——**句子里一个字都没有**，由界面按字典渲染。 */
 export interface QuestionDraft {
   template_key: string;
-  element: "chapter" | "plan" | "rhythm" | "continuity";
+  element: "chapter" | "plan" | "rhythm" | "continuity" | "foreshadow" | "spark";
   slots: Record<string, string>;
   anchors: string[];
   importance: number;
@@ -130,7 +130,8 @@ export interface LandReceipt {
 
 /** 主动问一次的结果：问出去了才有那张卡；`code` 说明为什么没问（错过一次推是静默的）。 */
 export interface PushDone {
-  /** `push.asked` / `push.quota_used` / `push.too_soon` / `push.nothing_to_ask` */
+  /** `push.asked` / `push.quota_used` / `push.too_soon` / `push.empty_chapter` / `push.nothing_to_ask` */
+  /** （`push.empty_chapter`＝这一章还是空的，"你卡住了"/"这一章写完了"在那时候不成立） */
   code: string;
   question: SelectedQuestion | null;
 }
