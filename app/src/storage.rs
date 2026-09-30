@@ -814,6 +814,7 @@ mod tests {
             keep: 7,
             tz_offset_minutes: 480,
             device: "测试机".to_string(),
+            seal: None,
         };
         let report = data.with_store(|store| Ok(store.backup_now(&request)?)).unwrap();
         assert_eq!(report.succeeded(), 1, "备份该成功：{:?}", report.outcomes);

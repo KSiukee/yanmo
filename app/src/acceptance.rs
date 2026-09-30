@@ -208,6 +208,7 @@ pub fn run_bench(plan: &Plan) -> Report {
             keep: 1,
             tz_offset_minutes: 480,
             device: "验收模式".to_string(),
+            seal: None,
         };
         let outcome = store.backup_now(&request).map_err(|e| e.to_string())?;
         Ok(((), format!("成功 {} 个位置", outcome.succeeded())))

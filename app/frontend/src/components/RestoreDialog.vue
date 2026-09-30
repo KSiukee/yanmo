@@ -10,11 +10,21 @@ import { formatBytes, formatWords } from "../editor/display.ts";
 import type { EditorSession } from "../editor/session";
 
 const props = defineProps<{ session: EditorSession }>();
-const { sources, picked, preview, busy, error, done, close, select, pickDatabase, apply } =
+const { sources, picked, preview, busy, error, done, needKey, close, select, pickDatabase, unlock, apply } =
   props.session.restore;
 
 /** 作者勾了"我知道"才让按——换库是这份软件里最重的一个动作 */
 const confirmed = ref(false);
+/** 解加密包用的钥匙：口令 / 恢复码二选一（两把任一把都能开），只在这一会儿拿在手里 */
+const keyKind = ref<"passphrase" | "recovery">("passphrase");
+const keyDraft = ref("");
+
+/** 给钥匙：空着不发（壳也会拒收）；成不成由状态机报回来（钥匙不对只说"打不开"） */
+async function submitKey(): Promise<void> {
+  if (keyDraft.value.trim() === "") return;
+  await unlock(keyKind.value, keyDraft.value);
+  keyDraft.value = "";
+}
 
 const sizeText = (bytes: number): string => formatBytes(bytes);
 
@@ -31,6 +41,7 @@ const canApply = computed(
 /** 换一份来源就要重新确认：上一个"我知道"不该替这一份背书 */
 async function choose(source: string): Promise<void> {
   confirmed.value = false;
+  keyDraft.value = ""; // 上一份的钥匙只对那一份有意义，换来源就清掉
   await select(source);
 }
 
@@ -71,17 +82,24 @@ async function chooseFromDisk(): Promise<void> {
             :class="{ 'restore__row--picked': picked === item.path }"
           >
             <div class="restore__main">
-              <span class="restore__label">{{ when(item.created_at) }}</span>
+              <span class="restore__label">
+                {{ when(item.created_at) }}
+                <span v-if="item.sealed" class="restore__sealed">{{ t("restore.sealed") }}</span>
+              </span>
               <span class="restore__meta">
-                {{
-                  t("restore.package_meta", {
-                    works: item.works,
-                    chapters: item.chapters,
-                    words: formatWords(item.words),
-                  })
-                }}
-                <template v-if="item.device">
-                  · {{ t("restore.package_device", { device: item.device }) }}
+                <!-- 加密包的清单在密文里：书名 / 章数 / 字数 / 机器都给不出来（大小是真的） -->
+                <template v-if="item.sealed">{{ t("restore.sealed_unknown") }}</template>
+                <template v-else>
+                  {{
+                    t("restore.package_meta", {
+                      works: item.works,
+                      chapters: item.chapters,
+                      words: formatWords(item.words),
+                    })
+                  }}
+                  <template v-if="item.device">
+                    · {{ t("restore.package_device", { device: item.device }) }}
+                  </template>
                 </template>
                 <template v-if="sizeText(item.bytes)"> · {{ sizeText(item.bytes) }}</template>
               </span>
@@ -99,6 +117,32 @@ async function chooseFromDisk(): Promise<void> {
           </button>
           <span class="restore__hint">{{ t("restore.pick_hint") }}</span>
         </p>
+
+        <!-- 加密包：先给钥匙（口令 / 恢复码），解锁之后就照常显示体检结论 -->
+        <template v-if="needKey">
+          <h3 class="restore__section">{{ t("restore.need_key") }}</h3>
+          <p class="dialog__note">{{ t("restore.key_hint") }}</p>
+          <div class="restore__key">
+            <select v-model="keyKind" class="restore__kind">
+              <option value="passphrase">{{ t("restore.key_passphrase") }}</option>
+              <option value="recovery">{{ t("restore.key_recovery") }}</option>
+            </select>
+            <input
+              v-model="keyDraft"
+              class="restore__secret"
+              type="password"
+              @keydown.enter="submitKey()"
+            />
+            <button
+              type="button"
+              class="dialog__button"
+              :disabled="busy || !keyDraft.trim()"
+              @click="submitKey()"
+            >
+              {{ busy ? t("restore.key_unlocking") : t("restore.key_unlock") }}
+            </button>
+          </div>
+        </template>
 
         <!-- 选中之后的体检结论：先摆事实，再让作者确认 -->
         <template v-if="preview">
@@ -172,7 +216,7 @@ async function chooseFromDisk(): Promise<void> {
           <p v-else class="restore__bad">{{ t("restore.cannot_restore") }}</p>
         </template>
 
-        <p v-else-if="busy" class="dialog__note">{{ t("restore.checking") }}</p>
+        <p v-else-if="busy && !needKey" class="dialog__note">{{ t("restore.checking") }}</p>
       </template>
 
       <p v-if="error" class="restore__bad">{{ error }}</p>
@@ -288,5 +332,34 @@ async function chooseFromDisk(): Promise<void> {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.restore__sealed {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--ym-warn);
+}
+
+.restore__key {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.restore__kind,
+.restore__secret {
+  padding: 2px 6px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+
+.restore__secret {
+  flex: 1;
+  min-width: 0;
 }
 </style>

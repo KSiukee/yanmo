@@ -18,6 +18,7 @@
 mod appearance;
 mod author;
 mod backup;
+mod backup_key;
 mod backup_seal;
 mod card;
 mod card_move;
@@ -96,9 +97,9 @@ pub use sop_mech::{BookMechFacts, ChapterMechFacts};
 pub use backup::{
     gaps_for, has_other_volume, ledger_summary, read_ledger, read_manifest, BackupConfig,
     BackupLedger, BackupManifest, BackupReport, BackupRequest, BackupTarget, BackupVerify,
-    LedgerEntry, TargetOutcome, WorkStamp,
+    LedgerEntry, SealKey, TargetOutcome, WorkStamp,
 };
-pub use backup_seal::{open_sealed, seal_dir};
+pub use backup_seal::{is_sealed_package, open_sealed, seal_dir, sealed_path};
 pub use card::KIND_QUESTION;
 pub use card_move::CardEvent;
 pub use cast::CastMember;

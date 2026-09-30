@@ -55,6 +55,7 @@ fn make_backup(f: &mut Fixture) -> PathBuf {
             keep: 7,
             tz_offset_minutes: 480,
             device: "测试机".to_string(),
+            seal: None,
         })
         .unwrap();
     assert_eq!(report.succeeded(), 1, "备份该成功：{:?}", report.outcomes);
@@ -361,6 +362,47 @@ fn a_corrupt_live_database_is_brought_back_and_the_bad_one_kept_as_evidence() {
     // 坏库也留证：原样躺在留底目录里，一个字节没改（将来还能交给人看）
     let kept = Path::new(&outcome.quarantine).join("yanmo.db");
     assert_eq!(std::fs::read(&kept).unwrap(), wreck, "坏库要原样留证");
+}
+
+/// 加密包也在"能恢复的来源"里：它的清单在密文里，所以只报**名字与文件本身**那点事实，
+/// 别的字段留空——界面据此显示"🔒 要钥匙"，而不是假装知道里面有几本书。
+#[test]
+fn sealed_packages_are_listed_without_their_secrets() {
+    let mut f = fixture();
+    let mut request = BackupRequest {
+        data_dir: f.data_dir.clone(),
+        targets: vec![BackupTarget {
+            path: f.target.to_string_lossy().to_string(),
+            volume_id: "vol-other".to_string(),
+            volume_label: "备份盘".to_string(),
+            removable: true,
+        }],
+        keep: 7,
+        tz_offset_minutes: 480,
+        device: "测试机".to_string(),
+        seal: Some(yanmo_core::store::SealKey {
+            passphrase: "口令".to_string(),
+            recovery: "1M2H-J4K6-N8PQ-RSTV-WXY0-2345".to_string(),
+        }),
+    };
+    request.keep = 7;
+    let report = f.store.backup_now(&request).unwrap();
+    assert_eq!(report.succeeded(), 1, "备份该成功：{:?}", report.outcomes);
+
+    let listed = scan_packages(&[f.target.clone()]);
+    assert_eq!(listed.len(), 1, "加密包也该列出来：{listed:?}");
+    let brief = &listed[0];
+    assert!(brief.sealed, "要标出它是加密包");
+    assert!(
+        yanmo_core::store::is_sealed_package(Path::new(&brief.path)),
+        "列的该是那个 .ympkg 文件：{}",
+        brief.path
+    );
+    assert!(brief.stamp.starts_with("20"), "时间戳从文件名抠出来：{}", brief.stamp);
+    assert!(brief.bytes > 0, "大小取自文件本身");
+    assert_eq!(brief.works, 0, "清单在密文里，这几栏**不猜**");
+    assert_eq!(brief.words, 0);
+    assert!(brief.device.is_empty(), "机器名也在密文里");
 }
 
 /// 递归列出目录下的文件（成稿是按卷分目录的，不能只看一层）。

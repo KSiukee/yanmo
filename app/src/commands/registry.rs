@@ -34,6 +34,12 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         // 慢命令与卡顿的现场（守护之心"慢"那一半的读数）
         crate::commands::system::slow_report,
         crate::commands::system::ui_lag,
+        // 加密备份包那一族（开关 / 口令 / 恢复码，见 commands/seal.rs）
+        crate::commands::seal::seal_status,
+        crate::commands::seal::seal_enable,
+        crate::commands::seal::seal_disable,
+        crate::commands::seal::seal_unlock,
+        crate::commands::seal::seal_lock,
         crate::commands::editor::open_editor_target,
         crate::commands::editor::open_chapter,
         crate::commands::editor::open_work_target,
@@ -158,6 +164,7 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::location::data_location_pick,
         crate::commands::location::data_location_move,
         crate::commands::location::data_location_cancel,
+        crate::commands::restore::backup_restore_unlock,
         crate::commands::mirror::mirror_status,
         crate::commands::mirror::mirror_set_enabled,
         crate::commands::mirror::mirror_sync_now,

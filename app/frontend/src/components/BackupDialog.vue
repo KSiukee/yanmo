@@ -9,6 +9,7 @@ import { t } from "../locales/index.ts";
 import type { EditorSession } from "../editor/session";
 import { formatBytes } from "../editor/display.ts";
 import type { BackupConfig, BackupTarget } from "../api/core";
+import SealSettings from "./SealSettings.vue";
 
 const props = defineProps<{ session: EditorSession }>();
 const { status, lastReport, busy, error, close, save, runNow, dismissTip } =
@@ -192,6 +193,8 @@ function openRestore(): void {
         </label>
       </div>
 
+      <!-- 加密备份包：开关 / 口令 / 恢复码（自成一体，见 components/SealSettings.vue） -->
+      <SealSettings :seal="session.seal" />
       <div class="backup__actions">
         <button type="button" class="dialog__button dialog__button--primary" :disabled="busy" @click="runNow()">
           {{ busy ? t("backup.running") : t("backup.run") }}

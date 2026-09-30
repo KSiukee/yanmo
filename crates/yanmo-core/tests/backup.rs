@@ -12,7 +12,8 @@ use std::path::{Path, PathBuf};
 
 use yanmo_core::model::{NodeKind, WorkKind};
 use yanmo_core::store::{
-    read_ledger, read_manifest, BackupConfig, BackupRequest, BackupTarget, Store,
+    is_sealed_package, read_ledger, read_manifest, BackupConfig, BackupRequest, BackupTarget,
+    SealKey, Store,
 };
 
 struct Fixture {
@@ -54,6 +55,7 @@ fn request(fixture: &Fixture, keep: usize) -> BackupRequest {
         keep,
         tz_offset_minutes: 480,
         device: "测试机".to_string(),
+        seal: None,
     }
 }
 
@@ -324,4 +326,111 @@ fn a_ledger_that_cannot_be_written_is_reported_not_swallowed() {
 
     assert_eq!(report.succeeded(), 1, "包还是写好了（不该因为账本没记上就报失败）");
     assert!(!report.ledger_written, "账本没写成功，必须如实报出来");
+}
+
+/// 开了加密：写出去的**是一份密文文件**，目录不留在盘上；两把钥匙任一把都能开；
+/// 解开之后与明文包逐字节一致。
+#[test]
+fn a_sealed_backup_is_one_file_that_both_keys_open() {
+    let mut f = fixture();
+    seed_book(&mut f.store);
+
+    let mut request = request(&f, 7);
+    request.seal = Some(SealKey {
+        passphrase: "今年的口令".to_string(),
+        recovery: "1M2H-J4K6-N8PQ-RSTV-WXY0-2345".to_string(),
+    });
+    let report = f.store.backup_now(&request).unwrap();
+    assert_eq!(report.succeeded(), 1, "报告：{:?}", report.outcomes);
+
+    // 落地的必须是那一个密文文件：同名的**目录不许还在**（不然网盘里那份明文还在）
+    let package = PathBuf::from(&report.outcomes[0].package);
+    assert!(is_sealed_package(&package), "写出去的该是 .ympkg：{package:?}");
+    let plain = package.with_extension("");
+    assert!(!plain.is_dir(), "封好之后目录不该留在备份盘上：{plain:?}");
+    // 数据目录里也不该留着中转的那份密文
+    let leftovers: Vec<PathBuf> = std::fs::read_dir(&f.data_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| is_sealed_package(p))
+        .collect();
+    assert!(leftovers.is_empty(), "数据目录里不该留下密文中转件：{leftovers:?}");
+
+    // 两把钥匙都能开，解开之后是一份**标准包目录**（清单读得出来、体检能过）
+    for secret in [
+        yanmo_core::seal::Secret::Passphrase("今年的口令".to_string()),
+        yanmo_core::seal::Secret::Recovery("1m2hj4k6n8pqrstvwxy02345".to_string()),
+    ] {
+        let opened = f.data_dir.join("解开");
+        let _ = std::fs::remove_dir_all(&opened);
+        yanmo_core::store::open_sealed(&package, &opened, &secret).expect("两把钥匙任一把都该开得了");
+        let manifest = read_manifest(&opened).expect("解开之后清单要读得出来");
+        assert_eq!(manifest.works.len(), 1);
+        assert!(opened.join("yanmo.db").is_file(), "快照要在");
+        assert!(f.store.verify_backup(&opened).ok, "解开之后的包要体检通过");
+    }
+
+    // 错钥匙：只说打不开
+    let wrong = f.data_dir.join("错的");
+    let _ = std::fs::remove_dir_all(&wrong);
+    let error = yanmo_core::store::open_sealed(
+        &package,
+        &wrong,
+        &yanmo_core::seal::Secret::Passphrase("猜的".to_string()),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(&error, yanmo_core::Error::Invalid { code, .. }
+            if *code == yanmo_core::error_codes::codes::SEAL_OPEN_FAILED),
+        "错钥匙该报 seal.open_failed：{error:?}"
+    );
+    assert!(!wrong.exists(), "解不开就别留半截产物");
+}
+
+/// 滚动清理要把**加密包**也算进去：不然开了加密之后，旧备份再也不会被轮掉（无声地堆满盘）。
+#[test]
+fn rolling_retention_counts_sealed_packages_too() {
+    let mut f = fixture();
+    seed_book(&mut f.store);
+    let mut request = request(&f, 2);
+    request.seal = Some(SealKey {
+        passphrase: "口令".to_string(),
+        recovery: "1M2H-J4K6-N8PQ-RSTV-WXY0-2345".to_string(),
+    });
+
+    // 同一分钟内连做四次：包名靠序号区分（unique_file），清理按名字排序轮掉最老的
+    for _ in 0..4 {
+        let report = f.store.backup_now(&request).unwrap();
+        assert_eq!(report.succeeded(), 1, "报告：{:?}", report.outcomes);
+    }
+    let sealed: Vec<PathBuf> = std::fs::read_dir(&f.target)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| is_sealed_package(p))
+        .collect();
+    assert_eq!(sealed.len(), 2, "留 2 份就该只剩 2 个密文文件：{sealed:?}");
+}
+
+/// 恢复码那一格：只在没有的时候写（换掉它等于让以前那些包失去第二把钥匙）。
+#[test]
+fn the_recovery_code_is_recorded_once_and_kept() {
+    let f = fixture();
+    assert!(f.store.seal_recovery().unwrap().is_none(), "没开过就不该有");
+
+    let mut store = f.store;
+    store.set_seal_recovery("AAAA-BBBB-CCCC-DDDD-EEEE-FFFF").unwrap();
+    assert_eq!(
+        store.seal_recovery().unwrap().as_deref(),
+        Some("AAAA-BBBB-CCCC-DDDD-EEEE-FFFF")
+    );
+
+    // 已经有了一把：再写不覆盖（作者纸上那一串还是它）
+    store.set_seal_recovery("1111-2222-3333-4444-5555-6666").unwrap();
+    assert_eq!(
+        store.seal_recovery().unwrap().as_deref(),
+        Some("AAAA-BBBB-CCCC-DDDD-EEEE-FFFF"),
+        "换掉恢复码会让以前的包失去第二把钥匙"
+    );
 }

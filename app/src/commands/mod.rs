@@ -45,6 +45,8 @@ pub mod question_push;
 /// 从备份恢复：预览、体检、换库。
 pub mod restore;
 /// 场景卡：四格（视角 / 目标 / 冲突 / 结果）的读写。
+/// 加密备份包：开关、口令（只在内存）、恢复码。
+pub mod seal;
 pub mod scene;
 /// 会话与退出闸门：心跳 / 上次会话的交代 / 关窗回话与收尾（**壳自己的那一族**）。
 pub mod session;

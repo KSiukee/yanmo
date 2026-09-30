@@ -18,7 +18,7 @@ use crate::error::ApiError;
 use crate::storage::AppData;
 use yanmo_core::store::{
     gaps_for, has_other_volume, read_ledger, BackupConfig, BackupReport, BackupRequest, BackupTarget,
-    Store,
+    SealKey, Store,
 };
 use yanmo_core::time::{local_date, now_millis};
 
@@ -68,6 +68,10 @@ pub struct BackupStatusDto {
     pub should_nudge: bool,
     pub targets: Vec<TargetStatusDto>,
     pub today: String,
+    /// 作者开了加密没有（设置页那一组要显示）
+    pub sealed: bool,
+    /// 此刻手里有没有口令——**重启之后会是 false**，界面要如实说「这次备份跑不了」
+    pub seal_unlocked: bool,
 }
 
 /// 这个目标的盘此刻在不在。
@@ -148,6 +152,7 @@ pub fn backup_status(
         })
         .collect();
 
+    let seal_enabled = config.seal;
     Ok(BackupStatusDto {
         has_other_volume: has_other_volume(&config, &data_volume_id),
         should_nudge: !config.tip_dismissed && !has_other_volume(&config, &data_volume_id),
@@ -156,22 +161,33 @@ pub fn backup_status(
         data_volume_id,
         targets,
         today,
+        sealed: seal_enabled,
+        seal_unlocked: crate::seal_gate::unlocked(),
     })
 }
 
 /// 写备份偏好（整份替换：目标、保留份数、自动两条、提示条是否被拒过）。
+///
+/// ⚠️ **加密那一格不跟着整份配置走**：它跟口令绑在一起，只由 [`crate::commands::seal`] 那两条
+/// （`seal_enable` / `seal_disable`）改。这里把它**按库里存的写回**，免得界面一份陈旧配置
+/// 顺手把加密关掉（那是"无声地少了一层保护"）。
 #[tauri::command(rename_all = "snake_case")]
 pub fn backup_config_write(
     data: State<'_, AppData>,
-    config: BackupConfig,
+    mut config: BackupConfig,
 ) -> Result<BackupConfig, ApiError> {
     data.with_store(|store: &mut Store| {
+        config.seal = store.backup_config()?.seal;
         store.set_backup_config(&config)?;
         Ok(store.backup_config()?)
     })
 }
 
 /// 立即备份到所有目标。**逐目标成败**：一个盘写不进去不影响别的盘。
+///
+/// 开了加密时把两把钥匙一次递给核心（口令**只在这条命令的内存里**过一手，不落盘）。
+/// ⚠️ **开了加密但口令不在**（重启之后就是这种状态）时**拒绝执行**，绝不退回明文包：
+/// 悄悄写一份比作者要求更弱的备份，比这次不做坏得多。
 #[tauri::command(rename_all = "snake_case")]
 pub fn backup_now(
     data: State<'_, AppData>,
@@ -183,12 +199,24 @@ pub fn backup_now(
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| Path::new(".").to_path_buf());
+    let seal = if config.seal {
+        let Some(passphrase) = crate::seal_gate::take() else {
+            return Err(ApiError::new("backup.seal_locked"));
+        };
+        let recovery = data
+            .with_store(|store: &mut Store| Ok(store.seal_recovery()?))?
+            .ok_or_else(|| ApiError::new("backup.seal_no_recovery"))?;
+        Some(SealKey { passphrase, recovery })
+    } else {
+        None
+    };
     let request = BackupRequest {
         data_dir,
         targets: config.targets,
         keep: config.keep,
         tz_offset_minutes,
         device: device_name(),
+        seal,
     };
     data.with_store(|store: &mut Store| Ok(store.backup_now(&request)?))
 }

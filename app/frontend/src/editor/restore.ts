@@ -13,7 +13,11 @@
 import { ref, type Ref } from "vue";
 
 import type { RestoreOutcome, RestorePreview, RestoreSources } from "../api/core";
+import type { UnsealedSource } from "../api/seal";
 import { localOffsetMinutes } from "./backup.ts";
+
+/** 加密备份包的文件后缀（与核心 `is_sealed_package` 同一口径：`研墨备份-….ympkg`）。 */
+const SEALED_SUFFIX = ".ympkg";
 
 /** 恢复要用的几个动作（会话层注入真命令，测试注入替身）。 */
 export interface RestoreTransport {
@@ -22,6 +26,8 @@ export interface RestoreTransport {
   apply: (source: string, tz_offset_minutes: number) => Promise<RestoreOutcome>;
   /** 让作者挑一个库文件（返回 null = 取消了） */
   pick: (title: string, filter_label: string) => Promise<string | null>;
+  /** 给加密包钥匙：解开 + 体检（返回解开的目录与结论）；钥匙不对就 reject */
+  unlock: (source: string, kind: "passphrase" | "recovery", secret: string) => Promise<UnsealedSource>;
 }
 
 export interface RestoreOptions {
@@ -43,6 +49,8 @@ export interface RestoreState {
   preview: Ref<RestorePreview | null>;
   busy: Ref<boolean>;
   error: Ref<string | null>;
+  /** 选中的是一份加密包：要钥匙（**这时候还没有体检结论**，见 `unlock`） */
+  needKey: Ref<boolean>;
   /** 换库成功（窗口马上会重启，所以成功之后一直保持 busy） */
   done: Ref<RestoreOutcome | null>;
   open: () => Promise<void>;
@@ -51,6 +59,8 @@ export interface RestoreState {
   /** 选中一份并体检（体检结论出来之前不显示"可以恢复"） */
   select: (source: string) => Promise<void>;
   pickDatabase: (title: string, filterLabel: string) => Promise<void>;
+  /** 给加密包钥匙（口令 / 恢复码）：解开的目录与体检结论一起回来 */
+  unlock: (kind: "passphrase" | "recovery", secret: string) => Promise<void>;
   apply: () => Promise<void>;
 }
 
@@ -59,6 +69,7 @@ export function useRestore(options: RestoreOptions): RestoreState {
   const sources = ref<RestoreSources | null>(null);
   const picked = ref<string | null>(null);
   const preview = ref<RestorePreview | null>(null);
+  const needKey = ref(false);
   const busy = ref(false);
   const error = ref<string | null>(null);
   const done = ref<RestoreOutcome | null>(null);
@@ -79,12 +90,53 @@ export function useRestore(options: RestoreOptions): RestoreState {
     }
   }
 
+  /**
+   * 这份来源是不是加密包：**清单在密文里**，拿它去体检壳会明确拒绝
+   *（`backup.restore_sealed_needs_key`），所以要先给钥匙、不能发 preview。
+   *
+   * 两条判据都要：候选列表里壳标了 `sealed` 的，以及**从磁盘选进来的 `.ympkg`**
+   *（那条路上没有清单可查，只能看扩展名——与壳 `is_sealed_package` 同一口径）。
+   */
+  function sealedSource(source: string): boolean {
+    if (source.toLowerCase().endsWith(SEALED_SUFFIX)) return true;
+    return sources.value?.packages.some((item) => item.path === source && item.sealed) ?? false;
+  }
+
   async function select(source: string): Promise<void> {
     picked.value = source;
     preview.value = null; // 先清掉上一份的结论：宁可显示"还没体检"，也别把别人的结论挂在这份上
+    needKey.value = sealedSource(source); // 加密包：先要钥匙，**不发 preview**
+    if (needKey.value) {
+      error.value = null;
+      return;
+    }
     busy.value = true;
     try {
       preview.value = await options.transport.preview(source);
+      error.value = null;
+    } catch (e) {
+      error.value = report(e);
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  /**
+   * 给加密包钥匙：口令 / 恢复码二选一，**两把任一把都能开**。
+   *
+   * 成功之后 `picked` 换成**解开的那个目录**——后面点「换库」时把它当普通来源递回去
+   *（换库那条链一个字都没改）。失败时**不动 `picked`**（还指着那个加密包，作者能换一把钥匙再试），
+   * 只把那句"打不开"摆出来。
+   */
+  async function unlock(kind: "passphrase" | "recovery", secret: string): Promise<void> {
+    const source = picked.value;
+    if (busy.value || !source) return;
+    busy.value = true;
+    try {
+      const opened: UnsealedSource = await options.transport.unlock(source, kind, secret);
+      preview.value = opened.preview;
+      picked.value = opened.source;
+      needKey.value = false;
       error.value = null;
     } catch (e) {
       error.value = report(e);
@@ -128,9 +180,11 @@ export function useRestore(options: RestoreOptions): RestoreState {
     preview,
     busy,
     error,
+    needKey,
     done,
     open: async () => {
       // 每次打开都重新扫一遍：备份位置可能刚插上/刚拔掉
+      needKey.value = false; // 钥匙那一块跟着"选中项"一起清掉（换一份来源不该还摆着上一份的钥匙框）
       picked.value = null;
       preview.value = null;
       done.value = null;
@@ -144,6 +198,7 @@ export function useRestore(options: RestoreOptions): RestoreState {
     load,
     select,
     pickDatabase,
+    unlock,
     apply,
   };
 }

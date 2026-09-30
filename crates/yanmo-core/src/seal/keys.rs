@@ -30,8 +30,8 @@ pub const SLOT_RECOVERY: u8 = 2;
 
 /// 一把钥匙。
 ///
-/// 只在内存里活着：**口令不落盘**（应用关掉就没了，下次要重输）；恢复码是长期的那把，
-/// 由作者自己抄在纸上或存在别处。
+/// 只在内存里活着：**口令不落盘**（应用关掉就没了，下次要重输）；恢复码是长期的那把——
+/// 壳把它记在本机偏好里（见 `store::backup_key` 文件头那段说明），同时**请作者抄一份到别处**。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Secret {
     /// 口令（作者自己记的那句话）
@@ -69,7 +69,8 @@ impl Secret {
 
 /// 生成一把恢复码（120 位熵）。
 ///
-/// 只在**建包**那一刻调用一次；返回的字符串要原样交给作者，别存进任何文件。
+/// **开启加密**那一刻调用一次；返回的字符串要原样交给作者抄下来，同时由壳记进本机偏好
+/// （不是写进备份包本身——包里只带它的派生结果；正因如此，**包里取不回这串码**）。
 pub fn generate_recovery_code() -> Result<String> {
     let mut raw = [0u8; RECOVERY_BYTES];
     getrandom::fill(&mut raw).map_err(|_| Error::invalid_with(codes::SEAL_RANDOM_FAILED, []))?;

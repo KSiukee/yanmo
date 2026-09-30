@@ -39,6 +39,13 @@ pub const SHELL_CODES: &[(&str, &[&str])] = &[
     ("shell.mirror_write_failed", &["path"]),
     ("shell.mirror_rename_failed", &["path"]),
     ("shell.mirror_remove_failed", &["path"]),
+    ("shell.mirror_unknown_action", &["value"]),
+    // 加密备份包：开关与口令那一路（沿用核心的域前缀 `backup.*`，界面按码取文案）
+    ("backup.seal_locked", &[]),
+    ("backup.seal_no_recovery", &[]),
+    ("backup.seal_passphrase_empty", &[]),
+    ("backup.restore_sealed_needs_key", &[]),
+    ("backup.restore_unseal_failed", &["detail"]),
     ("shell.mirror_dir_create_failed", &["path"]),
     ("shell.mirror_unavailable", &[]),
     ("shell.mirror_issue_gone", &[]),

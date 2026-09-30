@@ -350,6 +350,10 @@ export interface BackupStatus {
   should_nudge: boolean;
   targets: BackupTargetStatus[];
   today: string;
+  /** 作者开了加密（写出去的包要口令才打得开） */
+  sealed: boolean;
+  /** 此刻内存里有没有口令——**重启之后是 false**，界面要如实说 */
+  seal_unlocked: boolean;
 }
 
 /** 一个目标的备份结果。 */
@@ -386,6 +390,8 @@ export interface BackupPackage {
   chapters: number;
   words: number;
   bytes: number;
+  /** 加密包（`.ympkg`）：清单在密文里——上面那几栏全是 0 与空串，只有 stamp / created_at / bytes 是真的 */
+  sealed: boolean;
   data_format_version: number;
 }
 
@@ -720,6 +726,13 @@ export const COMMANDS = {
   backupRestorePreview: "backup_restore_preview",
   backupRestoreApply: "backup_restore_apply",
   backupRestorePick: "backup_restore_pick",
+  // 加密备份包的钥匙与开关（类型与薄封装在 api/seal.ts，见那里的三条分寸）
+  sealStatus: "seal_status",
+  sealEnable: "seal_enable",
+  sealDisable: "seal_disable",
+  sealUnlock: "seal_unlock",
+  sealLock: "seal_lock",
+  backupRestoreUnlock: "backup_restore_unlock",
   deleteWork: "delete_work",
   listTrash: "list_trash",
   restoreWork: "restore_work",

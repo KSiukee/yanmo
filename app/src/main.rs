@@ -40,6 +40,7 @@ mod renderer;
 mod renderer_win;
 mod single;
 mod slowcmd;
+mod seal_gate;
 mod slowcmd_wire;
 mod startup;
 mod storage;
@@ -154,6 +155,10 @@ fn main() {
                 }
             };
             app.manage(data);
+            // 上一次运行崩在"解开加密包之后、换库之前"留下的那份明文：启动时扫掉。
+            // 名字里带的是**那次运行的 pid**，所以要按名字扫（`sweep_stale_sealed_temp`），
+            // 不能拿本进程 pid 拼出来的那一个名字去找——那一个必然不存在。别人的东西一律不碰。
+            crate::commands::restore::sweep_stale_sealed_temp(&app.state::<storage::AppData>());
             // 磁盘 `.md` 镜像的工作线程：**验收模式不起**——它的巡检节拍会掺进冷启动读数。
             if acceptance::ui_plan().is_none() {
                 let handle = crate::mirror::MirrorHandle::start(app.handle().clone());

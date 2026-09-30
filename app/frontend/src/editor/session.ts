@@ -90,6 +90,7 @@ import {
   type SnapshotRestoreAck,
 } from "../api/core";
 import { resolveMirrorIssue } from "../api/mirror";
+import { disableSeal, enableSeal, lockSeal, readSealStatus, unlockSeal, unlockRestoreSource } from "../api/seal";
 import {
   collectionAdd,
   collectionCreate,
@@ -156,6 +157,7 @@ import { attachGlobalKeys } from "./global-keys";
 import type { KeyTarget } from "./shortcuts";
 import { useZen, type ZenState } from "./zen";
 import { useFloatingPanels, type FloatingPanels, type PanelId } from "./panels";
+import { useSeal, type SealState } from "./seal";
 
 export interface EditorSession {
   editor: ShallowRef<Editor | undefined>;
@@ -251,6 +253,7 @@ export interface EditorSession {
   backup: BackupState;
   /** 从备份恢复：列出来源、看清会丢什么、确认换库（换完壳会重启） */
   restore: RestoreState;
+  seal: SealState;
   /** 稿子放在哪：首启确认位置、设置里换位置（换完壳会重启；旧位置不删） */
   location: LocationState;
   /** 专注模式：藏两侧栏与顶栏、只留正文（**当下这一会儿**的状态，不落盘；判断在 zen.ts） */
@@ -297,6 +300,8 @@ export function useEditorSession(): EditorSession {
   const fullscreenOn = ref(false);
   /** 专注时的悬浮卡片（大纲）：一次只开一张 */
   const panels = useFloatingPanels();
+  // 加密备份包：与 zen / panels 同层——它不依赖 createParts 里的东西，装配在这儿最省行数（棘轮盯着这个文件）
+  const seal = useSeal({ transport: { status: readSealStatus, enable: enableSeal, disable: disableSeal, unlock: unlockSeal, lock: lockSeal }, onError: (message) => { failure.value = t("session.seal_failed", { detail: message }); } });
 
   const autosave = shallowRef<Autosave | null>(null);
   let gate: ExitGate | null = null;
@@ -1002,7 +1007,7 @@ export function useEditorSession(): EditorSession {
         sources: readRestoreSources,
         preview: previewRestoreSource,
         apply: applyRestore,
-        pick: pickRestoreDatabase,
+        pick: pickRestoreDatabase, unlock: unlockRestoreSource,
       },
       tzOffsetMinutes: localOffsetMinutes,
       beforeApply: () => flushCurrent(),
@@ -1295,6 +1300,7 @@ export function useEditorSession(): EditorSession {
     switchWork,
     backup,
     restore,
+    seal,
     location,
     language,
     caliber,

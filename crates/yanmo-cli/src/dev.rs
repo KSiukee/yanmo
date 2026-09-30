@@ -129,6 +129,7 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
                 keep,
                 tz_offset_minutes: tz,
                 device: args.optional("device").unwrap_or("cli").to_string(),
+                seal: None,
             };
             let report = store.backup_now(&request)?;
             json!({

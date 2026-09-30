@@ -53,9 +53,31 @@ const ALLOWED: &[Allowance] = &[
     Allowance {
         file: "crates/yanmo-core/src/store/backup.rs",
         rule: "remove-dir-all",
-        count: 4,
+        count: 5,
         why: "只删备份的**暂存区**与自己产出的历史备份包（都是本模块刚创建的目录）；\
-              数据目录本身从不经这里删——换库留底走 restore_swap 的改名，不删",
+              数据目录本身从不经这里删——换库留底走 restore_swap 的改名，不删。\
+              0.88.0 多的一处是加密包封不成时清暂存区（与快照失败那条早退路径同一处清理）",
+    },
+    Allowance {
+        file: "crates/yanmo-core/src/store/backup_seal.rs",
+        rule: "remove-dir-all",
+        count: 3,
+        why: "封包之后**解开体检**用的那个临时候检目录（`.verify`）：它由本模块在暂存区边上刚建、\
+              挂在暂存区名下，验完就删（三处分别是：验之前清一次、解开失败时清、验完清）——\
+              全都是本模块自己刚创建的东西，别人的目录一律不碰",
+    },
+    Allowance {
+        file: "app/src/commands/restore.rs",
+        rule: "remove-dir-all",
+        count: 3,
+        why: "**加密包解开出来的临时目录**（数据目录里的 `.restore-sealed-<pid>`）：\
+              名字由壳自己拼（只这一个名字），解锁前清一次（不让上一个包的内容混进来）、\
+              换库成功后清一次；启动时还会按名字扫一遍上一次运行崩在半路留下的那份\
+              （`sweep_stale_sealed_temp`，见 main.rs——名字里带的是那次运行的 pid，\
+              所以只能按名字找，不能拿本进程 pid 去拼）。判据窄到只认 \
+              `.restore-sealed-<纯数字>` 这一种**目录**名，别人的东西一律不碰；\
+              同一份数据目录同时只允许一个实例，所以扫到的必定是已经死掉的那次运行留下的。\
+              这是壳侧**唯一**的删除点——换库那条链（留底 / 回滚）仍然全在核心",
     },
     Allowance {
         file: "app/src/acceptance.rs",

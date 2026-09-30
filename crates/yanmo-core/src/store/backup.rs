@@ -76,6 +76,13 @@ pub struct BackupConfig {
     /// 作者拒绝过那条"插个盘吧"的小条——**拒过就不再自动弹**（设置页仍常驻一行建议）
     #[serde(default)]
     pub tip_dismissed: bool,
+    /// **加密备份包**（默认关）：开了之后写出去的包是 `.ympkg` 密文文件。
+    ///
+    /// ⚠️ 这一格只说"作者要不要加密"；**口令不在这儿**（它只在内存里活着，见壳那边的口令闸）。
+    /// 于是会出现"开了加密但口令不在"的状态（重启之后就是这个状态）——那种情况下
+    /// **绝不退回明文包**：宁可这次备份不做并说清原因，也不悄悄写一份比作者要求更弱的备份。
+    #[serde(default)]
+    pub seal: bool,
 }
 
 impl Default for BackupConfig {
@@ -87,6 +94,7 @@ impl Default for BackupConfig {
             auto_on_start: true,
             auto_on_close: true,
             tip_dismissed: false,
+            seal: false,
         }
     }
 }
@@ -227,6 +235,8 @@ impl BackupLedger {
 /// 一次备份请求。
 #[derive(Debug, Clone)]
 pub struct BackupRequest {
+    /// 要加密时给两把钥匙（**口令只在内存里**，由壳在调用这一刻递进来）；不加密就是 `None`
+    pub seal: Option<SealKey>,
     /// 数据目录（账本与暂存区都放这儿）
     pub data_dir: PathBuf,
     pub targets: Vec<BackupTarget>,
@@ -235,6 +245,16 @@ pub struct BackupRequest {
     pub tz_offset_minutes: i32,
     /// 来源机器名（多机共用备份盘时用来分辨）
     pub device: String,
+}
+
+/// 封包要用的两把钥匙：口令（作者记的那句话）与恢复码（抄在纸上那一串）。
+///
+/// 两把都是**同一份数据的钥匙**：任一把都能把包解开（换口令不必重加密整个包）。
+/// 核心只在这一刻用它们，**一个字节都不落盘**；口令活多久由壳决定（默认直到应用关掉）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SealKey {
+    pub passphrase: String,
+    pub recovery: String,
 }
 
 /// 读账本（**只读文件，不碰库**——库坏了也要能读）。
@@ -351,11 +371,45 @@ impl Store {
             }
         };
 
+        // ①.5 要加密就**先封一次**（各目标拿到的是同一份密文，见 backup_seal::seal_package），
+        // 并当场解开体检一遍——递给作者的是那个密文文件，"写进去而打不开"比没写更坏。
+        let sealed = match &req.seal {
+            None => None,
+            Some(key) => match super::backup_seal::seal_package(&staging, key, |dir| {
+                self.verify_backup(dir).ok
+            }) {
+                Ok(file) => Some(file),
+                Err(reason) => {
+                    // 封不成＝这份备份做不出来：所有目标一起记失败（与快照失败那条早退路径同一套话）
+                    let mut outcomes = Vec::new();
+                    for target in &req.targets {
+                        outcomes.push(outcome(target, "failed", &reason, "", 0, 0, 0, "", at));
+                    }
+                    for target in &req.targets {
+                        ledger.entries.push(entry(target, &date, &stamp, "failed", &reason, "", at));
+                    }
+                    ledger.updated_at = at;
+                    let ledger_written = write_ledger(&req.data_dir, &ledger);
+                    std::fs::remove_dir_all(&staging).ok();
+                    return Ok(BackupReport { at, stamp, outcomes, ledger_written });
+                }
+            },
+        };
+
         // ② 逐个目标写包 + 体检 + 滚动清理
         let mut outcomes = Vec::new();
         for target in &req.targets {
-            let (outcome, ledger_entry) =
-                self.write_to_target(target, &staging, &manifest, snapshot_bytes, &date, &stamp, req.keep, at);
+            let (outcome, ledger_entry) = self.write_to_target(
+                target,
+                &staging,
+                &manifest,
+                snapshot_bytes,
+                &date,
+                &stamp,
+                req.keep,
+                at,
+                sealed.as_deref(),
+            );
             ledger.entries.push(ledger_entry);
             outcomes.push(outcome);
         }
@@ -369,6 +423,10 @@ impl Store {
         }
         let ledger_written = write_ledger(&req.data_dir, &ledger);
         std::fs::remove_dir_all(&staging).ok(); // 暂存区用完就删（失败也无所谓）
+        if let Some(file) = &sealed {
+            // 暂存区边上那个密文文件也删掉：它只是"抄给各目标"的中转，**不该留在数据目录里**
+            std::fs::remove_file(file).ok();
+        }
         Ok(BackupReport { at, stamp, outcomes, ledger_written })
     }
 
@@ -479,6 +537,10 @@ impl Store {
     }
 
     /// 把暂存好的这一份复制到某个目标：写包 → 体检 → 滚动清理。
+    ///
+    /// `sealed` 有值时（作者开了加密）要搬的只有**一个密文文件**：封包与「解开体检」
+    /// 都在 [`Store::backup_now`] 里做过了，这里照同一套口径记账与滚动清理。
+    #[allow(clippy::too_many_arguments)]
     fn write_to_target(
         &self,
         target: &BackupTarget,
@@ -489,14 +551,27 @@ impl Store {
         stamp: &str,
         keep: usize,
         at: i64,
+        sealed: Option<&Path>,
     ) -> (TargetOutcome, LedgerEntry) {
         let root = PathBuf::from(&target.path);
+        // 加密包：**只有一个文件**要搬（封包与"解开体检"在写之前都做过了，见 backup_now）
+        if let Some(file) = sealed {
+            return super::backup_seal::write_sealed_to_target(
+                target,
+                file,
+                date,
+                stamp,
+                keep,
+                at,
+                &manifest.fingerprint,
+            );
+        }
         // 目标不可达：**跳过并记账**，不做隐式补做。
         // 原因要分清——"盘不在"是常态（拔了盘），"写不进去"是真故障（权限/路径被占），
         // 一句"盘没插？"糊过去会让人查错方向。
         if let Err(error) = std::fs::create_dir_all(&root) {
             let reason = if volume_root_exists(&target.path) {
-                format!("写不进去：{error}")
+                write_dir_reason(error)
             } else {
                 "盘不在（没插？）".to_string()
             };
@@ -511,7 +586,7 @@ impl Store {
 
         let copied = copy_tree(staging, &package);
         if let Err(error) = copied {
-            let reason = format!("写备份失败：{error}");
+            let reason = write_failed_reason(error);
             std::fs::remove_dir_all(&package).ok();
             return (
                 outcome(target, "failed", &reason, "", 0, 0, 0, "", at),
@@ -678,7 +753,7 @@ fn cleanup_probe(probe: &Path) {
     std::fs::remove_file(probe.with_extension("db-shm")).ok();
 }
 
-fn outcome(
+pub(super) fn outcome(
     target: &BackupTarget,
     status: &str,
     reason: &str,
@@ -703,7 +778,7 @@ fn outcome(
     }
 }
 
-fn entry(
+pub(super) fn entry(
     target: &BackupTarget,
     date: &str,
     stamp: &str,
@@ -762,6 +837,21 @@ fn unique_package(base: PathBuf) -> PathBuf {
     base
 }
 
+/// 「写不进去」那一句（目标不可达 / 没权限）。
+///
+/// 抽成函数是**为了不把同一句话在另一个文件里再抄一遍**：界面文案守卫按「文件 + 那句话」
+/// 记欠账，抄一份就等于多欠一笔（加密包那条路上也要说这句）。
+pub(super) fn write_dir_reason(error: impl std::fmt::Display) -> String {
+    format!("写不进去：{error}")
+}
+
+/// 「写备份失败」那一句（复制 / 封包 / 半截文件都归这里，细节由调用方给）。
+///
+/// 同上：与既有那几句是同一句话，别在别的文件里再写一遍。
+pub(super) fn write_failed_reason(error: impl std::fmt::Display) -> String {
+    format!("写备份失败：{error}")
+}
+
 /// 复制整棵目录树（备份包不大，够用且直观）。
 fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;
@@ -777,33 +867,48 @@ fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// 滚动清理：**只删自己写出来的包**（目录名前缀 + 包里有我们的清单），保留最近 `keep` 份。
+/// 滚动清理：**只删自己写出来的包**，保留最近 `keep` 份。
+///
+/// 两种形态一起数、一起排：**明文包是目录**（目录名前缀 + 包里有我们的清单）、
+/// **加密包是一个 `.ympkg` 文件**（名字前缀 + 扩展名；它的清单在密文里，读不到也不该读）。
+/// 不把加密包算进来的话，开了加密之后旧备份就再也不会被轮掉——那是无声的堆积。
 ///
 /// 返回删掉几份。别人的文件、半截的目录一律不碰——"清理"最忌讳误删。
-fn prune_packages(root: &Path, keep: usize) -> usize {
+pub(super) fn prune_packages(root: &Path, keep: usize) -> usize {
     let Ok(entries) = std::fs::read_dir(root) else {
         return 0;
     };
-    let mut packages: Vec<PathBuf> = entries
+    let mut packages: Vec<(PathBuf, bool)> = entries
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| {
-            p.is_dir()
-                && p.file_name()
-                    .map(|n| n.to_string_lossy().starts_with(PACKAGE_PREFIX))
-                    .unwrap_or(false)
-                && read_manifest(p).is_some()
+        .filter_map(|path| {
+            let named = path
+                .file_name()
+                .map(|n| n.to_string_lossy().starts_with(PACKAGE_PREFIX))
+                .unwrap_or(false);
+            if !named {
+                return None;
+            }
+            if path.is_dir() {
+                return read_manifest(&path).is_some().then_some((path, true));
+            }
+            super::backup_seal::is_sealed_package(&path).then_some((path, false))
         })
         .collect();
     // 名字里带 `YYYYMMDD-HHMM`，字面量排序就是时间排序
-    packages.sort();
+    packages.sort_by(|a, b| a.0.cmp(&b.0));
     let keep = keep.max(1);
     if packages.len() <= keep {
         return 0;
     }
     let mut removed = 0;
-    for old in &packages[..packages.len() - keep] {
-        if std::fs::remove_dir_all(old).is_ok() {
+    for (old, is_dir) in &packages[..packages.len() - keep] {
+        let done = if *is_dir {
+            std::fs::remove_dir_all(old).is_ok()
+        } else {
+            std::fs::remove_file(old).is_ok()
+        };
+        if done {
             removed += 1;
         }
     }

@@ -12,18 +12,19 @@ import assert from "node:assert/strict";
 import type { RestoreOutcome, RestorePreview, RestoreSources } from "../api/core.ts";
 import { useRestore } from "./restore.ts";
 
-function sources(packages = 1): RestoreSources {
+function sources(packages = 1, sealed = false): RestoreSources {
   return {
     packages: Array.from({ length: packages }, (_, index) => ({
       path: `备份盘/研墨备份/研墨备份-20260913-01${index}0`,
       stamp: `20260913-01${index}0`,
       created_at: 1_700_000_000_000 + index,
-      device: "写字机",
-      works: 1,
-      chapters: 2,
-      words: 1200,
+      device: sealed ? "" : "写字机",
+      works: sealed ? 0 : 1,
+      chapters: sealed ? 0 : 2,
+      words: sealed ? 0 : 1200,
       bytes: 4096,
-      data_format_version: 1,
+      data_format_version: sealed ? 0 : 1,
+      sealed,
     })),
     roots: ["备份盘/研墨备份"],
     data_dir: "稿子/研墨",
@@ -67,11 +68,29 @@ function outcome(): RestoreOutcome {
   };
 }
 
-function harness(options: { preview?: RestorePreview; pick?: string | null } = {}) {
-  const calls = { flushes: 0, applied: [] as string[], picked: 0 };
+function harness(
+  options: {
+    preview?: RestorePreview;
+    pick?: string | null;
+    /** 候选包是加密包（清单在密文里，只能先要钥匙） */
+    sealed?: boolean;
+    /** 钥匙不对：unlock 抛错 */
+    failUnlock?: boolean;
+  } = {},
+) {
+  const calls = {
+    flushes: 0,
+    applied: [] as string[],
+    picked: 0,
+    previews: [] as string[],
+    unlocks: [] as string[],
+  };
   const transport = {
-    sources: async () => sources(),
-    preview: async () => options.preview ?? preview(),
+    sources: async () => sources(1, options.sealed ?? false),
+    preview: async (source: string) => {
+      calls.previews.push(source);
+      return options.preview ?? preview();
+    },
     apply: async (source: string) => {
       calls.applied.push(source);
       return outcome();
@@ -79,6 +98,16 @@ function harness(options: { preview?: RestorePreview; pick?: string | null } = {
     pick: async () => {
       calls.picked += 1;
       return options.pick ?? null;
+    },
+    // 给钥匙：解开到临时目录 + 体检，一次把两样都给回来（壳就是这么回的）
+    unlock: async (source: string, kind: string, secret: string) => {
+      calls.unlocks.push(`${kind}:${secret}`);
+      if (options.failUnlock) throw new Error("seal.open_failed");
+      assert.ok(source.length > 0);
+      return {
+        preview: preview({ source: "临时区/解开的那一份" }),
+        source: "临时区/解开的那一份",
+      };
     },
   };
   const restore = useRestore({
@@ -181,6 +210,9 @@ test("换库失败：报出来，并且还能再试一次", async () => {
         throw new Error("backup.restore_swap_failed");
       },
       pick: async () => null,
+      unlock: async () => {
+        throw new Error("这一条用不到：没选过加密包");
+      },
     },
     tzOffsetMinutes: () => 480,
     beforeApply: async () => {
@@ -197,4 +229,53 @@ test("换库失败：报出来，并且还能再试一次", async () => {
 
   await restore.apply();
   assert.equal(calls.applied, 2, "第二次仍然该真的去调一次");
+});
+
+// ── 加密包：先给钥匙，再体检（加密包绝不能走 preview） ──────────────────
+
+test("sealed 候选：**不发 preview**，改成要钥匙", async () => {
+  const { restore, calls } = harness({ sealed: true });
+  await restore.open();
+  await restore.select("备份盘/研墨备份/研墨备份-20260913-0100");
+  assert.equal(restore.needKey.value, true);
+  assert.equal(restore.preview.value, null, "还没有体检结论——别说这一份能恢复");
+  assert.deepEqual(calls.previews, [], "加密包不能走体检（壳会明确拒绝）");
+  assert.equal(restore.picked.value, "备份盘/研墨备份/研墨备份-20260913-0100", "选中的还是那个加密包");
+});
+
+test("磁盘上选来的 .ympkg 同样先要钥匙（那条路上没有清单可查）", async () => {
+  const { restore, calls } = harness({ pick: "别处/研墨备份-20260913-0100.ympkg" });
+  await restore.open();
+  await restore.pickDatabase("选择要恢复的库文件", "研墨的库");
+  assert.equal(restore.needKey.value, true);
+  assert.equal(restore.picked.value, "别处/研墨备份-20260913-0100.ympkg");
+  assert.deepEqual(calls.previews, []);
+});
+
+test("钥匙不对：报出来、**不动 picked**（还能换一把钥匙再试），也换不了库", async () => {
+  const { restore, calls } = harness({ sealed: true, failUnlock: true });
+  await restore.open();
+  await restore.select("备份盘/研墨备份/研墨备份-20260913-0100");
+  await restore.unlock("passphrase", "猜的一句");
+  assert.match(restore.error.value ?? "", /open_failed/);
+  assert.equal(restore.picked.value, "备份盘/研墨备份/研墨备份-20260913-0100", "没解开就还指着那个加密包");
+  assert.equal(restore.needKey.value, true, "还在要钥匙那一档");
+  assert.equal(restore.preview.value, null);
+  assert.equal(restore.busy.value, false, "失败之后要松开，让人能换一把钥匙再试");
+  await restore.apply();
+  assert.deepEqual(calls.applied, [], "没有体检结论就按不动");
+});
+
+test("解锁成功：picked 换成解开的目录、preview 是解开的结论、不再要钥匙", async () => {
+  const { restore, calls } = harness({ sealed: true });
+  await restore.open();
+  await restore.select("备份盘/研墨备份/研墨备份-20260913-0100");
+  await restore.unlock("recovery", "ABCD-EFGH-IJKL-MNPQ");
+  assert.deepEqual(calls.unlocks, ["recovery:ABCD-EFGH-IJKL-MNPQ"]);
+  assert.equal(restore.needKey.value, false);
+  assert.equal(restore.picked.value, "临时区/解开的那一份");
+  assert.ok(restore.preview.value, "解锁时顺手体检：结论与目录一次拿全");
+  await restore.apply();
+  assert.deepEqual(calls.applied, ["临时区/解开的那一份"], "换库递的是解开的目录（换库那条链一个字没改）");
+  assert.equal(calls.flushes, 1, "照样先落盘");
 });
