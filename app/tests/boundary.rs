@@ -636,12 +636,14 @@ fn every_declared_command_is_registered_and_reachable_from_the_gateway() {
         "入口没有接上命令登记处（src/commands/registry.rs）"
     );
 
-    // 命令都要有界面出口，否则就是没人用的死代码
-    let gateway = read(&package_root().join("frontend/src/api/core.ts"));
+    // 命令都要有界面出口，否则就是没人用的死代码。
+    // 命令名那张表的家是 `src/api/gateway.ts`（它从 api/core.ts 搬出来，只为不让一张一条命令一行的
+    // 常量表继续给通道文件加长）；api/core.ts 只把它转出，所以这里读的是表本身所在的那个文件。
+    let gateway = read(&package_root().join("frontend/src/api/gateway.ts"));
     for name in &registered {
         assert!(
             gateway.contains(&format!("\"{name}\"")),
-            "命令 {name} 没有登记进前端网关（src/api/core.ts 的命令白名单）"
+            "命令 {name} 没有登记进前端网关（src/api/gateway.ts 的命令白名单）"
         );
     }
 }

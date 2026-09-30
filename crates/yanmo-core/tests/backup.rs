@@ -186,7 +186,7 @@ fn an_unreachable_target_is_skipped_and_recorded_without_blocking_others() {
 }
 
 #[test]
-fn retention_keeps_the_newest_and_never_touches_foreign_files() {
+fn retention_keeps_one_package_per_day_and_never_touches_foreign_files() {
     let mut f = fixture();
     seed_book(&mut f.store);
     std::fs::create_dir_all(&f.target).unwrap();
@@ -194,15 +194,24 @@ fn retention_keeps_the_newest_and_never_touches_foreign_files() {
     std::fs::create_dir_all(f.target.join("我的照片")).unwrap();
     std::fs::write(f.target.join("说明书.txt"), "别删我".as_bytes()).unwrap();
 
+    // 同一天做三次（保留份数给 2）：**同一天只留最新的一份**——一天里最新的那份才是
+    // "这一天结束时的样子"，前面那两次彼此只差几秒，留着只是占盘。
+    let mut written: Vec<String> = Vec::new();
     for _ in 0..3 {
         let report = f.store.backup_now(&request(&f, 2)).unwrap();
         assert_eq!(report.succeeded(), 1);
+        written.push(report.outcomes[0].package.clone());
     }
-    let ours = packages(&f.target)
+    written.sort();
+    let newest = written.last().unwrap().clone();
+
+    let ours: Vec<String> = packages(&f.target)
         .into_iter()
         .filter(|p| read_manifest(p).is_some())
-        .collect::<Vec<_>>();
-    assert_eq!(ours.len(), 2, "保留 2 份：{:?}", ours);
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+    assert_eq!(ours.len(), 1, "同一天做了三次：只该留一份（{:?}）", ours);
+    assert_eq!(ours[0], newest, "留下的必须是**最新**那一份");
     assert!(f.target.join("我的照片").is_dir(), "别人的目录不许删");
     assert!(f.target.join("说明书.txt").is_file(), "别人的文件不许删");
 }
@@ -390,6 +399,8 @@ fn a_sealed_backup_is_one_file_that_both_keys_open() {
 }
 
 /// 滚动清理要把**加密包**也算进去：不然开了加密之后，旧备份再也不会被轮掉（无声地堆满盘）。
+///
+/// 同一天连做四次（保留份数给 2）⇒ 密文包只剩**一份**：同一天只留最新那份（见 `plan_prune`）。
 #[test]
 fn rolling_retention_counts_sealed_packages_too() {
     let mut f = fixture();
@@ -400,18 +411,23 @@ fn rolling_retention_counts_sealed_packages_too() {
         recovery: "1M2H-J4K6-N8PQ-RSTV-WXY0-2345".to_string(),
     });
 
-    // 同一分钟内连做四次：包名靠序号区分（unique_file），清理按名字排序轮掉最老的
+    // 同一分钟里连做四次：包名靠 `-2`/`-3` 序号区分（unique_file），清理按名字排序轮掉老的
+    let mut written = Vec::new();
     for _ in 0..4 {
         let report = f.store.backup_now(&request).unwrap();
         assert_eq!(report.succeeded(), 1, "报告：{:?}", report.outcomes);
+        written.push(report.outcomes[0].package.clone());
     }
-    let sealed: Vec<PathBuf> = std::fs::read_dir(&f.target)
+    written.sort();
+    let sealed: Vec<String> = std::fs::read_dir(&f.target)
         .unwrap()
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| is_sealed_package(p))
+        .map(|p| p.to_string_lossy().to_string())
         .collect();
-    assert_eq!(sealed.len(), 2, "留 2 份就该只剩 2 个密文文件：{sealed:?}");
+    assert_eq!(sealed.len(), 1, "同一天只该留一份密文包：{sealed:?}");
+    assert_eq!(sealed[0], *written.last().unwrap(), "留下的得是最新那一份");
 }
 
 /// 恢复码那一格：只在没有的时候写（换掉它等于让以前那些包失去第二把钥匙）。

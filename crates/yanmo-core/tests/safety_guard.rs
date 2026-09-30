@@ -53,10 +53,16 @@ const ALLOWED: &[Allowance] = &[
     Allowance {
         file: "crates/yanmo-core/src/store/backup.rs",
         rule: "remove-dir-all",
-        count: 5,
+        count: 4,
         why: "只删备份的**暂存区**与自己产出的历史备份包（都是本模块刚创建的目录）；\
               数据目录本身从不经这里删——换库留底走 restore_swap 的改名，不删。\
-              0.88.0 多的一处是加密包封不成时清暂存区（与快照失败那条早退路径同一处清理）",
+              0.88.0 多的一处是加密包封不成时清暂存区（与快照失败那条早退路径同一处清理）。              0.91.0 把「名字口径 + 滚动清理」整块搬去 `backup/prune.rs`（删除点跟着走了），              所以这里由 5 处减到 4 处——少掉的那一处见下面那条",
+    },
+    Allowance {
+        file: "crates/yanmo-core/src/store/backup/prune.rs",
+        rule: "remove-dir-all",
+        count: 1,
+        why: "滚动清理删的是**我们自己写出来的自动备份包**：名字前缀是我们的、而且（目录形态）包里有我们的清单 /              （加密形态）是我们的 `.ympkg`；该轮掉哪些由纯逻辑 `plan_prune` 定——              **手动「立即备份」写出去的一个都不删**（名字带记号的不进名单），              **读不出日期的名字也不碰**。别人的文件与目录一律不在此列",
     },
     Allowance {
         file: "crates/yanmo-core/src/store/backup_seal.rs",

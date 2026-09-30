@@ -54,6 +54,13 @@ pub const MANIFEST_KIND: &str = "yanmo-backup";
 // i18n-allow-next-line: 这是**磁盘上的既有目录名**（老版本就在写这个目录），改了旧备份包会认不出来
 pub(super) const DRAFT_DIR: &str = "成稿";
 
+/// 包名口径与滚动清理（**从本文件搬出去的**：只留"哪个名字该轮掉"这一件事，见 `prune.rs`）。
+mod prune;
+// 转出去让老路径继续可用（`backup::package_name` 这种写法在壳与恢复列表那边已经在用）；
+// 纯逻辑那两条（按名字判日期 / 该轮掉哪些）是 `pub` 的——它要能在没有磁盘、没有时钟的情况下被测。
+pub use prune::{package_day, plan_prune};
+pub(crate) use prune::{package_name, prune_packages, stamp_of_package_name};
+
 /// 一个备份目标（作者勾的一处落点）。
 ///
 /// `volume_id` / `volume_label` 是**那块盘**的标识（Windows 卷序列号 + 卷标），
@@ -836,33 +843,6 @@ fn volume_root_exists(path: &str) -> bool {
     root.exists()
 }
 
-/// 包名（明文包是目录名，加密包再挂一个 `.ympkg` 后缀）：手动的那一类带上记号。
-pub(super) fn package_name(stamp: &str, manual: bool) -> String {
-    if manual {
-        format!("{PACKAGE_PREFIX}{MANUAL_MARK}{stamp}")
-    } else {
-        format!("{PACKAGE_PREFIX}{stamp}")
-    }
-}
-
-/// 这个名字是不是**手动备份**（`研墨备份-手动-…`）。
-///
-/// 只看记号、不看有没有时间戳：记号是我们要不要留它的唯一判据，
-/// 名字再古怪也不该因此变成"可以删的"。
-pub(super) fn is_manual_package_name(name: &str) -> bool {
-    name.starts_with(&format!("{PACKAGE_PREFIX}{MANUAL_MARK}"))
-}
-
-/// 从包名里抠出时间戳（`研墨备份-手动-20260930-1300.ympkg` → `20260930-1300`）。
-///
-/// 恢复列表要对它排序、也要显示"这是哪一刻写的"——**手动记号不是时间的一部分**，得剥掉。
-pub(super) fn stamp_of_package_name(name: &str) -> String {
-    let rest = name.strip_prefix(PACKAGE_PREFIX).unwrap_or(name);
-    let rest = rest.strip_prefix(MANUAL_MARK).unwrap_or(rest);
-    rest.trim_end_matches(&format!(".{}", crate::seal::SEAL_EXT))
-        .to_string()
-}
-
 /// 同名包换一个带序号的目录（同一分钟里做两次也不覆盖）。
 fn unique_package(base: PathBuf) -> PathBuf {
     if !base.exists() {
@@ -909,63 +889,6 @@ fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
     }
     Ok(())
 }
-/// 滚动清理：**只删自己写出来的自动备份**，保留最近 `keep` 份。
-///
-/// 两种形态一起数、一起排：**明文包是目录**（目录名前缀 + 包里有我们的清单）、
-/// **加密包是一个 `.ympkg` 文件**（名字前缀 + 扩展名；它的清单在密文里，读不到也不该读）。
-/// 不把加密包算进来的话，开了加密之后旧备份就再也不会被轮掉——那是无声的堆积。
-///
-/// **手动「立即备份」写出去的包一个都不删**（名字里带 [`MANUAL_MARK`]）：那是作者亲手点的，
-/// 要留多久由他自己决定——滚动保留只该管"机器自己按日做的那些"。两套生命周期因此彻底分开：
-/// 自动的按份数轮转，手动的只增不减（真要清就自己动手删，这一点在界面上说清楚）。
-///
-/// 下面那个改动日期前的老包没有记号 ⇒ 按**自动**对待（与这条策略落地之前的行为一致：
-/// 那时所有包都在一起按份数轮转）。
-///
-/// 返回删掉几份。别人的文件、半截的目录一律不碰——"清理"最忌讳误删。
-pub(super) fn prune_packages(root: &Path, keep: usize) -> usize {
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return 0;
-    };
-    let mut packages: Vec<(PathBuf, bool)> = entries
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter_map(|path| {
-            let name = path.file_name()?.to_string_lossy().to_string();
-            if !name.starts_with(PACKAGE_PREFIX) || is_manual_package_name(&name) {
-                // 不是我们的东西 / 是作者亲手点的那一类：都不在"该轮掉"的名单里
-                return None;
-            }
-            if path.is_dir() {
-                return read_manifest(&path).is_some().then_some((path, true));
-            }
-            super::backup_seal::is_sealed_package(&path).then_some((path, false))
-        })
-        .collect();
-    // 名字里带 `YYYYMMDD-HHMM`，字面量排序就是时间排序。
-    //
-    // ⚠ 这条**依赖一件事**：所有写包的地方都按同一个时区基准取名。界面按本地时间给；
-    // 命令行那条 `backup` 现在**不给 --tz 就报用法错误**（曾默认 UTC，于是它写的那份名字排到
-    // 本地时间包的**前面**，刚写下去就被当成最旧的一份轮掉）。将来再加写包的地方，别忘这一条。
-    packages.sort_by(|a, b| a.0.cmp(&b.0));
-    let keep = keep.max(1);
-    if packages.len() <= keep {
-        return 0;
-    }
-    let mut removed = 0;
-    for (old, is_dir) in &packages[..packages.len() - keep] {
-        let done = if *is_dir {
-            std::fs::remove_dir_all(old).is_ok()
-        } else {
-            std::fs::remove_file(old).is_ok()
-        };
-        if done {
-            removed += 1;
-        }
-    }
-    removed
-}
-
 /// 每个目标"最近一次成功是哪天 / 缺了哪几天"——设置页一眼看到空档（单位：天）。
 pub fn gaps_for(ledger: &BackupLedger, target_path: &str, today: &str, days: u32) -> Vec<String> {
     let succeeded: Vec<&str> = ledger

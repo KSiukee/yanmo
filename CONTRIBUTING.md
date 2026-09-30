@@ -61,7 +61,8 @@
 ### 一、先记住三条铁律（它们决定了代码长什么样）
 
 1. **单一真相源**：所有读写都发生在 `crates/yanmo-core`。壳（`app/`）只调用，不碰文件系统——
-   界面侧连 `@tauri-apps/api` 都只许在 `app/frontend/src/api/core.ts` 这一个文件里 import。
+   界面侧连 `@tauri-apps/api` 都只许在 `app/frontend/src/api/` 这一个目录里 import——
+   真正碰通道的是 `api/core.ts`（`call`），命令名那张白名单单独住在 `api/gateway.ts`。
 2. **核心零 UI 依赖、零网络**：核心要能被单测、被命令行、被压测直接驱动；
    它不产界面文案（只给「码 + 参数」，句子在 `app/frontend/src/locales/`），也不出网。
 3. **只报告、不自动改稿**：涉及作者原稿的动作（排版清理、整本换编号写法、恢复、导入）
@@ -87,7 +88,7 @@
 ### 三、然后按"一个功能一条链"去读
 
 比如"写一章正文"：`app/frontend/src/editor/session.ts`（编辑器）→
-`app/frontend/src/api/core.ts`（唯一出口）→ `app/src/commands/editor.rs`（命令）→
+`app/frontend/src/api/core.ts`（唯一出口；命令名在 `api/gateway.ts`）→ `app/src/commands/editor.rs`（命令）→
 `crates/yanmo-core/src/store/content.rs`（写库 + 回算字数 + 留痕）。
 
 ### 四、最后：怎么改才不会被守卫拦

@@ -95,7 +95,8 @@ pub use sop::{
 };
 pub use sop_mech::{BookMechFacts, ChapterMechFacts};
 pub use backup::{
-    gaps_for, has_other_volume, ledger_summary, read_ledger, read_manifest, BackupConfig,
+    gaps_for, has_other_volume, ledger_summary, package_day, plan_prune, read_ledger, read_manifest,
+    BackupConfig,
     BackupLedger, BackupManifest, BackupReport, BackupRequest, BackupTarget, BackupVerify,
     LedgerEntry, SealKey, TargetOutcome, WorkStamp,
 };
