@@ -359,7 +359,7 @@ fn a_backup_from_the_command_line_writes_a_package_and_a_skipped_target_is_recor
     let report = ok(
         dir.path(),
         "backup",
-        &[("to", target.to_str().unwrap()), ("keep", "3"), ("device", "演练台")],
+        &[("to", target.to_str().unwrap()), ("keep", "3"), ("tz", "480"), ("device", "演练台")],
     );
     assert_eq!(report["succeeded"], 1, "{report}");
     let package = std::path::Path::new(report["outcomes"][0]["package"].as_str().unwrap());
@@ -372,7 +372,7 @@ fn a_backup_from_the_command_line_writes_a_package_and_a_skipped_target_is_recor
     let bad = ok(
         dir.path(),
         "backup",
-        &[("to", blocked.join("子目录").to_str().unwrap())],
+        &[("to", blocked.join("子目录").to_str().unwrap()), ("tz", "480")],
     );
     assert_eq!(bad["succeeded"], 0, "{bad}");
     // 目标不可达算「跳过」（不是「失败」）：跳过与失败都记进账本，但语义不同——
@@ -394,6 +394,23 @@ fn a_backup_from_the_command_line_writes_a_package_and_a_skipped_target_is_recor
     assert_eq!(entries[1]["status"], "skipped");
     assert!(!entries[1]["reason"].as_str().unwrap_or("").is_empty());
     assert!(work_id > 0);
+}
+
+#[test]
+fn a_backup_without_a_timezone_is_a_usage_error() {
+    // 这条命令**不猜时区**：退 an UTC 会让包名排到本地时间写的包前面，于是那份刚写下去
+    // 就可能被当成最旧的一份轮掉。宁可当场报用法错误，也别悄悄按 UTC 写。
+    let dir = tempfile::tempdir().unwrap();
+    let (_, node_id) = seed(dir.path(), "novel");
+    ok(dir.path(), "write", &[("node", &node_id.to_string()), ("body", "正文。")]);
+    let target = dir.path().join("备份盘");
+    let missing = run(dir.path(), "backup", &[("to", target.to_str().unwrap())]);
+    assert!(matches!(missing, Err(CliError::Usage(_))), "缺 --tz 该报用法错误：{missing:?}");
+    assert!(matches!(
+        run(dir.path(), "backup", &[("to", target.to_str().unwrap()), ("tz", "东八")]),
+        Err(CliError::Usage(_))
+    ), "--tz 不是整数也该报用法错误");
+    assert!(!target.exists(), "报用法错误时什么都不该写出去");
 }
 
 #[test]

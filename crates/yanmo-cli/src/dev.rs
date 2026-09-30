@@ -111,12 +111,13 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
                     .parse()
                     .map_err(|_| Usage::from("--keep 需要是一个整数（每个目标留几份）"))?,
             };
-            let tz: i32 = match args.optional("tz") {
-                None => 0,
-                Some(text) => text
-                    .parse()
-                    .map_err(|_| Usage::from("--tz 需要是一个整数（分钟，东八区 480）"))?,
-            };
+            // **--tz 必给**：包名里的时间戳按它写。这条命令不猜时区（与"不猜路径"同一条纪律）——
+            // 退回 UTC 会让这份包的名字排到本地时间写的包**前面**，于是它刚写下去就被当成最旧的
+            // 一份轮掉（0.90.0 真机走查里真出现过一次）。时区只有调用方知道，东八区是 480。
+            let tz: i32 = args
+                .required("tz")?
+                .parse()
+                .map_err(|_| Usage::from("--tz 需要是一个整数（分钟，东八区 480）"))?;
             let request = BackupRequest {
                 data_dir: args.data.clone(),
                 targets: vec![BackupTarget {

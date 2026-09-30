@@ -91,8 +91,11 @@ pub const HELP_DEV: &str = "\
   fingerprint --node <id>   库里正文的指纹
   end --node <id>           正常退出收尾（留快照 + 标记干净）
   abandon                   放弃这次会话（只标记干净，不留快照）
-  backup --to <目录> [--keep <n>] [--tz <分钟>] [--device <名字>]
+  backup --to <目录> --tz <分钟> [--keep <n>] [--device <名字>]
                             立刻做一次备份（演练用：验「备份目标不可写会怎样」与保留滚动）
+                            **--tz 必给**：包名里的时间戳按它写。不给就退回 UTC，而 UTC 的名字会排到
+                            本地时间写的包**前面**——那份刚写下去就可能被当成最旧的一份轮掉
+                            （2026-09-30 真机走查里真出现过一次）。时区只有调用方知道，这条命令不猜。
   new-work --kind <novel|collection|article> --title <书名>
                             新建一本书
   new-node --work <id> [--parent <id>] --kind <volume|chapter|section|piece|scene> [--title <名字>]

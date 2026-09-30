@@ -942,7 +942,11 @@ pub(super) fn prune_packages(root: &Path, keep: usize) -> usize {
             super::backup_seal::is_sealed_package(&path).then_some((path, false))
         })
         .collect();
-    // 名字里带 `YYYYMMDD-HHMM`，字面量排序就是时间排序
+    // 名字里带 `YYYYMMDD-HHMM`，字面量排序就是时间排序。
+    //
+    // ⚠ 这条**依赖一件事**：所有写包的地方都按同一个时区基准取名。界面按本地时间给；
+    // 命令行那条 `backup` 现在**不给 --tz 就报用法错误**（曾默认 UTC，于是它写的那份名字排到
+    // 本地时间包的**前面**，刚写下去就被当成最旧的一份轮掉）。将来再加写包的地方，别忘这一条。
     packages.sort_by(|a, b| a.0.cmp(&b.0));
     let keep = keep.max(1);
     if packages.len() <= keep {
