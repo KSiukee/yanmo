@@ -6,8 +6,8 @@
 use yanmo_core::model::ForeshadowState;
 use yanmo_core::outline::UNCOLLECTED_CHAPTERS;
 use yanmo_core::question::{
-    generate, template, ChapterFacts, ForeshadowFacts, QuestionDraft, RhythmParams, SparkFacts,
-    WritingElements,
+    generate, template, ChapterFacts, CharacterFacts, ForeshadowFacts, QuestionDraft, RhythmParams,
+    SparkFacts, WritingElements, STALLED_CAST_CHAPTERS,
 };
 
 fn chapter(id: i64, title: &str, chars: i64, summary: &str) -> ChapterFacts {
@@ -332,4 +332,91 @@ fn the_same_elements_always_give_the_same_drafts() {
     assert_eq!(overdue.len(), 2);
     assert_eq!(overdue[0].anchors, vec!["foreshadow:1"]);
     assert_eq!(overdue[1].anchors, vec!["foreshadow:2"]);
+}
+
+/// 一条人物线的事实（**"静了多少章"直接给**——这个数由存储层按"正文单位"那份清单算好，
+/// 规则只比数；见 `CharacterFacts` 的说明）。
+fn person(id: i64, name: &str, chapters_since: Option<i64>) -> CharacterFacts {
+    CharacterFacts { id, name: name.to_string(), chapters_since }
+}
+
+/// 人物线：**刚好静够阈值**产一条，差一章不产；从没出场过（`None`）与刚露面（0）都不产。
+///
+/// 阈值取自 `STALLED_CAST_CHAPTERS`——不在测试里写死数字：写死的话，改了阈值这测试照样绿
+/// （那条规则白测了）。人物线是一条**派生的推进度**：这个数不由作者标出来，
+/// 所以这里的判据只认"静了多少章"这一个数。
+#[test]
+fn a_person_is_asked_only_after_the_stalled_threshold() {
+    let threshold = STALLED_CAST_CHAPTERS.max(1);
+    let importance_at = |since: Option<i64>| {
+        let elements = WritingElements {
+            characters: vec![person(7, "陆文", since)],
+            ..Default::default()
+        };
+        only(generate(&elements, &RhythmParams::default()), "cast.stalled")
+    };
+
+    let at_threshold = importance_at(Some(threshold));
+    assert_eq!(at_threshold.len(), 1, "刚好静够就够了：{at_threshold:?}");
+    assert_eq!(at_threshold[0].anchors, vec!["entity:7"], "锚点是这个人自己");
+    assert_eq!(at_threshold[0].slots["cast"], "陆文");
+    assert_eq!(at_threshold[0].slots["chapters"], threshold.to_string());
+    assert_eq!(at_threshold[0].element, yanmo_core::question::ElementKind::Cast);
+
+    assert!(importance_at(Some(threshold - 1)).is_empty(), "差一章都不该问");
+    assert!(importance_at(Some(0)).is_empty(), "最后一章里还出场的人正热着");
+    // 从没在书里出场过 ⇒ 判不了"静了多少章"，绝不猜（"这条线还没起"，不是断了）
+    assert!(importance_at(None).is_empty(), "判不了就不猜");
+}
+
+/// 提紧迫度：**静得越久越靠前**，封顶 1.0，而且踩线那一刻不是最高（还是模板基准）。
+#[test]
+fn the_longer_a_person_is_quiet_the_more_it_matters() {
+    let threshold = STALLED_CAST_CHAPTERS.max(1);
+    let importance_at = |gap: i64| {
+        let elements = WritingElements {
+            characters: vec![person(1, "陆文", Some(gap))],
+            ..Default::default()
+        };
+        only(generate(&elements, &RhythmParams::default()), "cast.stalled")
+            .first()
+            .expect("足够久，该产一条")
+            .importance
+    };
+
+    let base_of_template = template("cast.stalled").unwrap().importance;
+    let barely = importance_at(threshold); // 刚好踩线
+    let halfway = importance_at(threshold * 2); // 静到两倍
+    let capped = importance_at(threshold * 3); // 到顶
+    let beyond = importance_at(threshold * 4); // 再久也不许超
+
+    assert!(
+        (barely - base_of_template).abs() < 1e-12 && barely < 1.0,
+        "刚够格就是模板基准，不该一上来就最高：{barely}"
+    );
+    assert!(halfway > barely, "静得久的要更靠前：{halfway} vs {barely}");
+    assert!(halfway < 1.0, "还没到顶，不该已经封顶：{halfway}");
+    assert!((capped - 1.0).abs() < 1e-12, "三倍阈值就该到顶：{capped}");
+    assert!((beyond - 1.0).abs() < 1e-12, "再静也不许超过 1.0：{beyond}");
+}
+
+/// 人物线：**一个人只产一条**，顺序＝要素清单那一份稳定序（两次调用结果一样）。
+#[test]
+fn the_same_persons_always_give_the_same_cast_drafts() {
+    let elements = WritingElements {
+        characters: vec![
+            person(1, "甲", Some(STALLED_CAST_CHAPTERS)),
+            person(2, "乙", Some(STALLED_CAST_CHAPTERS + 3)),
+            // 名字空着的不出场：界面不替作者编名字
+            person(3, "  ", Some(STALLED_CAST_CHAPTERS + 9)),
+        ],
+        ..Default::default()
+    };
+    let once = only(generate(&elements, &RhythmParams::default()), "cast.stalled");
+    let twice = only(generate(&elements, &RhythmParams::default()), "cast.stalled");
+    assert_eq!(once, twice, "同一份要素两次结果必须一样");
+    assert_eq!(once.len(), 2, "一条事实一条草稿：{once:?}");
+    assert_eq!(once[0].anchors, vec!["entity:1"]);
+    assert_eq!(once[1].anchors, vec!["entity:2"]);
+    assert!(once[1].importance > once[0].importance, "静得久的更重要");
 }

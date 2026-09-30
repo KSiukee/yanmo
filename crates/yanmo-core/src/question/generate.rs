@@ -6,12 +6,12 @@
 //! （文案在界面字典里，核心零文案），作者点头之后再落成卡。这一层因此是纯函数：
 //! 给一份「这本书此刻长什么样」，给回一串草稿——好测、可复现、可被命令行直接驱动。
 //!
-//! # 三路要素
+//! # 四路要素
 //!
 //! 章节树（有没有这一章、动笔没有）、每章一句话（计划要点）、字数（节奏），
-//! 加上后来接进来的两路：伏笔那本账（埋了多久还没收）与碎片池的引力
-//! （作者自己记下的句子，此刻最亮的几条）。**三路只是三份事实**：
-//! 每接一路就是多一条规则，引力公式与排序一行都不用改。
+//! 加上后来接进来的三路：伏笔那本账（埋了多久还没收）、碎片池的引力
+//! （作者自己记下的句子，此刻最亮的几条）、人物线（出场过的人静了多久）。
+//! **四路只是四份事实**：每接一路就是多一条规则，引力公式与排序一行都不用改。
 //!
 //! # 去重不在这里
 //!
@@ -143,15 +143,20 @@ pub fn generate(elements: &WritingElements, p: &RhythmParams) -> Vec<QuestionDra
 
     // ⑧ 引力排到前头的那几条灵感碎片：你自己记下的句子，要不要用掉
     out.extend(high_gravity_sparks(elements));
+    // ⑨ 静了很久的人物：这条线还接不接（**人物线**：从"谁出场过"这本账派生）
+    out.extend(stalled_cast(elements));
 
     out
 }
 
-/// 每再拖一个阈值，超期草稿的重要度涨这么多。
+/// 每再拖一个阈值，超期 / 静默草稿的重要度涨这么多。
 ///
 /// 取 0.2 的理由：伏笔模板的基准重要度是 0.8（见 `super::template::TEMPLATES`），
 /// 加上 0.2 刚好封顶 1.0——也就是"拖到阈值的两倍"算拖到底。**踩线那一刻额外量是 0**：
-/// 刚够格就问的那一条按基准 0.8 排队，让位给拖得更久的那些（不最高，也不被埋掉）。
+/// 刚够格就问的那一条按基准排队，让位给拖得更久的那些（不最高，也不被埋掉）。
+///
+/// 人物线复用同一条曲线（它的基准是 0.6，所以要到**三倍**阈值才封顶）：
+/// "静得越久越该接回来"与"埋得越久越该收"本来就是同一件事，没必要写第二个公式。
 const OVERDUE_IMPORTANCE_STEP: f64 = 0.2;
 
 /// 超期程度 → 这条草稿的重要度：`基准 + 超出的比例 × 步长`，封顶 1.0。
@@ -200,6 +205,57 @@ fn overdue_foreshadows(elements: &WritingElements) -> Vec<QuestionDraft> {
         );
         // 提紧迫度：拖得越久越靠前（封顶 1.0，见 `overdue_importance`）
         made.importance = overdue_importance(base, gap, UNCOLLECTED_CHAPTERS);
+        out.push(made);
+    }
+    out
+}
+
+/// 人物静了这么多章，这条线就该接回来了（阈值，旋钮）。
+///
+/// 取 12 的理由：一部长篇里，一个**出场过**的人整整十来回合没露面，读者先忘了他是谁——
+/// 到那时再提"这条线接回来还是让他退场"才是提醒，早了是催（刚歇两章也要接回来，
+/// 那叫多线并进，不叫断了）；12 就是**十来**回合那个数，与字典里温柔那版
+/// 说的"十来回合以前"同一个口径，不另外编一个数。
+///
+/// 为什么不借伏笔那条 20：那个数说的是"埋了 20 章还没收"的**收账期限**（大纲体检
+/// 与叩问共用的同一个判据），人物静一阵子是长篇的正常呼吸，两者不是一件事；
+/// 共用一个数只会让改一个动两处。这个数**只有这一个消费者**（`stalled_cast`）。
+pub const STALLED_CAST_CHAPTERS: i64 = 12;
+
+/// 出场过、而且静了**足够多章**的人物各产一条草稿。
+///
+/// 四条分寸：
+///
+/// 1. **出场过才问**（`chapters_since` 是 `None` 就跳过）：从没在书里露过面的人不是
+///    "这条线断了"，是"这条线还没起"——问"接回来还是让他退场"无从答起；
+/// 2. **刚露面不问**（差一章也不问，判据是 `>=` 阈值）：最后一章里还出场的人正热着；
+/// 3. **一个人只产一条**：锚点 `entity:<人物卡 id>` 就是他的身份；
+/// 4. **静得越久越靠前**：重要度按超出的比例涨（封顶 1.0，与伏笔那条同一套写法，
+///    见 `overdue_importance`——踩线那一刻还是模板基准）。
+///
+/// 顺序＝ `elements.characters` 的顺序（读库那层给的是按名字排的稳定序），两次调用结果一样。
+fn stalled_cast(elements: &WritingElements) -> Vec<QuestionDraft> {
+    let base = spec_of("cast.stalled").importance;
+    let mut out = Vec::new();
+    for person in &elements.characters {
+        // "静了多少章"由存储层按**正文单位**那份清单算好（`text_spine`，见 `CharacterFacts`）；
+        // 判不了的（从没出场 / 出场节点已不在那份清单里）跳过，绝不猜。
+        let Some(gap) = person.chapters_since else { continue };
+        if gap < STALLED_CAST_CHAPTERS {
+            continue;
+        }
+        // 名字空着的跳过：**没有名字就问不出口**（存储层已经滤过一道，这里再兜一次——
+        // 规则不该产出一条槽位是空的问题）。界面不替作者编名字。
+        let name = slot_text(&person.name);
+        if name.is_empty() {
+            continue;
+        }
+        let mut made = draft(
+            "cast.stalled",
+            &[("cast", name), ("chapters", gap.to_string())],
+            format!("entity:{}", person.id),
+        );
+        made.importance = overdue_importance(base, gap, STALLED_CAST_CHAPTERS);
         out.push(made);
     }
     out

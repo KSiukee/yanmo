@@ -8,11 +8,11 @@ use std::collections::BTreeSet;
 
 use yanmo_core::gravity::{signal_for_action, FeedbackSignal, FragmentLevel};
 use yanmo_core::model::{
-    ForeshadowState, FragmentKind, NewForeshadow, NewQuestionCard, NodeKind, QuestionState,
-    WorkKind, TRANSITIONS,
+    EntityKind, ForeshadowState, FragmentKind, NewEntityCard, NewForeshadow, NewQuestionCard,
+    NodeKind, QuestionState, WorkKind, TRANSITIONS,
 };
 use yanmo_core::outline::{IssueRule, UNCOLLECTED_CHAPTERS};
-use yanmo_core::question::{ElementKind, TEMPLATES};
+use yanmo_core::question::{ElementKind, TEMPLATES, STALLED_CAST_CHAPTERS};
 use yanmo_core::store::{NewFragment, Store, SPARK_ELEMENTS};
 
 fn fresh() -> (tempfile::TempDir, Store) {
@@ -445,6 +445,35 @@ fn book_with_chapters(store: &mut Store, chapters: usize) -> (i64, Vec<i64>) {
     (work.id, ids)
 }
 
+/// 一张人物卡（出生时名字不许空——`clean` 挡住了；要造"名字空着"那种坏数据
+/// 只能在库里直接抹，见下面那条测试）。
+fn person(store: &mut Store, work: i64, name: &str) -> i64 {
+    store
+        .create_entity_card(
+            &NewEntityCard {
+                work_id: work,
+                kind: EntityKind::Person,
+                name: name.to_string(),
+                aliases: Vec::new(),
+                attributes: Vec::new(),
+                note: String::new(),
+            },
+            "test",
+        )
+        .unwrap()
+}
+
+/// 人物线的事实读数：谁、静了多少章（没人出场过的是 `None`）。
+fn quiet_chapters(store: &Store, work: i64, entity: i64) -> Option<i64> {
+    let elements = store.writing_elements(work).unwrap();
+    elements
+        .characters
+        .iter()
+        .find(|person| person.id == entity)
+        .unwrap_or_else(|| panic!("人物 {entity} 该在要素清单里"))
+        .chapters_since
+}
+
 fn planted_foreshadow(store: &mut Store, work: i64, body: &str, planted: Option<i64>) -> i64 {
     store
         .create_foreshadow(
@@ -636,5 +665,147 @@ fn a_second_spark_on_the_same_chapter_still_gets_a_draft() {
     assert!(
         !drafts.iter().any(|d| d.anchors.contains(&format!("fragment:{first}"))),
         "问过的那条不该再产：{drafts:?}"
+    );
+}
+
+/// 人物线（**派生的推进度**，不新建任何数据模型）：出场过、静够多章的人各产一条。
+///
+/// 判据一次摆开四档：刚好踩线（产）、差一章（不产）、最后一章里还出场（不产）、
+/// 从没出场过（判不了 ⇒ 不产）。锚点是**人自己**（`entity:<id>`），不是某一章。
+#[test]
+fn a_person_who_has_been_quiet_for_long_enough_becomes_a_draft() {
+    let threshold = STALLED_CAST_CHAPTERS.max(1) as usize;
+    let (_dir, mut store) = fresh();
+    // threshold + 1 章：下标 0 那一章出场的人 ⇒ 静了 threshold 章（刚好踩线）
+    let (work, chapters) = book_with_chapters(&mut store, threshold + 1);
+    let last_chapter = chapters[threshold];
+
+    let stalled = person(&mut store, work, "陆文");
+    store.set_node_cast(chapters[0], &[stalled], "test").unwrap();
+    assert_eq!(
+        quiet_chapters(&store, work, stalled),
+        Some(threshold as i64),
+        "静了多少章由存储层按正文单位算好"
+    );
+
+    // 差一章：下标 1 ⇒ 静了 threshold − 1 章
+    let one_short = person(&mut store, work, "张三");
+    store.set_node_cast(chapters[1], &[one_short], "test").unwrap();
+    // 最后一章里还出场：静了 0 章（正热着）
+    let still_hot = person(&mut store, work, "李四");
+    store.set_node_cast(last_chapter, &[still_hot], "test").unwrap();
+    // 从没在书里出场过：判不了"静了多少章"，绝不猜
+    let never = person(&mut store, work, "王五");
+    assert_eq!(quiet_chapters(&store, work, never), None, "没出场过就是判不了");
+
+    let drafts = store.question_drafts(work).unwrap();
+    let cast: Vec<_> = drafts.iter().filter(|d| d.template_key == "cast.stalled").collect();
+    assert_eq!(cast.len(), 1, "只有静够久的那个人该问：{drafts:?}");
+    assert_eq!(cast[0].anchors, vec![format!("entity:{stalled}")], "锚点是这个人自己");
+    assert_eq!(cast[0].slots["cast"], "陆文");
+    assert_eq!(cast[0].slots["chapters"], threshold.to_string());
+    assert_eq!(cast[0].element, ElementKind::Cast);
+    for (id, why) in [(one_short, "差一章"), (still_hot, "最后一章还在"), (never, "从没出场")] {
+        assert!(
+            !drafts.iter().any(|d| d.anchors.contains(&format!("entity:{id}"))),
+            "{why}的人不该被问：{drafts:?}"
+        );
+    }
+}
+
+/// **同一个人出场好几章，也只产一条**（锚点就是他的身份），而且顺序稳、问过就不再来。
+#[test]
+fn a_person_appearing_in_many_chapters_still_gets_one_draft() {
+    let threshold = STALLED_CAST_CHAPTERS.max(1) as usize;
+    let (_dir, mut store) = fresh();
+    // 出场三章（下标 0 / 1 / 2），末章下标 threshold + 2 ⇒ 最后一次出场后静了 threshold 章
+    let (work, chapters) = book_with_chapters(&mut store, threshold + 3);
+    let id = person(&mut store, work, "陆文");
+    for node in &chapters[..3] {
+        store.set_node_cast(*node, &[id], "test").unwrap();
+    }
+
+    let once = store.question_drafts(work).unwrap();
+    let twice = store.question_drafts(work).unwrap();
+    assert_eq!(once, twice, "同一本书两次生成结果必须一样");
+    let cast: Vec<_> = once.iter().filter(|d| d.template_key == "cast.stalled").collect();
+    assert_eq!(cast.len(), 1, "一个人只产一条：{once:?}");
+    assert_eq!(cast[0].anchors, vec![format!("entity:{id}")]);
+    assert_eq!(
+        cast[0].slots["chapters"],
+        (chapters.len() - 1 - 2).to_string(),
+        "最后一次出场是下标 2 那一章（末章下标 {}）", chapters.len() - 1
+    );
+
+    // 问过（同模板 + 同锚点）就不再产——新模板走同一条去重链
+    store
+        .create_question_card(&card(work, "cast.stalled", &[&format!("entity:{id}")]))
+        .unwrap();
+    let after = store.question_drafts(work).unwrap();
+    assert!(
+        !after.iter().any(|d| d.template_key == "cast.stalled"),
+        "同一个人不该再产草稿：{after:?}"
+    );
+}
+
+/// **口径：人物静了多少章按"正文单位"算**——末章前夹着场景卡也不影响这个数
+/// （与伏笔那条同一个坐标，见上面那条"两个判据必须同时成立"的测试）。
+#[test]
+fn scene_cards_do_not_change_how_long_a_person_has_been_quiet() {
+    let threshold = STALLED_CAST_CHAPTERS.max(1) as usize;
+    let (_dir, mut store) = fresh();
+    // 差一章：章距 threshold − 1，本来就够不着阈值
+    let (work, chapters) = book_with_chapters(&mut store, threshold);
+    let id = person(&mut store, work, "陆文");
+    store.set_node_cast(chapters[0], &[id], "test").unwrap();
+    let asks = |store: &Store| {
+        store
+            .question_drafts(work)
+            .unwrap()
+            .into_iter()
+            .any(|draft| draft.template_key == "cast.stalled")
+    };
+
+    assert_eq!(quiet_chapters(&store, work, id), Some(threshold as i64 - 1));
+    assert!(!asks(&store), "差一章：还不该问");
+
+    // 末章前挂两张场景卡（场景卡承载正文、会进叩问那份章节清单，但不是"章"）
+    let last = chapters[chapters.len() - 1];
+    for index in 0..2 {
+        store.create_node(work, Some(last), NodeKind::Scene, &format!("场景{index}")).unwrap();
+    }
+    assert_eq!(
+        quiet_chapters(&store, work, id),
+        Some(threshold as i64 - 1),
+        "夹着场景卡，静了多少章一个字都不该变"
+    );
+    assert!(!asks(&store), "场景卡不该把他顶过阈值");
+
+    // 真加一章：这才踩线
+    store.create_node(work, None, NodeKind::Chapter, "再多一章").unwrap();
+    assert_eq!(quiet_chapters(&store, work, id), Some(threshold as i64));
+    assert!(asks(&store), "真多一章才该问：{id}");
+}
+
+/// 名字空着的人物卡不产草稿：没有名字就问不出口（界面不替作者编名字）。
+///
+/// 建卡时名字不许空（`clean` 挡住了），所以这里直接把库里那一格抹掉，
+/// 造出"外部改坏 / 老数据"那种行。
+#[test]
+fn a_nameless_person_gets_no_draft() {
+    let threshold = STALLED_CAST_CHAPTERS.max(1) as usize;
+    let (_dir, mut store) = fresh();
+    let (work, chapters) = book_with_chapters(&mut store, threshold + 1);
+    let id = person(&mut store, work, "陆文");
+    store.set_node_cast(chapters[0], &[id], "test").unwrap();
+    store
+        .conn()
+        .execute("UPDATE entity_cards SET name = '   ' WHERE id = ?1", [id])
+        .unwrap();
+
+    let drafts = store.question_drafts(work).unwrap();
+    assert!(
+        !drafts.iter().any(|d| d.template_key == "cast.stalled"),
+        "名字空着的不问：{drafts:?}"
     );
 }

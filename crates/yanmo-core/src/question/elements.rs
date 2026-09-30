@@ -1,7 +1,8 @@
 //! 写作要素：**这本书此刻长什么样**（纯数据，由存储层读出来，这里不认识 SQL）。
 //!
-//! 三条线各一样事实：章节（有没有这一章、动笔没有）、伏笔（埋了多久还没收）、
-//! 灵感碎片（引力排前头的几条）。规则（`super::generate`）只读这些事实，
+//! 四路事实各一样：章节（有没有这一章、动笔没有）、伏笔（埋了多久还没收）、
+//! 灵感碎片（引力排前头的几条）、人物（谁出场过、之后静了多久）。
+//! 规则（`super::generate`）只读这些事实，
 //! 引力公式与排序一行都不用改——新要素接进来就是**多一类事实 + 多一条规则**。
 //!
 //! 事实里**没有一个字的句子**：`body` 是作者自己写下的原文（伏笔正文 / 碎片原文），
@@ -39,6 +40,24 @@ pub struct ForeshadowFacts {
     pub chapters_since: Option<i64>,
 }
 
+/// 一个人物的事实（纯数据：**"静了多少章"已经算好**，规则不必再认节点 id、也不必自己数）。
+///
+/// `chapters_since` = 这个人**最后一次出场**之后又过了多少章（0 = 最后一章里还出场），
+/// **由存储层按"正文单位"那一份清单算**（`Store::text_spine`：承载正文且不是场景卡——
+/// 与伏笔那条"隔了多少章"同一份坐标，见 [`ForeshadowFacts`]）。
+/// 为什么不让机制层自己从 [`WritingElements::chapters`] 里减：那份清单含场景卡，
+/// 而"静了 12 章没露面"数的是章——同一个阈值架在两份清单上，夹了场景卡的两边就会打架。
+///
+/// `None` = 判不了：**从没在书里出场过**，或者出场的那几个节点已不在正文单位清单里
+/// （删了、是场景卡、或者是别人书里的）——规则一律跳过它，绝不猜
+/// （"从没出场过"不是"这条线断了"，是"这条线还没起"）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CharacterFacts {
+    pub id: i64,
+    pub name: String,
+    pub chapters_since: Option<i64>,
+}
+
 /// 一条灵感碎片的事实（纯数据：**引力总分由既有公式算好**，这里不重新算一遍）。
 ///
 /// `total` 就是 `gravity::inspire` 的 `SparkGravity::total`（重要度 × 热度 × 关联度 ×
@@ -55,8 +74,8 @@ pub struct SparkFacts {
 
 /// 一本书此刻的写作要素。
 ///
-/// 三个字段都是**清单**（各读各的，互不推导）：`chapters` 按阅读顺序、`foreshadows`
-/// 按读库的顺序、`sparks` 按引力降序。三条规则各自只认自己那一份清单。
+/// 四个字段都是**清单**（各读各的，互不推导）：`chapters` 按阅读顺序、`foreshadows`
+/// 按读库的顺序、`sparks` 按引力降序、`characters` 按名字排。四条规则各自只认自己那一份清单。
 ///
 /// ⚠️ 没有 `Eq`：引力总分是 `f64`（`PartialEq` 够用，`Eq` 说不成立）。
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -64,6 +83,8 @@ pub struct WritingElements {
     pub chapters: Vec<ChapterFacts>,
     pub foreshadows: Vec<ForeshadowFacts>,
     pub sparks: Vec<SparkFacts>,
+    /// 人物线：谁出场过、之后静了多久（**派生出来的推进度**，不是作者标出来的）
+    pub characters: Vec<CharacterFacts>,
 }
 
 /// 节奏判据的旋钮（集中放，好调）。

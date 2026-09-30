@@ -12,7 +12,7 @@ import { call, COMMANDS } from "./core";
 /** 一条候选**草稿**：模板键 + 槽位取值——**句子里一个字都没有**，由界面按字典渲染。 */
 export interface QuestionDraft {
   template_key: string;
-  element: "chapter" | "plan" | "rhythm" | "continuity" | "foreshadow" | "spark";
+  element: "chapter" | "plan" | "rhythm" | "continuity" | "foreshadow" | "spark" | "cast";
   slots: Record<string, string>;
   anchors: string[];
   importance: number;

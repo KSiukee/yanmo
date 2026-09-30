@@ -2,8 +2,9 @@
 //!
 //! 三件事都在这儿，因为它们共用同一份"书此刻长什么样"：
 //!
-//! 1. [读要素](Store::writing_elements)：三路事实——按阅读顺序的节点（承载正文的）、
-//!    伏笔那本账（埋点换算成阅读顺序里的下标）、碎片池里引力最高的前几条；
+//! 1. [读要素](Store::writing_elements)：四路事实——按阅读顺序的节点（承载正文的）、
+//!    伏笔那本账（埋点换算成阅读顺序里的下标）、碎片池里引力最高的前几条、
+//!    人物那本账（人物卡与出场节点现算出来的"静了多少章"）；
 //! 2. [生草稿](Store::question_drafts)：按规则产出模板 + 槽位，**滤掉已经问过的**；
 //! 3. 派生关系的守门（[`validate_derivation`]）：来源必须同书、自动派生不许无限套娃。
 //!
@@ -16,9 +17,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 use super::Store;
 use crate::error::{codes, Error, Result};
 use crate::gravity::allowed_auto_derivation;
+use crate::model::EntityKind;
 use crate::question::{
-    generate, ChapterFacts, ForeshadowFacts, QuestionDraft, RhythmParams, SparkFacts,
-    WritingElements,
+    generate, ChapterFacts, CharacterFacts, ForeshadowFacts, QuestionDraft, RhythmParams,
+    SparkFacts, WritingElements,
 };
 
 /// 生成叩问候选时，取**引力最高的前几条**灵感碎片（旋钮，3~5 之间都好用）。
@@ -99,13 +101,16 @@ pub(super) fn validate_derivation(
 }
 
 impl Store {
-    /// 读一本书的写作要素：三路事实各读各的。
+    /// 读一本书的写作要素：四路事实各读各的。
     ///
     /// 1. **章节**：按阅读顺序、承载正文的那些节点（容器节点滤掉）；
     /// 2. **伏笔**：埋点换算成**阅读顺序里的下标**（判"隔了多少章"靠它；埋点不在
     ///    这份章节清单里的——删了、指向别处——就是 `None`，规则会跳过，绝不猜）；
     /// 3. **灵感碎片**：作者随手记的那几种里**引力最高的前 [`SPARK_ELEMENTS`] 条**
-    ///    （引力用现成的 [`Store::spark_candidates`]——同一套公式、同一个排序，不另算一份）。
+    ///    （引力用现成的 [`Store::spark_candidates`]——同一套公式、同一个排序，不另算一份）；
+    /// 4. **人物**：人物卡 × 出场账（`node_cast`）→ 每个人**最后一次出场之后**隔了多少章
+    ///    （与伏笔**同一份坐标**；从没出场过、或出场节点不在那份清单里的就是 `None`，
+    ///    规则跳过，绝不猜——这是"人物线"那条**派生推进度**的读数口）。
     ///
     /// 焦点给 `None`：这一层答的是"这本书此刻长什么样"，而"作者正打开着哪一章"是
     /// 每次**选题**时才知道的事（见 [`Store::select_questions_for_chapter`]）——
@@ -126,13 +131,11 @@ impl Store {
             });
         }
 
-        // 伏笔"隔了多少章"：**按"正文单位"那一份清单算**（`text_spine`：承载正文、不是场景卡）
-        // ——与大纲体检那条同阈值判据同一份坐标。上面 `chapters` 那份含场景卡（章节类规则要用它），
-        // 两份清单各司其职，别拿一份去数另一件事的章数。
-        let spine: Vec<i64> = self.text_spine(work_id)?.into_iter().map(|node| node.id).collect();
-        let spine_last = spine.len().saturating_sub(1) as i64;
-        let spine_pos: HashMap<i64, i64> =
-            spine.iter().enumerate().map(|(at, id)| (*id, at as i64)).collect();
+        // 伏笔与人物判"隔了多少章 / 静了多少章"：**按"正文单位"那一份清单算**
+        // （`text_spine`：承载正文、不是场景卡）——与大纲体检那条同阈值判据同一份坐标。
+        // 上面 `chapters` 那份含场景卡（章节类规则要用它），两份清单各司其职，
+        // 别拿一份去数另一件事的章数。**一处算、两条线共用一个数**（见 `spine_index`）。
+        let (spine_last, spine_pos) = self.spine_index(work_id)?;
         let foreshadows = self
             .foreshadows(work_id, None)?
             .into_iter()
@@ -158,7 +161,72 @@ impl Store {
             })
             .collect();
 
-        Ok(WritingElements { chapters, foreshadows, sparks })
+        // 人物线：人物卡 × 出场账 → "静了多少章"（与伏笔**同一份** `spine_index` 坐标）
+        let characters = self.character_facts(work_id, spine_last, &spine_pos)?;
+
+        Ok(WritingElements { chapters, foreshadows, sparks, characters })
+    }
+
+    /// **正文单位**（`text_spine`）在阅读顺序里的下标：返回（末章下标, 节点 → 下标）。
+    ///
+    /// 为什么抽出来一处算：伏笔超期与人物静默数的是**同一个东西**（"从某个节点到末章隔了几章"）。
+    /// 各写一套的话，哪天要换清单就得记得换两处——漏一处，两条线立刻各说各话
+    /// （0.92.1 修的就是这种"两份清单打架"的账）。数在哪算、就按哪的口径。
+    fn spine_index(&self, work_id: i64) -> Result<(i64, HashMap<i64, i64>)> {
+        let spine = self.text_spine(work_id)?;
+        let last = spine.len().saturating_sub(1) as i64;
+        let pos = spine
+            .into_iter()
+            .enumerate()
+            .map(|(at, node)| (node.id, at as i64))
+            .collect();
+        Ok((last, pos))
+    }
+
+    /// 一本书的**人物线事实**：每个还活着的人物卡静了多久（**现算，不存**——这条派生线
+    /// 不新建任何数据模型）。
+    ///
+    /// 三条口径：
+    ///
+    /// 1. **只认人物卡**（[`EntityKind::Person`]）：出场那一格的选人卡只摆人物
+    ///    （见 `app/frontend/src/components/grid-cast.ts`），地点 / 物品挂上节点也叫"出场"，
+    ///    但它们不"退场"——这条线说的是人；
+    /// 2. **出场账只数正文单位里的节点**（`spine_pos`）：人物挂过的节点若不在那份清单里
+    ///    （场景卡、已删的、别的书——`node_cast` 已按书过滤），那一次出场不算数；
+    /// 3. **判不了的不猜**：从没出场过的（出场账里根本没有他）与上面那条不成立的，
+    ///    一律 `None`；名字空着的**直接跳过**（界面不替作者编名字，也不拿空格去填句子）。
+    ///
+    /// 顺序＝ [`Store::entity_cards`] 给的顺序（按名字排、id 收尾），两次调用结果一样。
+    fn character_facts(
+        &self,
+        work_id: i64,
+        spine_last: i64,
+        spine_pos: &HashMap<i64, i64>,
+    ) -> Result<Vec<CharacterFacts>> {
+        // 出场账：人物 id → **最后一次**出场（正文单位里的下标）。一个人挂过好几章，
+        // 取最靠后的那一次（"最后一次露面"）。
+        let mut last_at: HashMap<i64, i64> = HashMap::new();
+        for (node, members) in self.node_cast(work_id)? {
+            let Some(at) = spine_pos.get(&node).copied() else { continue };
+            for member in members {
+                let seen = last_at.entry(member.entity_id).or_insert(at);
+                if at > *seen {
+                    *seen = at;
+                }
+            }
+        }
+        let mut out = Vec::new();
+        for card in self.entity_cards(work_id, Some(EntityKind::Person))? {
+            if card.name.trim().is_empty() {
+                continue;
+            }
+            out.push(CharacterFacts {
+                id: card.id,
+                name: card.name,
+                chapters_since: last_at.get(&card.id).map(|at| spine_last - at),
+            });
+        }
+        Ok(out)
     }
 
     /// 一本书此刻的候选草稿：按规则生成，**滤掉已经问过的**（同模板 + 同锚点）。
