@@ -55,6 +55,7 @@ fn make_backup(f: &mut Fixture) -> PathBuf {
             keep: 7,
             tz_offset_minutes: 480,
             device: "测试机".to_string(),
+            manual: false,
             seal: None,
         })
         .unwrap();
@@ -380,6 +381,7 @@ fn sealed_packages_are_listed_without_their_secrets() {
         keep: 7,
         tz_offset_minutes: 480,
         device: "测试机".to_string(),
+        manual: false,
         seal: Some(yanmo_core::store::SealKey {
             passphrase: "口令".to_string(),
             recovery: "1M2H-J4K6-N8PQ-RSTV-WXY0-2345".to_string(),

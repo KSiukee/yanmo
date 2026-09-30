@@ -55,6 +55,7 @@ fn request(fixture: &Fixture, keep: usize) -> BackupRequest {
         keep,
         tz_offset_minutes: 480,
         device: "测试机".to_string(),
+        manual: false,
         seal: None,
     }
 }
@@ -433,4 +434,66 @@ fn the_recovery_code_is_recorded_once_and_kept() {
         Some("AAAA-BBBB-CCCC-DDDD-EEEE-FFFF"),
         "换掉恢复码会让以前的包失去第二把钥匙"
     );
+}
+
+/// 两套生命周期：**手动「立即备份」写出去的包滚动清理永不删**，自动的照旧按份数轮转。
+///
+/// 这条规则只在**名字**上区分（手动那份带记号）——加密包的清单在密文里，
+/// 名字是唯一不靠钥匙就能看的判据，所以明文与加密必须走同一个口径。
+#[test]
+fn manual_backups_are_never_rotated_away() {
+    let mut f = fixture();
+    seed_book(&mut f.store);
+
+    // 自动一份 → 手动一份 → 再自动一份（保留份数给 1：自动那两份必须轮到只剩一份）
+    f.store.backup_now(&request(&f, 1)).unwrap();
+    let mut manual = request(&f, 1);
+    manual.manual = true;
+    let written = f.store.backup_now(&manual).unwrap();
+    assert_eq!(written.succeeded(), 1, "手动那份要写出去：{:?}", written.outcomes);
+    f.store.backup_now(&request(&f, 1)).unwrap();
+
+    let ours: Vec<PathBuf> = packages(&f.target)
+        .into_iter()
+        .filter(|p| read_manifest(p).is_some())
+        .collect();
+    let manual_kept = ours
+        .iter()
+        .filter(|p| p.file_name().unwrap().to_string_lossy().contains("手动"))
+        .count();
+    assert_eq!(manual_kept, 1, "作者亲手点的那一份不许被轮掉：{:?}", ours);
+    assert_eq!(ours.len(), 2, "自动那两份该轮到只剩 1 份：{:?}", ours);
+}
+
+/// 加密包那一档同一个规则（手动的那份 `.ympkg` 也不许被轮掉）。
+#[test]
+fn manual_sealed_backups_are_never_rotated_away_either() {
+    let mut f = fixture();
+    seed_book(&mut f.store);
+    let key = SealKey {
+        passphrase: "今年的口令".to_string(),
+        recovery: "1M2H-J4K6-N8PQ-RSTV-WXY0-2345".to_string(),
+    };
+
+    let mut auto = request(&f, 1);
+    auto.seal = Some(key.clone());
+    f.store.backup_now(&auto).unwrap();
+    let mut manual = request(&f, 1);
+    manual.seal = Some(key);
+    manual.manual = true;
+    f.store.backup_now(&manual).unwrap();
+    f.store.backup_now(&auto).unwrap();
+
+    let ours: Vec<PathBuf> = std::fs::read_dir(&f.target)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| is_sealed_package(p))
+        .collect();
+    let manual_kept = ours
+        .iter()
+        .filter(|p| p.file_name().unwrap().to_string_lossy().contains("手动"))
+        .count();
+    assert_eq!(manual_kept, 1, "手动那份密文包不许被轮掉：{:?}", ours);
+    assert_eq!(ours.len(), 2, "自动那些密文包该轮到只剩 1 份：{:?}", ours);
 }

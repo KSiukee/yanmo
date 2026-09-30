@@ -111,6 +111,7 @@ pub(super) fn write_sealed_to_target(
     keep: usize,
     at: i64,
     fingerprint: &str,
+    manual: bool,
 ) -> (TargetOutcome, LedgerEntry) {
     let root = PathBuf::from(&target.path);
     if let Err(error) = fs::create_dir_all(&root) {
@@ -120,9 +121,14 @@ pub(super) fn write_sealed_to_target(
             entry(target, date, stamp, "failed", &reason, "", at),
         );
     }
-    // 落地名按**包名**来（`研墨备份-<时间戳>.ympkg`），不抄暂存区那个内部名字：
-    // 备份盘上摆着 `.backup-staging-…` 这种东西，作者认不出、列表与滚动清理也认不出。
-    let wanted = root.join(format!("{PACKAGE_PREFIX}{stamp}.{}", crate::seal::SEAL_EXT));
+    // 落地名按**包名**来（`研墨备份-<时间戳>.ympkg`；手动那份带「手动-」记号），
+    // 不抄暂存区那个内部名字：备份盘上摆着 `.backup-staging-…` 这种东西，
+    // 作者认不出、列表与滚动清理也认不出。
+    let wanted = root.join(format!(
+        "{}.{}",
+        super::backup::package_name(stamp, manual),
+        crate::seal::SEAL_EXT
+    ));
     let destination = unique_file(wanted);
     let bytes = match fs::copy(sealed, &destination) {
         Ok(bytes) => bytes,

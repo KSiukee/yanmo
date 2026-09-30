@@ -206,6 +206,7 @@ fn the_backup_manifest_agrees_with_the_draft_it_shipped() {
             keep: 3,
             tz_offset_minutes: 480,
             device: "测试机".to_string(),
+            manual: false,
             seal: None,
         })
         .unwrap();

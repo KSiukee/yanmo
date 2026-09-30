@@ -891,8 +891,10 @@ export const writeBackupConfig = (config: BackupConfig) =>
   call<BackupConfig>(COMMANDS.backupConfigWrite, { config });
 
 /** 立即备份到所有目标（逐目标成败，一个盘写不进去不影响别的盘）。 */
-export const runBackupNow = (tz_offset_minutes: number) =>
-  call<BackupReport>(COMMANDS.backupNow, { tz_offset_minutes });
+/** 做一次备份。`manual`：作者亲手点的「立即备份」传 true，机器自己按日做的那两次传 false——
+ *  手动那份包名带记号，核心的滚动清理**永不删它**（自动的才按份数轮转）。 */
+export const runBackupNow = (tz_offset_minutes: number, manual: boolean) =>
+  call<BackupReport>(COMMANDS.backupNow, { tz_offset_minutes, manual });
 
 /** 能恢复的备份包（扫作者勾过的每个备份位置；盘不在就扫不到）。 */
 export const readRestoreSources = () => call<RestoreSources>(COMMANDS.backupRestoreSources);

@@ -183,7 +183,10 @@ pub fn backup_config_write(
     })
 }
 
-/// 立即备份到所有目标。**逐目标成败**：一个盘写不进去不影响别的盘。
+/// 做一次备份（写到所有目标）。**逐目标成败**：一个盘写不进去不影响别的盘。
+///
+/// `manual`：作者亲手点的「立即备份」传 `true`，机器自己按日做的那两次（首启 / 关窗）传 `false`。
+/// 只影响一件事——手动那份包名带记号，**滚动清理永不删它**（见核心 `store::backup::prune_packages`）。
 ///
 /// 开了加密时把两把钥匙一次递给核心（口令**只在这条命令的内存里**过一手，不落盘）。
 /// ⚠️ **开了加密但口令不在**（重启之后就是这种状态）时**拒绝执行**，绝不退回明文包：
@@ -192,6 +195,7 @@ pub fn backup_config_write(
 pub fn backup_now(
     data: State<'_, AppData>,
     tz_offset_minutes: i32,
+    manual: bool,
 ) -> Result<BackupReport, ApiError> {
     let config = data.with_store(|store: &mut Store| Ok(store.backup_config()?))?;
     let data_dir = data
@@ -216,12 +220,11 @@ pub fn backup_now(
         keep: config.keep,
         tz_offset_minutes,
         device: device_name(),
+        manual,
         seal,
     };
     data.with_store(|store: &mut Store| Ok(store.backup_now(&request)?))
 }
-
-// ── 盘符探测（Windows） ─────────────────────────────────────────────────────
 
 /// 列出现在能看到的盘（含可移动盘）。非 Windows 返回空列表——那边还没有发布形态。
 #[cfg(windows)]

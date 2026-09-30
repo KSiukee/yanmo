@@ -13,7 +13,13 @@ import type { BackupConfig, BackupReport, BackupStatus } from "../api/core";
 export interface BackupTransport {
   status: (tz_offset_minutes: number) => Promise<BackupStatus>;
   write: (config: BackupConfig) => Promise<BackupConfig>;
-  run: (tz_offset_minutes: number) => Promise<BackupReport>;
+  /**
+   * 做一次备份。`manual`：作者亲手点的「立即备份」传 true，机器自己按日做的那两次传 false。
+   *
+   * 这个区别只为一件事：**手动那份包核心永不删**（自动的才按份数轮转）。两套生命周期
+   * 在核心那一处彻底分开，界面只负责如实告诉它"这一次是谁要的"。
+   */
+  run: (tz_offset_minutes: number, manual: boolean) => Promise<BackupReport>;
 }
 
 export interface BackupOptions {
@@ -99,7 +105,8 @@ export function useBackup(options: BackupOptions): BackupState {
     if (busy.value) return;
     busy.value = true;
     try {
-      lastReport.value = await options.transport.run(tz());
+      // 作者亲手点的「立即备份」：这份包核心永不删（自动的才按份数轮转）
+      lastReport.value = await options.transport.run(tz(), true);
       status.value = await options.transport.status(tz());
       error.value = null;
     } catch (e) {
@@ -140,7 +147,8 @@ export function useBackup(options: BackupOptions): BackupState {
       const doneToday = current.targets.some((t) => t.last_success === current.today);
       if (doneToday) return;
       try {
-        lastReport.value = await options.transport.run(tz());
+        // 机器自己按日做的那一次：按份数轮转
+        lastReport.value = await options.transport.run(tz(), false);
         await load();
       } catch {
         // 自动备份失败不打扰作者：账本里记着，设置页看得到
@@ -151,7 +159,8 @@ export function useBackup(options: BackupOptions): BackupState {
       if (!current || !current.config.auto_on_close) return;
       if (current.config.targets.length === 0) return;
       // 异步：关窗不等它（来不及做完就算了，下次启动还会做）
-      void options.transport.run(tz()).catch(() => {});
+      // 机器自己做的（关窗那次）：同样按份数轮转
+      void options.transport.run(tz(), false).catch(() => {});
     },
   };
 }

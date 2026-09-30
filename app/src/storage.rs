@@ -814,6 +814,7 @@ mod tests {
             keep: 7,
             tz_offset_minutes: 480,
             device: "测试机".to_string(),
+            manual: false,
             seal: None,
         };
         let report = data.with_store(|store| Ok(store.backup_now(&request)?)).unwrap();

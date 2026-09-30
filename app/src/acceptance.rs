@@ -208,6 +208,8 @@ pub fn run_bench(plan: &Plan) -> Report {
             keep: 1,
             tz_offset_minutes: 480,
             device: "验收模式".to_string(),
+            // 验收脚本走的是"机器自己做的那一次"那一档（不带手动记号）
+            manual: false,
             seal: None,
         };
         let outcome = store.backup_now(&request).map_err(|e| e.to_string())?;

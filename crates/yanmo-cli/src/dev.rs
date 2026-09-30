@@ -129,6 +129,8 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
                 keep,
                 tz_offset_minutes: tz,
                 device: args.optional("device").unwrap_or("cli").to_string(),
+                // 命令行这条备份当作**自动**那一类（不带手动记号）——手动的从界面点
+                manual: false,
                 seal: None,
             };
             let report = store.backup_now(&request)?;

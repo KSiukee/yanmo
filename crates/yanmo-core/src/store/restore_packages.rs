@@ -108,10 +108,9 @@ fn package_brief(package: &Path) -> Option<PackageBrief> {
 /// 其余字段一律留空值：要看清内容，得先给钥匙解开——**不猜、不假装知道**。
 fn sealed_brief(path: &Path) -> PackageBrief {
     let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-    let stamp = name
-        .trim_start_matches(PACKAGE_PREFIX)
-        .trim_end_matches(&format!(".{}", super::super::seal::SEAL_EXT))
-        .to_string();
+    // 时间戳从名字里抠；**手动记号不是时间的一部分**（`研墨备份-手动-20260930-1300.ympkg`
+    // → `20260930-1300`），剥记号这件事归核心那一处口径管——这里不再抄一遍。
+    let stamp = super::backup::stamp_of_package_name(&name);
     let metadata = std::fs::metadata(path).ok();
     let created_at = metadata
         .as_ref()

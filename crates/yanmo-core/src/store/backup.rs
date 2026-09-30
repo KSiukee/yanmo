@@ -34,6 +34,14 @@ use crate::version;
 
 /// 备份包目录名的前缀——**只认自己写出来的包**（滚动清理时绝不误删别人的东西）。
 pub const PACKAGE_PREFIX: &str = "研墨备份-";
+/// 手动备份的名字记号（`研墨备份-手动-<时间戳>`）：**手动写出去的包，滚动清理永不删**。
+///
+/// 为什么把这件事记在**文件名**上：自动备份与手动备份是两套生命周期（自动的按份数轮转、
+/// 手动的留着不动），而这个区别必须在**不解开包**的前提下读得到——加密包的清单在密文里，
+/// 名字是唯一不靠钥匙就能看的判据。明文包也按同一个名字口径认，两条路一条判断，免得打架。
+// i18n-allow-next-line: 这是**磁盘上包名的记号**（备份盘上的文件就叫这个名），不是界面文案；
+// 界面上那句话在 locales 里（「「立即备份」写出去的永不删」）。改了老包会认不出来。
+pub const MANUAL_MARK: &str = "手动-";
 /// 包里的清单文件名（也是"这是不是一个备份包"的判据）。
 pub const MANIFEST_FILE: &str = "manifest.json";
 /// 包里的快照文件名。
@@ -245,6 +253,11 @@ pub struct BackupRequest {
     pub tz_offset_minutes: i32,
     /// 来源机器名（多机共用备份盘时用来分辨）
     pub device: String,
+    /// 这次是**作者亲手点的「立即备份」**（`true`）还是自动做的那一次（`false`）。
+    ///
+    /// 只影响一件事：包名带不带手动记号 ⇒ 滚动清理**不会删手动写出去的包**。
+    /// 两套生命周期在核心这一处彻底分开，界面不必自己记"哪份是谁写的"。
+    pub manual: bool,
 }
 
 /// 封包要用的两把钥匙：口令（作者记的那句话）与恢复码（抄在纸上那一串）。
@@ -395,7 +408,6 @@ impl Store {
                 }
             },
         };
-
         // ② 逐个目标写包 + 体检 + 滚动清理
         let mut outcomes = Vec::new();
         for target in &req.targets {
@@ -409,6 +421,7 @@ impl Store {
                 req.keep,
                 at,
                 sealed.as_deref(),
+                req.manual,
             );
             ledger.entries.push(ledger_entry);
             outcomes.push(outcome);
@@ -552,6 +565,7 @@ impl Store {
         keep: usize,
         at: i64,
         sealed: Option<&Path>,
+        manual: bool,
     ) -> (TargetOutcome, LedgerEntry) {
         let root = PathBuf::from(&target.path);
         // 加密包：**只有一个文件**要搬（封包与"解开体检"在写之前都做过了，见 backup_now）
@@ -564,6 +578,7 @@ impl Store {
                 keep,
                 at,
                 &manifest.fingerprint,
+                manual,
             );
         }
         // 目标不可达：**跳过并记账**，不做隐式补做。
@@ -580,7 +595,8 @@ impl Store {
                 entry(target, date, stamp, "skipped", &reason, "", at),
             );
         }
-        let package = root.join(format!("{PACKAGE_PREFIX}{stamp}"));
+        // 手动与自动用**两种名字**（手动那份带记号）：滚动清理只轮自动的，靠的就是这个记号
+        let package = root.join(package_name(stamp, manual));
         // 同名包已存在（同一分钟内做了两次）：换一个带序号的目录，绝不覆盖已有备份
         let package = unique_package(package);
 
@@ -820,6 +836,33 @@ fn volume_root_exists(path: &str) -> bool {
     root.exists()
 }
 
+/// 包名（明文包是目录名，加密包再挂一个 `.ympkg` 后缀）：手动的那一类带上记号。
+pub(super) fn package_name(stamp: &str, manual: bool) -> String {
+    if manual {
+        format!("{PACKAGE_PREFIX}{MANUAL_MARK}{stamp}")
+    } else {
+        format!("{PACKAGE_PREFIX}{stamp}")
+    }
+}
+
+/// 这个名字是不是**手动备份**（`研墨备份-手动-…`）。
+///
+/// 只看记号、不看有没有时间戳：记号是我们要不要留它的唯一判据，
+/// 名字再古怪也不该因此变成"可以删的"。
+pub(super) fn is_manual_package_name(name: &str) -> bool {
+    name.starts_with(&format!("{PACKAGE_PREFIX}{MANUAL_MARK}"))
+}
+
+/// 从包名里抠出时间戳（`研墨备份-手动-20260930-1300.ympkg` → `20260930-1300`）。
+///
+/// 恢复列表要对它排序、也要显示"这是哪一刻写的"——**手动记号不是时间的一部分**，得剥掉。
+pub(super) fn stamp_of_package_name(name: &str) -> String {
+    let rest = name.strip_prefix(PACKAGE_PREFIX).unwrap_or(name);
+    let rest = rest.strip_prefix(MANUAL_MARK).unwrap_or(rest);
+    rest.trim_end_matches(&format!(".{}", crate::seal::SEAL_EXT))
+        .to_string()
+}
+
 /// 同名包换一个带序号的目录（同一分钟里做两次也不覆盖）。
 fn unique_package(base: PathBuf) -> PathBuf {
     if !base.exists() {
@@ -866,12 +909,18 @@ fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
     }
     Ok(())
 }
-
-/// 滚动清理：**只删自己写出来的包**，保留最近 `keep` 份。
+/// 滚动清理：**只删自己写出来的自动备份**，保留最近 `keep` 份。
 ///
 /// 两种形态一起数、一起排：**明文包是目录**（目录名前缀 + 包里有我们的清单）、
 /// **加密包是一个 `.ympkg` 文件**（名字前缀 + 扩展名；它的清单在密文里，读不到也不该读）。
 /// 不把加密包算进来的话，开了加密之后旧备份就再也不会被轮掉——那是无声的堆积。
+///
+/// **手动「立即备份」写出去的包一个都不删**（名字里带 [`MANUAL_MARK`]）：那是作者亲手点的，
+/// 要留多久由他自己决定——滚动保留只该管"机器自己按日做的那些"。两套生命周期因此彻底分开：
+/// 自动的按份数轮转，手动的只增不减（真要清就自己动手删，这一点在界面上说清楚）。
+///
+/// 下面那个改动日期前的老包没有记号 ⇒ 按**自动**对待（与这条策略落地之前的行为一致：
+/// 那时所有包都在一起按份数轮转）。
 ///
 /// 返回删掉几份。别人的文件、半截的目录一律不碰——"清理"最忌讳误删。
 pub(super) fn prune_packages(root: &Path, keep: usize) -> usize {
@@ -882,11 +931,9 @@ pub(super) fn prune_packages(root: &Path, keep: usize) -> usize {
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter_map(|path| {
-            let named = path
-                .file_name()
-                .map(|n| n.to_string_lossy().starts_with(PACKAGE_PREFIX))
-                .unwrap_or(false);
-            if !named {
+            let name = path.file_name()?.to_string_lossy().to_string();
+            if !name.starts_with(PACKAGE_PREFIX) || is_manual_package_name(&name) {
+                // 不是我们的东西 / 是作者亲手点的那一类：都不在"该轮掉"的名单里
                 return None;
             }
             if path.is_dir() {

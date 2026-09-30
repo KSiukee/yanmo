@@ -66,15 +66,16 @@ function report(): BackupReport {
 }
 
 function harness(current: BackupStatus) {
-  const calls = { runs: 0, writes: [] as BackupConfig[] };
+  const calls = { runs: 0, writes: [] as BackupConfig[], manuals: [] as boolean[] };
   const transport = {
     status: async () => current,
     write: async (next: BackupConfig) => {
       calls.writes.push(next);
       return next;
     },
-    run: async () => {
+    run: async (_tz: number, manual: boolean) => {
       calls.runs += 1;
+      calls.manuals.push(manual);
       return report();
     },
   };
@@ -163,6 +164,24 @@ test("立即备份：结果留在 lastReport 里；核心报错时记在 error �
   await failing.load();
   await failing.runNow();
   assert.match(failing.error.value ?? "", /快照做不出来/);
+});
+
+test("两套生命周期：亲手点的那次带 manual=true，机器自己做的那两次带 false", async () => {
+  // 这个标记只为一件事：手动那份包**核心永不删**（自动的才按份数轮转）。
+  // 界面这一侧唯一要守的就是"如实告诉它这一次是谁要的"——传错了就等于悄悄改了保留策略。
+  const mine = harness(status());
+  await mine.state.runNow();
+  assert.deepEqual(mine.calls.manuals, [true], "「立即备份」是作者亲手点的");
+
+  const start = harness(status());
+  await start.state.onStart();
+  assert.deepEqual(start.calls.manuals, [false], "每日首启那一次是机器自己做的");
+
+  const closing = harness(status());
+  await closing.state.load(); // 关窗那一刻读的是"当前现状"，没读回来它什么都不做
+  closing.state.onClose();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(closing.calls.manuals, [false], "关窗那一次也是机器自己做的");
 });
 
 test("时区偏移的口径：JS 给的是「落后 UTC 多少分钟」，核心要的是「超前多少」", () => {
