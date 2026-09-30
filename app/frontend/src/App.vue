@@ -35,6 +35,7 @@ import TrashDialog from "./components/TrashDialog.vue";
 import CompileDialog from "./components/CompileDialog.vue";
 import MirrorConflictDialog from "./components/MirrorConflictDialog.vue";
 import TypesetDialog from "./components/TypesetDialog.vue";
+import SearchDialog from "./components/SearchDialog.vue";
 import WritingDialog from "./components/WritingDialog.vue";
 
 // 会话在布局层建**一次**：目录树、书架与正文编辑器说的必须是同一本书、同一章
@@ -91,6 +92,8 @@ const collectionTitle = computed(() => session.collection.view.value?.title ?? "
 // （超期未回的投稿是"该管一管了"的信号，藏在弹窗里等于没有）
 void session.manuscript.refresh();
 const { visible: trashVisible } = session.trash;
+// 正文检索：顶栏那个按钮开的那个弹窗（状态机在 editor/search.ts）
+const { visible: searchVisible } = session.search;
 const { visible: snapshotsVisible } = session.snapshots;
 const { visible: typesetVisible } = session.typeset;
 const { visible: compileVisible } = session.compile;
@@ -130,6 +133,7 @@ const hint = computed(() => {
       :manuscript-overdue="overdueCount"
       @shelf="toggleShelf()"
       @manuscript="toggleManuscript()"
+      @search="session.search.toggle()"
       @zen="toggleZen()"
       @grid="toggleGrid()"
       @entities="showLore()"
@@ -212,6 +216,7 @@ const hint = computed(() => {
     <ManuscriptDialog v-if="manuscriptVisible" :session="session" />
     <WorkFormDialog v-if="workForm" :session="session" :form="workForm" @close="closeForm" />
     <TrashDialog v-if="trashVisible" :session="session" />
+    <SearchDialog v-if="searchVisible" :session="session" />
     <SnapshotDialog v-if="snapshotsVisible" :session="session" />
     <TypesetDialog v-if="typesetVisible" :session="session" />
     <WritingDialog v-if="writingVisible" :session="session" />

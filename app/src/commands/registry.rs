@@ -200,6 +200,8 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::collection::collection_create,
         crate::commands::collection::collection_loose_articles,
         crate::commands::collection::collection_of,
+        // 检索：正文里找一句话（命中带书名与片段，见 commands/search.rs）
+        crate::commands::search::search_text,
     ])
 }
 

@@ -1,0 +1,76 @@
+/* 弹窗公共壳（遮罩/盒子/标题/按钮/交代条/空态）在 dialog.css；这里只留本弹窗自己的东西。 */
+
+/* 输入框与"为什么要打字"那一句固定在上头，结果列表自己滚（长列表不把整个弹窗顶开） */
+.search__input {
+  flex: none;
+}
+
+.search__hint {
+  flex: none;
+}
+
+.search__note,
+.search__error {
+  flex: none;
+}
+
+/* 出错那一句用告警底色：它是"这次没找成"，与"找过了、没有"是两件事 */
+.search__error {
+  background: var(--ym-err-bg);
+  color: var(--ym-danger);
+}
+
+.search__list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.search__row {
+  border-bottom: 1px solid var(--ym-line);
+}
+
+/* 整行都是一个按钮：点哪儿都跳过去（不留"只有名字能点"的死角） */
+.search__open {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.search__open:hover {
+  background: var(--ym-hover);
+}
+
+.search__where {
+  display: block;
+  font-size: 12px;
+  color: var(--ym-ink-soft);
+}
+
+.search__chapter {
+  color: var(--ym-ink);
+}
+
+.search__snippet {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* 标出来的那一处：背景色 + 加粗，深浅两套色板都看得见 */
+.search__mark {
+  background: var(--ym-accent-soft);
+  color: var(--ym-accent);
+  font-weight: 600;
+}

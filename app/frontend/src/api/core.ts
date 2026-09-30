@@ -590,6 +590,24 @@ export interface RelocationReport {
 }
 
 
+/** 一条正文检索的命中。 */
+export interface SearchHit {
+  /** 这一章 / 这一篇的节点 id（点它跳过去） */
+  node_id: number;
+  work_id: number;
+  /** 书名；作者还没给书起名时是空串（界面给占位，核心不替他编名字） */
+  work_title: string;
+  /** 章名 / 篇名（命中在标题里时 `matched_title` 为真，那一段要标出来） */
+  title: string;
+  /** 命中周围的片段（**不带高亮标记**，高亮由界面自己算）；只在标题里命中时是空串 */
+  snippet: string;
+  matched_title: boolean;
+}
+
+/** 在正文里找一句话：`work_id` 传 null = 所有书；`limit` 传 0 = 核心默认上限（50）。 */
+export const searchText = (query: string, work_id: number | null, limit: number) =>
+  call<SearchHit[]>(COMMANDS.searchText, { query, work_id, limit });
+
 /** 命令白名单：新增命令先在这里登记，别在组件里裸调。
  *
  * 别的域（如 [`./volumes`](api/volumes.ts)）要用 `call` 与这里的命令名，
@@ -615,6 +633,8 @@ export const COMMANDS = {
   exitApp: "exit_app",
   openEditorTarget: "open_editor_target",
   openChapter: "open_chapter",
+  // 正文检索（类型与薄封装就在本文件里：它跟 open_chapter 同属"读正文"那一类）
+  searchText: "search_text",
   openWorkTarget: "open_work_target",
   createChapter: "create_chapter",
   chapterNeighbors: "chapter_neighbors",

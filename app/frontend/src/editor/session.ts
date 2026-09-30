@@ -35,6 +35,7 @@ import {
   onUiProbe,
   uiAlive,
   openChapter,
+  searchText,
   openEditorTarget,
   openWorkTarget,
   purgeNode,
@@ -153,6 +154,7 @@ import { DEFAULT_QUOTE_STYLE, useTypeset, type TypesetState } from "./typeset";
 import { useLocation, type LocationState } from "./location";
 import { useRestore, type RestoreState } from "./restore";
 import { useTrash, type Trash } from "./trash";
+import { useSearch, type Search } from "./search";
 import { attachGlobalKeys } from "./global-keys";
 import type { KeyTarget } from "./shortcuts";
 import { useZen, type ZenState } from "./zen";
@@ -185,6 +187,8 @@ export interface EditorSession {
   workKind: Ref<string>;
   /** 回收站：删错了能捞回来（恢复与真删的语义全在核心） */
   trash: Trash;
+  /** 正文全文检索：打几个字，看它写在哪几章里（点一条跳过去） */
+  search: Search;
   /** 版本历史：这一章留过哪些版本，看看差异、回滚（滚动保留与"回滚先留底"全在核心） */
   snapshots: Snapshots;
   /** 排版清理：先看后改（建议清单在核心扫出来，勾中的那几处才动） */
@@ -302,6 +306,18 @@ export function useEditorSession(): EditorSession {
   const panels = useFloatingPanels();
   // 加密备份包：与 zen / panels 同层——它不依赖 createParts 里的东西，装配在这儿最省行数（棘轮盯着这个文件）
   const seal = useSeal({ transport: { status: readSealStatus, enable: enableSeal, disable: disableSeal, unlock: unlockSeal, lock: lockSeal }, onError: (message) => { failure.value = t("session.seal_failed", { detail: message }); } });
+  // 正文检索：与 zen / panels / seal 同层——只用到 workId 与切章那条老路（都是函数声明，取值时才碰）
+  const search = useSearch({
+    transport: searchText,
+    // 命中在**别的书**里：先切书再切章（切书会认一遍类型、把主区从集视图让回来；两条都是既有纪律）
+    openHit: async (hit) => {
+      if (hit.work_id !== workId.value && !(await switchWork(hit.work_id))) return;
+      await switchChapter(hit.node_id);
+    },
+    report: (detail) => {
+      failure.value = t("session.search_failed", { detail });
+    },
+  });
 
   const autosave = shallowRef<Autosave | null>(null);
   let gate: ExitGate | null = null;
@@ -459,7 +475,7 @@ export function useEditorSession(): EditorSession {
    * 到点还没等到也照常聚焦（页内聚焦不会去抢别的窗口）。
    */
   /**
-   * 现在有没有弹窗盖在界面上（首启引导、书架、回收站、设置、备份、恢复、快照、排版、码字日历、删章路标）。
+   * 现在有没有弹窗盖在界面上（首启引导、书架、回收站、设置、备份、恢复、快照、排版、码字日历、检索、删章路标）。
    *
    * 为什么要有这个：Windows 的输入法是随"焦点落到输入元素"挂上去的，而**弹窗会抢走焦点**。
    * 启动时若正弹着首启引导就急着给正文定焦点，焦点会被弹窗拿走；等弹窗关掉又没人把焦点还回来——
@@ -468,6 +484,7 @@ export function useEditorSession(): EditorSession {
    */
   const anyDialogOpen = computed(
     () =>
+      search.visible.value ||
       shelf.visible.value ||
       trash.visible.value ||
       snapshots.visible.value ||
@@ -1283,6 +1300,7 @@ export function useEditorSession(): EditorSession {
     collection,
     workKind,
     trash,
+    search,
     snapshots,
     typeset,
     note,
