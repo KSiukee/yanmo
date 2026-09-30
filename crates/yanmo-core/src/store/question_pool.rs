@@ -126,10 +126,13 @@ impl Store {
             });
         }
 
-        // 埋点 → 下标：拿刚读出来的这份清单当坐标（规则算"隔了多少章"用的也是它，
-        // 两处同一个坐标系，不会一个按章数、一个按节点数）
-        let index_of: HashMap<i64, usize> =
-            chapters.iter().enumerate().map(|(at, chapter)| (chapter.node_id, at)).collect();
+        // 伏笔"隔了多少章"：**按"正文单位"那一份清单算**（`text_spine`：承载正文、不是场景卡）
+        // ——与大纲体检那条同阈值判据同一份坐标。上面 `chapters` 那份含场景卡（章节类规则要用它），
+        // 两份清单各司其职，别拿一份去数另一件事的章数。
+        let spine: Vec<i64> = self.text_spine(work_id)?.into_iter().map(|node| node.id).collect();
+        let spine_last = spine.len().saturating_sub(1) as i64;
+        let spine_pos: HashMap<i64, i64> =
+            spine.iter().enumerate().map(|(at, id)| (*id, at as i64)).collect();
         let foreshadows = self
             .foreshadows(work_id, None)?
             .into_iter()
@@ -137,7 +140,10 @@ impl Store {
                 id: item.id,
                 body: item.body,
                 state: item.state,
-                planted_index: item.planted_node.and_then(|node| index_of.get(&node).copied()),
+                chapters_since: item
+                    .planted_node
+                    .and_then(|node| spine_pos.get(&node).copied())
+                    .map(|at| spine_last - at),
             })
             .collect();
 

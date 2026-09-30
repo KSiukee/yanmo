@@ -173,7 +173,7 @@ fn overdue_importance(base: f64, gap: i64, threshold: i64) -> f64 {
 ///
 /// 1. **只看 `Planted`**：收了的不再问；"不写了"是正经结局（作者说过不走了，就别再念）——
 ///    与 `outline::rules` 的口径一致；
-/// 2. **没记埋点的不产**（`planted_index` 是 `None`）：判不了"隔了多少章"，绝不猜；
+/// 2. **没记埋点的不产**（`chapters_since` 是 `None`）：判不了"隔了多少章"，绝不猜；
 /// 3. **阈值与大纲体检是同一个数**（[`UNCOLLECTED_CHAPTERS`]）：体检说"该看看了"、
 ///    叩问问"往哪儿收"，是同一个判据的两张面孔，各写一个数迟早会分家；
 /// 4. **一条伏笔只产一条**：锚点 `foreshadow:<id>` 就是它的身份（同一条伏笔的两个埋点
@@ -181,20 +181,15 @@ fn overdue_importance(base: f64, gap: i64, threshold: i64) -> f64 {
 ///
 /// 顺序＝ `elements.foreshadows` 的顺序（读库那一层给的稳定序），两次调用结果一样。
 fn overdue_foreshadows(elements: &WritingElements) -> Vec<QuestionDraft> {
-    let Some(last_index) = elements.chapters.len().checked_sub(1) else {
-        return Vec::new(); // 一章都没有：没有"隔了多少章"这回事
-    };
     let base = spec_of("foreshadow.overdue").importance;
     let mut out = Vec::new();
     for item in &elements.foreshadows {
         if item.state != ForeshadowState::Planted {
             continue;
         }
-        let Some(planted) = item.planted_index else { continue };
-        // 隔了多少章 = 阅读顺序里**最后一章**的下标 − 埋点下标
-        // （与 `outline::rules` 那条"20 章还没收"同一个算法：那边用的是 1 起的章号，
-        //  `章号 = 下标 + 1`，两边算出来的差值一样）
-        let gap = last_index as i64 - planted as i64;
+        // "隔了多少章"由存储层按**正文单位**那份清单算好（`text_spine`）——与大纲体检
+        // 那条"埋了 20 章还没收"同一份坐标、同一个阈值；这里只比数，不再自己数一遍。
+        let Some(gap) = item.chapters_since else { continue };
         if gap < UNCOLLECTED_CHAPTERS {
             continue;
         }

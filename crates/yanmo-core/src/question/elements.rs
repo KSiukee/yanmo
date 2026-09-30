@@ -21,17 +21,22 @@ pub struct ChapterFacts {
     pub summary: String,
 }
 
-/// 一条伏笔的事实（纯数据：**埋点已经换算成阅读顺序里的下标**，规则不用再认节点 id）。
+/// 一条伏笔的事实（纯数据：**"隔了多少章"已经算好**，规则不必再认节点 id、也不必自己数）。
 ///
-/// `planted_index` 是 [`WritingElements::chapters`] 里的**下标**（0 起）；
-/// `None` = 没记埋点 / 埋点指向这一版章节清单里没有的节点（删了、或者是别人书里的），
+/// `chapters_since` = 埋点到**最后一章**隔了多少章，**由存储层按"正文单位"那一份清单算**
+/// （`Store::text_spine`：承载正文且不是场景卡——与大纲体检那条同阈值判据**同一份坐标**）。
+/// 为什么不让机制层自己从 [`WritingElements::chapters`] 里减：那份清单含场景卡，
+/// 而"埋了 20 章还没收"数的是章——同一个阈值架在两份清单上，夹了场景卡的两边就会打架
+/// （一边说该收了、一边说还没到）。数在哪算、就按哪的口径，这里只收结果。
+///
+/// `None` = 没记埋点 / 埋点不在那份清单里（删了、或者是别人书里的），
 /// 也就是**判不了"隔了多少章"**——规则一律跳过它，绝不猜。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForeshadowFacts {
     pub id: i64,
     pub body: String,
     pub state: ForeshadowState,
-    pub planted_index: Option<usize>,
+    pub chapters_since: Option<i64>,
 }
 
 /// 一条灵感碎片的事实（纯数据：**引力总分由既有公式算好**，这里不重新算一遍）。

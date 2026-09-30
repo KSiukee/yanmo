@@ -11,7 +11,7 @@ use yanmo_core::model::{
     ForeshadowState, FragmentKind, NewForeshadow, NewQuestionCard, NodeKind, QuestionState,
     WorkKind, TRANSITIONS,
 };
-use yanmo_core::outline::UNCOLLECTED_CHAPTERS;
+use yanmo_core::outline::{IssueRule, UNCOLLECTED_CHAPTERS};
 use yanmo_core::question::{ElementKind, TEMPLATES};
 use yanmo_core::store::{NewFragment, Store, SPARK_ELEMENTS};
 
@@ -472,6 +472,50 @@ fn jot(store: &mut Store, work: i64, body: &str, anchors: Vec<String>) -> i64 {
             "test",
         )
         .unwrap()
+}
+
+/// 同一本书上，叩问与大纲体检对"该收了"必须**同时**成立——**夹着场景卡也不能打架**。
+///
+/// 这条盯的是一个真实分歧：叩问那份章节清单含场景卡（章节类规则要用它），而大纲体检数的
+/// 是"正文单位"（不含场景卡）。同一个 20 章阈值架在两份清单上，夹了场景卡的两边就会错开——
+/// 旧写法按含场景卡的清单数，于是"差一章 + 两张场景卡"会被算成过了阈值：叩问说该收了、
+/// 体检说还没到。现在"隔了多少章"由存储层按体检那侧的口径算好，两边同一个数。
+#[test]
+fn the_overdue_verdict_agrees_with_the_outline_check_even_with_scene_cards() {
+    let threshold = UNCOLLECTED_CHAPTERS.max(1) as usize;
+    let (_dir, mut store) = fresh();
+    // 章距 = 章数 − 1：`threshold` 章 ⇒ 差一章
+    let (work, chapters) = book_with_chapters(&mut store, threshold);
+    // 埋点那一章下面挂两张场景卡（场景卡承载正文、会进叩问那份清单，但不算"章"）
+    for index in 0..2 {
+        store
+            .create_node(work, Some(chapters[0]), NodeKind::Scene, &format!("场景{index}"))
+            .unwrap();
+    }
+    let id = planted_foreshadow(&mut store, work, "还不到时候", Some(chapters[0]));
+
+    let asks = |store: &Store| {
+        store
+            .question_drafts(work)
+            .unwrap()
+            .into_iter()
+            .any(|draft| draft.template_key == "foreshadow.overdue")
+    };
+    let flags = |store: &Store| {
+        store
+            .outline_issues(work)
+            .unwrap()
+            .into_iter()
+            .any(|issue| issue.rule == IssueRule::ForeshadowUncollected)
+    };
+
+    assert!(!asks(&store), "章数还差一章：场景卡不该把它顶过阈值");
+    assert!(!flags(&store), "大纲体检也该说\"还没到\"——两边必须同一个口径");
+
+    // 再加一章：章距刚好踩线 ⇒ 两边同时说"该收了"
+    store.create_node(work, None, NodeKind::Chapter, "再多一章").unwrap();
+    assert!(asks(&store), "踩线就该问：{id}");
+    assert!(flags(&store), "体检也该说该收了");
 }
 
 /// 伏笔那条线：埋点换成**阅读顺序里的下标**，"隔了多少章"与大纲体检同一个阈值。

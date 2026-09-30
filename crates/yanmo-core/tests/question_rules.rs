@@ -20,9 +20,10 @@ fn chapter(id: i64, title: &str, chars: i64, summary: &str) -> ChapterFacts {
     }
 }
 
-/// 一条伏笔的事实（埋点用**下标**给——规则认的就是下标）。
-fn foreshadow(id: i64, body: &str, state: ForeshadowState, planted_index: Option<usize>) -> ForeshadowFacts {
-    ForeshadowFacts { id, body: body.to_string(), state, planted_index }
+/// 一条伏笔的事实（**"隔了多少章"直接给**——这个数由存储层按"正文单位"那份清单算好，
+/// 规则只比数；见 `ForeshadowFacts` 的说明）。
+fn foreshadow(id: i64, body: &str, state: ForeshadowState, chapters_since: Option<i64>) -> ForeshadowFacts {
+    ForeshadowFacts { id, body: body.to_string(), state, chapters_since }
 }
 
 /// `n` 章**都写了字**的清单（伏笔那条规则要一摞章来数"隔了多少章"）。
@@ -158,10 +159,10 @@ fn every_slot_is_filled() {
 #[test]
 fn a_foreshadow_is_asked_only_when_it_is_overdue_by_the_shared_threshold() {
     let threshold = UNCOLLECTED_CHAPTERS.max(1) as usize;
-    // 阅读顺序：0..threshold 章，埋点下标 0 → 隔了 threshold 章（刚好踩线）
+    // 隔了 threshold 章（刚好踩线）——这个数由存储层算好，这里直接给
     let at_threshold = WritingElements {
         chapters: chapters(threshold + 1),
-        foreshadows: vec![foreshadow(1, "老张的怀表", ForeshadowState::Planted, Some(0))],
+        foreshadows: vec![foreshadow(1, "老张的怀表", ForeshadowState::Planted, Some(threshold as i64))],
         ..Default::default()
     };
     let drafts = only(generate(&at_threshold, &RhythmParams::default()), "foreshadow.overdue");
@@ -170,10 +171,12 @@ fn a_foreshadow_is_asked_only_when_it_is_overdue_by_the_shared_threshold() {
     assert_eq!(drafts[0].slots["chapters"], threshold.to_string());
     assert_eq!(drafts[0].slots["foreshadow"], "老张的怀表");
 
-    // 埋点往后挪一章 → 差一章，不问
+    // 少一章（threshold - 1）→ 不问
     let one_short = WritingElements {
         chapters: chapters(threshold + 1),
-        foreshadows: vec![foreshadow(1, "老张的怀表", ForeshadowState::Planted, Some(1))],
+        foreshadows: vec![
+            foreshadow(1, "老张的怀表", ForeshadowState::Planted, Some(threshold as i64 - 1)),
+        ],
         ..Default::default()
     };
     assert!(
@@ -188,17 +191,18 @@ fn a_foreshadow_is_asked_only_when_it_is_overdue_by_the_shared_threshold() {
 /// 收了的不问、"不写了"不问、没记埋点的不问。
 #[test]
 fn collected_dropped_and_unplanted_foreshadows_stay_silent() {
-    let book = |state: ForeshadowState, planted: Option<usize>| WritingElements {
+    let book = |state: ForeshadowState, since: Option<i64>| WritingElements {
         chapters: chapters(UNCOLLECTED_CHAPTERS.max(1) as usize + 5),
-        foreshadows: vec![foreshadow(7, "那封信", state, planted)],
+        foreshadows: vec![foreshadow(7, "那封信", state, since)],
         ..Default::default()
     };
-    for (state, planted, why) in [
-        (ForeshadowState::Collected, Some(0), "收了的线头别再念"),
-        (ForeshadowState::Dropped, Some(0), "「不写了」是正经结局"),
+    let overdue = UNCOLLECTED_CHAPTERS * 3; // 明显超期：唯一变量只剩状态
+    for (state, since, why) in [
+        (ForeshadowState::Collected, Some(overdue), "收了的线头别再念"),
+        (ForeshadowState::Dropped, Some(overdue), "「不写了」是正经结局"),
         (ForeshadowState::Planted, None, "没记埋点就判不了，绝不猜"),
     ] {
-        let drafts = only(generate(&book(state, planted), &RhythmParams::default()), "foreshadow.overdue");
+        let drafts = only(generate(&book(state, since), &RhythmParams::default()), "foreshadow.overdue");
         assert!(drafts.is_empty(), "{why}：{drafts:?}");
     }
 }
@@ -207,12 +211,12 @@ fn collected_dropped_and_unplanted_foreshadows_stay_silent() {
 #[test]
 fn the_longer_a_foreshadow_is_overdue_the_more_it_matters() {
     let threshold = UNCOLLECTED_CHAPTERS.max(1) as usize;
-    // 一份固定的章节清单：最后一章的下标是 `last`
-    let last = threshold * 3 - 1;
     let importance_at = |gap: usize| {
         let elements = WritingElements {
             chapters: chapters(threshold * 3),
-            foreshadows: vec![foreshadow(1, "怀表", ForeshadowState::Planted, Some(last - gap))],
+            foreshadows: vec![
+                foreshadow(1, "怀表", ForeshadowState::Planted, Some(gap as i64)),
+            ],
             ..Default::default()
         };
         only(generate(&elements, &RhythmParams::default()), "foreshadow.overdue")
@@ -283,8 +287,10 @@ fn long_bodies_are_clipped_with_an_ellipsis() {
             total: 0.5,
             anchors: Vec::new(),
         }],
-        // 埋点在最前、最后一章在下标 threshold：隔了 threshold 章，刚好该问
-        foreshadows: vec![foreshadow(2, "短句", ForeshadowState::Planted, Some(0))],
+        // 隔了 threshold 章：刚好该问（这条测的是截断，不是阈值）
+        foreshadows: vec![
+            foreshadow(2, "短句", ForeshadowState::Planted, Some(UNCOLLECTED_CHAPTERS)),
+        ],
         ..Default::default()
     };
     let drafts = generate(&elements, &RhythmParams::default());
@@ -307,8 +313,8 @@ fn the_same_elements_always_give_the_same_drafts() {
     let elements = WritingElements {
         chapters: chapters(UNCOLLECTED_CHAPTERS.max(1) as usize + 1),
         foreshadows: vec![
-            foreshadow(1, "甲", ForeshadowState::Planted, Some(0)),
-            foreshadow(2, "乙", ForeshadowState::Planted, Some(0)),
+            foreshadow(1, "甲", ForeshadowState::Planted, Some(UNCOLLECTED_CHAPTERS)),
+            foreshadow(2, "乙", ForeshadowState::Planted, Some(UNCOLLECTED_CHAPTERS)),
         ],
         sparks: vec![SparkFacts {
             fragment_id: 9,
