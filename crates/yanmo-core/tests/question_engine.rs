@@ -9,10 +9,10 @@ use std::collections::BTreeSet;
 use yanmo_core::gravity::{signal_for_action, FeedbackSignal, FragmentLevel};
 use yanmo_core::model::{
     EntityKind, ForeshadowState, FragmentKind, NewEntityCard, NewForeshadow, NewQuestionCard,
-    NodeKind, QuestionState, WorkKind, TRANSITIONS,
+    NodeKind, QuestionState, StoryLine, WorkKind, TRANSITIONS,
 };
 use yanmo_core::outline::{IssueRule, UNCOLLECTED_CHAPTERS};
-use yanmo_core::question::{ElementKind, TEMPLATES, STALLED_CAST_CHAPTERS};
+use yanmo_core::question::{ElementKind, TEMPLATES, STALLED_CAST_CHAPTERS, STALLED_LINE_CHAPTERS};
 use yanmo_core::store::{NewFragment, Store, SPARK_ELEMENTS};
 
 fn fresh() -> (tempfile::TempDir, Store) {
@@ -807,5 +807,169 @@ fn a_nameless_person_gets_no_draft() {
     assert!(
         !drafts.iter().any(|d| d.template_key == "cast.stalled"),
         "名字空着的不问：{drafts:?}"
+    );
+}
+
+/// 五线的事实读数：这条线**最后一次被推进之后**静了多少章（一次都没标过的是 `None`）。
+fn stalled_line_chapters(store: &Store, work: i64, line: StoryLine) -> Option<i64> {
+    let elements = store.writing_elements(work).unwrap();
+    elements
+        .lines
+        .iter()
+        .find(|fact| fact.line == line)
+        .unwrap_or_else(|| panic!("{line:?} 该在要素清单里（五条线各一条事实）"))
+        .chapters_since
+}
+
+/// 五线（**作者自己标出来的**推进度）：标过、而且静够多章的线各产一条。
+///
+/// 判据一次摆开四档：刚好踩线（产）、差一章（不产）、最后一章还在推（不产）、
+/// 一次都没标过（判不了 ⇒ 不产）。锚点是**线自己**（`line:<码>`），不是某一章。
+#[test]
+fn a_line_that_has_not_moved_for_long_enough_becomes_a_draft() {
+    let threshold = STALLED_LINE_CHAPTERS.max(1) as usize;
+    let (_dir, mut store) = fresh();
+    // threshold + 1 章：下标 0 那一章标过的线 ⇒ 静了 threshold 章（刚好踩线）
+    let (work, chapters) = book_with_chapters(&mut store, threshold + 1);
+    let asks = |store: &Store| {
+        store
+            .question_drafts(work)
+            .unwrap()
+            .into_iter()
+            .any(|draft| draft.template_key == "line.stalled")
+    };
+
+    // 标之前：一次都没标过 ⇒ 判不了，一个也不问（"没标"不等于"没推进"）
+    assert!(!asks(&store), "没标过就没得问");
+
+    let stalled = StoryLine::Main;
+    store.set_node_lines(chapters[0], &[stalled], "test").unwrap();
+    assert_eq!(
+        stalled_line_chapters(&store, work, stalled),
+        Some(threshold as i64),
+        "静了多少章由存储层按正文单位算好"
+    );
+
+    // 差一章：下标 1 ⇒ 静了 threshold − 1 章
+    let one_short = StoryLine::Sub;
+    store.set_node_lines(chapters[1], &[one_short], "test").unwrap();
+    // 最后一章里还在推：静了 0 章（正热着）
+    let still_hot = StoryLine::Suspense;
+    store.set_node_lines(chapters[threshold], &[still_hot], "test").unwrap();
+    // 一次都没标过：判不了"多久没被推过"，绝不猜
+    let never = StoryLine::Growth;
+    assert_eq!(stalled_line_chapters(&store, work, never), None, "没标过就是判不了");
+
+    let drafts = store.question_drafts(work).unwrap();
+    let lines: Vec<_> = drafts.iter().filter(|d| d.template_key == "line.stalled").collect();
+    assert_eq!(lines.len(), 1, "只有静够的那条线该问：{drafts:?}");
+    assert_eq!(lines[0].anchors, vec!["line:main"], "锚点是这条线自己");
+    assert_eq!(lines[0].slots["line"], "main", "槽位是码（核心零文案，界面才翻）");
+    assert_eq!(lines[0].slots["chapters"], threshold.to_string());
+    assert_eq!(lines[0].element, ElementKind::Line);
+    for (line, why) in [
+        (one_short, "差一章"),
+        (still_hot, "最后一章还在推"),
+        (never, "一次都没标过"),
+    ] {
+        assert!(
+            !drafts.iter().any(|d| d.anchors.contains(&format!("line:{}", line.as_str()))),
+            "{why}的线不该被问：{drafts:?}"
+        );
+    }
+}
+
+/// **口径：线的推进度按"正文单位"算**——末章前夹着场景卡也不影响这个数
+/// （与伏笔、人物那两条同一个坐标）；场景卡上就算有几行**脏标注**也不算数。
+#[test]
+fn scene_cards_do_not_change_how_long_a_line_has_been_stalled() {
+    let threshold = STALLED_LINE_CHAPTERS.max(1) as usize;
+    let (_dir, mut store) = fresh();
+    // 差一章：章距 threshold − 1，本来就够不着阈值
+    let (work, chapters) = book_with_chapters(&mut store, threshold);
+    store.set_node_lines(chapters[0], &[StoryLine::Main], "test").unwrap();
+    let asks = |store: &Store| {
+        store
+            .question_drafts(work)
+            .unwrap()
+            .into_iter()
+            .any(|draft| draft.template_key == "line.stalled")
+    };
+
+    assert_eq!(
+        stalled_line_chapters(&store, work, StoryLine::Main),
+        Some(threshold as i64 - 1)
+    );
+    assert!(!asks(&store), "差一章：还不该问");
+
+    // 末章前挂两张场景卡（场景卡承载正文、会进叩问那份章节清单，但不是"章"）
+    let last = chapters[chapters.len() - 1];
+    let mut scenes = Vec::new();
+    for index in 0..2 {
+        scenes.push(store.create_node(work, Some(last), NodeKind::Scene, &format!("场景{index}")).unwrap());
+    }
+    assert_eq!(
+        stalled_line_chapters(&store, work, StoryLine::Main),
+        Some(threshold as i64 - 1),
+        "夹着场景卡，静了多少章一个字都不该变"
+    );
+    assert!(!asks(&store), "场景卡不该把它顶过阈值");
+
+    // 场景卡上的**脏标注**：正常路径进不去（`set_node_lines` 当场拒卷与场景卡），
+    // 所以这里直接往库里塞一行——它也不算数（数章只看正文单位里的节点）。
+    store
+        .conn()
+        .execute(
+            "INSERT INTO node_lines(node_id, line, created_at) VALUES(?1, 'suspense', 0)",
+            [scenes[0]],
+        )
+        .unwrap();
+    assert_eq!(
+        stalled_line_chapters(&store, work, StoryLine::Suspense),
+        None,
+        "场景卡上的标注连\"标过\"都算不上"
+    );
+    assert!(!asks(&store), "脏标注不该问出问题来");
+
+    // 真加一章：这才踩线
+    store.create_node(work, None, NodeKind::Chapter, "再多一章").unwrap();
+    assert_eq!(
+        stalled_line_chapters(&store, work, StoryLine::Main),
+        Some(threshold as i64)
+    );
+    assert!(asks(&store), "真多一章才该问");
+}
+
+/// **一条线只产一条**（一条线可能在好几章上标过，取的只是"最后一次被推进"那一次），
+/// 而且顺序稳、问过就不再来。
+#[test]
+fn a_line_marked_in_many_chapters_still_gets_one_draft() {
+    let threshold = STALLED_LINE_CHAPTERS.max(1) as usize;
+    let (_dir, mut store) = fresh();
+    // 标三章（下标 0 / 1 / 2），末章下标 threshold + 2 ⇒ 最后一次推进之后静了 threshold 章
+    let (work, chapters) = book_with_chapters(&mut store, threshold + 3);
+    for node in &chapters[..3] {
+        store.set_node_lines(*node, &[StoryLine::Main], "test").unwrap();
+    }
+
+    let once = store.question_drafts(work).unwrap();
+    let twice = store.question_drafts(work).unwrap();
+    assert_eq!(once, twice, "同一本书两次生成结果必须一样");
+    let lines: Vec<_> = once.iter().filter(|d| d.template_key == "line.stalled").collect();
+    assert_eq!(lines.len(), 1, "一条线只产一条：{once:?}");
+    assert_eq!(lines[0].anchors, vec!["line:main"]);
+    assert_eq!(
+        lines[0].slots["chapters"],
+        (chapters.len() - 1 - 2).to_string(),
+        "最后一次推进是下标 2 那一章（末章下标 {}）",
+        chapters.len() - 1
+    );
+
+    // 问过（同模板 + 同锚点）就不再产——新模板走同一条去重链
+    store.create_question_card(&card(work, "line.stalled", &["line:main"])).unwrap();
+    let after = store.question_drafts(work).unwrap();
+    assert!(
+        !after.iter().any(|d| d.template_key == "line.stalled"),
+        "同一条线不该再产草稿：{after:?}"
     );
 }

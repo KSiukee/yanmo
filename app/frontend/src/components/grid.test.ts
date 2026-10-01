@@ -71,6 +71,11 @@ test("卷不承载正文：四格、出场人物与五线对它都填不了（�
   assert.equal(cellEditable(spec("foreshadow"), { kind: "chapter" }), false);
   assert.equal(cellEditable(spec("lines"), { kind: "volume" }), false);
   assert.equal(cellEditable(spec("lines"), { kind: "chapter" }), true);
+  // 场景卡也不行：与核心那道闸同一口径（正文单位才标线），界面上干脆不摆编辑入口
+  assert.equal(cellEditable(spec("lines"), { kind: "scene" }), false, "场景卡不摆编辑入口");
+  assert.equal(cellEditable(spec("lines"), { kind: "piece" }), true, "单篇算正文单位");
+  // 别的列不受这条影响：场景卡照样能填自己的四格
+  assert.equal(cellEditable(spec("pov"), { kind: "scene" }), true, "场景卡的视角照旧能填");
 });
 
 test("格值：顶层取顶层，四格从 fields 里取", () => {

@@ -145,6 +145,8 @@ pub fn generate(elements: &WritingElements, p: &RhythmParams) -> Vec<QuestionDra
     out.extend(high_gravity_sparks(elements));
     // ⑨ 静了很久的人物：这条线还接不接（**人物线**：从"谁出场过"这本账派生）
     out.extend(stalled_cast(elements));
+    // ⑩ 静了很久的线：这条线要不要推一把（**五线**：读作者自己标过的 `node_lines`）
+    out.extend(stalled_lines(elements));
 
     out
 }
@@ -256,6 +258,59 @@ fn stalled_cast(elements: &WritingElements) -> Vec<QuestionDraft> {
             format!("entity:{}", person.id),
         );
         made.importance = overdue_importance(base, gap, STALLED_CAST_CHAPTERS);
+        out.push(made);
+    }
+    out
+}
+
+/// 一条线连着这么多章没被推进，就该提一句（阈值，旋钮）。
+///
+/// 取 10 的理由：**线是最粗的一档**——一条线断了，读者跟着断的是这本书的主干；
+/// 而"某个人物静了十来章"（[`STALLED_CAST_CHAPTERS`] = 12）是长篇里的正常呼吸。
+/// 所以这个数要比人物的那一个**早一档**：一条线静过十来回合，已经不是呼吸，
+/// 是一整段没往那儿走，该提了。为什么不是 8：八章常常就是短篇里的一整段偏，
+/// 这时候问"要不要推一把"更像催；为什么不是 12：那等于与人物那条同档，
+/// 而线比人粗，"粗的那一档先提"才说得通。
+///
+/// 为什么**不借** 12 或 20：`STALLED_CAST_CHAPTERS` 说的是"一个人物多久该接回来"、
+/// `UNCOLLECTED_CHAPTERS` 说的是"一条伏笔多久该收"——三个数各有各的语义，
+/// 共用一个数只会让改一个动三处。这个数**只有这一个消费者**（`stalled_lines`）。
+pub const STALLED_LINE_CHAPTERS: i64 = 10;
+
+/// 连着 [`STALLED_LINE_CHAPTERS`] 章没被推进、而且**作者标过**的线各产一条草稿。
+///
+/// 四条分寸：
+///
+/// 1. **标过才问**（`chapters_since` 是 `None` 就跳过）：**"没标"不等于"没推进"**
+///    （`model::story_line` 写死的口径）——一次都没标过的线不是"断了"，是"还没说过"，
+///    问"要不要推一把"无从答起；
+/// 2. **刚推过不问**（差一章也不问，判据是 `>=` 阈值）：最后一章就在推这条线的，正热着；
+/// 3. **一条线只产一条**：锚点 `line:<码>` 就是这条线的身份（一条线可能在好几章上标过，
+///    取的只是"最后一次被推进"那一次）；
+/// 4. **静得越久越靠前**：重要度按超出的比例涨（封顶 1.0，与伏笔、人物那两条同一套写法，
+///    见 `overdue_importance`——踩线那一刻还是模板基准）。
+///
+/// ⚠️ 槽位 `line` 给的是**码**（`main` 这种），**不是中文名**：核心零文案，
+/// 界面渲染那一层拿 `grid.lines.name.*` 那份字典翻成全名（与列上那五个徽标同一份键）。
+///
+/// 顺序＝ `elements.lines` 的顺序（读库那层给的是 [`crate::model::StoryLine::ALL`] 的固定序），
+/// 两次调用结果一样。
+fn stalled_lines(elements: &WritingElements) -> Vec<QuestionDraft> {
+    let base = spec_of("line.stalled").importance;
+    let mut out = Vec::new();
+    for fact in &elements.lines {
+        // "多久没被推过"由存储层按**正文单位**那份清单算好（`text_spine`，见 `LineFacts`）；
+        // 判不了的（一次都没标过）跳过，绝不猜。
+        let Some(gap) = fact.chapters_since else { continue };
+        if gap < STALLED_LINE_CHAPTERS {
+            continue;
+        }
+        let mut made = draft(
+            "line.stalled",
+            &[("line", fact.line.as_str().to_string()), ("chapters", gap.to_string())],
+            format!("line:{}", fact.line.as_str()),
+        );
+        made.importance = overdue_importance(base, gap, STALLED_LINE_CHAPTERS);
         out.push(made);
     }
     out

@@ -34,18 +34,23 @@ pub enum ElementKind {
     /// 人物：出场过的人静了多久还没再露面（读设定卡与出场账，**派生出来的推进度**——
     /// 不是作者标出来的，作者只在那一章点了"有谁出场"）
     Cast,
+    /// 五线：作者标过的那几条线里，哪条连着若干章没被推进（读 `node_lines`——
+    /// 这一路是**作者自己标出来的**推进度，与 `Cast` 那条派生出来的正好相反）
+    Line,
 }
 
 impl ElementKind {
     /// 全部取值（界面按这个顺序分组列；穷举测试拿它对表）。
     ///
     /// 顺序＝**从"这一章自己"到"从别处的账里读来的"**：先章节自生的四类（章 / 计划 /
-    /// 节奏 / 承上启下），再跨章节的三类（伏笔 / 灵感 / 人物）。
+    /// 节奏 / 承上启下），再跨章节的四类（伏笔 / 灵感 / 人物 / 五线）。
     /// **人物线是派生的**：作者从没标过"谁静了多久"，这个数由出场账与章节清单现算
     /// （见 `question::generate` 的 `STALLED_CAST_CHAPTERS`），它与伏笔一样"从别处的账里读来"，
-    /// 所以排在末尾那一组里。后来加类就加在末尾——顺序是界面上的分组次序，
+    /// 所以排在末尾那一组里。**五线正好相反**：那是作者亲手标出来的（`node_lines`），
+    /// 但它读的也是另一本账（标注账），同样属于"从别处的账里读来的"那一组。
+    /// 后来加类就加在末尾——顺序是界面上的分组次序，
     /// 插在中间会让作者眼里的位置突然变一次。
-    pub const ALL: [ElementKind; 7] = [
+    pub const ALL: [ElementKind; 8] = [
         ElementKind::Chapter,
         ElementKind::Plan,
         ElementKind::Rhythm,
@@ -53,6 +58,7 @@ impl ElementKind {
         ElementKind::Foreshadow,
         ElementKind::Spark,
         ElementKind::Cast,
+        ElementKind::Line,
     ];
 }
 
@@ -72,9 +78,10 @@ pub struct QuestionTemplate {
 
 /// 起步池——只用**这本书已经有的数据**就能问出来的问题。
 ///
-/// 四路要素各出几条：章节树 / 每章一句话 / 字数（章 / 计划 / 节奏 / 承上启下四类），
+/// 五路要素各出几条：章节树 / 每章一句话 / 字数（章 / 计划 / 节奏 / 承上启下四类），
 /// 伏笔那本账（埋了多久没收），碎片池的引力（作者自己记下的句子），
-/// 人物线（出场过的人静了多久——**派生出来的**，见 `super::generate`）。
+/// 人物线（出场过的人静了多久——**派生出来的**，见 `super::generate`），
+/// 五线（作者自己标过的推进度里，哪条线多久没被推过）。
 /// 池子还会长大：**加模板即可**，引力公式与排序一行不用改——新要素接进来只是
 /// 多一类事实（`super::elements`）+ 多一条生成规则（`super::generate`）。
 pub const TEMPLATES: &[QuestionTemplate] = &[
@@ -157,6 +164,20 @@ pub const TEMPLATES: &[QuestionTemplate] = &[
         key: "cast.stalled",
         element: ElementKind::Cast,
         slots: &["cast", "chapters"],
+        base_urgency: 0.6,
+        importance: 0.6,
+    },
+    // 五线（**作者自己标出来的**推进度：这一章在推哪几条线，见 `model::story_line`）：
+    // 一条线连着若干章没被推进，就该提一句——线是最粗的一档，它断了比"某个人物静了"更要紧，
+    // 所以阈值（`question::generate` 的 `STALLED_LINE_CHAPTERS`）比人物那条早一档。
+    // 基准紧迫度 0.6：与人物线同一档——它不催人（作者可能就是有意搁着），
+    // 但它是"你自己标过的线"，值得被摆到眼前；真正的催账留给伏笔（0.85）。
+    // ⚠️ `line` 这个槽位的取值是**码**（`main` 这种），不是中文名：核心零文案，
+    // 界面渲染那一层拿 `grid.lines.name.*` 那份字典把它翻成全名（与列上那五个徽标同一份键）。
+    QuestionTemplate {
+        key: "line.stalled",
+        element: ElementKind::Line,
+        slots: &["line", "chapters"],
         base_urgency: 0.6,
         importance: 0.6,
     },

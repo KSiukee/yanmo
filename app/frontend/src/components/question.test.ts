@@ -186,3 +186,30 @@ test("语气码：认得的是三档，认不出的当「中性」（库里手�
   assert.equal(toneLabel("neutral"), "中性");
   assert.equal(toneLabel("direct"), "直接");
 });
+
+test("五线那条模板：槽位里的「码」在渲染这一层翻成中文名（不许念出 main）", () => {
+  const draft: QuestionDraft = {
+    template_key: "line.stalled",
+    element: "line",
+    slots: { line: "main", chapters: "12" },
+    anchors: ["line:main"],
+    importance: 0.6,
+  };
+  for (const [tone, tail] of [
+    ["neutral", "要不要推一把？"],
+    ["warm", "要不要回头给它添一笔？"],
+    ["direct", "推一把，还是先放着？"],
+  ] as const) {
+    const sentence = renderDraft(draft, tone);
+    assert.ok(sentence.includes("主线"), `码该翻成中文名：${sentence}`);
+    assert.ok(sentence.includes("12"), `章数照填：${sentence}`);
+    assert.ok(!sentence.includes("main"), `不许把码念给作者：${sentence}`);
+    assert.ok(sentence.includes(tail), sentence);
+    // 类别名不加引号（与「某人」「某条伏笔」那种带引号的不一样）
+    assert.ok(!sentence.includes("「"), sentence);
+  }
+
+  // 认不出的码（库里被手改坏 / 核心先加了新线）**原样交回去**：屏幕上看得见，比静默强
+  const odd = { ...draft, slots: { line: "plot", chapters: "12" } };
+  assert.ok(renderDraft(odd).includes("plot"), renderDraft(odd));
+});

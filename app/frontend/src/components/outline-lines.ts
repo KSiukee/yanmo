@@ -32,7 +32,13 @@ export function badgeTexts(lines: readonly string[] | undefined): string[] {
   return markedLines(lines).map((code) => t(`grid.lines.short.${code}`));
 }
 
-/** 勾选框旁边那一行全名（`主线` / `副线` / `感情线` / `悬念线` / `成长线`）。 */
+/**
+ * 勾选框旁边那一行全名（`主线` / `副线` / `感情线` / `悬念线` / `成长线`）。
+ *
+ * 这几个字是**类别名**，不是谁的名字——所以叩问那条线把它们填进句子时不加引号
+ * （「主线已经 12 章没往前走了」），与「某人」「某条伏笔」那种带引号的不一样。
+ * 名字只有 `grid.lines.name.*` 这一份：叩问面板也走 [`lineName`]，不另抄一遍。
+ */
 export function lineName(code: StoryLineCode): string {
   return t(`grid.lines.name.${code}`);
 }

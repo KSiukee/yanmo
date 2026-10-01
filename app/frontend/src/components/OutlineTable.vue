@@ -349,6 +349,7 @@ watch(
               <OutlineLinesCell
                 v-else-if="spec.key === 'lines'"
                 :row="row" :open="linesFor === row.node_id" :busy="busy" :draft="linesDraft"
+                :editable="cellEditable(spec, row)"
                 @open="void openLines(row.node_id)" @toggle="toggleLine" @close="void closeLines()"
               />
 

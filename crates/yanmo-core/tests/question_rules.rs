@@ -3,11 +3,11 @@
 //! 与另外两份测试的分工：`gravity_vectors` 盯机制对齐、这一份盯"照书里的东西该问什么"、
 //! `question_engine` 盯"落库之后的选择与学习"。
 
-use yanmo_core::model::ForeshadowState;
+use yanmo_core::model::{ForeshadowState, StoryLine};
 use yanmo_core::outline::UNCOLLECTED_CHAPTERS;
 use yanmo_core::question::{
-    generate, template, ChapterFacts, CharacterFacts, ForeshadowFacts, QuestionDraft, RhythmParams,
-    SparkFacts, WritingElements, STALLED_CAST_CHAPTERS,
+    generate, template, ChapterFacts, CharacterFacts, ForeshadowFacts, LineFacts, QuestionDraft,
+    RhythmParams, SparkFacts, WritingElements, STALLED_CAST_CHAPTERS, STALLED_LINE_CHAPTERS,
 };
 
 fn chapter(id: i64, title: &str, chars: i64, summary: &str) -> ChapterFacts {
@@ -419,4 +419,93 @@ fn the_same_persons_always_give_the_same_cast_drafts() {
     assert_eq!(once[0].anchors, vec!["entity:1"]);
     assert_eq!(once[1].anchors, vec!["entity:2"]);
     assert!(once[1].importance > once[0].importance, "静得久的更重要");
+}
+
+/// 一条故事线的事实（**"多久没被推过"直接给**——这个数由存储层按"正文单位"那份清单算好，
+/// 规则只比数；见 `LineFacts`）。
+fn line(line: StoryLine, chapters_since: Option<i64>) -> LineFacts {
+    LineFacts { line, chapters_since }
+}
+
+/// 五线：**刚好静够阈值**产一条，差一章不产；没标过（`None`）与刚推过（0）都不产。
+///
+/// 阈值取自 `STALLED_LINE_CHAPTERS`——不在测试里写死数字：写死的话，改了阈值这测试照样绿
+/// （那条规则白测了）。
+#[test]
+fn a_line_is_asked_only_after_the_stalled_line_threshold() {
+    let threshold = STALLED_LINE_CHAPTERS.max(1);
+    let drafts_at = |since: Option<i64>| {
+        let elements = WritingElements {
+            lines: vec![line(StoryLine::Main, since)],
+            ..Default::default()
+        };
+        only(generate(&elements, &RhythmParams::default()), "line.stalled")
+    };
+
+    let at_threshold = drafts_at(Some(threshold));
+    assert_eq!(at_threshold.len(), 1, "刚好静够就够了：{at_threshold:?}");
+    assert_eq!(at_threshold[0].anchors, vec!["line:main"], "锚点是这条线自己");
+    // 槽位给的是**码**，不是中文名（核心零文案；界面渲染那一层才翻）
+    assert_eq!(at_threshold[0].slots["line"], "main", "槽位是码，核心不出中文");
+    assert_eq!(at_threshold[0].slots["chapters"], threshold.to_string());
+    assert_eq!(at_threshold[0].element, yanmo_core::question::ElementKind::Line);
+
+    assert!(drafts_at(Some(threshold - 1)).is_empty(), "差一章都不该问");
+    assert!(drafts_at(Some(0)).is_empty(), "最后一章还在推的线正热着");
+    // 一次都没标过 ⇒ 判不了"多久没被推过"，绝不猜（"没标"不等于"没推进"）
+    assert!(drafts_at(None).is_empty(), "判不了就不猜");
+}
+
+/// 提紧迫度：**静得越久越靠前**，封顶 1.0，而且踩线那一刻不是最高（还是模板基准）。
+#[test]
+fn the_longer_a_line_has_been_stalled_the_more_it_matters() {
+    let threshold = STALLED_LINE_CHAPTERS.max(1);
+    let importance_at = |gap: i64| {
+        let elements = WritingElements {
+            lines: vec![line(StoryLine::Suspense, Some(gap))],
+            ..Default::default()
+        };
+        only(generate(&elements, &RhythmParams::default()), "line.stalled")
+            .first()
+            .expect("足够久，该产一条")
+            .importance
+    };
+
+    let base_of_template = template("line.stalled").unwrap().importance;
+    let barely = importance_at(threshold); // 刚好踩线
+    let halfway = importance_at(threshold * 2); // 静到两倍
+    let capped = importance_at(threshold * 3); // 到顶（基准 0.6 + 0.2 × 2）
+    let beyond = importance_at(threshold * 4); // 再久也不许超
+
+    assert!(
+        (barely - base_of_template).abs() < 1e-12 && barely < 1.0,
+        "刚够格就是模板基准，不该一上来就最高：{barely}"
+    );
+    assert!(halfway > barely, "静得久的要更靠前：{halfway} vs {barely}");
+    assert!(halfway < 1.0, "还没到顶，不该已经封顶：{halfway}");
+    assert!((capped - 1.0).abs() < 1e-12, "三倍阈值就该到顶：{capped}");
+    assert!((beyond - 1.0).abs() < 1e-12, "再静也不许超过 1.0：{beyond}");
+}
+
+/// 五线：**一条线只产一条**，顺序＝要素清单那一份稳定序（两次调用结果一样）；
+/// 没标过的线（`None`）静在清单里但一条都不产。
+#[test]
+fn the_same_lines_always_give_the_same_line_drafts() {
+    let elements = WritingElements {
+        lines: vec![
+            line(StoryLine::Main, Some(STALLED_LINE_CHAPTERS + 3)),
+            line(StoryLine::Sub, None),
+            line(StoryLine::Romance, Some(STALLED_LINE_CHAPTERS)),
+            line(StoryLine::Suspense, Some(STALLED_LINE_CHAPTERS - 1)),
+            line(StoryLine::Growth, None),
+        ],
+        ..Default::default()
+    };
+    let once = only(generate(&elements, &RhythmParams::default()), "line.stalled");
+    let twice = only(generate(&elements, &RhythmParams::default()), "line.stalled");
+    assert_eq!(once, twice, "同一份要素两次结果必须一样");
+    assert_eq!(once.len(), 2, "只有静够的那两条产：{once:?}");
+    assert_eq!(once[0].anchors, vec!["line:main"], "顺序＝要素清单那一份（按 ALL）");
+    assert_eq!(once[1].anchors, vec!["line:romance"]);
+    assert!(once[0].importance > once[1].importance, "静得久的更重要");
 }

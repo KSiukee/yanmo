@@ -4,12 +4,40 @@
 // 文案一律从字典取（`question.template.*` / `flow.*`）——界面文案只有那一处来源。
 
 import { t } from "../locales/index.ts";
+import { lineName, STORY_LINES, type StoryLineCode } from "./outline-lines.ts";
 import type { AnswerTarget, Gravity, QuestionDraft } from "../api/question.ts";
 
 const DAY_MS = 86_400_000;
 
 /** 问话语气（与核心 `QuestionTone` 的稳定码一致）；`neutral` 就是"不加语气"。 */
 export type QuestionTone = "warm" | "neutral" | "direct";
+
+/**
+ * 五线那条模板的键（核心 `question::generate` 的 `stalled_lines` 用的就是它）。
+ *
+ * 单独拎成一个常量，是因为它有一个**特殊待遇**：槽位 `line` 的取值是**码**（`main` 这种），
+ * 得在渲染这一层翻成全名。
+ */
+const LINE_STALLED = "line.stalled";
+
+/**
+ * 草稿的槽位，**把"码"翻成人话之后**那一份。
+ *
+ * 为什么翻的这一刀落在界面层：核心**只认码**（`model::story_line`：中文名不出核心，
+ * `tools/qa/scan_text.py` 盯着这条），所以 `stalled_lines` 攒出来的 `line` 槽位就是 `main`。
+ * 不翻的话，屏幕上那句会念出"main 已经 12 章没往前走了"——码是给程序看的，不是给作者看的。
+ *
+ * 翻译用的是 [`lineName`]（读 `grid.lines.name.*`）：与大纲表那一列上的五个徽标
+ * **同一份字典键**，不在别处再抄一份中文名——两处各写一份，改了名字就会一处变一处不变。
+ * 认不出的码（库里被手改坏、或将来核心加了新线而界面还没跟上）**原样交回去**：
+ * 屏幕上出现一个 `main` 是一眼看得见的错，比静默少一条强。
+ */
+function slotValues(draft: QuestionDraft): Record<string, string> {
+  if (draft.template_key !== LINE_STALLED) return draft.slots;
+  const code = draft.slots.line;
+  if (!STORY_LINES.includes(code as StoryLineCode)) return draft.slots;
+  return { ...draft.slots, line: lineName(code as StoryLineCode) };
+}
 
 /**
  * 一条候选渲染成句子：模板键查字典、槽位填进去，**按当前语气挑那一版**。
@@ -23,12 +51,14 @@ export type QuestionTone = "warm" | "neutral" | "direct";
  */
 export function renderDraft(draft: QuestionDraft, tone: QuestionTone = "neutral"): string {
   const base = `question.template.${draft.template_key}`;
+  // 槽位先过一道翻译（只对"码"那类槽位动手，见 `slotValues`）
+  const slots = slotValues(draft);
   if (tone !== "neutral") {
     const key = `${base}.${tone}`;
-    const text = t(key, draft.slots);
+    const text = t(key, slots);
     if (text !== key) return text;
   }
-  return t(base, draft.slots);
+  return t(base, slots);
 }
 
 /** 语气怎么称呼（设置里那三档）。 */

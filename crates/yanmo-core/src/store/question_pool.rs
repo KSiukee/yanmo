@@ -2,9 +2,10 @@
 //!
 //! 三件事都在这儿，因为它们共用同一份"书此刻长什么样"：
 //!
-//! 1. [读要素](Store::writing_elements)：四路事实——按阅读顺序的节点（承载正文的）、
+//! 1. [读要素](Store::writing_elements)：五路事实——按阅读顺序的节点（承载正文的）、
 //!    伏笔那本账（埋点换算成阅读顺序里的下标）、碎片池里引力最高的前几条、
-//!    人物那本账（人物卡与出场节点现算出来的"静了多少章"）；
+//!    人物那本账（人物卡与出场节点现算出来的"静了多少章"）、
+//!    五线标注（每条线最后一次被推进之后隔了多少章）；
 //! 2. [生草稿](Store::question_drafts)：按规则产出模板 + 槽位，**滤掉已经问过的**；
 //! 3. 派生关系的守门（[`validate_derivation`]）：来源必须同书、自动派生不许无限套娃。
 //!
@@ -17,12 +18,11 @@ use rusqlite::{params, Connection, OptionalExtension};
 use super::Store;
 use crate::error::{codes, Error, Result};
 use crate::gravity::allowed_auto_derivation;
-use crate::model::EntityKind;
+use crate::model::{EntityKind, StoryLine};
 use crate::question::{
-    generate, ChapterFacts, CharacterFacts, ForeshadowFacts, QuestionDraft, RhythmParams,
-    SparkFacts, WritingElements,
+    generate, ChapterFacts, CharacterFacts, ForeshadowFacts, LineFacts, QuestionDraft,
+    RhythmParams, SparkFacts, WritingElements,
 };
-
 /// 生成叩问候选时，取**引力最高的前几条**灵感碎片（旋钮，3~5 之间都好用）。
 ///
 /// 3 的理由：碎片这条线一屏只摆一条（`store::question_select` 的"同类不扎堆"），
@@ -101,7 +101,7 @@ pub(super) fn validate_derivation(
 }
 
 impl Store {
-    /// 读一本书的写作要素：四路事实各读各的。
+    /// 读一本书的写作要素：五路事实各读各的。
     ///
     /// 1. **章节**：按阅读顺序、承载正文的那些节点（容器节点滤掉）；
     /// 2. **伏笔**：埋点换算成**阅读顺序里的下标**（判"隔了多少章"靠它；埋点不在
@@ -110,7 +110,10 @@ impl Store {
     ///    （引力用现成的 [`Store::spark_candidates`]——同一套公式、同一个排序，不另算一份）；
     /// 4. **人物**：人物卡 × 出场账（`node_cast`）→ 每个人**最后一次出场之后**隔了多少章
     ///    （与伏笔**同一份坐标**；从没出场过、或出场节点不在那份清单里的就是 `None`，
-    ///    规则跳过，绝不猜——这是"人物线"那条**派生推进度**的读数口）。
+    ///    规则跳过，绝不猜——这是"人物线"那条**派生推进度**的读数口）；
+    /// 5. **五线**：五线标注（`node_lines`）→ 每条线**最后一次被推进之后**隔了多少章
+    ///    （**同一份坐标**；一次都没标过的就是 `None`——"没标"不等于"没推进"，
+    ///    规则跳过，绝不猜。这是作者自己标出来的那一路推进度的读数口）。
     ///
     /// 焦点给 `None`：这一层答的是"这本书此刻长什么样"，而"作者正打开着哪一章"是
     /// 每次**选题**时才知道的事（见 [`Store::select_questions_for_chapter`]）——
@@ -162,9 +165,12 @@ impl Store {
             .collect();
 
         // 人物线：人物卡 × 出场账 → "静了多少章"（与伏笔**同一份** `spine_index` 坐标）
+        // 人物线：人物卡 × 出场账 → "静了多少章"（与伏笔**同一份** `spine_index` 坐标）
         let characters = self.character_facts(work_id, spine_last, &spine_pos)?;
+        // 五线：作者标过的推进度 → 每条线"多久没被推过"（**同一份**坐标）
+        let lines = self.line_facts(work_id, spine_last, &spine_pos)?;
 
-        Ok(WritingElements { chapters, foreshadows, sparks, characters })
+        Ok(WritingElements { chapters, foreshadows, sparks, characters, lines })
     }
 
     /// **正文单位**（`text_spine`）在阅读顺序里的下标：返回（末章下标, 节点 → 下标）。
@@ -227,6 +233,49 @@ impl Store {
             });
         }
         Ok(out)
+    }
+
+    /// 一本书的**五线事实**：每条线**最后一次被推进之后**隔了多少章（**现算，不存**——
+    /// 这条推进度读的是作者自己标的 `node_lines`，不新建任何数据模型）。
+    ///
+    /// 三条口径：
+    ///
+    /// 1. **只数正文单位里的节点**（`spine_pos`）：标注本来就只有正文单位能落（
+    ///    `set_node_lines` 当场拒卷与场景卡），这里再兜一道——那份清单外的节点（场景卡、
+    ///    已删的、别的书——`node_lines` 已按书过滤）就算有几行脏标注也不算数；
+    /// 2. **一次都没标过的照样进清单，只是 `None`**：五条线各有一条事实，顺序＝
+    ///    [`StoryLine::ALL`]（与人物那本账同一个写法：清单的形状不随作者标没标而变）。
+    ///    为什么不是"没标过的就不进清单"：`None` 在这个结构里**有确切含义**（"没说过"），
+    ///    而"少一条"只能靠调用方自己发现——那正是最难查的一类静默（见 `LineFacts`）；
+    /// 3. **判不了的不猜**：`None` 的线规则一律跳过——"没标"不是"没推进"
+    ///    （这是 [`StoryLine`] 写死的口径），绝不把"还没说过"说成"断了"。
+    ///
+    /// 顺序＝ [`StoryLine::ALL`]（五条线的固定序），两次调用结果一样。
+    fn line_facts(
+        &self,
+        work_id: i64,
+        spine_last: i64,
+        spine_pos: &HashMap<i64, i64>,
+    ) -> Result<Vec<LineFacts>> {
+        // 标注账：线 → **最后一次**被推进（正文单位里的下标）。一条线可能在好几章上标过，
+        // 取最靠后的那一次（"最后一次被推"）。
+        let mut last_at: HashMap<StoryLine, i64> = HashMap::new();
+        for (node, lines) in self.node_lines(work_id)? {
+            let Some(at) = spine_pos.get(&node).copied() else { continue };
+            for line in lines {
+                let seen = last_at.entry(line).or_insert(at);
+                if at > *seen {
+                    *seen = at;
+                }
+            }
+        }
+        Ok(StoryLine::ALL
+            .into_iter()
+            .map(|line| LineFacts {
+                line,
+                chapters_since: last_at.get(&line).map(|at| spine_last - at),
+            })
+            .collect())
     }
 
     /// 一本书此刻的候选草稿：按规则生成，**滤掉已经问过的**（同模板 + 同锚点）。

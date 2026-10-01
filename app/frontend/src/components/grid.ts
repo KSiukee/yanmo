@@ -80,7 +80,16 @@ export const FIELD_COLUMNS = ["pov", "goal", "conflict", "outcome"] as const;
  */
 export function cellEditable(spec: ColumnSpec, row: { kind: string }): boolean {
   if (!spec.editable) return false;
-  return row.kind !== "volume";
+  if (row.kind === "volume") return false;
+  // 五线只标在**正文单位**上（章 / 节 / 单篇）：卷与**场景卡**都不是——与核心 `is_text_spine`
+  // 同一口径。界面上干脆不摆编辑入口（而不是让人点了再被拒）：少一个陷阱。
+  if (spec.key === "lines") return isTextUnit(row);
+  return true;
+}
+
+/** 这一段算不算「正文单位」（章 / 节 / 单篇）——与核心 `NodeKind::is_text_spine` 同一口径。 */
+export function isTextUnit(row: { kind: string }): boolean {
+  return row.kind === "chapter" || row.kind === "section" || row.kind === "piece";
 }
 
 /**

@@ -21,6 +21,8 @@ defineProps<{
   busy: boolean;
   /** 卡上此刻勾着的那几条（手上那一份，还没落库） */
   draft: string[];
+  /** 这一行能不能标（卷与场景卡不能——见 `cellEditable`）：不能就只画，不摆编辑入口 */
+  editable: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -32,7 +34,15 @@ const emit = defineEmits<{
 
 <template>
   <div class="grid__lines">
+    <!-- 不能标的行（卷 / 场景卡）：只摆画出来的徽标，**不摆编辑入口** -->
+    <span v-if="!editable" class="grid__lines-open grid__lines-open--empty">
+      <span v-if="unmarked(row.lines)" class="grid__lines-none">{{ t("grid.lines.none") }}</span>
+      <span v-for="text in badgeTexts(row.lines)" :key="text" class="grid__lines-badge">
+        {{ text }}
+      </span>
+    </span>
     <button
+      v-else
       type="button"
       class="grid__lines-open"
       :class="{ 'grid__lines-open--empty': unmarked(row.lines) }"
@@ -46,7 +56,7 @@ const emit = defineEmits<{
       </span>
     </button>
     <OutlineLinesPicker
-      v-if="open"
+      v-if="open && editable"
       :marked="draft"
       :busy="busy"
       @toggle="(line) => emit('toggle', line)"

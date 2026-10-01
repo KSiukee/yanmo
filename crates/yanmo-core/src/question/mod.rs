@@ -18,10 +18,11 @@ pub mod template;
 pub use defer::{anchors_of, chapter_anchor, DeferCondition, DeferKind, DAY_MS};
 pub use defer_preset::DeferPreset;
 pub use elements::{
-    ChapterFacts, CharacterFacts, ForeshadowFacts, RhythmParams, SparkFacts, WritingElements,
+    ChapterFacts, CharacterFacts, ForeshadowFacts, LineFacts, RhythmParams, SparkFacts,
+    WritingElements,
 };
 pub use push::{advanced, decide, PushDecision, PushQuota, PushReason, PushState};
-pub use generate::{generate, QuestionDraft, STALLED_CAST_CHAPTERS};
+pub use generate::{generate, QuestionDraft, STALLED_CAST_CHAPTERS, STALLED_LINE_CHAPTERS};
 pub use template::{
     template, urgency_of, ElementKind, QuestionTemplate, DEFAULT_URGENCY, TEMPLATES,
 };

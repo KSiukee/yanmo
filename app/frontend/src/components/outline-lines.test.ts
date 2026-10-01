@@ -74,3 +74,10 @@ test("按节点 id 把标注并到行上：没标过的段补空清单，别的�
   assert.equal(merged[0].title, "第1章", "别的列原样留着");
   assert.equal(merged.length, rows.length, "一行都不多、一行都不少");
 });
+
+test("全名五个码各有一句：码 → 中文名（叩问面板翻的就是这一份，不是另抄的）", () => {
+  assert.deepEqual(
+    STORY_LINES.map((code) => lineName(code)),
+    ["主线", "副线", "感情线", "悬念线", "成长线"],
+  );
+});
