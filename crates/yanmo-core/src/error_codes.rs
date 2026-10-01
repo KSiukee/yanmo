@@ -206,6 +206,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "认不出的设定卡类型：{value}（只认 person / setting）" : ["value"],
     UNKNOWN_SCENE_FIELD => "value.unknown_scene_field"
         : "认不出的场景卡栏目：{value}（只认 pov / goal / conflict / outcome）" : ["value"],
+    UNKNOWN_STORY_LINE => "value.unknown_story_line"
+        : "认不出的故事线：{value}（只认 main / sub / romance / suspense / growth）" : ["value"],
     ENTITY_NAME_EMPTY => "entity.name_empty" : "名字不能空着——先给它起个名字" : [],
     ENTITY_NOT_FOUND => "entity.not_found" : "设定卡不存在：{entity_id}" : ["entity_id"],
     ENTITY_BAD_FIELD => "entity.bad_field"

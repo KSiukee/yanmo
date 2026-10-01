@@ -1,4 +1,4 @@
-//! 开发档里的**大纲命令面**：设定卡（人物 / 设定）、场景卡四格、出场人物、整片粘贴、大纲体检。
+//! 开发档里的**大纲命令面**：设定卡（人物 / 设定）、场景卡四格、出场人物、五线标注、整片粘贴、大纲体检。
 //!
 //! 与别的开发档命令一样**只存在于开发构建**。单独成文件的原因：
 //! 它是同一件事的三个面（先有承载，才判得动，判完还能处置）——
@@ -10,7 +10,7 @@
 
 use serde_json::{json, Value};
 use yanmo_core::model::{
-    Attribute, EntityKind, ForeshadowState, NewEntityCard, NewForeshadow, SceneFields,
+    Attribute, EntityKind, ForeshadowState, NewEntityCard, NewForeshadow, SceneFields, StoryLine,
 };
 use yanmo_core::store::{FragmentEdit, OutlineCell, Store};
 
@@ -40,6 +40,8 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         "cast-list" => Some(&["work"]),
         "outline-rows" => Some(&["work"]),
         "paste-cells" => Some(&["work", "cells-file", "trigger"]),
+        "lines-set" => Some(&["node", "lines", "trigger"]),
+        "lines-list" => Some(&["work"]),
         _ => None,
     }
 }
@@ -49,6 +51,22 @@ fn split_ids(args: &Args, name: &str) -> Result<Vec<i64>, Usage> {
     split_list(args, name)
         .into_iter()
         .map(|part| part.parse::<i64>().map_err(|_| Usage::from(format!("--{name} 要写成逗号分隔的整数"))))
+        .collect()
+}
+
+/// 逗号分隔的一串故事线码（`--lines main,romance`；空着就是"一条都不标"，即清空）。
+///
+/// 认不出的码**当场报用法错误**（不是静默丢掉）：开发档这几条命令存在就是为了
+/// "同一条路反复跑"，一个打错的码被吞掉，脚本会拿一份少一条线的结果当"跑过了"。
+fn split_lines(args: &Args) -> Result<Vec<StoryLine>, Usage> {
+    let known = StoryLine::ALL.map(|line| line.as_str()).join(" / ");
+    split_list(args, "lines")
+        .into_iter()
+        .map(|part| {
+            StoryLine::parse(&part).map_err(|_| {
+                Usage::from(format!("--lines 认不出的故事线：{part}（只认 {known}）"))
+            })
+        })
         .collect()
 }
 
@@ -280,6 +298,24 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
                 .collect();
             nodes.sort_by_key(|row| row["node_id"].as_i64().unwrap_or(0));
             json!({ "ok": true, "command": "cast-list", "count": nodes.len(), "nodes": nodes })
+        }
+        "lines-set" => {
+            let node = args.required_i64("node")?;
+            let trigger = args.optional("trigger").unwrap_or("cli").to_string();
+            // 线也是**整份覆盖**（与界面那一格同一条语义）：给了哪几条就是哪几条，不写就是清空
+            let lines = store.set_node_lines(node, &split_lines(args)?, &trigger)?;
+            json!({ "ok": true, "command": "lines-set", "node_id": node, "lines": lines })
+        }
+        "lines-list" => {
+            let work = args.required_i64("work")?;
+            // 摊成按节点排的一串（脚本对表用；没标过的节点不出现）
+            let mut nodes: Vec<Value> = store
+                .node_lines(work)?
+                .into_iter()
+                .map(|(node_id, lines)| json!({ "node_id": node_id, "lines": lines }))
+                .collect();
+            nodes.sort_by_key(|row| row["node_id"].as_i64().unwrap_or(0));
+            json!({ "ok": true, "command": "lines-list", "count": nodes.len(), "nodes": nodes })
         }
         "outline-rows" => {
             // 界面上那张大纲表读的就是这一份（一整屏一次给全）

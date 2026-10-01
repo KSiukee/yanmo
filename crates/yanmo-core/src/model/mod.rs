@@ -8,6 +8,8 @@
 //! 大纲本体的两样承载（设定卡与场景卡四格）在 `entity_card` 与 `scene_card`。
 //! 稿件的**流转状态机**（`manuscript_state`）与**投稿记录 + 冷冻期判据**（`submission`）
 //! 同样分开：前者是"走到哪一步"，后者是"投过哪几家、还在等谁"。
+//! 大纲的「**这一章在推进哪几条线**」是个**固定闭集**（`story_line`，五条），
+//! 与出场人物同属"逐章的结构标注"：空是常态（没标 ≠ 没推进），码进库、中文名住界面字典。
 
 mod answer_target;
 mod author;
@@ -24,6 +26,7 @@ mod question_tone;
 mod scene_card;
 mod side_tab;
 mod spark_target;
+mod story_line;
 mod submission;
 mod theme;
 mod work;
@@ -51,5 +54,6 @@ pub use question_tone::QuestionTone;
 pub use scene_card::{SceneField, SceneFields};
 pub use side_tab::SideTab;
 pub use spark_target::SparkTarget;
+pub use story_line::StoryLine;
 pub use theme::Theme;
 pub use work::{Work, WorkKind, WorkLanguage};

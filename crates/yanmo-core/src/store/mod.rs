@@ -41,6 +41,7 @@ mod inspire_adopt;
 mod inspire_collide;
 mod inspire_elements;
 mod inspire_skips;
+mod lines;
 mod manuscript;
 mod manuscript_row;
 mod manuscript_submit;

@@ -1217,6 +1217,7 @@
   "error.value.unknown_theme": "认不出的配色：{value}（只认浅色 / 深色 / 跟随系统）",
   "error.value.unknown_entity_kind": "认不出的设定卡类型：{value}（只认人物 / 设定）",
   "error.value.unknown_scene_field": "认不出的场景卡栏目：{value}（只认视角 / 目标 / 冲突 / 结果）",
+  "error.value.unknown_story_line": "认不出的故事线：{value}（只认主线 / 副线 / 感情线 / 悬念线 / 成长线）",
   "error.entity.name_empty": "名字不能空着——先给它起个名字",
   "error.entity.not_found": "设定卡不存在：{entity_id}",
   "error.entity.bad_field": "这张设定卡的「{field}」存坏了：{value}",
