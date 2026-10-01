@@ -71,7 +71,7 @@ pub struct NeighborsDto {
 }
 
 /// 组装一章的快照（打开与切换走同一条路，免得两处各写一份）。
-fn snapshot_of(store: &Store, target: EditorTarget) -> yanmo_core::Result<EditorSnapshot> {
+pub(super) fn snapshot_of(store: &Store, target: EditorTarget) -> yanmo_core::Result<EditorSnapshot> {
     let (body, stats) = store.read_body_with_stats(target.node_id)?;
     // 口径由核心落定（作者选过 → 它；没选过 → 作品语言的默认）：规则只写在核心一处
     let language = store.get_work(target.work_id)?.language;
@@ -146,7 +146,7 @@ pub fn open_editor_target(data: State<'_, AppData>) -> Result<EditorSnapshot, Ap
 /// 为什么挂在这儿：这三个都是**低频时机**（不是击键那条路），也正是"时机到了"的语义现场——
 /// 开新章意味着"写到某一章"那条条件可能刚刚满足。它失败不该连累开章，但也不许静默：
 /// 记进体检日志（[`crate::diagnose`]），验收时看得到。
-fn sweep_question_requeues(store: &mut Store, work_id: i64) {
+pub(super) fn sweep_question_requeues(store: &mut Store, work_id: i64) {
     if let Err(error) = store.requeue_due_questions(work_id, yanmo_core::time::now_millis(), "shell")
     {
         // 体检日志（开发者/验收看）：用英文，免得被"界面文案回潮"守卫当成界面文案

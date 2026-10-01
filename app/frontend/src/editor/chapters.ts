@@ -50,8 +50,13 @@ export class ChapterSwitch {
 
     this.busy = true;
     try {
-      // ① 先落盘 + 记光标：这一步不成功就**不切**
-      if (current) {
+      // ① 先落盘 + 记光标：这一步不成功就**不切**。
+      //
+      // 唯一的例外：手上这个控制器**已经被摘下来了**（它守着的那个节点没了——删掉当前章、
+      // 撤销拆章都会走到这里）。那时落盘与记光标都无从谈起，照做只会把整次切换拦下来
+      // （真机走查撞出来的：撤销拆章卡在这一步）。作者手上那点字在摘之前已经存过了
+      // （那两条路都是"先落盘再动"），跳过它不会丢字。
+      if (current && !current.isDetached()) {
         await current.flush();
         const cursor = this.deps.currentCursor();
         if (cursor) await this.deps.saveCursor(current.node_id, cursor);

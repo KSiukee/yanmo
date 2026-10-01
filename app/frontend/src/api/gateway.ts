@@ -37,6 +37,9 @@ export const COMMANDS = {
   searchText: "search_text",
   openWorkTarget: "open_work_target",
   createChapter: "create_chapter",
+  // 拆章：在光标所在那一段之前把一章切成两章（只由作者触发）；撤销＝两章合回去
+  chapterSplit: "chapter_split",
+  chapterSplitUndo: "chapter_split_undo",
   chapterNeighbors: "chapter_neighbors",
   treeChildren: "tree_children",
   treeAncestors: "tree_ancestors",

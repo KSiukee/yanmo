@@ -28,7 +28,7 @@ function snapshot(node_id: number, body = "正文"): EditorSnapshot {
 
 interface Setup {
   /** 当前挂着的章（null = 还没挂） */
-  current?: { node_id: number; failFlush?: boolean } | null;
+  current?: { node_id: number; failFlush?: boolean; detached?: boolean } | null;
   cursor?: EditorCursor | null;
   failLoad?: number;
 }
@@ -45,6 +45,8 @@ function build(options: Setup = {}) {
           calls.push(`flush:${current.node_id}`);
           if (current.failFlush) throw new Error("磁盘写入失败");
         },
+        // 已摘下的控制器：flush 必然失败（节点没了），切章那一步要先问一句再决定要不要碰它
+        isDetached: () => current.detached ?? false,
       } as unknown as Autosave)
     : null;
 
@@ -123,4 +125,16 @@ test("还没挂章时（首次载入）直接载入目标章", async () => {
   const { switchTo, calls } = build({ current: null });
   assert.equal(await switchTo.to(3), "switched");
   assert.deepEqual(calls, ["load:3", "apply:3", "autosave:3"]);
+});
+
+test("手上这一章已经被删了（控制器摘下来了）：跳过落盘与记光标，照样切过去", async () => {
+  // 真机走查撞出来的：撤销拆章时人正站在"即将被删掉的新章"上，摘了控制器之后
+  // 切章那一步还去 flush，必然抛错把整次撤销拦下来。字在摘之前已经存过了，跳过它才对。
+  const { switchTo, calls, errors } = build({
+    current: { node_id: 7, detached: true, failFlush: true },
+    cursor: { anchor: 42, head: 42, scroll_top: 0 },
+  });
+  assert.equal(await switchTo.to(8), "switched");
+  assert.deepEqual(calls, ["load:8", "apply:8", "autosave:8"], "不碰那个已摘下的控制器");
+  assert.deepEqual(errors, []);
 });

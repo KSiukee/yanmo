@@ -16,6 +16,7 @@ import {
 import { goalProgress, goalReached, pickDayCount } from "../editor/writing-days.ts";
 import { typographyStyle } from "../editor/typography.ts";
 import { shortcutKeys } from "../editor/shortcuts.ts";
+import { useSplitAction } from "./split-action.ts";
 import type { EditorSession } from "../editor/session";
 import type { AutosaveState } from "../editor/autosave";
 import ExitDialog from "./ExitDialog.vue";
@@ -23,6 +24,7 @@ import SceneFields from "./SceneFields.vue";
 import { looksLikeFirstRun } from "../editor/shelf";
 import { secondsText } from "../editor/drift.ts";
 import { stallStats } from "../editor/stall-watch.ts";
+import SplitDialog from "./SplitDialog.vue";
 
 const props = defineProps<{ session: EditorSession }>();
 // 摊开之后每一项都是顶层绑定，模板里照常自动解包
@@ -40,6 +42,7 @@ const {
   caliber,
   cycleCaliber,
   cycleLanguage,
+  switching,
 } = props.session;
 
 // 专注模式：退出按钮就挂在章名这一行——专注时它是屏幕上唯一的"出口"，
@@ -138,6 +141,21 @@ async function startNote() {
 }
 
 // 状态 → 字典键：文案在 locales 里，这里只留"哪个状态对应哪句话"
+
+// ── 拆章：光标放在要分出去的那一段上，点一下，确认了才动 ──
+//
+// 状态与那几条口径住在 `components/split-action.ts`（"光标一动重算一次"是**行为**，
+// 与版式不是同一个变化理由）；这里只用它，并把真去拆那一下交给会话。
+const {
+  canSplitHere,
+  dialog: splitPoint,
+  hint: splitHint,
+  busy: splitBusy,
+  open: openSplit,
+  confirm: confirmSplit,
+} = useSplitAction(props.session.editor, (at, title) => props.session.splitChapterAt(at, title));
+
+// 状态 → 字典键：文案在 locales 里，这里只留"哪个状态对应哪句话"
 const STATUS_KEYS: Record<AutosaveState["status"], string> = {
   idle: "editor.status.idle",
   pending: "editor.status.pending",
@@ -188,6 +206,15 @@ function statusText(status: AutosaveState["status"]): string {
         @click="void startNote()"
       >
         {{ t("editor.note_button") }}
+      </button>
+      <button
+        type="button"
+        class="editor__versions"
+        :title="canSplitHere ? t('split.button_title') : t('split.cannot')"
+        :disabled="!canSplitHere || switching"
+        @click="openSplit()"
+      >
+        {{ t("split.button") }}
       </button>
       <span class="editor__meta">
         <span v-if="failure" class="editor__bad" :title="failure">{{ failure }}</span>
@@ -273,6 +300,20 @@ function statusText(status: AutosaveState["status"]): string {
       {{ t("editor.incident", { kind: saveState.incident }) }}
     </p>
 
+    <!-- 拆章的两条交代：**切不了时说清为什么**；拆完给一次撤销的回头路。
+         这两条都不是提醒（不催、不阻塞）：一条是"这一下为什么没动"，一条是"刚才那一下怎么退回去"。 -->
+    <p v-if="splitHint" class="editor__notice">{{ splitHint }}</p>
+    <p v-if="props.session.splitNotice.value" class="editor__notice">
+      {{ t("split.done", {
+        kept: props.session.splitNotice.value.kept_chars,
+        moved: props.session.splitNotice.value.moved_chars,
+        name: props.session.splitNotice.value.new_title,
+      }) }}
+      <button type="button" class="editor__notice-action" :disabled="switching" @click="void props.session.undoSplit()">
+        {{ t("split.undo") }}
+      </button>
+    </p>
+
     <!-- 这一章的"一句话"：写入框就在正文上方，存了就显示一行，点它接着改 -->
     <form v-if="noteEditing" class="editor__note" @submit.prevent="void saveNote()">
       <input
@@ -318,6 +359,14 @@ function statusText(status: AutosaveState["status"]): string {
       @retry="retryExit"
       @escape="escapeExit"
       @force="forceExit"
+    />
+
+    <SplitDialog
+      v-if="splitPoint"
+      :split="splitPoint"
+      :busy="splitBusy"
+      @cancel="splitPoint = null"
+      @confirm="void confirmSplit($event)"
     />
   </section>
 </template>

@@ -60,6 +60,8 @@ pub mod session;
 pub mod sop;
 /// 每章版本快照：列表、对照、回滚。
 pub mod snapshot;
+/// 拆章：在作者指定的切点把一章切成两章，以及撤销那一次（**只由作者触发**）。
+pub mod split;
 /// 系统信息：版本、数据目录、验收与诊断。
 pub mod system;
 /// 回收站：列出、预览、恢复。

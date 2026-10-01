@@ -814,6 +814,7 @@ export const exportWork = (work_id: number, format: string) =>
 export const createChapter = (node_id: number, title: string) =>
   call<EditorSnapshot>(COMMANDS.createChapter, { node_id, title });
 
+
 /** 上一章 / 下一章（按阅读顺序，跨卷）。 */
 export const chapterNeighbors = (node_id: number) =>
   call<ChapterNeighbors>(COMMANDS.chapterNeighbors, { node_id });

@@ -10,6 +10,7 @@ use std::collections::HashSet;
 
 use crate::error::Result;
 use crate::store::{NodeSummary, Store};
+use crate::text;
 
 /// 清单里的一条。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,7 +77,7 @@ fn collect(
             kind: if chapter { ItemKind::Chapter } else { ItemKind::Container },
             title: node.title_rendered.clone(),
             summary: if chapter { node.summary.clone() } else { String::new() },
-            paragraphs: if chapter { paragraphs(&store.read_body(node.id)?) } else { Vec::new() },
+            paragraphs: if chapter { text::paragraphs(&store.read_body(node.id)?) } else { Vec::new() },
             depth,
         });
         // **有没有下级按数据判**，不按"这种类型能不能放下级"判：后者是界面上的可放性，
@@ -86,16 +87,4 @@ fn collect(
         }
     }
     Ok(())
-}
-
-/// 正文 → 段落清单（空行分段，与正文存储口径一致）：去掉空段与首尾空白，
-/// 段**内部**的换行留成空格（正文里不该有硬换行，真有了也不能把一段拆散）。
-pub(crate) fn paragraphs(body: &str) -> Vec<String> {
-    body.replace("\r\n", "\n")
-        .replace('\r', "\n")
-        .split("\n\n")
-        .map(|block| block.split('\n').map(str::trim).collect::<Vec<_>>().join(" "))
-        .map(|block| block.trim().to_string())
-        .filter(|block| !block.is_empty())
-        .collect()
 }

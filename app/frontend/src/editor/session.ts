@@ -90,6 +90,8 @@ import {
   type EditorSnapshot,
   type SnapshotRestoreAck,
 } from "../api/core";
+import { useChapterSplit } from "./chapter-split.ts";
+import { chapterSplit, chapterSplitUndo, type SplitReceipt } from "../api/split.ts";
 import { resolveMirrorIssue } from "../api/mirror";
 import { disableSeal, enableSeal, lockSeal, readSealStatus, unlockSeal, unlockRestoreSource } from "../api/seal";
 import {
@@ -271,6 +273,13 @@ export interface EditorSession {
   /** 点悬浮按钮：开着就收（并把焦点还给正文），收着就开 */
   togglePanel: (id: PanelId) => void;
   /** 收起卡片并**把焦点还给正文**（焦点留在按钮上输入法就没落点，见 focus.ts） */
+
+  /** 拆章（**只由作者触发**）：编排在 `editor/chapter-split.ts`，切点在 `editor/split.ts`。 */
+  splitChapterAt: (at: number, title: string) => Promise<boolean>;
+  /** 撤销刚那一次拆章（两章合回原章、新章进回收站） */
+  undoSplit: () => Promise<boolean>;
+  /** 刚拆完的那一次（条上给一次「撤销」）；`null` = 现在没有可撤销的 */
+  splitNotice: Ref<SplitReceipt | null>;
   closePanel: () => void;
 }
 
@@ -724,6 +733,19 @@ export function useEditorSession(): EditorSession {
   /// 在某一章后面新建一章并直接切过去（目录树的「+」与"接着写下一章"走同一条路）。
   ///
   /// **返回新章 id**：目录树连点同一个「+」时要靠它接着往下排（见 `editor/add-chapter.ts`）。
+
+  /**
+   * 切到某一章之后的收尾——**新建一章 / 拆章 / 撤销拆章走的是同一条**：
+   * 重取上下章、把焦点还给正文、刷目录（新章得看得见，目录不为别的动作整树重建）。
+   *
+   * 写成一份是因为三处要的完全一样：抄三遍的话，将来改一处忘两处，
+   * 症状是"某些路径下新章不出现"这种最难查的不一致。
+   */
+  async function settleAfterSwitch(): Promise<void> {
+    await refreshNeighbors();
+    settleFocus(true);
+    await directory.refresh();
+  }
   async function addChapterAfter(node_id: number): Promise<number | null> {
     if (switcher.switching) return null;
     switching.value = true;
@@ -733,11 +755,7 @@ export function useEditorSession(): EditorSession {
       // 落点也由核心定：编号能认出来就**按号归位**，认不出来才退回"插在点的那一行之后"
       // （见 store::node_edit::add_chapter_after 的说明）
       const created = await createChapter(node_id, "");
-      if ((await switcher.to(created)) === "switched") {
-        await refreshNeighbors();
-        settleFocus(true); // 刚新建：接着写（不管它是第几章）
-      }
-      await directory.refresh(); // 新章得看得见（目录不为别的动作整树重建）
+      if ((await switcher.to(created)) === "switched") await settleAfterSwitch();
       return created.node_id; // 新章 id：目录树连点「+」时要靠它接着往下排
     } catch (error) {
       failure.value = t("session.create_chapter_failed", {
@@ -1286,10 +1304,27 @@ export function useEditorSession(): EditorSession {
       void engine.flush().catch(() => {}).finally(() => engine.dispose());
     }
   });
+  /** 拆章的装配（**唯一一处**）：编排住在 `editor/chapter-split.ts`，这里只把它接上。 */
+  const split = useChapterSplit({
+    currentNode: () => currentNodeId.value,
+    flush: flushCurrent,
+    runSplit: chapterSplit,
+    runUndo: chapterSplitUndo,
+    detachCurrent: () => autosave.value?.detach(),
+    switchTo: async (snapshot) => (await switcher.to(snapshot)) === "switched",
+    settle: settleAfterSwitch,
+    busy: switching,
+    report: (message) => {
+      failure.value = message;
+    },
+  });
 
   return {
     editor,
     addChapterAfter,
+    splitChapterAt: split.splitAt,
+    undoSplit: split.undo,
+    splitNotice: split.notice,
     deleteNode,
     directory,
     adding,

@@ -224,6 +224,12 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     STORY_LINE_NODE_NO_BODY => "story_line.node_no_body"
         : "这一段的种类标不了故事线（只有承载正文的章 / 节 / 单篇能标，卷与场景卡不标）：{kind}"
         : ["kind"],
+    CHAPTER_SPLIT_NODE_UNSUPPORTED => "chapter.split_unsupported"
+        : "这一段的种类拆不了（只有承载正文的章 / 节 / 单篇能拆，卷与场景卡不参与）：{kind}"
+        : ["kind"],
+    CHAPTER_SPLIT_POINT_INVALID => "chapter.split_point_invalid"
+        : "这个切点用不了：这一章一共 {count} 段，切点落在第 {at} 段之前（不能切在开头或末尾）"
+        : ["at", "count"],
     OUTLINE_PASTE_TOO_BIG => "outline.paste_too_big"
         : "一次粘进来的格子太多（{cells} 格，上限 {max}）——分成几次粘，或先只粘一列"
         : ["cells", "max"],

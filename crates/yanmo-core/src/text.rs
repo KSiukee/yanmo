@@ -14,6 +14,47 @@
 //!
 //! 所有下标都是 **Unicode 字符下标**，不是字节下标——中文按字节算会错得离谱。
 
+
+/// 正文 → 每一段的**起始字节位置 + 原文**（空行分段，与正文存储口径一致）。
+///
+/// 与 [`paragraphs`] 的区别：这里**一个字符都不动**（段内的硬换行原样留着），
+/// 返回的位置是**原串里的字节下标**——所以调用方可以拿它把原文大切两半而
+/// 不碰任何其它字符（拆章要的正是这个：切点处不丢、不重、不改）。
+///
+/// 分段的判据只有一条：**空行**（连续两个及以上换行）。段首段尾的空白算在段外，
+/// 分段的判据只有一条：**空行**（连续两个及以上换行）。位置指的是这一段的**开头**
+/// ——紧跟在分隔空行之后，段首的空白也算在这一段里（调用方要按原文切时，一个字符都不少）。
+pub fn paragraph_spans(body: &str) -> Vec<(usize, &str)> {
+    let mut out = Vec::new();
+    let mut cursor = 0usize;
+    for (index, _) in body.match_indices("\n\n") {
+        push_span(&mut out, cursor, &body[cursor..index]);
+        cursor = index + 2;
+    }
+    push_span(&mut out, cursor, &body[cursor..]);
+    out
+}
+
+fn push_span<'a>(out: &mut Vec<(usize, &'a str)>, start: usize, piece: &'a str) {
+    let trimmed = piece.trim();
+    if trimmed.is_empty() {
+        return; // 空段不算一段（与"空行只当分隔符"同一条口径）
+    }
+    out.push((start, trimmed));
+}
+
+/// 正文 → 段落清单（给**排版/导出**看的那一份）：段**内部**的硬换行折算成空格
+/// ——正文里本不该有硬换行，真有了也不能让它在成稿里把一段拆散。
+///
+/// 与 [`paragraph_spans`] 共用同一个切段实现（**只有一份**）：那边的位置是给
+/// "按原文切"用的，这边的文本是给"读"用的。
+pub fn paragraphs(body: &str) -> Vec<String> {
+    let normalized = body.replace("\r\n", "\n").replace('\r', "\n");
+    paragraph_spans(&normalized)
+        .into_iter()
+        .map(|(_, block)| block.split('\n').map(str::trim).collect::<Vec<_>>().join(" "))
+        .collect()
+}
 /// 是否 CJK 表意文字（含扩展 A/兼容区与扩展 B+）。
 pub fn is_cjk(c: char) -> bool {
     matches!(c as u32,

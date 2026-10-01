@@ -44,6 +44,9 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::editor::open_chapter,
         crate::commands::editor::open_work_target,
         crate::commands::editor::create_chapter,
+        // 拆章（**只由作者触发**：在光标所在那一段之前把一章切成两章；撤销＝两章合回去）
+        crate::commands::split::chapter_split,
+        crate::commands::split::chapter_split_undo,
         crate::commands::editor::chapter_neighbors,
         crate::commands::editor::save_cursor,
         crate::commands::editor::save_body,

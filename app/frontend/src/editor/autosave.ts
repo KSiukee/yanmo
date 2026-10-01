@@ -243,6 +243,8 @@ export class Autosave {
     this.dispose();
   }
 
+  /** 已摘下来了吗（节点没了）：切章那一步据此跳过"先落盘、记光标"，理由见 `chapters.ts`。 */
+  isDetached(): boolean { return this.detached; }
   state(): AutosaveState {
     return {
       status: this.status,

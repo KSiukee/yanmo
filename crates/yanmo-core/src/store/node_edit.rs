@@ -14,7 +14,7 @@ use crate::model::{NamingStyle, NodeKind};
 use crate::time::now_millis;
 
 /// 同父下的节点 id，按现有顺序。
-fn sibling_ids(conn: &Connection, work_id: i64, parent_id: Option<i64>) -> Result<Vec<i64>> {
+pub(super) fn sibling_ids(conn: &Connection, work_id: i64, parent_id: Option<i64>) -> Result<Vec<i64>> {
     let mut stmt = conn.prepare(
         "SELECT id FROM nodes
          WHERE work_id = ?1 AND parent_id IS ?2 AND deleted_at IS NULL
