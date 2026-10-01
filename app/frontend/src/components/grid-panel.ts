@@ -19,6 +19,7 @@ import { setNodeSummary, saveNodeFields, treeMoveNode } from "../api/core.ts";
 import { t } from "../locales/index.ts";
 import { dropPlan, type DropZone } from "./drop-plan.ts";
 import { useGridCast } from "./grid-cast.ts";
+import { useGridLines, type GridLinesState } from "./grid-lines.ts";
 import { parsePasteTable, pasteProblemText, planPaste } from "./grid-paste.ts";
 import {
   COLUMNS,
@@ -92,6 +93,8 @@ export interface GridPanelState {
   closeCast: () => void;
   /** 选 / 不选一个人 */
   toggleCast: (node_id: number, entity_id: number) => Promise<void>;
+  /** 「五线」那一格：读 / 勾 / 一次落库（状态与命令在 `grid-lines.ts`） */
+  lines: GridLinesState;
   /** 跳到这一章（顺手把表收起来） */
   open: (node_id: number) => Promise<void>;
   /** 在这个分组下面加一章 */
@@ -138,6 +141,7 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
   );
 
   const cast = useGridCast({ workId: deps.workId, replace, rowOf, report, busy });
+  const lines = useGridLines({ replace, rowOf, report, busy, justSaved });
 
   async function load() {
     const work = deps.workId.value;
@@ -148,7 +152,7 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
     try {
       busy.value = true;
       errorText.value = "";
-      rows.value = await outlineRows(work);
+      rows.value = await lines.attach(work, await outlineRows(work));
     } catch (error) {
       report(error);
     } finally {
@@ -266,7 +270,7 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
     try {
       busy.value = true;
       errorText.value = "";
-      rows.value = await outlinePasteCells(work, plan.cells);
+      rows.value = await lines.attach(work, await outlinePasteCells(work, plan.cells));
       const touched = new Set(plan.cells.map((cell) => cell.node_id)).size;
       const done = t("grid.paste.done", { cells: plan.cells.length, rows: touched });
       // 跳过了哪几列要说出来（不然作者以为整张表都进来了）
@@ -359,6 +363,7 @@ export function useOutlineGrid(deps: GridPanelOptions): GridPanelState {
     collapsed,
     justSaved,
     castFor: cast.openFor,
+    lines,
     castCards: cast.cards,
     show,
     hide,

@@ -23,6 +23,7 @@ import type { EditorSession } from "../editor/session.ts";
 import { t } from "../locales/index.ts";
 import { dropPlan, type DropZone } from "./drop-plan.ts";
 import OutlineCastPicker from "./OutlineCastPicker.vue";
+import OutlineLinesCell from "./OutlineLinesCell.vue";
 import {
   castText,
   cellEditable,
@@ -51,6 +52,7 @@ const {
   justSaved,
   castFor,
   castCards,
+  lines,
   toggleColumn,
   toggleCollapsed,
   saveSummary,
@@ -63,6 +65,8 @@ const {
   open,
   addChapter,
 } = props.session.grid;
+/** 「五线」那一格的状态与命令（与选人卡同一路，见 `grid-lines.ts`）。 */
+const { openFor: linesFor, draft: linesDraft, open: openLines, close: closeLines, toggle: toggleLine } = lines;
 
 /** 表尾那个「+ 加一章」挂在哪：最后一个卷（没有卷就挂在根上）。 */
 function lastVolume(): number | null {
@@ -135,16 +139,18 @@ function toggleCastCard(node_id: number) {
 }
 
 /**
- * 点在表里别处：**把选人卡收起来**。
+ * 点在表里别处：**把开着的那张卡收起来**（选人卡 / 五线卡）。
  *
- * 点在这一格里面（勾人 / 收起按钮）不动它——不然勾一下卡片就没了，
- * 连选几个人这件事根本做不成。
+ * 点在这一格里面（勾人 / 勾线 / 收起按钮）不动它——不然勾一下卡片就没了，
+ * 连选几个人、连着标几条这件事根本做不成。
+ *
+ * 五线卡收起来时要**把手上那份落下**（`closeLines` 里：动了才写一次，没动就一个字都不发）。
  */
 function onTableClick(event: MouseEvent) {
-  if (castFor.value === null) return;
+  if (castFor.value === null && linesFor.value === null) return;
   const target = event.target as HTMLElement | null;
-  if (target?.closest(".grid__cast")) return;
-  closeCast();
+  if (castFor.value !== null && !target?.closest(".grid__cast")) closeCast();
+  if (linesFor.value !== null && !target?.closest(".grid__lines")) void closeLines();
 }
 
 // ── 拖行：上三分之一排前面、下三分之一排后面、中间放进卷里 ──────────────
@@ -318,7 +324,7 @@ watch(
                 {{ row.title.trim() === "" ? t("grid.untitled") : row.title }}
               </button>
 
-              <!-- 出场人物：点开选人（表里唯一不是打字改的一格） -->
+              <!-- 出场人物 / 五线：点开一张卡（表里不是打字改的两格） -->
               <div v-else-if="spec.key === 'cast'" class="grid__cast">
                 <button
                   type="button"
@@ -338,6 +344,13 @@ watch(
                   @close="closeCast()"
                 />
               </div>
+
+              <!-- 五线：格子摆一排小徽标（没标过就一个「未标」），点开勾选 -->
+              <OutlineLinesCell
+                v-else-if="spec.key === 'lines'"
+                :row="row" :open="linesFor === row.node_id" :busy="busy" :draft="linesDraft"
+                @open="void openLines(row.node_id)" @toggle="toggleLine" @close="void closeLines()"
+              />
 
               <!-- 伏笔 / 字数：核心算的，只读 -->
               <span v-else-if="spec.key === 'foreshadow'" class="grid__cell-text">

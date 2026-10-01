@@ -1,8 +1,12 @@
-//! 五线推进度：**节点（章 / 节 / 场景卡）↔ 故事线**的标注。
+//! 五线推进度：**「正文单位」（章 / 节 / 单篇）↔ 故事线**的标注。卷与场景卡标不了（见下第 0 条）。
 //!
 //! 表与理由见 `db::migrations_v19`。这里管三件事：读这本书的、读一段的、**换掉一段的**。
 //!
-//! 四条分寸：
+//! 五条分寸：
+//!
+//! 0. **只有「正文单位」能标**（章 / 节 / 单篇）：卷是分组行、场景卡是写这一章时的辅助卡，
+//!    两者当场拒（`story_line.node_no_body`，参数带上种类）。判据与数章共用一份
+//!    ——见 `NodeKind::is_text_spine`，**这里不许另写一套**；
 //!
 //! 1. **整份覆盖**：界面上那一格是一排勾选框，"这一章在推哪几条线"点一下就落定——
 //!    交上来的就是那一段完整的清单，不做"加一条 / 减一条"两套接口（两套接口就有两处
@@ -22,7 +26,7 @@ use rusqlite::params;
 use serde_json::json;
 
 use super::Store;
-use crate::error::Result;
+use crate::error::{codes, Error, Result};
 use crate::model::StoryLine;
 use crate::time::now_millis;
 
@@ -83,8 +87,17 @@ impl Store {
         lines: &[StoryLine],
         trigger: &str,
     ) -> Result<Vec<StoryLine>> {
-        // 段在不在（软删的算不在）：往一段已经不存在的章上标线没有意义
-        self.node_work(node_id)?;
+        // 段在不在（软删的算不在）：往一段已经不存在的章上标线没有意义。
+        // 种类一并读出来：**只有「正文单位」能标线**——卷与场景卡当场拒。
+        let kind = super::node::node_kind_in(&self.conn, node_id)?;
+        if !kind.is_text_spine() {
+            // 拒要**干净**：这一句在任何一次写之前返回，库里那几笔一笔都不动（卷这种
+            // 分组行上没有"标过一半"这种东西，界面也不该见到一个半吊子状态）。
+            return Err(Error::invalid_with(
+                codes::STORY_LINE_NODE_NO_BODY,
+                [("kind", kind.as_str().to_string())],
+            ));
+        }
         // 去重 + 稳定序：同一章同一条线重复传只留一份，返回的顺序与输入无关
         let wanted = in_stable_order(lines);
 

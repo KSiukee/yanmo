@@ -1,0 +1,102 @@
+/* 「五线」那一格自己的东西：格子上的小徽标 + 一张浮在下面的勾选卡。
+   风格与「出场人物」那一格（outline-cast.css）一致；颜色只从两套色板里取
+   （组件里不许写颜色字面量，见 app/tests/boundary.rs）。 */
+
+/* 格子的外框：点开它的按钮在这儿，卡在下面 */
+.grid__lines {
+  position: relative;
+}
+
+.grid__lines-open {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.grid__lines-open:hover {
+  background: var(--ym-paper-dim);
+}
+
+/* 一条都没标：淡一点，一眼看得出"这一格还没填" */
+.grid__lines-open--empty {
+  opacity: 0.55;
+}
+
+/* 一条线一个字的小徽标（主 / 副 / 情 / 悬 / 长） */
+.grid__lines-badge {
+  display: inline-block;
+  min-width: 1.1em;
+  padding: 0 3px;
+  border: 1px solid var(--ym-line);
+  border-radius: 3px;
+  background: var(--ym-paper-dim);
+  font-size: 11px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.grid__lines-none {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+/* 勾选卡：浮在那一格下面（与出场人物那张卡同一个摆法） */
+.grid__lines-pop {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 15rem;
+  padding: 6px 8px;
+  border: 1px solid var(--ym-line);
+  border-radius: 6px;
+  background: var(--ym-paper);
+  box-shadow: 0 6px 18px var(--ym-shadow);
+}
+
+.grid__lines-title {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.grid__lines-item {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* 那句说明：它得**看得见**（不是注释里的一句），所以给足行高、别裁字 */
+.grid__lines-note {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.7;
+}
+
+.grid__lines-done {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}

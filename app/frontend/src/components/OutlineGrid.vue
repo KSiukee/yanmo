@@ -18,7 +18,9 @@ import OutlineTable from "./OutlineTable.vue";
 import StorylinePane from "./StorylinePane.vue";
 
 const props = defineProps<{ session: EditorSession }>();
-const { visible, pane, pickPane, castFor, closeCast, hide } = props.session.grid;
+const { visible, pane, pickPane, castFor, closeCast, lines, hide } = props.session.grid;
+/** 「五线」卡：Esc 也要能收（收的时候顺手把手上那份落下，见 `grid-lines.ts`）。 */
+const { openFor: linesFor, close: closeLines } = lines;
 
 /** 三片页签（稳定码 → 字典 `grid.tab.*`）：默认落在总纲。 */
 const PANES: GridPane[] = ["storyline", "chapters", "actual"];
@@ -26,6 +28,10 @@ const PANES: GridPane[] = ["storyline", "chapters", "actual"];
 function onEscape() {
   if (castFor.value !== null) {
     closeCast();
+    return;
+  }
+  if (linesFor.value !== null) {
+    void closeLines();
     return;
   }
   if (pane.value !== DEFAULT_PANE) {

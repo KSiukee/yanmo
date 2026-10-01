@@ -121,6 +121,18 @@ impl NodeKind {
             NodeKind::Chapter | NodeKind::Section | NodeKind::Piece | NodeKind::Scene
         )
     }
+    /// 这一段的种类算不算**「正文单位」**（章 / 节 / 单篇）：承载正文，**且不是场景卡**。
+    ///
+    /// 判据只有这一份：数章（[`Store::text_spine`](crate::store::Store::text_spine)）与
+    /// 标故事线（[`Store::set_node_lines`](crate::store::Store::set_node_lines)）都问它。
+    /// 两处各写一遍，迟早会在"场景卡算不算一段"上分家——而分家之后，界面上那句"能不能标"
+    /// 与表里数出来的章数会对不上，谁也不知道该信哪个。
+    ///
+    /// 为什么不数场景卡：它挂在章下面，是写这一章时的辅助卡，不是读者顺着读下去的那一行
+    /// （完整理由在 `Store::text_spine` 那一段）。
+    pub const fn is_text_spine(self) -> bool {
+        self.holds_body() && !matches!(self, NodeKind::Scene)
+    }
 
     /// 能不能容纳下级（目录树据此决定"能不能放进去"）。
     ///
@@ -223,6 +235,15 @@ mod tests {
         assert!(NodeKind::Chapter.holds_body());
         // ★ 单篇也承载正文 —— 这是"零层级文章"能成立的关键
         assert!(NodeKind::Piece.holds_body());
+    }
+    /// 「正文单位」这条判据**五类都过一遍**：卷与场景卡不算，章 / 节 / 单篇算。
+    #[test]
+    fn text_spine_excludes_volumes_and_scene_cards() {
+        assert!(!NodeKind::Volume.is_text_spine(), "卷是分组行，不是一段正文");
+        assert!(!NodeKind::Scene.is_text_spine(), "场景卡挂在章下面，不是读者顺着读的那一行");
+        assert!(NodeKind::Chapter.is_text_spine());
+        assert!(NodeKind::Section.is_text_spine());
+        assert!(NodeKind::Piece.is_text_spine(), "单篇自己就是一段正文");
     }
 
     #[test]

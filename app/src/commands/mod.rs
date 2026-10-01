@@ -28,6 +28,8 @@ pub mod foreshadow;
 pub mod fragment;
 /// 灵感：把碎片按引力排出来，并采纳 / 丢弃（**机制排，不生成字**）。
 pub mod inspire;
+/// 五线推进度：**这一段在推进哪几条线**的读与写（卷与场景卡标不了，由核心拒）。
+pub mod lines;
 /// 命令登记处：壳上所有命令的唯一一张清单（入口只接上它）。
 pub mod registry;
 /// 稿子放哪：位置查询、换位置、打开文件夹。

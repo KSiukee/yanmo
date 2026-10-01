@@ -43,30 +43,34 @@ test("「大纲」打开默认落在总纲那一页（章纲是第二页）", ()
   assert.equal(DEFAULT_PANE, "storyline");
 });
 
-test("列：默认露章名 + 一句话 + 出场人物 + 四格；伏笔与字数按需勾", () => {
+test("列：默认露章名 + 一句话 + 出场人物 + 五线 + 四格；伏笔与字数按需勾", () => {
   assert.deepEqual(DEFAULT_COLUMNS, [
     "title",
     "summary",
     "cast",
+    "lines",
     "pov",
     "goal",
     "conflict",
     "outcome",
   ]);
-  assert.equal(COLUMNS.length, 9);
+  assert.equal(COLUMNS.length, 10);
   assert.equal(spec("summary").editable, true);
   assert.equal(spec("title").editable, false, "章名归目录树管");
   assert.equal(spec("foreshadow").editable, false, "伏笔去伏笔账本改");
   assert.equal(spec("cast").editable, true, "出场人物能改，但改法是点选（不是在格子里打字）");
+  assert.equal(spec("lines").editable, true, "五线也能改，改法是点开勾选（五个勾选框）");
 });
 
-test("卷不承载正文：四格与出场人物对它都填不了（一句话也一样不摆）", () => {
+test("卷不承载正文：四格、出场人物与五线对它都填不了（一句话也一样不摆）", () => {
   assert.equal(cellEditable(spec("pov"), { kind: "volume" }), false);
   assert.equal(cellEditable(spec("pov"), { kind: "chapter" }), true);
   assert.equal(cellEditable(spec("pov"), { kind: "scene" }), true);
   assert.equal(cellEditable(spec("cast"), { kind: "volume" }), false);
   assert.equal(cellEditable(spec("cast"), { kind: "chapter" }), true);
   assert.equal(cellEditable(spec("foreshadow"), { kind: "chapter" }), false);
+  assert.equal(cellEditable(spec("lines"), { kind: "volume" }), false);
+  assert.equal(cellEditable(spec("lines"), { kind: "chapter" }), true);
 });
 
 test("格值：顶层取顶层，四格从 fields 里取", () => {

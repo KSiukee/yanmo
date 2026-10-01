@@ -9,7 +9,7 @@
 //! 6. 迁移 v19 幂等（同一个库开两次），且标注落库会留痕进 op-log。
 
 use yanmo_core::error::codes;
-use yanmo_core::model::{NodeKind, StoryLine, WorkKind};
+use yanmo_core::model::{EntityKind, NewEntityCard, NodeKind, StoryLine, WorkKind};
 use yanmo_core::store::Store;
 
 fn fresh() -> (tempfile::TempDir, Store) {
@@ -162,4 +162,114 @@ fn migration_nineteen_is_idempotent_on_an_existing_library() {
     assert_eq!(store.lines_of(first).unwrap(), vec![StoryLine::Main, StoryLine::Romance]);
     assert_eq!(store.node_lines(work).unwrap()[&first].len(), 2);
     assert_eq!(op_log_count(&store), 1, "重开库不该再记一次 op-log");
+}
+
+/// 闸（用户拍板）：**只有「正文单位」能标线**——卷与场景卡当场拒，且拒的话里带上种类。
+///
+/// 判据与数章是同一份（`NodeKind::is_text_spine`）：所以这里挨个过一遍五类，
+/// 谁被拒、谁被放行都得与"表里数得出几章"对得上。
+#[test]
+fn only_text_units_can_be_annotated() {
+    let (_dir, mut store) = fresh();
+    let (work, chapter, _second) = book_with_two_chapters(&mut store);
+    // 小说的根就是那个卷（`create_work` 会给一本小说配一个）
+    let volume = store.list_nodes(work).unwrap()[0].id;
+    let scene = store.create_node(work, Some(chapter), NodeKind::Scene, "开场").unwrap();
+    let section = store.create_node(work, Some(chapter), NodeKind::Section, "第一节").unwrap();
+
+    for (node, kind_code) in [(volume, "volume"), (scene, "scene")] {
+        let err = store.set_node_lines(node, &[StoryLine::Main], "test").unwrap_err();
+        assert_eq!(err.code(), codes::STORY_LINE_NODE_NO_BODY, "{err:?}");
+        let params: std::collections::BTreeMap<_, _> = err.params().into_iter().collect();
+        assert_eq!(
+            params.get("kind").map(String::as_str),
+            Some(kind_code),
+            "拒的时候要说清它是什么种类（界面据此说\"这是卷 / 这是场景卡\"）：{err:?}"
+        );
+        assert!(store.lines_of(node).unwrap().is_empty(), "拒了就不许留下一个字");
+    }
+
+    for node in [chapter, section] {
+        assert_eq!(
+            store.set_node_lines(node, &[StoryLine::Main], "test").unwrap(),
+            vec![StoryLine::Main],
+            "章与节都能标"
+        );
+    }
+
+    // 单篇（零层级作品的那一篇正文，本身就是一段正文）
+    let article = store.create_work(WorkKind::Article, "零层级").unwrap();
+    let piece = store.list_nodes(article.id).unwrap()[0].id;
+    assert_eq!(store.list_nodes(article.id).unwrap()[0].kind, NodeKind::Piece);
+    assert_eq!(
+        store.set_node_lines(piece, &[StoryLine::Growth], "test").unwrap(),
+        vec![StoryLine::Growth],
+        "单篇自己就是一段正文，能标"
+    );
+}
+
+/// 拒要**干净**：被拒的那一次，库里本来标着的那几条一个字都不动，也不留痕。
+#[test]
+fn a_refused_write_leaves_the_existing_annotation_untouched() {
+    let (_dir, mut store) = fresh();
+    let (work, chapter, _second) = book_with_two_chapters(&mut store);
+    let volume = store.list_nodes(work).unwrap()[0].id;
+    store
+        .set_node_lines(chapter, &[StoryLine::Main, StoryLine::Romance], "test")
+        .unwrap();
+    let before = store.node_lines(work).unwrap();
+    let op_before = op_log_count(&store);
+
+    let err = store.set_node_lines(volume, &[], "test").unwrap_err();
+    assert_eq!(err.code(), codes::STORY_LINE_NODE_NO_BODY, "{err:?}");
+
+    assert_eq!(
+        store.lines_of(chapter).unwrap(),
+        vec![StoryLine::Main, StoryLine::Romance],
+        "被拒的是卷，别的段的标注一个字都不许动"
+    );
+    assert_eq!(store.node_lines(work).unwrap(), before, "整本书读回来还是原来那一份");
+    assert_eq!(op_log_count(&store), op_before, "被拒的那次不该留痕");
+}
+
+/// 一张人物卡（对账那一步要用的人）。
+fn person(store: &mut Store, work_id: i64, name: &str) -> i64 {
+    store
+        .create_entity_card(
+            &NewEntityCard {
+                work_id,
+                kind: EntityKind::Person,
+                name: name.to_string(),
+                aliases: Vec::new(),
+                attributes: Vec::new(),
+                note: String::new(),
+            },
+            "test",
+        )
+        .unwrap()
+}
+
+/// 「不进」：大纲留底 / 撤回**不碰**五线标注——界面上那句
+/// "大纲撤回不会回滚这里标过的线"说的就是这件事（撤回那一支只写回章纲 / 四格 / 出场人物）。
+#[test]
+fn restoring_an_outline_snapshot_does_not_roll_back_the_story_lines() {
+    let (_dir, mut store) = fresh();
+    let (work, chapter, _second) = book_with_two_chapters(&mut store);
+    let card = person(&mut store, work, "陆文");
+    store.set_node_summary(chapter, "他进城").unwrap();
+    store.set_node_lines(chapter, &[StoryLine::Main], "test").unwrap();
+
+    // 对一次账（补一个人）：它改之前会先给这一章留一份底 —— 撤回认的就是那一份
+    assert_eq!(store.align_outline_cast(chapter, &[card]).unwrap(), 1);
+    let snapshot = store.latest_outline_snapshot(chapter).unwrap().unwrap();
+    store.set_node_summary(chapter, "改成别的").unwrap();
+    store.set_node_lines(chapter, &[StoryLine::Suspense], "test").unwrap();
+
+    store.restore_outline_snapshot(snapshot.id).unwrap();
+    assert_eq!(store.node_summary(chapter).unwrap(), "他进城", "留底里那句话回来了");
+    assert_eq!(
+        store.lines_of(chapter).unwrap(),
+        vec![StoryLine::Suspense],
+        "五线留着**后来**改的那一份：大纲撤回不回滚它"
+    );
 }

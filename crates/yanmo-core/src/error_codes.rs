@@ -217,6 +217,9 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : ["entity_id", "work_id"],
     CAST_NODE_NO_BODY => "cast.node_no_body"
         : "这一段挂不了出场人物（只有承载正文的章 / 节 / 场景卡才有）：{node_id}" : ["node_id"],
+    STORY_LINE_NODE_NO_BODY => "story_line.node_no_body"
+        : "这一段的种类标不了故事线（只有承载正文的章 / 节 / 单篇能标，卷与场景卡不标）：{kind}"
+        : ["kind"],
     OUTLINE_PASTE_TOO_BIG => "outline.paste_too_big"
         : "一次粘进来的格子太多（{cells} 格，上限 {max}）——分成几次粘，或先只粘一列"
         : ["cells", "max"],

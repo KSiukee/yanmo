@@ -124,6 +124,9 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::outline::outline_actuals,
         crate::commands::outline::outline_align_cast,
         crate::commands::outline::outline_align_undo,
+        // 五线推进度：这一本书每一段标了哪几条线（读 / 整份覆盖地写）
+        crate::commands::lines::node_lines,
+        crate::commands::lines::node_lines_set,
         crate::commands::foreshadow::foreshadow_list,
         crate::commands::foreshadow::foreshadow_create,
         crate::commands::foreshadow::foreshadow_update,

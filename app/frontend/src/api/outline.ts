@@ -43,6 +43,13 @@ export interface OutlineRowDto {
   collected: number;
   /** 这一段出场的人物（空表＝还没挂过；名字是刚读到的） */
   cast: CastMember[];
+  /**
+   * 这一段推进的故事线（稳定码：`main` / `sub` / `romance` / `suspense` / `growth`）。
+   *
+   * 空数组＝**还没标过**（不是"没推进任何线"，见核心 `model::story_line` 的口径）；
+   * 内容由 `node_lines` 那条链按节点 id 并进来（见 `attachLines`）。
+   */
+  lines: string[];
 }
 
 /** 名单里的一个人：设定卡的 id + 它**现在**的名字（卡改名，下次读就是新名）。 */
@@ -167,3 +174,27 @@ export const outlineAlignCast = (node_id: number, entity_ids: number[]) =>
 /** 撤销上一次对齐（把这一章的大纲放回最近那份留底）。 */
 export const outlineAlignUndo = (node_id: number) =>
   call<CastMember[]>(COMMANDS.outlineAlignUndo, { node_id });
+
+/** 一段的标注：节点 id + 它推进的那几条线（稳定码，按界面上那排的顺序）。 */
+export interface NodeLinesDto {
+  node_id: number;
+  lines: string[];
+}
+
+/**
+ * 这本书里每一段标了哪些线（**没标过的段不出现**）。
+ *
+ * 与 [`outlineRows`] 分成两条命令：标注与"表要摆什么"是两个变化理由，
+ * 标注这条链（核心 `store::lines` / 命令行 `lines-set`）本来就是独立的一份。
+ */
+export const nodeLines = (work_id: number) =>
+  call<NodeLinesDto[]>(COMMANDS.nodeLines, { work_id });
+
+/**
+ * 换掉一段的标注（**整份覆盖**），回这一段最新那一份（稳定序）。
+ *
+ * 一次调用只发一次：界面那一格是"勾完一次交上去"，不是每勾一下发一条——
+ * 整份覆盖的语义下，逐勾发请求会让两次快速点击各自按手上那份旧清单算，后一次盖掉前一次。
+ */
+export const nodeLinesSet = (node_id: number, lines: string[]) =>
+  call<string[]>(COMMANDS.nodeLinesSet, { node_id, lines });

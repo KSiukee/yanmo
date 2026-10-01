@@ -27,6 +27,7 @@ export type GridColumn =
   | "title"
   | "summary"
   | "cast"
+  | "lines"
   | "pov"
   | "goal"
   | "conflict"
@@ -46,6 +47,8 @@ export const COLUMNS: ColumnSpec[] = [
   { key: "summary", editable: true },
   // 出场人物那一列**能改**，但改法是点选（那张多选卡），不是在格子里打字
   { key: "cast", editable: true },
+  // 五线那一列也是点选（五个勾选框，勾完一次落库）；它对卷同样"填不了"，与四格同一条
+  { key: "lines", editable: true },
   { key: "pov", editable: true },
   { key: "goal", editable: true },
   { key: "conflict", editable: true },
@@ -54,11 +57,12 @@ export const COLUMNS: ColumnSpec[] = [
   { key: "words", editable: false },
 ];
 
-/** 默认露哪几列：章名 + 一句话 + 出场人物 + 四格（伏笔与字数按需勾出来）。 */
+/** 默认露哪几列：章名 + 一句话 + 出场人物 + 五线 + 四格（伏笔与字数按需勾出来）。 */
 export const DEFAULT_COLUMNS: GridColumn[] = [
   "title",
   "summary",
   "cast",
+  "lines",
   "pov",
   "goal",
   "conflict",
@@ -151,6 +155,8 @@ export interface GridRow {
   planted_open: number;
   collected: number;
   cast: { entity_id: number; name: string }[];
+  /** 这一段推进的几条线（稳定码；空＝还没标过） */
+  lines: string[];
 }
 
 /** 表里要摆的行：先按折叠状态剔掉收起的分组，再按"只看没填的"筛。 */
@@ -202,6 +208,8 @@ export function columnWidth(column: GridColumn): string {
   if (column === "summary" || column === "conflict" || column === "outcome") return "16rem";
   // 人物那一列要摆得下三四个名字（多了折行，不撑破表）
   if (column === "cast") return "12rem";
+  // 五线那一列要摆得下五个单字徽标（主副情悬长），再多一条就折行
+  if (column === "lines") return "7rem";
   if (column === "foreshadow") return "7rem";
   if (column === "words") return "5rem";
   return "10rem";

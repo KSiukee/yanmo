@@ -351,10 +351,11 @@ impl Store {
     /// 为什么不数场景卡：它挂在章下面，是写这一章时的辅助卡，不是读者顺着读下去的那一行。
     /// 代价说清楚——作者若把整章都写成场景卡，这一条只会**报得更晚**，不会误报。
     /// "埋了多久没收""故事时间倒序"说的都是章，这里数出来的就是章（单篇 / 节也算一段）。
+    ///
+    /// 判据本身住在 [`NodeKind::is_text_spine`]（**只有那一份**）：标故事线那道闸问的也是它，
+    /// 于是"表里数得出的章"与"能标线的段"永远是同一批。
     pub fn text_spine(&self, work_id: i64) -> Result<Vec<ChapterSummary>> {
-        self.reading_order_where(work_id, |node| {
-            node.kind.holds_body() && node.kind != NodeKind::Scene
-        })
+        self.reading_order_where(work_id, |node| node.kind.is_text_spine())
     }
 
     /// 阅读顺序的**同一条走法**：`keep` 决定哪些节点算数（两处的顺序必须一模一样）。
