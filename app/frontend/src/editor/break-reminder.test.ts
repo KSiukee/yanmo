@@ -237,3 +237,23 @@ test("章长那条没有可说的（null）时，条上什么都不变", () => {
   env.watch.offerChapter(null);
   assert.equal(env.watch.tip.value, null);
 });
+
+// ★ 用户 2026-09-30 拍板：**一个开关静音全部安静提醒**——关掉之后，章长那条也闭嘴。
+test("★ 总开关关掉：章长那条也说不出话（不是「少吵一条」，是全静音）", () => {
+  const on = fake();
+  on.watch.offerChapter(CHAPTER);
+  assert.deepEqual(on.watch.tip.value, { kind: "chapter", ...CHAPTER }, "开着：说得出来");
+  assert.equal(on.watch.enabled(), true);
+
+  const off = fake({ on: false });
+  off.watch.offerChapter(CHAPTER);
+  assert.equal(off.watch.tip.value, null, "关掉：一声不响");
+  assert.equal(off.watch.enabled(), false, "接线层也该问得出「开没开」（章长那条据此不读分布）");
+
+  // 读不回来（还没读到 / 读失败）同样不响——默认值只在核心那一处，界面不猜
+  const unknown = fake();
+  unknown.setSettings(null);
+  unknown.watch.offerChapter(CHAPTER);
+  assert.equal(unknown.watch.tip.value, null, "读不回来：不响");
+  assert.equal(unknown.watch.enabled(), false);
+});

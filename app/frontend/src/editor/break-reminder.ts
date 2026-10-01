@@ -90,6 +90,8 @@ export interface BreakWatch {
    * 条上已经有一条时什么都不做——**软件不该抢自己的话头**。
    */
   offerChapter: (tip: ChapterLengthTip | null) => void;
+  /** ★**总开关**：关掉那个开关＝**全部安静提醒**闭嘴（用眼两条在 `evaluate` 里拦，这条在出口拦）。 */
+  enabled: () => boolean;
 }
 
 export function useBreakWatch(options: BreakWatchOptions): BreakWatch {
@@ -162,7 +164,14 @@ export function useBreakWatch(options: BreakWatchOptions): BreakWatch {
    * 它与用眼那两条**各自记账**：用眼那两条一轮只说一次，章长这条每次停下点都可能再提
    * （「知道了」＝只关这一次，不记账）；「就这样写」才是记账那一种（落在 `chapter-length.ts`）。
    */
+  /** 这一处安静提醒现在开没开（＝那份设置里的总开关；界面与章长那条都问它）。 */
+  const enabled = (): boolean => {
+    const current = options.settings();
+    return current !== null && current.on;
+  };
+
   const offerChapter = (next: ChapterLengthTip | null): void => {
+    if (!enabled()) return; // 总开关关着：章长这条也闭嘴（作者要的是安静，不是"少吵一条"）
     if (next === null || tip.value !== null) return;
     tip.value = { kind: "chapter", ...next };
   };
@@ -171,7 +180,7 @@ export function useBreakWatch(options: BreakWatchOptions): BreakWatch {
     tip.value = null;
   };
 
-  return { tip, poke, evaluate, dismiss, offerChapter };
+  return { tip, poke, evaluate, dismiss, offerChapter, enabled };
 }
 
 /** 条上那一句（键名只在这里出现一次；组件不必知道有哪几种说法）。 */
@@ -240,6 +249,11 @@ export function useBreakReminder(
     work: number | null = leftWork,
     node: number | null = leftChapter,
   ): void {
+    // ★**一个开关静音全部安静提醒**（用户拍板）：关掉那个开关之后，章长这条也闭嘴——
+    // 不去读分布、也不摆条。理由：作者说"别提醒我"时，他要的是安静，不是"少吵一条"。
+    // 用眼那两条的闸门在 `useBreakWatch` 里（同一个 settings）；这一条在接线层拦，
+    // 两处读的是**同一个** `break_reminder`。
+    if (!watch0.enabled()) return;
     void chapter.atStop(work, node).then((next) => watch0.offerChapter(next));
   }
 
