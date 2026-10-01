@@ -139,6 +139,19 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 「偏长」那一行角标：**最安静的那种标记**——不阻断、不弹、不抢焦点，
+   只是跟字数排在一起的一小撮灰字（同一条事实在停下点那一刻会说成一句话）。 */
+.tree__long {
+  flex: none;
+  margin-left: 4px;
+  padding: 0 3px;
+  border: 1px solid var(--ym-line);
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--ym-ink-soft);
+}
+
 .tree__add {
   flex: none;
   padding: 0 4px;

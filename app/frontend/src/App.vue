@@ -17,6 +17,8 @@ import { useQuestionPush } from "./editor/question-push.ts";
 import { breakTipText, useBreakReminder } from "./editor/break-reminder.ts";
 import { watchForStalls } from "./editor/stall-watch.ts";
 import type { SelectedQuestion } from "./api/question.ts";
+// 章长提醒那条链的真件（读分布 / 记「就这样写」）：**只有 api/ 下能 import Tauri**，通道从这交给接线层
+import { chapterLengthTransport } from "./api/chapter-length.ts";
 import DirectoryPane from "./components/DirectoryPane.vue";
 import EditorPane from "./components/EditorPane.vue";
 import AsidePane from "./components/AsidePane.vue";
@@ -75,9 +77,10 @@ const { tab: asideTab, pick: pickAside } = useAsideTab(session.appearance);
 // 不需要往下传任何值，所以不接它的返回值）。
 useTheme(session.appearance);
 
-// 用眼提醒：**只在"他要停下来"的时刻说一句**——切章 / 切书 / 关窗前那一下，
-// 判据与记账全在 editor/break-reminder.ts；写作过程中一句都不说（它不接键盘那条路）。
-const breakReminder = useBreakReminder(session);
+// 用眼提醒 + 章长提醒：**只在"他要停下来"的时刻说一句**——切章 / 切书 / 关窗前那一下，
+// 判据与记账全在 editor/break-reminder.ts（章长那条的判据在核心，与叩问同源）；
+// 写作过程中一句都不说（它们都不接键盘那条路）。
+const breakReminder = useBreakReminder(session, chapterLengthTransport);
 
 function answerPushed() {
   // 提示条上的「答一句」要落到叩问那一块：先把那一块露出来，再把卡交过去
@@ -167,10 +170,13 @@ const hint = computed(() => {
         {{ t("backup.tip_dismiss") }}
       </button>
     </p>
-    <!-- 用眼提醒：与上面两条**共用同一个出口**（一次只显示一条）；它只在停下点冒头，
-         一个「知道了」就收，不给任何指令性按钮——不指挥作者。 -->
+    <!-- 用眼提醒 + 章长提醒：与上面两条**共用同一个出口**（一次只显示一条）；只在停下点冒头，
+         一个「知道了」就收；章长那条多一个「就这样写」——都不指挥作者。 -->
     <p v-else-if="breakReminder.tip.value" class="shell__nudge">
       <span>{{ breakTipText(breakReminder.tip.value) }}</span>
+      <button v-if="breakReminder.tip.value?.kind === 'chapter'" type="button" class="shell__nudge-go" @click="breakReminder.keep()">
+        {{ t("break.chapter_keep") }}
+      </button>
       <button type="button" class="shell__nudge-no" @click="breakReminder.dismiss()">
         {{ t("break.dismiss") }}
       </button>

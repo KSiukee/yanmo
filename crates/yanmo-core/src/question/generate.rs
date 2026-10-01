@@ -21,6 +21,7 @@
 use std::collections::BTreeMap;
 
 use super::elements::{WritingElements, ChapterFacts, RhythmParams};
+use super::rhythm;
 use super::template::{template, ElementKind, QuestionTemplate};
 use crate::model::ForeshadowState;
 use crate::outline::UNCOLLECTED_CHAPTERS;
@@ -369,25 +370,18 @@ fn same_length_run(chapters: &[ChapterFacts], p: &RhythmParams) -> Option<(usize
     }
     Some((counts.len(), avg, window.last()?.node_id))
 }
-
-/// 比中位数长出一大截的那一章（章数太少就不评——两三章说不出"节奏"）。
+/// 比中位数长出一大截的那一章。
+///
+/// **判据不在本函数里**：中位数、样本门槛、倍数比对都在 [`super::rhythm`]——那里是
+/// "特别长"的**唯一一处**定义，界面那条章长提醒读的也是它。这里只做"按阅读顺序挑出第一个"。
+/// 章数太少就不评（两三章说不出"节奏"），由 [`super::rhythm::distribution`] 的闸门定。
 fn very_long_chapter<'a>(
     chapters: &'a [ChapterFacts],
     p: &RhythmParams,
 ) -> Option<(&'a ChapterFacts, i64)> {
-    let written: Vec<&ChapterFacts> = chapters.iter().filter(|c| c.has_body && c.char_count > 0).collect();
-    if written.len() < 3 {
-        return None;
-    }
-    let mut counts: Vec<i64> = written.iter().map(|c| c.char_count).collect();
-    counts.sort_unstable();
-    let median = counts[counts.len() / 2];
-    if median <= 0 {
-        return None;
-    }
-    let limit = (median as f64 * p.very_long_ratio) as i64;
-    written
+    let dist = rhythm::distribution(chapters);
+    rhythm::samples(chapters)
         .into_iter()
-        .find(|c| c.char_count > limit)
-        .map(|c| (c, c.char_count))
+        .find(|chapter| rhythm::exceeds(chapter.char_count, &dist, p.very_long_ratio))
+        .map(|chapter| (chapter, chapter.char_count))
 }

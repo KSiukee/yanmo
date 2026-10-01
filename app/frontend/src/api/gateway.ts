@@ -105,6 +105,8 @@ export const COMMANDS = {
   outlineActuals: "outline_actuals",
   outlineAlignCast: "outline_align_cast",
   outlineAlignUndo: "outline_align_undo",
+  // 章长：这一本书每一章多少字、哪一章偏长（只读；类型与薄封装在 api/chapter-length.ts）
+  chapterLengths: "chapter_lengths",
   // 五线推进度：这一本书每一段标了哪几条线（类型与薄封装在 api/outline.ts，与那一族的读法同路）
   nodeLines: "node_lines",
   nodeLinesSet: "node_lines_set",

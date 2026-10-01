@@ -19,11 +19,24 @@
 // 本文件是**纯逻辑 + 注入时钟**：它不认识 Vue、不认识 DOM，单测直接喂时钟与读数。
 // 下面那半 `useBreakReminder` 才是接线（与会话的三个停下点接上），薄薄一层。
 
+// ★ 那条出口上还住着**第二个内容**：**章长提醒（防爆章）**
+//   （"这一章 4700 字，这本书中位 2000 字（2.4 倍）——是故意的吗？"）。
+//   它跟用眼提醒**同一处停下点、同一条小条**，只是它要读一眼书里的分布（异步）；
+//   判据与记账都在 `editor/chapter-length.ts`；答复多一个「就这样写」（这一章以后不再提）。
+//   优先级：叩问推 > 备份 > **用眼提醒 > 章长**——用眼那两条一轮只说一次，先让它们说完；
+//   章长这条每次停下点都可能再提（「知道了」只关这一次），排最后就不会把前两条饿死。
 import { ref, watch, type Ref } from "vue";
 
 import { t } from "../locales/index.ts";
 import type { EditorSession } from "./session.ts";
 import { pickDayCount } from "./writing-days.ts";
+
+import {
+  chapterTipText,
+  useChapterLengthWatch,
+  type ChapterLengthTransport,
+  type ChapterLengthTip,
+} from "./chapter-length.ts";
 
 /** 静置多久算"翻篇"（毫秒）：连续写作的计数清零、下一个停下点重新算。 */
 export const IDLE_RESET_MS = 5 * 60_000;
@@ -45,7 +58,9 @@ export interface BreakSettings {
 /** 条上要显示的那一句是什么（`null` = 不显示）。 */
 export type BreakTip =
   | { kind: "minutes"; minutes: number }
-  | { kind: "words"; words: number };
+  | { kind: "words"; words: number }
+  /** 章长那条：事实 + 那条"以后不再提"的记号的原文（核心给的，界面照抄） */
+  | ({ kind: "chapter" } & ChapterLengthTip);
 
 export interface BreakWatchOptions {
   /**
@@ -70,6 +85,11 @@ export interface BreakWatch {
   evaluate: () => void;
   /** 「知道了」：把条收掉（收掉不等于没说过——这一轮仍然不重复） */
   dismiss: () => void;
+  /**
+   * 章长那条的入口：**只在停下点、读完那一页之后调**（接线见 `useBreakReminder` 那三处）。
+   * 条上已经有一条时什么都不做——**软件不该抢自己的话头**。
+   */
+  offerChapter: (tip: ChapterLengthTip | null) => void;
 }
 
 export function useBreakWatch(options: BreakWatchOptions): BreakWatch {
@@ -136,24 +156,38 @@ export function useBreakWatch(options: BreakWatchOptions): BreakWatch {
     tip.value = { kind: "words", words: today };
   }
 
+  /**
+   * 章长那条：**只在停下点调**（异步读完那一页之后）——条空着才说得出来。
+   *
+   * 它与用眼那两条**各自记账**：用眼那两条一轮只说一次，章长这条每次停下点都可能再提
+   * （「知道了」＝只关这一次，不记账）；「就这样写」才是记账那一种（落在 `chapter-length.ts`）。
+   */
+  const offerChapter = (next: ChapterLengthTip | null): void => {
+    if (next === null || tip.value !== null) return;
+    tip.value = { kind: "chapter", ...next };
+  };
+
   const dismiss = (): void => {
     tip.value = null;
   };
 
-  return { tip, poke, evaluate, dismiss };
+  return { tip, poke, evaluate, dismiss, offerChapter };
 }
 
 /** 条上那一句（键名只在这里出现一次；组件不必知道有哪几种说法）。 */
 export function breakTipText(tip: BreakTip | null): string {
   if (tip === null) return "";
-  return tip.kind === "minutes"
-    ? t("break.eye", { minutes: tip.minutes })
-    : t("break.words", { words: tip.words });
+  if (tip.kind === "minutes") return t("break.eye", { minutes: tip.minutes });
+  if (tip.kind === "words") return t("break.words", { words: tip.words });
+  return chapterTipText(tip);
 }
 
 export interface BreakReminder {
   tip: Ref<BreakTip | null>;
+  /** 「知道了」：只关这一次（不记账——下次停下点还超长会再提一次） */
   dismiss: () => void;
+  /** 「就这样写」：这一章以后不再提（只在章长那条上有意义） */
+  keep: () => void;
 }
 
 /**
@@ -167,7 +201,10 @@ export interface BreakReminder {
  *   记账了"，作者多半看不到；真要在他合上稿子之前说一句，得有一条**不阻塞**的关窗路
  *   （那是另一件事，不在这一刀里）。另外两处（切章 / 切书）才是这句话真正露面的时候。
  */
-export function useBreakReminder(session: EditorSession): BreakReminder {
+export function useBreakReminder(
+  session: EditorSession,
+  chapterTransport: ChapterLengthTransport,
+): BreakReminder {
   const watch0 = useBreakWatch({
     settings: () => {
       const values = session.appearance.values.value;
@@ -184,6 +221,28 @@ export function useBreakReminder(session: EditorSession): BreakReminder {
     todayWords: () => pickDayCount(session.writing.today.value, session.caliber.value),
   });
 
+  // 章长那条：与用眼提醒**同一处停下点**（不新起钩子），但它要读一眼书里的分布，所以是
+  // 异步的——读完把结论交给同一个出口（`offerChapter`，条空着才说）。
+  const chapter = useChapterLengthWatch(chapterTransport);
+  /**
+   * 刚离开的那一章（连同**它在哪本书里**）：切书那一刻手上这一对还是上一本书的，
+   * 而判据要拿它跟**它自己那本书**的分布比——所以两个值一起记。
+   */
+  let leftWork = session.workId.value;
+  let leftChapter = session.directory.current.value;
+  /**
+   * 读一眼、判"刚离开的那一章"、把结论交给出口。
+   *
+   * 默认用上一对（`leftWork` / `leftChapter`）；关窗前那一处显式传"现在手上这一对"
+   * （那一刻这一章就是要离开的那一章）。读不出来 / 这一章不偏长：一声不响。
+   */
+  function stopChapterLength(
+    work: number | null = leftWork,
+    node: number | null = leftChapter,
+  ): void {
+    void chapter.atStop(work, node).then((next) => watch0.offerChapter(next));
+  }
+
   // 活动信号：字数一变（落盘回执）就是"还在写"——与叩问那条"卡住"用的是同一个观测点
   watch(() => session.saveState.value.char_count, () => watch0.poke());
 
@@ -194,8 +253,13 @@ export function useBreakReminder(session: EditorSession): BreakReminder {
     (node) => {
       if (node === null) return;
       watch0.poke();
-      if (hadChapter) watch0.evaluate();
+      if (hadChapter) {
+        watch0.evaluate(); // 用眼提醒（同步）
+        stopChapterLength(); // 章长：读一眼**刚离开的那一章**
+      }
       hadChapter = true;
+      leftChapter = node;
+      leftWork = session.workId.value;
     },
   );
 
@@ -206,6 +270,10 @@ export function useBreakReminder(session: EditorSession): BreakReminder {
     (id) => {
       if (hadWork && id !== null) watch0.evaluate();
       hadWork = id !== null;
+      // 章长那一半**不在这里重复评一次**：换书是先换章再换书，刚离开的那一章由上面那个
+      // 切章 watcher 带上了（这里再评只会拿新书那份分布去比一个刚打开的章，没有意义）。
+      // 这一处只把**新书的分布**读进来给目录角标（不发声："刚打开这本书"不是一个要说话的时刻）。
+      void chapter.refresh(id);
     },
   );
 
@@ -213,9 +281,22 @@ export function useBreakReminder(session: EditorSession): BreakReminder {
   watch(
     () => session.exitState.value.blocked,
     (blocked) => {
-      if (blocked) watch0.evaluate();
+      if (!blocked) return;
+      watch0.evaluate();
+      // 章长：这一刻手上这一章就是要离开的那一章。⚠️ **与用眼提醒同一处弱环**——这一句
+      // 压在退出确认框那层遮罩底下，作者多半看不到（如实说，不去改退出那条链）。
+      stopChapterLength(session.workId.value, session.directory.current.value);
     },
   );
 
-  return { tip: watch0.tip, dismiss: watch0.dismiss };
+  const keep = (): void => {
+    const current = watch0.tip.value;
+    if (current === null || current.kind !== "chapter") return;
+    // 先把条收掉（说完就走），再落账：写失败也**不**假装记上了——下一回读库还是"没说过"，
+    // 这一章会再被提一次（那是实话）。
+    watch0.dismiss();
+    void chapter.keep(current.work_id, current.node_id, current.fingerprint);
+  };
+
+  return { tip: watch0.tip, dismiss: watch0.dismiss, keep };
 }

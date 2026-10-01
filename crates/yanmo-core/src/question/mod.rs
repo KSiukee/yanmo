@@ -13,6 +13,8 @@ pub mod defer_preset;
 pub mod elements;
 pub mod push;
 pub mod generate;
+/// 节奏判据：**明显比别人长的那一章**（叩问那条规则与界面那条章长提醒共用同一个判据）。
+pub mod rhythm;
 pub mod template;
 
 pub use defer::{anchors_of, chapter_anchor, DeferCondition, DeferKind, DAY_MS};
@@ -23,6 +25,7 @@ pub use elements::{
 };
 pub use push::{advanced, decide, PushDecision, PushQuota, PushReason, PushState};
 pub use generate::{generate, QuestionDraft, STALLED_CAST_CHAPTERS, STALLED_LINE_CHAPTERS};
+pub use rhythm::{distribution, exceeds, is_sample, judge, ChapterLength, ChapterLengths, Distribution, MIN_SAMPLES};
 pub use template::{
     template, urgency_of, ElementKind, QuestionTemplate, DEFAULT_URGENCY, TEMPLATES,
 };

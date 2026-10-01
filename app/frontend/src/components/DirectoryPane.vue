@@ -16,6 +16,8 @@ import { composeTitle, renderedPrefix, splitTitle, type TitleParts } from "../ed
 import { t } from "../locales/index.ts";
 import { formatCaliberNumber, formatCaliberWords } from "../editor/display.ts";
 import { dropPlan, type DropZone } from "./drop-plan.ts";
+// 偏长角标：事实来自核心那一页（`editor/chapter-length.ts`，判据与叩问那条同源）
+import { chapterLengthBoard, isLongChapter } from "../editor/chapter-length.ts";
 
 const props = defineProps<{ session: EditorSession }>();
 // 从会话对象里取出的都是 ref，模板里照常自动解包
@@ -34,6 +36,18 @@ const {
 } = props.session.directory;
 // 目录树里的字数按**当前口径**显示（口径跟着作品语言，可在状态栏切换）
 const { caliber } = props.session;
+
+/**
+ * 「偏长」那一行角标：**安静、不阻断、不抢焦点**，只是把核心判出来的事实摆在那儿。
+ *
+ * 用的是与停下点那句话**同一个闸门**（`isLongChapter`）：样本不足、不偏长、
+ * 他已经说过「就这样写」的章都不标。
+ */
+const lengths = chapterLengthBoard();
+function isLong(row: TreeRow): boolean {
+  return row.holds_body && isLongChapter(lengths.value, row.id);
+}
+
 const { neighbors, switching, switchChapter, deleteNode, adding } = props.session;
 // 点「+」之后的编排在 editor/add-chapter.ts（这里只接线，不写流程）
 const { addHere } = adding;
@@ -311,6 +325,7 @@ function askDelete(row: TreeRow) {
         <span v-else class="tree__title" :title="rowLabel(row)">{{ rowLabel(row) }}</span>
 
         <span v-if="row.holds_body" class="tree__words">{{ row.has_body ? formatCaliberNumber(row, caliber) : t("tree.empty_chapter") }}</span>
+        <span v-if="isLong(row)" class="tree__long">{{ t("tree.chapter_long") }}</span>
         <span
           v-else
           class="tree__words"

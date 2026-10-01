@@ -119,20 +119,7 @@ impl Store {
     /// 每次**选题**时才知道的事（见 [`Store::select_questions_for_chapter`]）——
     /// 于是关联度一律 1.0，谁上场跟作者此刻在哪一章无关。
     pub fn writing_elements(&self, work_id: i64) -> Result<WritingElements> {
-        let mut chapters = Vec::new();
-        for node in self.list_nodes(work_id)? {
-            if !node.kind.holds_body() {
-                continue;
-            }
-            chapters.push(ChapterFacts {
-                node_id: node.id,
-                // 用**渲染后**的标题问问题（"第3章"而不是存着的模板 `第{$N}章`）
-                title: node.title_rendered,
-                has_body: node.has_body,
-                char_count: node.char_count,
-                summary: node.summary,
-            });
-        }
+        let chapters = self.chapter_facts(work_id)?;
 
         // 伏笔与人物判"隔了多少章 / 静了多少章"：**按"正文单位"那一份清单算**
         // （`text_spine`：承载正文、不是场景卡）——与大纲体检那条同阈值判据同一份坐标。
@@ -171,6 +158,29 @@ impl Store {
         let lines = self.line_facts(work_id, spine_last, &spine_pos)?;
 
         Ok(WritingElements { chapters, foreshadows, sparks, characters, lines })
+    }
+
+    /// 这本书的**章节事实**：按阅读顺序、承载正文的节点（容器节点滤掉）。
+    ///
+    /// 两处共用同一份样本：叩问那五路事实里的章节，与**章长判据**的分布
+    /// （见 `super::chapter_length`）。样本口径要是各筛各的，中位数就会悄悄不一样——
+    /// 而"这本书中位多少字"是要念给作者听的事实（见 `crate::question::rhythm`）。
+    pub(super) fn chapter_facts(&self, work_id: i64) -> Result<Vec<ChapterFacts>> {
+        let mut chapters = Vec::new();
+        for node in self.list_nodes(work_id)? {
+            if !node.kind.holds_body() {
+                continue;
+            }
+            chapters.push(ChapterFacts {
+                node_id: node.id,
+                // 用**渲染后**的标题问问题（"第3章"而不是存着的模板 `第{$N}章`）
+                title: node.title_rendered,
+                has_body: node.has_body,
+                char_count: node.char_count,
+                summary: node.summary,
+            });
+        }
+        Ok(chapters)
     }
 
     /// **正文单位**（`text_spine`）在阅读顺序里的下标：返回（末章下标, 节点 → 下标）。

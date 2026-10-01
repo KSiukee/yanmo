@@ -28,6 +28,7 @@ mod collection;
 mod collection_mint;
 mod collection_row;
 mod defer_condition;
+mod chapter_length;
 mod content;
 mod device;
 mod draft;
@@ -95,6 +96,7 @@ pub use sop::{
     MECH_JUDGES, MECH_SCOPES,
 };
 pub use sop_mech::{BookMechFacts, ChapterMechFacts};
+pub use chapter_length::{dismiss_identity, ChapterLength, ChapterLengthBoard};
 pub use backup::{
     gaps_for, has_other_volume, ledger_summary, package_day, plan_prune, read_ledger, read_manifest,
     BackupConfig,

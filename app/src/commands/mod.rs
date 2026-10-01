@@ -16,6 +16,8 @@ pub mod author;
 pub mod backup;
 /// 编译：投稿版 docx / 分章 txt / 合并 txt。
 pub mod compile;
+/// 章长：这一本书每一章多少字、哪一章偏长（**只读**；判据与叩问那条同源）。
+pub mod chapter_length;
 /// 短篇集：引用聚合（往集里加篇 / 拿掉 / 重排 / 定目标 / 一键建集），**从不碰正文**。
 pub mod collection;
 /// 编辑器：打开章节、落盘、光标与检索。

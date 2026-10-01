@@ -172,3 +172,68 @@ test("条上那一句照字典来（键名英文，句子在 locales 里）", ()
   assert.ok(has("break.dismiss"), "关闭按钮那句话在字典里");
   assert.equal(t("break.dismiss"), "知道了");
 });
+
+// ── 章长那条（同一条出口上的第二个内容） ──────────────────────────────────
+//
+// 判据与记账在 `editor/chapter-length.ts`（那一份有自己的测试）；这里只管**出口**：
+// 它必须在停下点、由接线层喂进来，而且不抢已经在说的那一句。
+
+/** 章长那句话要念的事实（判据在核心，这里只喂结果）。 */
+const CHAPTER = {
+  work_id: 1,
+  node_id: 3,
+  chars: 4700,
+  median: 2000,
+  times: 2.4,
+  fingerprint: "chapter-long:3",
+};
+
+test("★章长那句话只有 offerChapter 说得出来：写作途中、评估都不带它出来", () => {
+  const env = fake();
+  env.write(60); // 用眼那两条都到点了
+  env.setToday(2000);
+  assert.equal(env.watch.tip.value, null, "写的时候一声不响（章长那条更没有入口）");
+
+  env.watch.evaluate();
+  assert.equal(env.watch.tip.value?.kind, "minutes", "停下点先说的是用眼提醒（它排在前头）");
+  env.watch.dismiss();
+  env.watch.evaluate();
+  assert.equal(env.watch.tip.value?.kind, "words", "还是用眼那条");
+  env.watch.dismiss();
+
+  env.watch.offerChapter(CHAPTER);
+  assert.deepEqual(env.watch.tip.value, { kind: "chapter", ...CHAPTER }, "到这里章长那句才说得出来");
+  assert.equal(
+    breakTipText(env.watch.tip.value),
+    "这一章 4700 字，这本书中位 2000 字（2.4 倍）——是故意的吗？",
+    "念的是事实，末尾是问句",
+  );
+});
+
+test("条上已经有一条时，章长那条不抢自己的话头", () => {
+  const env = fake();
+  env.write(45);
+  env.watch.evaluate();
+  assert.equal(env.watch.tip.value?.kind, "minutes");
+
+  env.watch.offerChapter(CHAPTER);
+  assert.equal(env.watch.tip.value?.kind, "minutes", "已经在说的那句不被顶掉");
+});
+
+test("「知道了」只关这一次：同一个停下点还超长就再提一次", () => {
+  const env = fake();
+  env.watch.offerChapter(CHAPTER);
+  assert.equal(env.watch.tip.value?.kind, "chapter");
+
+  env.watch.dismiss();
+  assert.equal(env.watch.tip.value, null, "收掉就走");
+
+  env.watch.offerChapter(CHAPTER);
+  assert.equal(env.watch.tip.value?.kind, "chapter", "没记账 ⇒ 下次停下来还说得出来");
+});
+
+test("章长那条没有可说的（null）时，条上什么都不变", () => {
+  const env = fake();
+  env.watch.offerChapter(null);
+  assert.equal(env.watch.tip.value, null);
+});
