@@ -121,6 +121,8 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::outline::outline_clear_dismissed,
         crate::commands::outline::outline_paste_cells,
         crate::commands::outline::outline_set_cast,
+        // 正文里冒出来的名字（**显式动作**：要读每一章正文；见 core store::outline_mention）
+        crate::commands::outline::outline_mentions,
         // 章长：这一本书每一章多少字、哪一章偏长（只读；「就这样写」走既有的 outline_dismiss）
         crate::commands::chapter_length::chapter_lengths,
         crate::commands::outline::outline_actuals,

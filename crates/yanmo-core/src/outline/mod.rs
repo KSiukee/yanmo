@@ -30,9 +30,12 @@
 
 mod actual;
 mod issue;
+mod mention;
+mod mention_words;
 mod rules;
 
 pub use actual::{chapter_state, foreshadow_candidates, mentioned_cards, plan_is_empty,
     CastRef, ChapterActual, ChapterState, ForeshadowHit};
 pub use issue::{IssueRule, OutlineIssue};
+pub use mention::{unlisted_name_issues, unlisted_names, UnlistedName, UNLISTED_MAX};
 pub use rules::{scan, OutlineData, UNCOLLECTED_CHAPTERS};

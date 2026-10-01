@@ -102,6 +102,8 @@ export const COMMANDS = {
   outlineClearDismissed: "outline_clear_dismissed",
   outlinePasteCells: "outline_paste_cells",
   outlineSetCast: "outline_set_cast",
+  // 正文里冒出来的名字（**显式动作**：要读每一章正文，与打开面板自动跑的 outline_scan 分开）
+  outlineMentions: "outline_mentions",
   outlineActuals: "outline_actuals",
   outlineAlignCast: "outline_align_cast",
   outlineAlignUndo: "outline_align_undo",

@@ -104,3 +104,22 @@ export function anchorTarget(anchors: string[]): { kind: AnchorKind; id: number 
   }
   return { kind: "", id: null };
 }
+
+/**
+ * 一条「正文里冒出来的名字」候选要跳去的那一章（没有就 `null`，界面据此不摆那个按钮）。
+ *
+ * 这一条**核心不给锚点**（理由见核心 `outline::mention::to_issue`：忽略标记的指纹里带着
+ * 锚点，而"这个名字第一次出现在哪一章"会随作者改前面的章而变）——定位走 `params.node_id`。
+ */
+export function mentionNode(issue: OutlineIssue): number | null {
+  const id = Number(issue.params.node_id);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
+/**
+ * 这条候选该建成哪一种卡：核心猜了一个（`person` / `setting`），认不出的当人物
+ * （候选里绝大多数是称谓与人名，"地名"那条本来就更容易漏）。
+ */
+export function mentionKind(issue: OutlineIssue): "person" | "setting" {
+  return issue.params.kind === "setting" ? "setting" : "person";
+}

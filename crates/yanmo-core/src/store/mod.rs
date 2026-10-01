@@ -55,6 +55,7 @@ mod numbering;
 mod outline_actual;
 mod outline_dismiss;
 mod outline_grid;
+mod outline_mention;
 mod outline_paste;
 mod outline_scan;
 mod question_answer;

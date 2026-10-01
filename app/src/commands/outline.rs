@@ -120,6 +120,37 @@ pub fn outline_clear_dismissed(
     })
 }
 
+/// 「正文里冒出来的名字」那一屏：候选 + 已经忽略的指纹 + 如实报数。
+///
+/// 与 [`outline_scan`] 分开一条命令是有意的：这一条要**读每一章正文**（与"计划 vs
+/// 实际"同一档成本），所以它是界面上的一次**显式动作**，不该挂在打开面板就自动跑的那条上。
+#[derive(Debug, Serialize)]
+pub struct UnlistedBoardDto {
+    /// 候选（规则码 `entity.unlisted_name`；**不带锚点**，定位走 `params.node_id`）
+    pub issues: Vec<OutlineIssueDto>,
+    /// 已经忽略的指纹（与体检共用同一把——"这不是名字"与"这一处我知道了"是一回事）
+    pub dismissed: Vec<String>,
+    /// 一屏摆不下、没列出来的条数（**如实报**，不静默丢）
+    pub hidden: usize,
+    /// 这次扫了几章正文
+    pub scanned: usize,
+}
+
+/// 全书扫一遍正文，认名字，跟设定卡比对（**只读**；一次显式动作）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn outline_mentions(data: State<'_, AppData>, work_id: i64) -> Result<UnlistedBoardDto, ApiError> {
+    crate::acceptance::note_command("outline_mentions");
+    data.with_store(|store| {
+        let report = store.unlisted_names(work_id)?;
+        Ok(UnlistedBoardDto {
+            issues: report.issues.iter().map(OutlineIssueDto::from).collect(),
+            dismissed: store.dismissed_issues(work_id)?,
+            hidden: report.hidden,
+            scanned: report.scanned,
+        })
+    })
+}
+
 /// 交上来的一格：哪一段的哪一栏写什么（界面把粘进来的那一片拆好格再交上来）。
 ///
 /// 拆格在界面（那儿才看得见"哪一列现在露着、哪一行被折叠了"），**入库前的核对在核心**

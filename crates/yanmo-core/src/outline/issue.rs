@@ -19,19 +19,24 @@ pub enum IssueRule {
     SceneMissingFields,
     /// 伏笔埋了太久还没收（超过阈值；"不写了"是正经结局，不算）。
     ForeshadowUncollected,
-    /// 时间线倒置：后一章的事件，故事时间反而更早（倒叙不算——那是作者自己的写法）。
     TimelineOutOfOrder,
+    /// 正文里认到一个名字，**设定卡上没有**（要不要建卡由作者定；见 `outline::mention`）。
+    ///
+    /// 它与其余六条不同：那六条说的是"这里对不上"，这一条说的是"这个名字我认不出来"——
+    /// 报出来的是**候选**，所以界面上给的是"建成卡 / 这不是名字"，不是"去改"。
+    EntityUnlistedName,
 }
 
 impl IssueRule {
     /// 全部规则（**字典对表测试拿它穷举**：加一条规则就必须补一条文案）。
-    pub const ALL: [IssueRule; 6] = [
+    pub const ALL: [IssueRule; 7] = [
         IssueRule::EntityNameClash,
         IssueRule::EntityNameRepeated,
         IssueRule::EntityAttributeConflict,
         IssueRule::SceneMissingFields,
         IssueRule::ForeshadowUncollected,
         IssueRule::TimelineOutOfOrder,
+        IssueRule::EntityUnlistedName,
     ];
 
     /// 稳定码（界面字典键是 `outline.issue.<码>`；**别改**）。
@@ -43,6 +48,7 @@ impl IssueRule {
             IssueRule::SceneMissingFields => "scene.missing_fields",
             IssueRule::ForeshadowUncollected => "foreshadow.uncollected",
             IssueRule::TimelineOutOfOrder => "timeline.out_of_order",
+            IssueRule::EntityUnlistedName => "entity.unlisted_name",
         }
     }
 

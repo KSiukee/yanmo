@@ -8,7 +8,7 @@
 // 规则在核心（`outline::rules`，纯逻辑、零文案）。
 import { t } from "../locales/index.ts";
 import type { EditorSession } from "../editor/session.ts";
-import { anchorTarget, issueText, missingLine } from "./outline.ts";
+import { anchorTarget, issueText, mentionKind, mentionNode, missingLine } from "./outline.ts";
 import { useOutlinePanel } from "./outline-panel.ts";
 
 const props = defineProps<{ session: EditorSession }>();
@@ -18,8 +18,24 @@ const emit = defineEmits<{
 }>();
 
 const { workId, directory } = props.session;
-const { board, busy, errorText, showKnown, open, known, refresh, dismiss, undismiss, clearDismissed } =
-  useOutlinePanel({ workId });
+const {
+  board,
+  busy,
+  errorText,
+  showKnown,
+  open,
+  known,
+  refresh,
+  dismiss,
+  undismiss,
+  clearDismissed,
+  mentions,
+  mentionsBusy,
+  mentionOpen,
+  scanMentions,
+  dismissMention,
+  createCardFromMention,
+} = useOutlinePanel({ workId });
 
 /** 这一条的锚点指向哪儿（决定摆哪个按钮：去设定卡 / 跳到这一场）。 */
 function target(anchors: string[]) {
@@ -118,6 +134,64 @@ async function goScene(node_id: number) {
       </ul>
     </template>
     <p v-else-if="busy" class="check__hint">{{ t("outline.loading") }}</p>
+
+    <!--
+      正文里冒出来的名字：**单独一块、自己带一个「扫一遍」**。
+
+      为什么不像上面那样自动扫：这一块要读每一章正文（与「计划 vs 实际」同一档成本），
+      而上面那几条规则是几张小表（毫秒级）。挂在一起＝作者每次来看伏笔账都要等一次全书扫描。
+      报出来的是**候选**，所以出口是「建成卡」与「这不是名字」，不是「去改」。
+    -->
+    <section class="check__block">
+      <p class="check__row">
+        <span class="check__title">{{ t("outline.names.title") }}</span>
+        <button type="button" class="check__link" :disabled="mentionsBusy" @click="void scanMentions()">
+          {{ t("outline.names.scan") }}
+        </button>
+        <span v-if="mentions" class="check__hint">
+          {{ t("outline.names.scanned", { count: mentions.scanned }) }}
+        </span>
+      </p>
+      <p class="check__rule">{{ t("outline.names.rule") }}</p>
+      <template v-if="mentions">
+        <ul v-if="mentionOpen.length > 0" class="check__list">
+          <li v-for="issue in mentionOpen" :key="issue.fingerprint" class="check__item">
+            <p class="check__text">{{ issueText(issue) }}</p>
+            <div class="check__row">
+              <button
+                type="button"
+                class="check__link"
+                :disabled="mentionsBusy"
+                @click="void createCardFromMention(issue)"
+              >
+                {{ mentionKind(issue) === "setting" ? t("outline.names.make_setting") : t("outline.names.make_person") }}
+              </button>
+              <button
+                v-if="mentionNode(issue) !== null"
+                type="button"
+                class="check__link"
+                :disabled="mentionsBusy"
+                @click="void goScene(mentionNode(issue)!)"
+              >
+                {{ t("outline.go_scene") }}
+              </button>
+              <button
+                type="button"
+                class="check__link"
+                :disabled="mentionsBusy"
+                @click="void dismissMention(issue)"
+              >
+                {{ t("outline.names.not_a_name") }}
+              </button>
+            </div>
+          </li>
+        </ul>
+        <p v-else class="check__hint">{{ t("outline.names.empty") }}</p>
+        <p v-if="mentions.hidden > 0" class="check__hint">
+          {{ t("outline.names.hidden", { count: mentions.hidden }) }}
+        </p>
+      </template>
+    </section>
   </section>
 </template>
 

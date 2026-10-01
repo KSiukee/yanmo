@@ -14,11 +14,14 @@ import { asError } from "../api/errors.ts";
 import {
   outlineClearDismissed,
   outlineDismiss,
+  outlineMentions,
   outlineScan,
   outlineUndismiss,
   type OutlineBoard,
   type OutlineIssue,
+  type UnlistedBoard,
 } from "../api/outline.ts";
+import { entityCreate } from "../api/entity.ts";
 import { splitIssues } from "./outline.ts";
 
 export interface OutlinePanelOptions {
@@ -46,6 +49,85 @@ export function useOutlinePanel(props: OutlinePanelOptions) {
   const open = computed(() => split.value.open);
   /** 已经知道的（作者点"看忽略了哪些"才摆） */
   const known = computed(() => split.value.known);
+
+  // ── 正文里冒出来的名字（这一块要读每一章正文，所以自己带一个"扫一遍"） ──
+  const mentions = ref<UnlistedBoard | null>(null);
+  const mentionsBusy = ref(false);
+  /** 还要看的候选（忽略过的不摆在这一堆里） */
+  const mentionOpen = computed(
+    () => splitIssues(mentions.value?.issues ?? [], mentions.value?.dismissed ?? []).open,
+  );
+
+  /** 扫一遍正文（**只读**，也是这一块唯一的贵动作）。 */
+  async function scanMentions() {
+    const work = currentWork();
+    if (!work) {
+      mentions.value = null;
+      return;
+    }
+    try {
+      mentionsBusy.value = true;
+      errorText.value = "";
+      mentions.value = await outlineMentions(work);
+    } catch (error) {
+      report(error);
+    } finally {
+      mentionsBusy.value = false;
+    }
+  }
+
+  /**
+   * 「这不是名字」：与体检共用同一把忽略标记，写完**只重扫这一块**。
+   *
+   * 为什么不复用 `act()`：那一个是"调命令、吃回体检那一屏"，而这一条命令回的是
+   * 另一份（[`UnlistedBoard`]）——吃错了会把候选混进体检清单里。
+   */
+  async function dismissMention(issue: OutlineIssue) {
+    const work = currentWork();
+    if (!work) return;
+    try {
+      mentionsBusy.value = true;
+      errorText.value = "";
+      await outlineDismiss(work, issue.fingerprint);
+      mentions.value = await outlineMentions(work);
+    } catch (error) {
+      report(error);
+    } finally {
+      mentionsBusy.value = false;
+    }
+  }
+
+  /**
+   * 「建成人物卡 / 设定卡」：走既有的 `entity_create`（名字预填，其余空着），
+   * 建完重扫——卡在那儿了，这一条自然就不再是"认不出来"。
+   *
+   * 这是这一块**唯一的写**（除了忽略），留痕由核心那条命令负责。
+   */
+  async function createCardFromMention(issue: OutlineIssue) {
+    const work = currentWork();
+    const name = (issue.params.form ?? "").trim();
+    if (!work || name === "") return;
+    try {
+      mentionsBusy.value = true;
+      busy.value = true;
+      errorText.value = "";
+      await entityCreate(work, {
+        kind: issue.params.kind === "setting" ? "setting" : "person",
+        name,
+        aliases: [],
+        attributes: [],
+        note: "",
+      });
+      // 体检那一屏也重扫一遍：新卡可能带出别的发现（比如跟已有的别称撞了车）
+      await refresh();
+      mentions.value = await outlineMentions(work);
+    } catch (error) {
+      report(error);
+    } finally {
+      mentionsBusy.value = false;
+      busy.value = false;
+    }
+  }
 
   function report(error: unknown) {
     errorText.value = asError(error).message;
@@ -105,6 +187,8 @@ export function useOutlinePanel(props: OutlinePanelOptions) {
     () => props.workId.value,
     () => {
       showKnown.value = false;
+      // 换书＝换一把候选：上一本认出来的名字不许留在这一屏（下一本要重扫才会出来）
+      mentions.value = null;
       void refresh();
     },
   );
@@ -120,5 +204,11 @@ export function useOutlinePanel(props: OutlinePanelOptions) {
     dismiss,
     undismiss,
     clearDismissed,
+    mentions,
+    mentionsBusy,
+    mentionOpen,
+    scanMentions,
+    dismissMention,
+    createCardFromMention,
   };
 }

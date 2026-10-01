@@ -95,6 +95,32 @@ export interface OutlineBoard {
 export const outlineScan = (work_id: number) =>
   call<OutlineBoard>(COMMANDS.outlineScan, { work_id });
 
+/**
+ * 「正文里冒出来的名字」那一屏。
+ *
+ * 与 [`OutlineBoard`] 分开是因为**成本不同**：这一条要读每一章正文（与「计划 vs 实际」
+ * 同一档），所以界面上它是一次**显式动作**，不跟打开面板就自动跑的那条走。
+ */
+export interface UnlistedBoard {
+  /** 候选（`entity.unlisted_name`；**不带锚点**，定位走 `params.node_id`） */
+  issues: OutlineIssue[];
+  /** 已经忽略的指纹（与体检共用同一把） */
+  dismissed: string[];
+  /** 一屏摆不下、没列出来的条数（**如实报**，不静默丢） */
+  hidden: number;
+  /** 这次扫了几章正文 */
+  scanned: number;
+}
+
+/**
+ * 全书扫一遍正文，认名字，跟设定卡比对（**只读**；一次显式动作）。
+ *
+ * 与 [`outlineScan`] 分成两条命令：判据那边是几张小表（毫秒级，面板自动跑），
+ * 这边要读每一章正文——按需取，别让"看一眼伏笔账"也等一次全书扫描。
+ */
+export const outlineMentions = (work_id: number) =>
+  call<UnlistedBoard>(COMMANDS.outlineMentions, { work_id });
+
 /** 「这一处我知道了」：记下这条问题的指纹（幂等）。 */
 export const outlineDismiss = (work_id: number, fingerprint: string) =>
   call<OutlineBoard>(COMMANDS.outlineDismiss, { work_id, fingerprint });

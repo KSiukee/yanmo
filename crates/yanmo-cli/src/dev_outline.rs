@@ -42,6 +42,8 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         "paste-cells" => Some(&["work", "cells-file", "trigger"]),
         "lines-set" => Some(&["node", "lines", "trigger"]),
         "lines-list" => Some(&["work"]),
+        // 正文里冒出来的名字（要读每一章正文，所以单独一条；见 store::outline_mention）
+        "names-scan" => Some(&["work"]),
         _ => None,
     }
 }
@@ -258,6 +260,25 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
                 .collect();
             json!({ "ok": true, "command": "outline-scan", "count": shaped.len(),
                     "issues": shaped, "dismissed": store.dismissed_issues(work)? })
+        }
+        // 全书扫一遍正文认名字（**只读**；与界面那条命令同一份判据）
+        "names-scan" => {
+            let work = args.required_i64("work")?;
+            let report = store.unlisted_names(work)?;
+            let shaped: Vec<Value> = report
+                .issues
+                .iter()
+                .map(|issue| {
+                    json!({
+                        "rule": issue.rule.as_str(),
+                        "params": issue.params,
+                        "fingerprint": issue.fingerprint(),
+                    })
+                })
+                .collect();
+            json!({ "ok": true, "command": "names-scan", "count": shaped.len(),
+                    "hidden": report.hidden, "scanned": report.scanned,
+                    "names": shaped, "dismissed": store.dismissed_issues(work)? })
         }
         "outline-dismiss" => {
             let work = args.required_i64("work")?;

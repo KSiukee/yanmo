@@ -10,6 +10,8 @@ import {
   fieldLabel,
   isDismissed,
   issueText,
+  mentionKind,
+  mentionNode,
   missingLine,
   readableParams,
   sceneTitle,
@@ -113,4 +115,58 @@ test("故事时间那一栏空着时，用排序值顶一句（句子不该出�
   assert.equal(params.time, "第 12 天");
   assert.equal(params.earlier_time, "第 99 天");
   assert.doesNotMatch(issueText(issue), /（）/, "不留空括号");
+});
+
+// ── 「正文里冒出来的名字」那一块 ──
+//
+// 这一条与其余几条不同：核心**不给锚点**（理由见核心注释：指纹里带锚点会让"忽略"
+// 被作者改前面的章搅掉），定位走 params.node_id。下面钉的就是这个口径。
+
+test("候选的定位走 node_id，不走锚点", () => {
+  const issue = {
+    rule: "entity.unlisted_name",
+    params: { form: "李大人", kind: "person", count: "3", node_id: "12" },
+    anchors: [],
+    fingerprint: "fp",
+  };
+  assert.deepEqual(issue.anchors, [], "锚点必须留空（忽略要跨章稳定）");
+  assert.equal(mentionNode(issue), 12);
+});
+
+test("node_id 读不出来时不摆「去这一章」那个按钮", () => {
+  for (const node_id of ["", "abc", "0", "-3"]) {
+    const issue = {
+      rule: "entity.unlisted_name",
+      params: { form: "李大人", kind: "person", count: "3", node_id },
+      anchors: [],
+      fingerprint: "fp",
+    };
+    assert.equal(mentionNode(issue), null, `node_id=${node_id} 不该给得出一个跳转目标`);
+  }
+});
+
+test("建卡走核心猜的那一类；认不出的当人物", () => {
+  const of = (kind: string) => ({
+    rule: "entity.unlisted_name",
+    params: { form: "青城山", kind, count: "3", node_id: "7" },
+    anchors: [],
+    fingerprint: "fp",
+  });
+  assert.equal(mentionKind(of("setting")), "setting");
+  assert.equal(mentionKind(of("person")), "person");
+  assert.equal(mentionKind(of("")), "person", "认不出的当人物（候选里绝大多数是称谓与人名）");
+  assert.equal(mentionKind(of("who_knows")), "person");
+});
+
+test("这一条的文案不带引号包名字，也不许把规则码漏到屏幕上", () => {
+  const issue = {
+    rule: "entity.unlisted_name",
+    params: { form: "李大人", kind: "person", count: "3", node_id: "12" },
+    anchors: [],
+    fingerprint: "fp",
+  };
+  const text = issueText(issue);
+  assert.match(text, /李大人/);
+  assert.match(text, /3/);
+  assert.doesNotMatch(text, /entity\.unlisted_name/, "规则码只在字典查不到时才露脸");
 });
