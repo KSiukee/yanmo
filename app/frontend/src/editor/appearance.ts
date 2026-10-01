@@ -86,6 +86,14 @@ export interface AppearanceState {
    * 核心那边这项不参与每书覆盖，所以这里也不给"只设这本书"的口子。
    */
   setTheme: (value: string) => Promise<void>;
+  /**
+   * 用眼提醒：开关 + 两个阈值（连着写满多少分钟 / 今天写到多少字）。
+   *
+   * **只写全局那一层**（与配色同一条口径：这两个数与哪本书无关）——所以这里也不给
+   * "只设这本书"的口子。两个阈值 ≤0 或超上限会被核心当场拒，界面照单报出来
+   * （它要拿去跟"写了多久 / 写了多少"比，一个 0 会让它每时每刻都响，那不是提醒）。
+   */
+  setBreakReminder: (enabled: boolean, minutes: number, words: number) => Promise<void>;
   /** 回到默认（核心的默认值） */
   resetToDefault: () => Promise<void>;
   /** 跟当前作品重读一次（打开章节、换书时用） */
@@ -216,6 +224,16 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
         // "auto" 在核心那边就是"清掉这一层"（回默认浅色）；别的取值核心会校验。
         // 只写全局（null）：配色不进每书覆盖。
         options.transport.write(null, { theme: value }),
+      ),
+    setBreakReminder: (enabled, minutes, words) =>
+      // 三项一次带上（与叩问那两个数同一条做法）：核心那边是稀疏合并，没传的不动。
+      // 只写全局（null）：用眼提醒跟哪本书无关。
+      act(() =>
+        options.transport.write(null, {
+          break_reminder: enabled,
+          break_minutes: minutes,
+          break_words: words,
+        }),
       ),
     loadWork: async () => {
       const work_id = options.workId.value;

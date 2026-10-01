@@ -38,6 +38,10 @@ pub struct AppearanceDto {
     pub aside_tab: String,
     /// 界面配色（`light` / `dark` / `system`）；**只走全局**这一层
     pub theme: String,
+    /// 用眼提醒：开关 / 连着写多少分钟 / 今天写到多少字（**只走全局**这一层）
+    pub break_reminder: bool,
+    pub break_minutes: i64,
+    pub break_words: i64,
 }
 
 impl From<ResolvedAppearance> for AppearanceDto {
@@ -57,6 +61,9 @@ impl From<ResolvedAppearance> for AppearanceDto {
             question_push_cooldown_minutes: value.question_push_cooldown_minutes,
             aside_tab: value.aside_tab.as_str().to_string(),
             theme: value.theme.as_str().to_string(),
+            break_reminder: value.break_reminder,
+            break_minutes: value.break_minutes,
+            break_words: value.break_words,
         }
     }
 }
@@ -88,6 +95,12 @@ pub struct AppearancePatch {
     /// 界面配色：`light` / `dark` / `system`；传 `"auto"` = 清掉这一层（回默认：浅色）。
     /// **只落全局那一层**（传了 `work_id` 也不会写进每书记录，见核心 `store::appearance`）
     pub theme: Option<String>,
+    /// 用眼提醒的开关与两个阈值；两个阈值 ≤0 或超出上限（分钟 180 / 字 20000）
+    /// 会被核心**当场拒**（不像排版那样夹住，见核心 `store::appearance::break_threshold`）。
+    /// 三项都**只落全局那一层**（传了 `work_id` 也不会写进每书记录）
+    pub break_reminder: Option<bool>,
+    pub break_minutes: Option<i64>,
+    pub break_words: Option<i64>,
 }
 
 impl From<AppearancePatch> for Appearance {
@@ -107,6 +120,9 @@ impl From<AppearancePatch> for Appearance {
             question_push_cooldown_minutes: patch.question_push_cooldown_minutes,
             aside_tab: patch.aside_tab,
             theme: patch.theme,
+            break_reminder: patch.break_reminder,
+            break_minutes: patch.break_minutes,
+            break_words: patch.break_words,
         }
     }
 }

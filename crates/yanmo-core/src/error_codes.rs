@@ -202,6 +202,10 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "认不出的第二栏分区：{value}（只认 flow / creator / sop）" : ["value"],
     UNKNOWN_THEME => "value.unknown_theme"
         : "认不出的配色：{value}（只认 light / dark / system）" : ["value"],
+    BREAK_MINUTES_OUT_OF_RANGE => "break.minutes_out_of_range"
+        : "连着写的分钟数要落在 1~{max}：{value}" : ["value", "max"],
+    BREAK_WORDS_OUT_OF_RANGE => "break.words_out_of_range"
+        : "今日字数的提醒阈值要落在 1~{max}：{value}" : ["value", "max"],
     UNKNOWN_ENTITY_KIND => "value.unknown_entity_kind"
         : "认不出的设定卡类型：{value}（只认 person / setting）" : ["value"],
     UNKNOWN_SCENE_FIELD => "value.unknown_scene_field"

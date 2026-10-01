@@ -23,6 +23,9 @@ function fakeCore(workNaming: string | null = null) {
     daily_goal: null,
     naming,
     chapter_numbering: "continue",
+    break_reminder: true,
+    break_minutes: 45,
+    break_words: 1500,
   });
   return {
     writes,
@@ -146,4 +149,27 @@ test("第二栏露哪一块：只写全局那一层，换过就记住", async ()
   // "auto" 是"清掉这一层"（回默认叩问），原样交给核心判
   await state.setAsideTab("auto");
   assert.deepEqual(core.writes[1], { work_id: null, patch: { aside_tab: "auto" } });
+});
+
+test("用眼提醒：三项一次写全局那一层（不进每书覆盖）", async () => {
+  const core = fakeCore();
+  const state = useAppearance({
+    transport: core.transport,
+    workId: ref<number | null>(7),
+    onError: () => {},
+  });
+
+  await state.setBreakReminder(false, 30, 800);
+  assert.deepEqual(
+    core.writes[0],
+    { work_id: null, patch: { break_reminder: false, break_minutes: 30, break_words: 800 } },
+    "写全局那一层（阈值跟哪本书无关）；开关与两个阈值一次带上",
+  );
+
+  // 改一个数也要把另外两项原样带上（界面上它们本来就是一件事的三个数）
+  await state.setBreakReminder(true, 45, 1500);
+  assert.deepEqual(core.writes[1], {
+    work_id: null,
+    patch: { break_reminder: true, break_minutes: 45, break_words: 1500 },
+  });
 });

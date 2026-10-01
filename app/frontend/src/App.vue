@@ -14,6 +14,7 @@ import { useAsideTab } from "./editor/aside";
 import { useTheme } from "./editor/theme.ts";
 import { useMirrorReview, watchMirrorAtStartup } from "./editor/mirror-review.ts";
 import { useQuestionPush } from "./editor/question-push.ts";
+import { breakTipText, useBreakReminder } from "./editor/break-reminder.ts";
 import { watchForStalls } from "./editor/stall-watch.ts";
 import type { SelectedQuestion } from "./api/question.ts";
 import DirectoryPane from "./components/DirectoryPane.vue";
@@ -73,6 +74,10 @@ const { tab: asideTab, pick: pickAside } = useAsideTab(session.appearance);
 // 判断与落地都在 editor/theme.ts；这里只接一次线（它写的是 <html data-theme>，
 // 不需要往下传任何值，所以不接它的返回值）。
 useTheme(session.appearance);
+
+// 用眼提醒：**只在"他要停下来"的时刻说一句**——切章 / 切书 / 关窗前那一下，
+// 判据与记账全在 editor/break-reminder.ts；写作过程中一句都不说（它不接键盘那条路）。
+const breakReminder = useBreakReminder(session);
 
 function answerPushed() {
   // 提示条上的「答一句」要落到叩问那一块：先把那一块露出来，再把卡交过去
@@ -160,6 +165,14 @@ const hint = computed(() => {
       </button>
       <button type="button" class="shell__nudge-no" @click="void session.backup.dismissTip()">
         {{ t("backup.tip_dismiss") }}
+      </button>
+    </p>
+    <!-- 用眼提醒：与上面两条**共用同一个出口**（一次只显示一条）；它只在停下点冒头，
+         一个「知道了」就收，不给任何指令性按钮——不指挥作者。 -->
+    <p v-else-if="breakReminder.tip.value" class="shell__nudge">
+      <span>{{ breakTipText(breakReminder.tip.value) }}</span>
+      <button type="button" class="shell__nudge-no" @click="breakReminder.dismiss()">
+        {{ t("break.dismiss") }}
       </button>
     </p>
 

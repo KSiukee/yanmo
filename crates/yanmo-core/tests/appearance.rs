@@ -534,3 +534,101 @@ fn the_theme_is_global_only_and_defaults_to_light() {
         .unwrap();
     assert_eq!(store.appearance(None).unwrap().theme, Theme::Light);
 }
+
+/// 用眼提醒：**默认开 + 宽阈值**、只走全局、两个阈值 ≤0 或超上限**当场拒**。
+///
+/// 它跟排版那三项**不**同一条路：排版是"纯观感"，坏值夹住就行；这两个数要拿去跟
+/// "连着写了多久 / 今天写了多少"比，一个 0 或负数会让它每时每刻都够阈值——那正好把
+/// "安静"整个反转了。所以写侧明确拒（界面把码渲染成一句人话），读侧仍按坏数据当没设过。
+#[test]
+fn the_break_reminder_is_on_by_default_and_refuses_a_useless_threshold() {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+
+    // 没设过 → 开 + 45 分钟 / 1500 字（宽阈值：只在停下点说一句，不打断写作）
+    let defaults = store.appearance(None).unwrap();
+    assert!(defaults.break_reminder, "默认开；嫌吵一键关");
+    assert_eq!(defaults.break_minutes, 45);
+    assert_eq!(defaults.break_words, 1500);
+
+    // 往返：写进去读回来
+    store
+        .set_appearance(
+            None,
+            &Appearance {
+                break_reminder: Some(false),
+                break_minutes: Some(30),
+                break_words: Some(800),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let saved = store.appearance(None).unwrap();
+    assert!(!saved.break_reminder);
+    assert_eq!(saved.break_minutes, 30);
+    assert_eq!(saved.break_words, 800);
+
+    // ≤0 与超出上限一律拒，**且不落库**（拒了之后库里那份还是刚才写进去的）
+    for bad in [-3_i64, 0, 181] {
+        let err = store
+            .set_appearance(None, &Appearance { break_minutes: Some(bad), ..Default::default() })
+            .unwrap_err();
+        assert_eq!(err.code(), "break.minutes_out_of_range", "分钟 {bad} 该被拒");
+    }
+    for bad in [-3_i64, 0, 20_001] {
+        let err = store
+            .set_appearance(None, &Appearance { break_words: Some(bad), ..Default::default() })
+            .unwrap_err();
+        assert_eq!(err.code(), "break.words_out_of_range", "字数 {bad} 该被拒");
+    }
+    let kept = store.appearance(None).unwrap();
+    assert_eq!((kept.break_minutes, kept.break_words), (30, 800), "被拒的那几次一个字都没改");
+
+    // 上限本身是收的（180 分钟 / 20000 字）
+    store
+        .set_appearance(
+            None,
+            &Appearance { break_minutes: Some(180), break_words: Some(20_000), ..Default::default() },
+        )
+        .unwrap();
+    let top = store.appearance(None).unwrap();
+    assert_eq!((top.break_minutes, top.break_words), (180, 20_000));
+
+    // 先把全局那一条打开（这样才分辨得出"这本书生效的"到底跟了谁）
+    store
+        .set_appearance(None, &Appearance { break_reminder: Some(true), ..Default::default() })
+        .unwrap();
+
+    // ★ 只走全局：往某本书写这三项**不该**改变这本书生效的那一份，也不落每书记录
+    store
+        .set_appearance(
+            Some(work.id),
+            &Appearance {
+                break_reminder: Some(false),
+                break_minutes: Some(5),
+                break_words: Some(5),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let in_book = store.appearance(Some(work.id)).unwrap();
+    assert!(in_book.break_reminder, "用眼提醒不参与每书覆盖");
+    assert_eq!((in_book.break_minutes, in_book.break_words), (180, 20_000), "跟全局");
+    let book_raw = raw(&store, &format!("work.{}.appearance", work.id));
+    assert!(
+        book_raw.as_deref().is_none_or(|json| !json.contains("break_")),
+        "每书的记录里不该落用眼提醒的死键：{book_raw:?}"
+    );
+
+    // 库里已有的坏值当没设过（跟坏口径 / 坏配色一条规矩）：读侧不报错，回默认那一档
+    store
+        .conn()
+        .execute(
+            "INSERT OR REPLACE INTO settings(key, value, updated_at)
+             VALUES('appearance', '{\"break_minutes\":0,\"break_words\":-5}', 0)",
+            [],
+        )
+        .unwrap();
+    let broken = store.appearance(None).unwrap();
+    assert_eq!((broken.break_minutes, broken.break_words), (45, 1500), "坏值回默认");
+}

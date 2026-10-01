@@ -33,6 +33,13 @@ const DEFAULT_PUSH_COOLDOWN_MINUTES: i64 = 60;
 /// 手滑兜底：一天最多问 20 次、冷却最长一天（再多就不叫"稀缺"了）。
 const MAX_PUSH_PER_DAY: i64 = 20;
 const MAX_PUSH_COOLDOWN_MINUTES: i64 = 24 * 60;
+/// 用眼提醒的默认值与上限：**宽阈值**——它只在"作者要停下来"的时刻说一句、
+/// 绝不打断写作，所以默认开着；嫌吵一键关掉。
+const DEFAULT_BREAK_MINUTES: i64 = 45;
+const DEFAULT_BREAK_WORDS: i64 = 1500;
+/// 手滑兜底的上限：连着写 3 小时 / 一天 2 万字，已远超正常写作，再往上没有意义。
+const MAX_BREAK_MINUTES: i64 = 180;
+const MAX_BREAK_WORDS: i64 = 20_000;
 
 /// 次数类偏好的夹取：没设过用默认；设了就夹进 `0..=max`（0 是正经取值＝关掉那件事）。
 fn clamp_count(value: Option<i64>, fallback: i64, max: i64) -> i64 {
@@ -115,6 +122,23 @@ pub struct Appearance {
     /// 所以它不出现在 `Appearance::overridden_by` 里，写也只在全局那一层落库。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<String>,
+    /// 用眼提醒开着没有（`None` = 没改过 → **开**：它只在停下点说一句、不打断写作，
+    /// 所以宽阈值默认开着；嫌吵一键关掉——关掉就是一声不响）。
+    ///
+    /// ★ 与配色同一条口径：本项**只走全局**、不参与每书覆盖（"今天写了多少"与"坐了多久"
+    /// 跟哪本书无关）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub break_reminder: Option<bool>,
+    /// 连着写满多少分钟提醒一次（`None` = 没改过 → 45）。
+    ///
+    /// 也是**只走全局**：见上一条。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub break_minutes: Option<i64>,
+    /// 今天写到多少字提醒一次（`None` = 没改过 → 1500）。
+    ///
+    /// 同样**只走全局**。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub break_words: Option<i64>,
 }
 
 /// 正文排版的**可读范围**：超出就夹住（手滑打 1000 号字不该把版面炸了，也不该报错挡人）。
@@ -127,6 +151,25 @@ const LETTER_SPACING_RANGE: (i64, i64) = (0, 20);
 /// 只服务正文排版这三项：它们**纯观感**——不进导出、不动正文一个字节（有验收钉着）。
 fn typography_value(value: i64, (low, high): (i64, i64)) -> Option<i64> {
     (value > 0).then(|| value.clamp(low, high))
+}
+
+/// 用眼提醒那两个阈值的校验：**≤0 与超过上限都一律拒**。
+///
+/// 为什么不照排版那样夹住：这两个数要拿去跟"连着写了多久 / 今天写了多少"比，一个 0
+/// 或负数会让它**每时每刻**都够阈值——那正好把"安静"这件事整个反转了。所以宁可当场
+/// 说不收（界面把码渲染成一句人话），也不悄悄替作者改成另一个数。
+fn break_threshold(value: i64, max: i64, code: &'static str) -> Result<i64> {
+    if (1..=max).contains(&value) {
+        Ok(value)
+    } else {
+        Err(crate::error::Error::invalid_with(
+            code,
+            [
+                ("value", value.to_string()),
+                ("max", max.to_string()),
+            ],
+        ))
+    }
 }
 
 impl Appearance {
@@ -146,6 +189,9 @@ impl Appearance {
             && self.question_push_cooldown_minutes.is_none()
             && self.aside_tab.is_none()
             && self.theme.is_none()
+            && self.break_reminder.is_none()
+            && self.break_minutes.is_none()
+            && self.break_words.is_none()
     }
 
     /// 把 `over`（书的覆盖）盖在 `self`（全局）上：**只覆盖它真设过的项**。
@@ -177,6 +223,11 @@ impl Appearance {
             // 于是 `over`（书的覆盖）里的 theme 在这里被**有意丢掉**——就算哪本书的记录里
             // 真写了它，也翻不动界面；`set_appearance` 那边也不再往每书记录里写（见那里）。
             theme: self.theme.clone(),
+            // 用眼提醒三项：与配色同一条口径——**只认全局那一层**。
+            // `over`（书的覆盖）里的这三个字段在这里同样被有意丢掉，写那边也不落每书记录。
+            break_reminder: self.break_reminder,
+            break_minutes: self.break_minutes,
+            break_words: self.break_words,
         }
     }
 }
@@ -211,6 +262,10 @@ pub struct ResolvedAppearance {
     pub aside_tab: SideTab,
     /// 界面配色（没改过就是浅色）。**只走全局**这一层。
     pub theme: Theme,
+    /// 用眼提醒：开关 / 连着写多少分钟 / 今天写到多少字（**只走全局**这一层）。
+    pub break_reminder: bool,
+    pub break_minutes: i64,
+    pub break_words: i64,
 }
 
 impl Default for ResolvedAppearance {
@@ -235,6 +290,10 @@ impl Default for ResolvedAppearance {
             aside_tab: SideTab::default(),
             // 配色：默认浅色（不给没提过这件事的人换底子）
             theme: Theme::default(),
+            // 用眼提醒：宽阈值默认开着（只在停下点说一句、不打断写作；嫌吵一键关）
+            break_reminder: true,
+            break_minutes: DEFAULT_BREAK_MINUTES,
+            break_words: DEFAULT_BREAK_WORDS,
         }
     }
 }
@@ -314,6 +373,18 @@ impl Store {
                 .as_deref()
                 .and_then(|code| Theme::parse(code).ok())
                 .unwrap_or_default(),
+            // 用眼提醒：开关没有可坏的取值（坏 JSON 那条规矩已经把它兜住）；
+            // 两个阈值坏成 ≤0 或超出可接受范围时**当没设过**、回默认那一档——
+            // 读侧不报错（跟坏口径 / 坏配色同一条规矩），写侧才当场拒（见 `break_threshold`）。
+            break_reminder: merged.break_reminder.unwrap_or(defaults.break_reminder),
+            break_minutes: merged
+                .break_minutes
+                .filter(|value| (1..=MAX_BREAK_MINUTES).contains(value))
+                .unwrap_or(defaults.break_minutes),
+            break_words: merged
+                .break_words
+                .filter(|value| (1..=MAX_BREAK_WORDS).contains(value))
+                .unwrap_or(defaults.break_words),
         })
     }
 
@@ -467,6 +538,27 @@ impl Store {
                 }
             }
         }
+        // 用眼提醒三项：与配色同一条口径——**只落全局那一层**（每书传上来的有意不写，
+        // 读那边的合并本来就不认它）。两个阈值 ≤0 或超出上限当场拒（见 `break_threshold`）。
+        if work_id.is_none() {
+            if let Some(value) = patch.break_reminder {
+                stored.break_reminder = Some(value);
+            }
+            if let Some(value) = patch.break_minutes {
+                stored.break_minutes = Some(break_threshold(
+                    value,
+                    MAX_BREAK_MINUTES,
+                    crate::error::codes::BREAK_MINUTES_OUT_OF_RANGE,
+                )?);
+            }
+            if let Some(value) = patch.break_words {
+                stored.break_words = Some(break_threshold(
+                    value,
+                    MAX_BREAK_WORDS,
+                    crate::error::codes::BREAK_WORDS_OUT_OF_RANGE,
+                )?);
+            }
+        }
         let tx = self.conn.transaction()?;
         write_appearance(&tx, work_id, &stored)?;
         Self::record_in(
@@ -487,6 +579,9 @@ impl Store {
                 "question_push_cooldown_minutes": patch.question_push_cooldown_minutes,
                 "aside_tab": patch.aside_tab,
                 "theme": patch.theme,
+                "break_reminder": patch.break_reminder,
+                "break_minutes": patch.break_minutes,
+                "break_words": patch.break_words,
                 "editor_font_size": patch.editor_font_size,
                 "editor_line_height": patch.editor_line_height,
                 "editor_letter_spacing": patch.editor_letter_spacing,

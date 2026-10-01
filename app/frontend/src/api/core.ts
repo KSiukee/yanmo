@@ -162,6 +162,12 @@ export interface Appearance {
   aside_tab: string;
   /** 界面配色（light / dark / system）；**只走全局**这一层 */
   theme: string;
+  /** 用眼提醒：开着没有（**只走全局**；关掉就是一声不响） */
+  break_reminder: boolean;
+  /** 连着写满多少分钟提醒一次（默认 45；上限 180） */
+  break_minutes: number;
+  /** 今天写到多少字提醒一次（默认 1500；上限 20000） */
+  break_words: number;
 }
 
 /** 要改的偏好项：**只写传进来的**，没传的保持原样。 */
@@ -188,6 +194,10 @@ export interface AppearancePatch {
   aside_tab?: string;
   /** light / dark / system；传 "auto" 就是**清掉这一层**（回默认：浅色）。**只写全局那一层** */
   theme?: string;
+  /** 用眼提醒的开关与两个阈值；≤0 或超上限（180 / 20000）会被核心**当场拒**。**只写全局那一层** */
+  break_reminder?: boolean;
+  break_minutes?: number;
+  break_words?: number;
 }
 
 /** 某一天的字数（三个口径都给，界面按当前口径显示）。 */
