@@ -53,6 +53,7 @@ mod module_lifecycle;
 mod module_ipc;
 mod certification;
 mod module_import;
+mod module_package;
 mod module_management;
 mod module_read;
 mod module_registry;

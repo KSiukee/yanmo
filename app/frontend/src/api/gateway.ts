@@ -214,4 +214,5 @@ export const COMMANDS = {
   moduleImportPick: "module_import_pick",
   moduleImportConfirm: "module_import_confirm",
   moduleImportCancel: "module_import_cancel",
+  moduleRun: "module_run",
 } as const;

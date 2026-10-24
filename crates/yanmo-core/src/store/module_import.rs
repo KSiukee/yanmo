@@ -11,30 +11,19 @@
 //! （如 `folder`），**不存完整本机路径**。
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use yanmo_proto::capability::ModuleCapabilities;
 use yanmo_proto::localized::localized_text;
 use yanmo_proto::manifest::ModuleManifest;
-use yanmo_proto::{ManifestError, PROTOCOL_VERSION};
+use yanmo_proto::PROTOCOL_VERSION;
 
 use super::certification::CertificationSet;
+use super::module_package::{open_package, package, OpenedPackage};
 use super::Store;
 use crate::error::{codes, Error, Result};
-
-const MAX_ENTRY_BYTES: u64 = 32 * 1024 * 1024;
-const MAX_PACKAGE_BYTES: u64 = 128 * 1024 * 1024;
-const MAX_PACKAGE_ENTRIES: usize = 2_000;
-const MAX_PACKAGE_DEPTH: usize = 8;
-const MAX_MANIFEST_BYTES: u64 = 256 * 1024;
-
-/// 与宿主包校验同一条清单：包内一律不许出现的原生可执行 / 脚本后缀。
-const EXECUTABLE_EXTENSIONS: &[&str] = &[
-    "exe", "dll", "sys", "drv", "msi", "com", "scr", "bat", "cmd", "ps1", "vbs", "js", "jse",
-    "wsf", "wsh", "cpl", "ocx",
-];
 
 /// 导入前的预览：**只给事实**，界面据此逐项征得同意。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -142,6 +131,155 @@ impl Store {
             certification,
         )
     }
+
+    /// 导入并把包**复制进受管目录**（原子换入 + 复制后复核指纹），再落注册表。
+    ///
+    /// `dest_dir` 由壳给出（如 `<data>/modules/<id>`）；核心不猜数据目录。
+    pub fn import_module_managed(
+        &mut self,
+        source_dir: impl AsRef<Path>,
+        dest_dir: impl AsRef<Path>,
+        granted: &ModuleCapabilities,
+        expected_fingerprint: &str,
+        source_label: &str,
+        certs: &CertificationSet,
+    ) -> Result<()> {
+        let opened = open_package(source_dir.as_ref())?;
+        ensure_protocol(&opened.manifest)?;
+        if !expected_fingerprint.is_empty() && expected_fingerprint != opened.fingerprint {
+            return Err(Error::invalid(codes::MODULE_IMPORT_CHANGED));
+        }
+        match self.module_record(&opened.manifest.id) {
+            Ok(_) => {
+                return Err(Error::invalid_with(
+                    codes::MODULE_ALREADY_INSTALLED,
+                    [("module_id", opened.manifest.id.clone())],
+                ))
+            }
+            Err(error) if error.code() == codes::MODULE_NOT_FOUND => {}
+            Err(error) => return Err(error),
+        }
+
+        let dest = dest_dir.as_ref();
+        copy_package(&opened, dest)?;
+        let certification =
+            certs.lookup(&opened.manifest.id, &opened.manifest.version, &opened.fingerprint);
+        let result = self.insert_module(
+            &opened.manifest,
+            granted,
+            &opened.fingerprint,
+            source_label,
+            "import",
+            certification,
+        );
+        if result.is_err() {
+            let _ = fs::remove_dir_all(dest);
+        }
+        result
+    }
+
+    /// 启动前核对：受管目录里的包必须仍是导入时那一份（id + 载荷哈希）。
+    pub fn verify_module_package(
+        &self,
+        module_id: &str,
+        package_dir: impl AsRef<Path>,
+    ) -> Result<()> {
+        let card = self.module_card(module_id)?;
+        if card.fingerprint.is_empty() {
+            return Err(Error::invalid(codes::MODULE_PACKAGE_TAMPERED));
+        }
+        let preview = inspect_module_package(package_dir)?;
+        if preview.module_id != card.id || preview.fingerprint != card.fingerprint {
+            return Err(Error::invalid(codes::MODULE_PACKAGE_TAMPERED));
+        }
+        Ok(())
+    }
+}
+
+fn copy_package(opened: &OpenedPackage, dest: &Path) -> Result<()> {
+    let source = &opened.root;
+    if dest == source || dest.starts_with(source) || source.starts_with(dest) {
+        return Err(package("managed destination overlaps the source package"));
+    }
+    let parent = dest
+        .parent()
+        .ok_or_else(|| package("managed destination has no parent"))?;
+    fs::create_dir_all(parent).map_err(io_package)?;
+
+    let temp = sibling(dest, "tmp");
+    if temp.exists() {
+        fs::remove_dir_all(&temp).map_err(io_package)?;
+    }
+    copy_tree(source, &temp)?;
+
+    let copied = temp.join(&opened.manifest.entry);
+    if sha256_file(&copied)? != opened.fingerprint {
+        let _ = fs::remove_dir_all(&temp);
+        return Err(package("copied payload hash does not match the verified payload"));
+    }
+
+    let backup = sibling(dest, "old");
+    let had_old = dest.exists();
+    if had_old {
+        fs::rename(dest, &backup).map_err(io_package)?;
+    }
+    if let Err(error) = fs::rename(&temp, dest) {
+        if had_old {
+            let _ = fs::rename(&backup, dest);
+        }
+        let _ = fs::remove_dir_all(&temp);
+        return Err(io_package(error));
+    }
+    if had_old {
+        let _ = fs::remove_dir_all(&backup);
+    }
+    Ok(())
+}
+
+fn copy_tree(source: &Path, dest: &Path) -> Result<()> {
+    fs::create_dir_all(dest).map_err(io_package)?;
+    for entry in fs::read_dir(source).map_err(io_package)? {
+        let entry = entry.map_err(io_package)?;
+        let path = entry.path();
+        let meta = fs::symlink_metadata(&path).map_err(io_package)?;
+        if meta.file_type().is_symlink() {
+            return Err(package(format!("symlink: {}", path.display())));
+        }
+        let target = dest.join(entry.file_name());
+        if meta.is_dir() {
+            copy_tree(&path, &target)?;
+        } else if meta.is_file() {
+            fs::copy(&path, &target).map_err(io_package)?;
+        } else {
+            return Err(package("unsupported file type"));
+        }
+    }
+    Ok(())
+}
+
+fn sibling(dest: &Path, kind: &str) -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    let seq = NEXT.fetch_add(1, Ordering::Relaxed);
+    let name = dest
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("module");
+    dest.with_file_name(format!(
+        ".{name}.{kind}-{}-{}-{seq}",
+        std::process::id(),
+        crate::time::now_millis()
+    ))
+}
+
+fn sha256_file(path: &Path) -> Result<String> {
+    let bytes = fs::read(path).map_err(io_package)?;
+    let digest = Sha256::digest(&bytes);
+    Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+fn io_package(error: std::io::Error) -> Error {
+    package(error.to_string())
 }
 
 fn ensure_protocol(manifest: &ModuleManifest) -> Result<()> {
@@ -156,122 +294,4 @@ fn ensure_protocol(manifest: &ModuleManifest) -> Result<()> {
             ],
         ))
     }
-}
-
-struct OpenedPackage {
-    manifest: ModuleManifest,
-    entry_bytes: u64,
-    fingerprint: String,
-}
-
-fn open_package(dir: &Path) -> Result<OpenedPackage> {
-    let root = fs::canonicalize(dir)
-        .map_err(|error| package(format!("not a directory: {error}")))?;
-    if !root.is_dir() {
-        return Err(package("not a directory"));
-    }
-    let manifest_path = root.join("manifest.json");
-    let manifest_bytes = fs::read(&manifest_path)
-        .map_err(|error| package(format!("manifest.json: {error}")))?;
-    if manifest_bytes.len() as u64 > MAX_MANIFEST_BYTES {
-        return Err(package("manifest.json is too large"));
-    }
-    let manifest_text = std::str::from_utf8(&manifest_bytes)
-        .map_err(|error| package(format!("manifest.json: {error}")))?;
-    let raw: serde_json::Value = serde_json::from_str(manifest_text)
-        .map_err(|error| package(format!("manifest invalid: {error}")))?;
-    let declared_protocol = raw.get("protocol").and_then(|value| value.as_u64()).unwrap_or(0) as u32;
-    let manifest = match ModuleManifest::from_json(manifest_text) {
-        Ok(manifest) => manifest,
-        Err(error) if error.code == ManifestError::PROTOCOL => {
-            return Err(Error::invalid_with(
-                codes::MODULE_PROTOCOL_INCOMPATIBLE,
-                [
-                    ("actual", declared_protocol.to_string()),
-                    ("expected", PROTOCOL_VERSION.to_string()),
-                ],
-            ));
-        }
-        Err(error) => return Err(package(format!("manifest invalid: {error}"))),
-    };
-
-    let entry = root.join(&manifest.entry);
-    let meta = fs::symlink_metadata(&entry)
-        .map_err(|error| package(format!("entry_missing: {}: {error}", manifest.entry)))?;
-    if meta.file_type().is_symlink() {
-        return Err(package("symlink: entry"));
-    }
-    if !meta.is_file() {
-        return Err(package("entry_missing: entry is not a file"));
-    }
-    if !entry
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("wasm"))
-    {
-        return Err(package("entry_not_wasm: entry must be .wasm"));
-    }
-    if meta.len() > MAX_ENTRY_BYTES {
-        return Err(package(format!("entry_too_large: {} bytes", meta.len())));
-    }
-    let canonical_entry =
-        fs::canonicalize(&entry).map_err(|error| package(format!("entry_missing: {error}")))?;
-    if !canonical_entry.starts_with(&root) {
-        return Err(package("entry escapes the module directory"));
-    }
-
-    let mut total = 0u64;
-    let mut count = 0usize;
-    scan(&root, 0, &mut total, &mut count)?;
-
-    let bytes = fs::read(&canonical_entry)
-        .map_err(|error| package(format!("entry read: {error}")))?;
-    let digest = Sha256::digest(&bytes);
-    let fingerprint = digest.iter().map(|byte| format!("{byte:02x}")).collect();
-    Ok(OpenedPackage { manifest, entry_bytes: meta.len(), fingerprint })
-}
-
-fn scan(dir: &Path, depth: usize, total: &mut u64, count: &mut usize) -> Result<()> {
-    if depth > MAX_PACKAGE_DEPTH {
-        return Err(package("directory nesting is too deep"));
-    }
-    let entries = fs::read_dir(dir)
-        .map_err(|error| package(format!("read_dir {}: {error}", dir.display())))?;
-    for entry in entries {
-        let entry = entry.map_err(|error| package(error.to_string()))?;
-        *count += 1;
-        if *count > MAX_PACKAGE_ENTRIES {
-            return Err(package("too many entries"));
-        }
-        let path = entry.path();
-        let meta = fs::symlink_metadata(&path)
-            .map_err(|error| package(error.to_string()))?;
-        if meta.file_type().is_symlink() {
-            return Err(package(format!("symlink: {}", path.display())));
-        }
-        if meta.is_dir() {
-            scan(&path, depth + 1, total, count)?;
-            continue;
-        }
-        if !meta.is_file() {
-            return Err(package("unsupported file type"));
-        }
-        *total = total.saturating_add(meta.len());
-        if *total > MAX_PACKAGE_BYTES {
-            return Err(package("package is too large"));
-        }
-        if let Some(extension) = path.extension().and_then(|ext| ext.to_str()) {
-            if EXECUTABLE_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str()) {
-                return Err(package(format!(
-                    "executable: {} is not allowed in a module package",
-                    path.display()
-                )));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn package(detail: impl Into<String>) -> Error {
-    Error::invalid_with(codes::MODULE_PACKAGE_INVALID, [("detail", detail.into())])
 }

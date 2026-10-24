@@ -4,13 +4,17 @@
 //! 启动模块不在这里——宿主/启动器那一层还没接到默认壳（模块平台是可选构建）。
 
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 use std::sync::Mutex;
 
+use serde::Serialize;
 use tauri::State;
 
 use crate::error::ApiError;
 use crate::storage::AppData;
-use yanmo_core::store::{ImportPreview, ModuleCard, Store};
+use yanmo_core::store::{
+    CertificationSet, ImportPreview, ModuleCard, Store,
+};
 use yanmo_proto::capability::ModuleCapabilities;
 
 /// 界面选好、等着确认的模块文件夹。**路径只活在壳里**：界面拿不到，也递不进来。
@@ -121,7 +125,15 @@ pub fn module_import_confirm(
         )));
     }
     data.with_store(|store: &mut Store| {
-        store.import_module(&staged.dir, &granted, &expected_fingerprint, "folder")?;
+        let managed = data.data_dir().join("modules").join(&staged.module_id);
+        store.import_module_managed(
+            &staged.dir,
+            &managed,
+            &granted,
+            &expected_fingerprint,
+            "folder",
+            &CertificationSet::built_in(),
+        )?;
         store.module_card(&staged.module_id)
     })
 }
@@ -131,4 +143,115 @@ pub fn module_import_confirm(
 pub fn module_import_cancel(stage: State<'_, ImportStage>) -> Result<(), ApiError> {
     stage.clear();
     Ok(())
+}
+
+/// 跑一次模块的报告（宿主跑完的那一份）。
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleRunReport {
+    pub exit_code: Option<i32>,
+    pub timed_out: bool,
+    pub emitted: Vec<String>,
+    pub stderr: String,
+    pub ipc_error: Option<String>,
+    pub job_assigned: bool,
+}
+
+/// 启动（跑一次）一个**已装且受管**的模块：先核对包指纹，再拉独立启动器。
+///
+/// 启动器是独立进程（`yanmo-launch`），壳不链接沙箱/IPC；宿主二进制与启动器
+/// 必须与壳同目录（或由 `YANMO_HOST_BIN` / `YANMO_LAUNCH_BIN` 指定）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn module_run(
+    data: State<'_, AppData>,
+    module_id: String,
+) -> Result<ModuleRunReport, ApiError> {
+    let record = data.with_store(|store: &mut Store| store.module_record(&module_id))?;
+    if !record.is_active() {
+        return Err(ApiError::from(yanmo_core::Error::invalid_with(
+            yanmo_core::error_codes::codes::MODULE_DISABLED,
+            [("module_id", module_id.clone())],
+        )));
+    }
+    let managed = data.data_dir().join("modules").join(&module_id);
+    data.with_store(|store: &mut Store| store.verify_module_package(&module_id, &managed))?;
+
+    let host = resolve_bin("yanmo-host", "YANMO_HOST_BIN")?;
+    let launcher = resolve_bin("yanmo-launch", "YANMO_LAUNCH_BIN")?;
+    let mut command = Command::new(&launcher);
+    command
+        .arg("--db")
+        .arg(data.db_path())
+        .arg("--module")
+        .arg(&managed)
+        .arg("--host")
+        .arg(&host)
+        .arg("--timeout-secs")
+        .arg("60")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let output = command.output().map_err(|error| {
+        ApiError::new("shell.module_launch_failed").caused_by(error)
+    })?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(ApiError::new("shell.module_launch_failed").caused_by(detail));
+    }
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|error| {
+        ApiError::new("shell.module_launch_failed").caused_by(error)
+    })?;
+    Ok(ModuleRunReport {
+        exit_code: value
+            .get("exit_code")
+            .and_then(|value| value.as_i64())
+            .map(|code| code as i32),
+        timed_out: value.get("timed_out").and_then(|value| value.as_bool()).unwrap_or(false),
+        emitted: value
+            .get("emitted")
+            .and_then(|value| value.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        stderr: value
+            .get("stderr")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        ipc_error: value
+            .get("ipc_error")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+        job_assigned: value.get("job_assigned").and_then(|value| value.as_bool()).unwrap_or(false),
+    })
+}
+
+fn resolve_bin(name: &str, env_name: &str) -> Result<PathBuf, ApiError> {
+    if let Ok(path) = std::env::var(env_name) {
+        let path = PathBuf::from(path);
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+    let exe = std::env::current_exe()
+        .map_err(|_| ApiError::new("shell.module_platform_unavailable"))?;
+    let dir = exe
+        .parent()
+        .ok_or_else(|| ApiError::new("shell.module_platform_unavailable"))?;
+    let candidates = if cfg!(windows) {
+        vec![dir.join(format!("{name}.exe")), dir.join(name)]
+    } else {
+        vec![dir.join(name)]
+    };
+    candidates
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+        .ok_or_else(|| ApiError::new("shell.module_platform_unavailable"))
 }

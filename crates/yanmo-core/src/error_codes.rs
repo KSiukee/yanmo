@@ -383,6 +383,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "模块包在预览之后变了，请重新选择" : [],
     MODULE_CERT_INVALID => "module.cert_invalid"
         : "认证清单验签失败：{detail}" : ["detail"],
+    MODULE_PACKAGE_TAMPERED => "module.package_tampered"
+        : "模块包在安装后被改动，拒绝启动；请重新导入" : [],
 }
 
 /// 按码把参数填进日志模板；模板不认识这个码就退回 `码(名字=取值, …)`。

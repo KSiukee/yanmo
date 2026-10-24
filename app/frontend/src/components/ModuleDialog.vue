@@ -9,6 +9,7 @@ import {
   moduleImportCancel,
   moduleImportConfirm,
   moduleImportPick,
+  moduleRun,
   moduleSetEnabled,
   moduleSetFavorite,
   moduleSetPinned,
@@ -87,6 +88,18 @@ function uninstall(card: ModuleCard) {
   void act(async () => {
     await moduleUninstall(card.id);
     note.value = t("modules.uninstalled", { name: card.name });
+  });
+}
+
+function runModule(card: ModuleCard) {
+  void act(async () => {
+    const report = await moduleRun(card.id);
+    if (report.timed_out) {
+      note.value = t("modules.run_timeout");
+      return;
+    }
+    const emitted = report.emitted.join(" / ");
+    note.value = emitted ? t("modules.run_ok", { emitted }) : t("modules.run_ok_empty");
   });
 }
 
@@ -212,6 +225,14 @@ onMounted(() => {
             <span v-if="card.network" class="modules__badge">{{ t("modules.network") }}</span>
           </p>
           <div class="modules__actions">
+            <button
+              type="button"
+              class="modules__button dialog__button"
+              :disabled="busy || !card.enabled"
+              @click="runModule(card)"
+            >
+              {{ t("modules.run") }}
+            </button>
             <button
               type="button"
               class="modules__button dialog__button"

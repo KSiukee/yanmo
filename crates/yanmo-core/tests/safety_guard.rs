@@ -101,6 +101,14 @@ const ALLOWED: &[Allowance] = &[
               校验并加模块前缀，模块给不出任意表名），整段在一个事务里，任何一张删不掉就整体回滚；\
               卸载默认不调它，界面二次确认之后才走这条",
     },
+    Allowance {
+        file: "crates/yanmo-core/src/store/module_import.rs",
+        rule: "remove-dir-all",
+        count: 5,
+        why: "受管模块目录的**原子换入/清理**：只删复制用的临时目录、换入前的备份目录、\
+              以及落库失败时刚复制的那一份；目标目录由壳给出（`<data>/modules/<id>`），\
+              源包只读、从不删源目录，也不碰稿件与用户数据",
+    },
 ];
 
 fn workspace_root() -> PathBuf {

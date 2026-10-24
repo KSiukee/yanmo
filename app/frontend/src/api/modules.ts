@@ -75,3 +75,16 @@ export const moduleImportConfirm = (granted: ModuleCapabilities, expected_finger
   call<ModuleCard>(COMMANDS.moduleImportConfirm, { granted, expected_fingerprint });
 
 export const moduleImportCancel = () => call<void>(COMMANDS.moduleImportCancel);
+
+/** 跑一次模块的报告（宿主跑完的那一份）。 */
+export interface ModuleRunReport {
+  exit_code: number | null;
+  timed_out: boolean;
+  emitted: string[];
+  stderr: string;
+  ipc_error: string | null;
+  job_assigned: boolean;
+}
+
+export const moduleRun = (module_id: string) =>
+  call<ModuleRunReport>(COMMANDS.moduleRun, { module_id });

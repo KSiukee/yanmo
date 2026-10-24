@@ -166,3 +166,81 @@ fn granting_more_than_declared_is_refused() {
         .unwrap_err();
     assert_eq!(error.code(), codes::MODULE_GRANT_NOT_DECLARED);
 }
+
+#[test]
+fn managed_import_copies_the_package_and_verifies_it_before_launch() {
+    let dir = TempDir::new().unwrap();
+    let source = package(dir.path(), 1);
+    let preview = inspect_module_package(&source).unwrap();
+    let managed = dir.path().join("managed").join(ID);
+    let mut store = Store::open(dir.path().join("yanmo.db")).unwrap();
+    store
+        .import_module_managed(
+            &source,
+            &managed,
+            &grant(&[CoreDataArea::Works]),
+            &preview.fingerprint,
+            "folder",
+            &yanmo_core::store::CertificationSet::empty(),
+        )
+        .unwrap();
+
+    assert!(managed.join("manifest.json").is_file());
+    assert!(managed.join("module.wasm").is_file());
+    store.verify_module_package(ID, &managed).unwrap();
+
+    // 受管包被改：启动前核对必须拒
+    fs::write(managed.join("module.wasm"), wat::parse_str("(module (memory 1))").unwrap()).unwrap();
+    let error = store.verify_module_package(ID, &managed).unwrap_err();
+    assert_eq!(error.code(), codes::MODULE_PACKAGE_TAMPERED);
+
+    // 已装过同一 id：再导入直接拒
+    let error = store
+        .import_module_managed(
+            &source,
+            &managed,
+            &grant(&[CoreDataArea::Works]),
+            &preview.fingerprint,
+            "folder",
+            &yanmo_core::store::CertificationSet::empty(),
+        )
+        .unwrap_err();
+    assert_eq!(error.code(), codes::MODULE_ALREADY_INSTALLED);
+}
+
+#[test]
+fn reinstalling_replaces_the_managed_package() {
+    let dir = TempDir::new().unwrap();
+    let source = package(dir.path(), 1);
+    let managed = dir.path().join("managed").join(ID);
+    let mut store = Store::open(dir.path().join("yanmo.db")).unwrap();
+    let first = inspect_module_package(&source).unwrap();
+    store
+        .import_module_managed(
+            &source,
+            &managed,
+            &grant(&[CoreDataArea::Works]),
+            &first.fingerprint,
+            "folder",
+            &yanmo_core::store::CertificationSet::empty(),
+        )
+        .unwrap();
+    store.uninstall_module(ID).unwrap();
+
+    // 换一份载荷再装：受管目录要换成新包，并复核新指纹
+    fs::write(source.join("module.wasm"), wat::parse_str("(module (memory 1))").unwrap()).unwrap();
+    let second = inspect_module_package(&source).unwrap();
+    assert_ne!(first.fingerprint, second.fingerprint);
+    store
+        .import_module_managed(
+            &source,
+            &managed,
+            &grant(&[CoreDataArea::Works]),
+            &second.fingerprint,
+            "folder",
+            &yanmo_core::store::CertificationSet::empty(),
+        )
+        .unwrap();
+    store.verify_module_package(ID, &managed).unwrap();
+    assert_eq!(store.module_cards().unwrap()[0].fingerprint, second.fingerprint);
+}
