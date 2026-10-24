@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["crates/yanmo-core", "crates/yanmo-proto", "crates/yanmo-cli", "crates/yanmo-host", "crates/yanmo-ipc", "app"]
+members = ["crates/yanmo-core", "crates/yanmo-proto", "crates/yanmo-cli", "crates/yanmo-host", "crates/yanmo-ipc", "crates/yanmo-launcher", "app"]
 
 [workspace.package]
-version = "0.114.0"
+version = "0.115.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 repository = ""

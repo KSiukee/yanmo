@@ -1,0 +1,25 @@
+[package]
+name = "yanmo-launcher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "研墨模块启动器：起只读 IPC 服务、拉独立宿主、超时与作业对象配额（不进默认壳依赖）"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+yanmo-core.workspace = true
+yanmo-proto.workspace = true
+yanmo-ipc = { path = "../yanmo-ipc" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+tempfile = "3"
+wat = "1"

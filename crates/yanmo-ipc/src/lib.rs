@@ -18,11 +18,15 @@
 //! 能力码 / 帧格式 / 错误码都在 `yanmo_proto::ipc` 里；这里只做 socket 与线程。
 
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::time::{Duration, Instant};
 
 use yanmo_proto::ipc as wire;
 use yanmo_proto::ipc::{IpcError, ReadHandler};
 
 pub use yanmo_proto::ipc::{Handshake, HandshakeAck, Request, Response};
+
+/// 等宿主连上来的默认上限（宿主启动 + wasm 编译远小于它）。
+pub const ACCEPT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// 只绑回环的监听器（端口由系统给）。
 pub fn bind_loopback() -> Result<TcpListener, IpcError> {
@@ -32,15 +36,27 @@ pub fn bind_loopback() -> Result<TcpListener, IpcError> {
 /// 一次连接只服务一个宿主：验 token、逐帧应答、EOF 收工。
 ///
 /// `listener` 按值传入——函数返回时它被丢弃，**同一个 token 无法再开第二条连接**。
+/// 等宿主最多 [`ACCEPT_TIMEOUT`]；没人连就返回 `ipc.timeout`，不会把启动器卡死。
 pub fn serve_one<H: ReadHandler>(
     listener: TcpListener,
     token: String,
     handler: &mut H,
 ) -> Result<(), IpcError> {
+    serve_one_with_timeout(listener, token, handler, ACCEPT_TIMEOUT)
+}
+
+/// 同 [`serve_one`]，但可以指定等宿主的上限（启动器/验收用）。
+pub fn serve_one_with_timeout<H: ReadHandler>(
+    listener: TcpListener,
+    token: String,
+    handler: &mut H,
+    accept_timeout: Duration,
+) -> Result<(), IpcError> {
     if token.is_empty() {
         return Err(IpcError::new(IpcError::HANDSHAKE, "empty token"));
     }
-    let (mut stream, _) = listener.accept().map_err(IpcError::from)?;
+    let (mut stream, _) = accept_with_deadline(&listener, accept_timeout)?;
+    stream.set_nonblocking(false).map_err(IpcError::from)?;
     stream.set_read_timeout(Some(wire::IO_TIMEOUT)).map_err(IpcError::from)?;
     stream.set_write_timeout(Some(wire::IO_TIMEOUT)).map_err(IpcError::from)?;
 
@@ -166,8 +182,27 @@ impl Client {
     }
 }
 
-fn token_matches(expected: &str, actual: &str) -> bool {
-    let expected = expected.as_bytes();
+fn accept_with_deadline(
+    listener: &TcpListener,
+    timeout: Duration,
+) -> Result<(TcpStream, SocketAddr), IpcError> {
+    listener.set_nonblocking(true).map_err(IpcError::from)?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        match listener.accept() {
+            Ok(connection) => return Ok(connection),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    return Err(IpcError::new(IpcError::TIMEOUT, "no host connected"));
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(error) => return Err(IpcError::from(error)),
+        }
+    }
+}
+
+fn token_matches(expected: &str, actual: &str) -> bool {    let expected = expected.as_bytes();
     let actual = actual.as_bytes();
     if expected.len() != actual.len() {
         return false;

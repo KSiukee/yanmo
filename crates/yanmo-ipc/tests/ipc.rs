@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use yanmo_ipc::{bind_loopback, serve_one, Client};
+use yanmo_ipc::{bind_loopback, serve_one, serve_one_with_timeout, Client};
 use yanmo_proto::capability::CoreDataArea;
 use yanmo_proto::ipc::{self, IpcError, ReadHandler};
 
@@ -98,6 +98,20 @@ fn frames_are_bounded() {
 fn non_loopback_addresses_are_refused_without_connecting() {
     let error = Client::connect("192.0.2.1:9".parse().unwrap(), "token").unwrap_err();
     assert_eq!(error.code, IpcError::NOT_LOOPBACK);
+}
+
+#[test]
+fn a_server_with_no_host_times_out_instead_of_hanging() {
+    let listener = bind_loopback().unwrap();
+    let mut handler = Mock;
+    let error = serve_one_with_timeout(
+        listener,
+        "secret".to_string(),
+        &mut handler,
+        Duration::from_millis(100),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, IpcError::TIMEOUT);
 }
 
 #[test]

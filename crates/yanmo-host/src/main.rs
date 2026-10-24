@@ -62,13 +62,23 @@ fn run() -> Result<(), HostError> {
             .unwrap_or(defaults.max_read_result_bytes as u64) as usize,
         max_reads: number_of(&args, "--max-reads").unwrap_or(defaults.max_reads as u64) as usize,
     };
-    let client = match (value_of(&args, "--core"), value_of(&args, "--token")) {
+    let token_stdin = args.iter().any(|arg| arg == "--token-stdin");
+    let token = if token_stdin {
+        let mut line = String::new();
+        std::io::stdin()
+            .read_line(&mut line)
+            .map_err(|error| HostError::new(HostError::CORE, error.to_string()))?;
+        Some(line.trim_end_matches(['\r', '\n']).to_string())
+    } else {
+        value_of(&args, "--token").map(str::to_string)
+    };
+    let client = match (value_of(&args, "--core"), token) {
         (None, None) => None,
         (Some(addr), Some(token)) => {
             let addr: SocketAddr = addr.parse().map_err(|_| {
                 HostError::new(HostError::CORE, "invalid --core address (expected ip:port)")
             })?;
-            Some(Client::connect(addr, token).map_err(|error| {
+            Some(Client::connect(addr, &token).map_err(|error| {
                 HostError::new(HostError::CORE, format!("{}: {}", error.code, error.detail))
             })?)
         }
