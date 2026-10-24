@@ -18,12 +18,14 @@
 | [chacha20poly1305](https://github.com/RustCrypto/AEADs) | MIT 或 Apache-2.0 | XChaCha20-Poly1305 内容加密（备份包加密，可选） | 传递依赖 aead / chacha20 / universal-hash / hybrid-array 同为 MIT 或 Apache-2.0 |
 | [zeroize](https://github.com/RustCrypto/utils) | Apache-2.0 或 MIT | 用完抹掉密钥内存 | — |
 | [getrandom](https://github.com/rust-random/getrandom) | MIT 或 Apache-2.0 | 系统随机数（盐、随机数、数据钥匙） | 传递依赖 subtle 为 BSD-3-Clause |
+| [wasmi](https://github.com/wasmi-labs/wasmi) | MIT | 模块沙箱的 WASM 运行时（fuel / 内存上限 / 无 WASI） | **只在独立宿主进程 `yanmo-host` 里链接**；核心与壳不依赖它 |
 
 ## 测试依赖（不随产品分发）
 
 | 组件 | 许可 | 用途 |
 |---|---|---|
 | [tempfile](https://github.com/Stebalien/tempfile) | MIT 或 Apache-2.0 | 临时目录（数据库与数据目录相关测试） |
+| [wat](https://github.com/bytecodealliance/wasm-tools) | Apache-2.0 WITH LLVM-exception | WAT → WASM（沙箱验收测试现写 guest 用） |
 
 ## 内置素材
 
