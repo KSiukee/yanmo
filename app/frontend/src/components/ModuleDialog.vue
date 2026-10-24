@@ -39,6 +39,12 @@ function readsLabel(card: ModuleCard): string {
     .join(t("common.list_separator"));
 }
 
+function certificationLabel(card: ModuleCard): string {
+  if (!card.certified) return t("modules.uncertified");
+  const date = new Date(card.certified_at).toISOString().slice(0, 10);
+  return t("modules.certified_badge", { edition: card.cert_edition, date });
+}
+
 async function load() {
   busy.value = true;
   try {
@@ -183,7 +189,7 @@ onMounted(() => {
             <span class="modules__name">{{ card.name }}</span>
             <span class="modules__version">v{{ card.version }}</span>
             <span class="modules__badge">
-              {{ card.certified ? t("modules.certified") : t("modules.uncertified") }}
+              {{ certificationLabel(card) }}
             </span>
             <span class="modules__badge">
               {{ card.enabled ? t("modules.active") : t("modules.frozen") }}

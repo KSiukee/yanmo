@@ -21,6 +21,7 @@
 | [wasmi](https://github.com/wasmi-labs/wasmi) | MIT | 模块沙箱的 WASM 运行时（fuel / 内存上限 / 无 WASI） | **只在独立宿主进程 `yanmo-host` 里链接**；核心与壳不依赖它 |
 | [windows-sys](https://github.com/microsoft/windows-rs) | MIT 或 Apache-2.0 | Windows API（盘符探测 / 作业对象） | 只在 Windows 上编；启动器的作业对象用它 |
 | [sha2](https://github.com/RustCrypto/hashes) | MIT 或 Apache-2.0 | 导入闸算载荷 SHA-256 指纹 | 传递依赖 digest / block-buffer / crypto-common 同为 MIT 或 Apache-2.0 |
+| [ed25519-dalek](https://github.com/dalek-cryptography/ed25519-dalek) | BSD-3-Clause | 认证清单 Ed25519 验签 | 传递依赖 curve25519-dalek / subtle 同为 BSD-3-Clause |
 
 ## 测试依赖（不随产品分发）
 

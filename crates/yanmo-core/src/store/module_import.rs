@@ -20,6 +20,7 @@ use yanmo_proto::localized::localized_text;
 use yanmo_proto::manifest::ModuleManifest;
 use yanmo_proto::{ManifestError, PROTOCOL_VERSION};
 
+use super::certification::CertificationSet;
 use super::Store;
 use crate::error::{codes, Error, Result};
 
@@ -49,11 +50,25 @@ pub struct ImportPreview {
     pub fingerprint: String,
     pub declared: ModuleCapabilities,
     pub entry_bytes: u64,
+    /// 认证是**核心验签后的结果**，绝不是模块自述。
+    pub certified: bool,
+    pub cert_edition: u32,
+    pub certified_at: i64,
 }
 
 /// 检查一个模块目录，返回预览；**不安装**。
 pub fn inspect_module_package(dir: impl AsRef<Path>) -> Result<ImportPreview> {
+    inspect_module_package_with_certs(dir, &CertificationSet::built_in())
+}
+
+/// 同 [`inspect_module_package`]，但用指定的已验签清单（测试 / 将来的签发工具用）。
+pub fn inspect_module_package_with_certs(
+    dir: impl AsRef<Path>,
+    certs: &CertificationSet,
+) -> Result<ImportPreview> {
     let opened = open_package(dir.as_ref())?;
+    let certification =
+        certs.lookup(&opened.manifest.id, &opened.manifest.version, &opened.fingerprint);
     Ok(ImportPreview {
         module_id: opened.manifest.id.clone(),
         name: localized_text(
@@ -76,6 +91,9 @@ pub fn inspect_module_package(dir: impl AsRef<Path>) -> Result<ImportPreview> {
         fingerprint: opened.fingerprint,
         declared: opened.manifest.capabilities.clone(),
         entry_bytes: opened.entry_bytes,
+        certified: certification.is_some(),
+        cert_edition: certification.map(|cert| cert.edition).unwrap_or(0),
+        certified_at: certification.map(|cert| cert.certified_at).unwrap_or(0),
     })
 }
 
@@ -90,17 +108,38 @@ impl Store {
         expected_fingerprint: &str,
         source: &str,
     ) -> Result<()> {
+        self.import_module_with_certs(
+            dir,
+            granted,
+            expected_fingerprint,
+            source,
+            &CertificationSet::built_in(),
+        )
+    }
+
+    /// 同 [`Store::import_module`]，但用指定的已验签清单。
+    pub fn import_module_with_certs(
+        &mut self,
+        dir: impl AsRef<Path>,
+        granted: &ModuleCapabilities,
+        expected_fingerprint: &str,
+        source: &str,
+        certs: &CertificationSet,
+    ) -> Result<()> {
         let opened = open_package(dir.as_ref())?;
         ensure_protocol(&opened.manifest)?;
         if !expected_fingerprint.is_empty() && expected_fingerprint != opened.fingerprint {
             return Err(Error::invalid(codes::MODULE_IMPORT_CHANGED));
         }
+        let certification =
+            certs.lookup(&opened.manifest.id, &opened.manifest.version, &opened.fingerprint);
         self.insert_module(
             &opened.manifest,
             granted,
             &opened.fingerprint,
             source,
             "import",
+            certification,
         )
     }
 }

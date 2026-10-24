@@ -20,6 +20,7 @@ chacha20poly1305 = "0.11.0"
 zeroize = "1.9.0"
 getrandom = "0.4.3"
 sha2 = "0.10"
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 tempfile = "3"

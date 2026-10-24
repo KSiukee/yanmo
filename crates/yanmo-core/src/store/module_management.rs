@@ -23,6 +23,10 @@ pub struct ModuleCard {
     pub author: String,
     /// 核心验签后的认证状态（现在一律 false，认证那一刀之后才有 true）
     pub certified: bool,
+    /// 认证清单的第几版（0 = 没认证）
+    pub cert_edition: u32,
+    /// 认证日期（unix 毫秒；0 = 没认证）
+    pub certified_at: i64,
     /// 已激活（未冻结）
     pub enabled: bool,
     pub favorite: bool,
@@ -43,8 +47,8 @@ impl Store {
     /// 管理页列表：**置顶 → 收藏 → 安装顺序**。
     pub fn module_cards(&self) -> Result<Vec<ModuleCard>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, manifest, granted, enabled, certified, favorite, pinned,
-                    payload_sha256, source, installed_at, updated_at
+            "SELECT id, manifest, granted, enabled, certified, cert_edition, certified_at,
+                    favorite, pinned, payload_sha256, source, installed_at, updated_at
              FROM modules
              ORDER BY pinned DESC, favorite DESC, installed_at, id",
         )?;
@@ -55,12 +59,14 @@ impl Store {
                 row.get::<_, String>(2)?,
                 row.get::<_, bool>(3)?,
                 row.get::<_, bool>(4)?,
-                row.get::<_, bool>(5)?,
-                row.get::<_, bool>(6)?,
-                row.get::<_, String>(7)?,
-                row.get::<_, String>(8)?,
-                row.get::<_, i64>(9)?,
-                row.get::<_, i64>(10)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, i64>(6)?,
+                row.get::<_, bool>(7)?,
+                row.get::<_, bool>(8)?,
+                row.get::<_, String>(9)?,
+                row.get::<_, String>(10)?,
+                row.get::<_, i64>(11)?,
+                row.get::<_, i64>(12)?,
             ))
         })?;
         let mut cards = Vec::new();
@@ -71,6 +77,8 @@ impl Store {
                 granted_text,
                 enabled,
                 certified,
+                cert_edition,
+                certified_at,
                 favorite,
                 pinned,
                 fingerprint,
@@ -84,6 +92,8 @@ impl Store {
                 &granted_text,
                 enabled,
                 certified,
+                cert_edition,
+                certified_at,
                 favorite,
                 pinned,
                 &fingerprint,
@@ -164,6 +174,8 @@ fn decode(
     granted_text: &str,
     enabled: bool,
     certified: bool,
+    cert_edition: i64,
+    certified_at: i64,
     favorite: bool,
     pinned: bool,
     fingerprint: &str,
@@ -188,6 +200,8 @@ fn decode(
         version: manifest.version.clone(),
         author: manifest.author.name.clone(),
         certified,
+        cert_edition: cert_edition.max(0) as u32,
+        certified_at,
         enabled,
         favorite,
         pinned,

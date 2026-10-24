@@ -13,6 +13,8 @@ export interface ModuleCard {
   version: string;
   author: string;
   certified: boolean;
+  cert_edition: number;
+  certified_at: number;
   enabled: boolean;
   favorite: boolean;
   pinned: boolean;
@@ -47,6 +49,9 @@ export interface ImportPreview {
   fingerprint: string;
   declared: ModuleCapabilities;
   entry_bytes: number;
+  certified: boolean;
+  cert_edition: number;
+  certified_at: number;
 }
 
 export const modulesList = () => call<ModuleCard[]>(COMMANDS.modulesList);

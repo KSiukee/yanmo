@@ -40,6 +40,17 @@ const grant = ref<ModuleCapabilities>({
         })
       }}
     </p>
+    <p class="module-import__meta">
+      {{
+        preview.certified
+          ? t("modules.certified_badge", {
+              edition: preview.cert_edition,
+              date: new Date(preview.certified_at).toISOString().slice(0, 10),
+            })
+          : t("modules.uncertified")
+      }}
+    </p>
+    <p class="module-import__hint">{{ t("modules.cert_verify_hint") }}</p>
     <p v-if="!preview.compatible" class="module-import__protocol">
       {{
         t("modules.import_protocol_bad", {

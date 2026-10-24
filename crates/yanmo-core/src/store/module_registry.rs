@@ -81,10 +81,10 @@ impl Store {
         manifest: &ModuleManifest,
         granted: &ModuleCapabilities,
     ) -> Result<()> {
-        self.insert_module(manifest, granted, "", "", "install")
+        self.insert_module(manifest, granted, "", "", "install", None)
     }
 
-    /// 落注册表的唯一入口（导入闸会带载荷指纹与来源）。
+    /// 落注册表的唯一入口（导入闸会带载荷指纹、来源与认证）。
     pub(crate) fn insert_module(
         &mut self,
         manifest: &ModuleManifest,
@@ -92,6 +92,7 @@ impl Store {
         payload_sha256: &str,
         source: &str,
         op: &str,
+        certification: Option<&super::certification::Certification>,
     ) -> Result<()> {
         manifest.validate().map_err(map_manifest_error)?;
         granted.validate(&manifest.id).map_err(map_grant_error)?;
@@ -122,16 +123,23 @@ impl Store {
         })?;
         let granted_text = encode_grant(granted);
         let now = now_millis();
+        let certified = i64::from(certification.is_some());
+        let cert_edition = certification.map(|cert| cert.edition).unwrap_or(0) as i64;
+        let certified_at = certification.map(|cert| cert.certified_at).unwrap_or(0);
         let tx = self.conn.transaction()?;
         tx.execute(
-            "INSERT INTO modules(id, manifest, version, protocol, certified, enabled, granted,
-                                 payload_sha256, source, installed_at, updated_at)
-             VALUES(?1, ?2, ?3, ?4, 0, 1, ?5, ?6, ?7, ?8, ?8)",
+            "INSERT INTO modules(id, manifest, version, protocol, certified, cert_edition,
+                                 certified_at, enabled, granted, payload_sha256, source,
+                                 installed_at, updated_at)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8, ?9, ?10, ?11, ?11)",
             params![
                 manifest.id,
                 manifest_text,
                 manifest.version,
                 manifest.protocol,
+                certified,
+                cert_edition,
+                certified_at,
                 granted_text,
                 payload_sha256,
                 source,
@@ -151,6 +159,9 @@ impl Store {
                 "granted": granted,
                 "payload_sha256": payload_sha256,
                 "source": source,
+                "certified": certification.is_some(),
+                "cert_edition": cert_edition,
+                "certified_at": certified_at,
             }),
         )?;
         tx.commit()?;
