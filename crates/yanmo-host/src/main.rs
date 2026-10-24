@@ -8,7 +8,9 @@
 //! `--check` 只做静态校验（清单 / 入口 / 包内文件），不执行载荷。
 //! 这个二进制是**独立进程**：核心与壳将来通过协议拉起它，而不是把沙箱链进自己进程。
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 
@@ -34,14 +36,23 @@ fn main() -> ExitCode {
 
 fn run() -> Result<(), HostError> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let module = value_of(&args, "--module")
-        .ok_or_else(|| HostError::new(HostError::PACKAGE, "missing --module <dir>"))?;
+    let module = value_of(&args, "--module");
     let check_only = args.iter().any(|arg| arg == "--check");
     let resident = args.iter().any(|arg| arg == "--resident");
+    let modules_root = value_of(&args, "--modules-root").map(PathBuf::from);
     let idle_secs = number_of(&args, "--idle-secs").unwrap_or(300).clamp(1, 3600);
+    if module.is_none() && modules_root.is_none() {
+        return Err(HostError::new(
+            HostError::PACKAGE,
+            "missing --module <dir> or --modules-root <dir>",
+        ));
+    }
 
-    let package = ModulePackage::open(&module)?;
+    let package = module.map(ModulePackage::open).transpose()?;
     if check_only {
+        let package = package
+            .as_ref()
+            .ok_or_else(|| HostError::new(HostError::PACKAGE, "--check needs --module <dir>"))?;
         println!(
             "{}",
             json!({
@@ -103,6 +114,117 @@ fn run() -> Result<(), HostError> {
             _ => None,
         }
     };
+    if resident && modules_root.is_some() {
+        let root = modules_root.expect("checked");
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let stdin = std::io::stdin();
+            for line in stdin.lock().lines() {
+                if sender.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        let mut packages: HashMap<String, ModulePackage> = HashMap::new();
+        let mut links: HashMap<String, Arc<Mutex<CoreLink>>> = HashMap::new();
+        loop {
+            let line = match receiver.recv_timeout(std::time::Duration::from_secs(idle_secs)) {
+                Ok(Ok(line)) => line,
+                Ok(Err(error)) => {
+                    return Err(HostError::new(HostError::CORE, error.to_string()));
+                }
+                Err(_) => return Ok(()),
+            };
+            let command = line.trim();
+            if command == "stop" {
+                return Ok(());
+            }
+            let Some(module_id) = command.strip_prefix("run ").map(str::trim) else {
+                eprintln!(
+                    "{}",
+                    json!({ "ok": false, "code": "host.bad_command", "detail": command })
+                );
+                continue;
+            };
+            if module_id.is_empty() {
+                eprintln!(
+                    "{}",
+                    json!({ "ok": false, "code": "host.bad_command", "detail": "missing module id" })
+                );
+                continue;
+            }
+            if !packages.contains_key(module_id) {
+                match ModulePackage::open(root.join(module_id)) {
+                    Ok(package) if package.manifest().id == module_id => {
+                        packages.insert(module_id.to_string(), package);
+                    }
+                    Ok(package) => {
+                        eprintln!(
+                            "{}",
+                            json!({
+                                "ok": false,
+                                "code": "host.module_mismatch",
+                                "detail": format!("{} != {}", package.manifest().id, module_id)
+                            })
+                        );
+                        continue;
+                    }
+                    Err(error) => {
+                        eprintln!(
+                            "{}",
+                            json!({ "ok": false, "code": error.code, "detail": error.detail })
+                        );
+                        continue;
+                    }
+                }
+            }
+            let link = match (core_addr, token.as_ref()) {
+                (Some(addr), Some(token)) => Some(
+                    links
+                        .entry(module_id.to_string())
+                        .or_insert_with(|| {
+                            Arc::new(Mutex::new(CoreLink::new_module(
+                                addr,
+                                token.clone(),
+                                module_id.to_string(),
+                            )))
+                        })
+                        .clone(),
+                ),
+                _ => None,
+            };
+            let package = packages.get(module_id).expect("inserted above");
+            match run_package_with_core_shared(package, config, link) {
+                Ok(report) => {
+                    println!(
+                        "{}",
+                        json!({
+                            "ok": true,
+                            "module_id": report.module_id,
+                            "status": report.status,
+                            "emitted": report.emitted,
+                            "fuel_used": report.fuel_used,
+                            "memory_bytes": report.memory_bytes,
+                        })
+                    );
+                    use std::io::Write;
+                    let _ = std::io::stdout().flush();
+                }
+                Err(error) => {
+                    println!(
+                        "{}",
+                        json!({ "ok": false, "module_id": module_id, "code": error.code, "detail": error.detail })
+                    );
+                    use std::io::Write;
+                    let _ = std::io::stdout().flush();
+                }
+            }
+        }
+    }
+
+    let package = package
+        .ok_or_else(|| HostError::new(HostError::PACKAGE, "--module <dir> required"))?;
+
     if resident {
         let core = match (core_addr, token) {
             (Some(addr), Some(token)) => {

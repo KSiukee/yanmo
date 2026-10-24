@@ -43,6 +43,7 @@ impl IpcError {
     pub const TOO_MANY: &'static str = "ipc.too_many_requests";
     pub const NOT_LOOPBACK: &'static str = "ipc.not_loopback";
     pub const BAD_ARGUMENT: &'static str = "ipc.bad_argument";
+    pub const UNKNOWN_MODULE: &'static str = "ipc.unknown_module";
 
     pub fn new(code: impl Into<String>, detail: impl Into<String>) -> Self {
         Self { code: code.into(), detail: detail.into() }
@@ -92,6 +93,9 @@ pub struct Request {
     pub id: u64,
     pub capability: String,
     pub arg: Option<String>,
+    /// 多模块宿主：这次读属于哪个模块；单模块模式为 `None`。
+    #[serde(default)]
+    pub module_id: Option<String>,
 }
 
 /// 一次读取应答。

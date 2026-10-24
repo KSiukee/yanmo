@@ -18,6 +18,7 @@
 //!
 //! 能力码 / 帧格式 / 错误码都在 `yanmo_proto::ipc` 里；这里只做 socket 与线程。
 
+use std::collections::HashMap;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -141,16 +142,136 @@ pub fn serve_repeated<H: ReadHandler>(
     Ok(())
 }
 
+/// 多模块服务端：**同一监听器按请求里的 `module_id` 路由到不同 handler**。
+///
+/// 连接可反复重连；单条连接仍受 [`wire::MAX_REQUESTS`] 限制。单模块的
+/// `module_id=None` 只在 map 恰好一个 handler 时放行（兼容老调用）。
+pub fn serve_multi<H: ReadHandler + Send + 'static>(
+    listener: TcpListener,
+    token: String,
+    handlers: Arc<std::sync::Mutex<HashMap<String, H>>>,
+    stop: Arc<AtomicBool>,
+    accept_timeout: Duration,
+) -> Result<(), IpcError> {
+    if token.is_empty() {
+        return Err(IpcError::new(IpcError::HANDSHAKE, "empty token"));
+    }
+    while !stop.load(Ordering::Relaxed) {
+        let connection = listener.try_clone().map_err(IpcError::from)?;
+        let (stream, _) = match accept_with_deadline(&connection, accept_timeout) {
+            Ok(pair) => pair,
+            Err(error) if error.code == IpcError::TIMEOUT => continue,
+            Err(error) => return Err(error),
+        };
+        let token = token.clone();
+        let handlers = handlers.clone();
+        std::thread::spawn(move || {
+            let _ = serve_multi_connection(stream, token, handlers);
+        });
+    }
+    Ok(())
+}
+
+fn serve_multi_connection<H: ReadHandler + Send + 'static>(
+    mut stream: TcpStream,
+    token: String,
+    handlers: Arc<std::sync::Mutex<HashMap<String, H>>>,
+) -> Result<(), IpcError> {
+    stream.set_nonblocking(false).map_err(IpcError::from)?;
+    stream.set_read_timeout(Some(wire::IO_TIMEOUT)).map_err(IpcError::from)?;
+    stream.set_write_timeout(Some(wire::IO_TIMEOUT)).map_err(IpcError::from)?;
+    let handshake: Handshake = serde_json::from_slice(&wire::read_frame(&mut stream)?)?;
+    if !token_matches(&token, &handshake.token) {
+        let ack = HandshakeAck { ok: false, code: Some(IpcError::HANDSHAKE.to_string()) };
+        let _ = wire::write_frame(&mut stream, &serde_json::to_vec(&ack)?);
+        return Ok(());
+    }
+    wire::write_frame(
+        &mut stream,
+        &serde_json::to_vec(&HandshakeAck { ok: true, code: None })?,
+    )?;
+
+    for _ in 0..wire::MAX_REQUESTS {
+        let Some(frame) = wire::read_frame_opt(&mut stream)? else {
+            return Ok(());
+        };
+        let request: Request = serde_json::from_slice(&frame)?;
+        let mut map = handlers
+            .lock()
+            .map_err(|_| IpcError::new(IpcError::IO, "handler map poisoned"))?;
+        let target = match request.module_id.as_deref() {
+            Some(module_id) => map.get_mut(module_id),
+            None if map.len() == 1 => map.values_mut().next(),
+            None => None,
+        };
+        let response = match target {
+            None => Response {
+                id: request.id,
+                ok: false,
+                data: None,
+                code: Some(IpcError::UNKNOWN_MODULE.to_string()),
+                detail: request.module_id,
+            },
+            Some(handler) => match wire::parse_capability(&request.capability) {
+                None => Response {
+                    id: request.id,
+                    ok: false,
+                    data: None,
+                    code: Some(IpcError::UNKNOWN_CAP.to_string()),
+                    detail: Some(request.capability),
+                },
+                Some(area) => match handler.read(area, request.arg.as_deref()) {
+                    Ok(data) if data.len().saturating_add(1024) > wire::MAX_FRAME_BYTES => {
+                        Response {
+                            id: request.id,
+                            ok: false,
+                            data: None,
+                            code: Some(IpcError::RESPONSE_TOO_LARGE.to_string()),
+                            detail: Some(format!("{} bytes", data.len())),
+                        }
+                    }
+                    Ok(data) => Response {
+                        id: request.id,
+                        ok: true,
+                        data: Some(data),
+                        code: None,
+                        detail: None,
+                    },
+                    Err(error) => Response {
+                        id: request.id,
+                        ok: false,
+                        data: None,
+                        code: Some(error.code),
+                        detail: Some(error.detail),
+                    },
+                },
+            },
+        };
+        wire::write_frame(&mut stream, &serde_json::to_vec(&response)?)?;
+    }
+    Ok(())
+}
+
 /// 宿主侧：连回环、握手、按能力读。
 #[derive(Debug)]
 pub struct Client {
     stream: TcpStream,
     next_id: u64,
+    module_id: Option<String>,
 }
 
 impl Client {
     /// 连上启动器的 IPC；**非回环地址直接拒**（token 不出本机）。
     pub fn connect(addr: SocketAddr, token: &str) -> Result<Self, IpcError> {
+        Self::connect_module(addr, token, None)
+    }
+
+    /// 多模块宿主：连接时绑定模块 id，之后每个请求都带它。
+    pub fn connect_module(
+        addr: SocketAddr,
+        token: &str,
+        module_id: Option<&str>,
+    ) -> Result<Self, IpcError> {
         if !addr.ip().is_loopback() {
             return Err(IpcError::new(IpcError::NOT_LOOPBACK, addr.to_string()));
         }
@@ -169,7 +290,11 @@ impl Client {
                 ack.code.unwrap_or_else(|| "rejected".to_string()),
             ));
         }
-        Ok(Self { stream, next_id: 1 })
+        Ok(Self {
+            stream,
+            next_id: 1,
+            module_id: module_id.map(str::to_string),
+        })
     }
 
     /// 按区域读；`arg` 是整数 id 的十进制文本（`works` 不需要）。
@@ -189,6 +314,7 @@ impl Client {
             id,
             capability: capability.to_string(),
             arg: arg.map(str::to_string),
+            module_id: self.module_id.clone(),
         };
         wire::write_frame(&mut self.stream, &serde_json::to_vec(&request)?)?;
         let response: Response = serde_json::from_slice(&wire::read_frame(&mut self.stream)?)?;

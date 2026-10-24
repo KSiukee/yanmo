@@ -5,11 +5,11 @@
 
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use yanmo_ipc::{bind_loopback, serve_one, serve_one_with_timeout, serve_repeated, Client};
+use yanmo_ipc::{bind_loopback, serve_multi, serve_one, serve_one_with_timeout, serve_repeated, Client};
 use yanmo_proto::capability::CoreDataArea;
 use yanmo_proto::ipc::{self, IpcError, ReadHandler};
 
@@ -149,6 +149,47 @@ fn a_repeated_server_accepts_a_second_connection() {
         let mut second = Client::connect(addr, "secret").unwrap();
         assert_eq!(second.read(CoreDataArea::Works, None).unwrap(), r#"{"works":[]}"#);
     }
+    stop.store(true, Ordering::Relaxed);
+    handle.join().unwrap().unwrap();
+}
+
+struct Echo(&'static str);
+
+impl ReadHandler for Echo {
+    fn read(&mut self, _area: CoreDataArea, _arg: Option<&str>) -> Result<String, IpcError> {
+        Ok(self.0.to_string())
+    }
+}
+
+#[test]
+fn a_multi_module_server_routes_by_module_id() {
+    let listener = bind_loopback().unwrap();
+    let addr = listener.local_addr().unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+    let server_stop = stop.clone();
+    let handle = std::thread::spawn(move || {
+        let mut handlers: std::collections::HashMap<String, Echo> = std::collections::HashMap::new();
+        handlers.insert("a".to_string(), Echo("alpha"));
+        handlers.insert("b".to_string(), Echo("beta"));
+        serve_multi(
+            listener,
+            "secret".to_string(),
+            Arc::new(Mutex::new(handlers)),
+            server_stop,
+            Duration::from_millis(200),
+        )
+    });
+
+    let mut a = Client::connect_module(addr, "secret", Some("a")).unwrap();
+    assert_eq!(a.read(CoreDataArea::Works, None).unwrap(), "alpha");
+    let mut b = Client::connect_module(addr, "secret", Some("b")).unwrap();
+    assert_eq!(b.read(CoreDataArea::Works, None).unwrap(), "beta");
+    let error = Client::connect_module(addr, "secret", Some("nope"))
+        .unwrap()
+        .read(CoreDataArea::Works, None)
+        .unwrap_err();
+    assert_eq!(error.code, IpcError::UNKNOWN_MODULE);
+
     stop.store(true, Ordering::Relaxed);
     handle.join().unwrap().unwrap();
 }

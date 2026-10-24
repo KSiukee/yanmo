@@ -11,14 +11,22 @@ use yanmo_proto::capability::CoreDataArea;
 use yanmo_proto::ipc::IpcError;
 
 pub struct CoreLink {
-    endpoint: Option<(SocketAddr, String)>,
+    endpoint: Option<(SocketAddr, String, Option<String>)>,
     client: Option<Client>,
 }
 
 impl CoreLink {
     pub fn new(addr: SocketAddr, token: String) -> Self {
         Self {
-            endpoint: Some((addr, token)),
+            endpoint: Some((addr, token, None)),
+            client: None,
+        }
+    }
+
+    /// 多模块宿主：连接时绑定模块 id，服务端按请求路由。
+    pub fn new_module(addr: SocketAddr, token: String, module_id: String) -> Self {
+        Self {
+            endpoint: Some((addr, token, Some(module_id))),
             client: None,
         }
     }
@@ -77,10 +85,10 @@ impl CoreLink {
     }
 
     fn connect(&mut self) -> Result<(), IpcError> {
-        let Some((addr, token)) = self.endpoint.clone() else {
+        let Some((addr, token, module_id)) = self.endpoint.clone() else {
             return Err(IpcError::new(IpcError::IO, "no reconnect endpoint"));
         };
-        self.client = Some(Client::connect(addr, &token)?);
+        self.client = Some(Client::connect_module(addr, &token, module_id.as_deref())?);
         Ok(())
     }
 }
