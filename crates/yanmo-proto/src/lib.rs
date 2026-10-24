@@ -9,8 +9,42 @@
 //!
 //! # 当前阶段的范围
 //!
-//! **只设计、不实现**。本 crate 目前只承载协议的类型骨架与版本常量；
-//! `yanmo-daemon`（把核心包成可独立运行的本机服务）排在 P1。
+//! **协议与清单：设计成代码；宿主运行时不在这里。** 本 crate 承载：
+//! - 协议版本常量与监听约定；
+//! - **模块清单**（[`ModuleManifest`]）：模块目录里那份 `manifest.json` 的类型、解析与校验；
+//! - 能力声明（[`ModuleCapabilities`]）、界面三档（[`ModuleUiForm`]）、载荷形态
+//!   （[`ModuleRuntime`]）。
+//!
+//! 把核心包成可独立运行的本机服务、以及模块宿主进程，排在后面的任务里
+//! （协议口是核心与模块平台之间唯一的联系；宿主独立成 crate，保证平台可编译期剥离）。
+//!
+//! # 清单长这样
+//!
+//! ```json
+//! {
+//!   "id": "app.example.plot-map",
+//!   "default_language": "zh-Hans",
+//!   "name": { "zh-Hans": "剧情地图", "en": "Plot Map" },
+//!   "description": { "zh-Hans": "按章节看人物与地点怎么走。", "en": "See how places and people move." },
+//!   "author": { "name": "Example Studio", "homepage": "https://example.com" },
+//!   "version": "1.0.0",
+//!   "protocol": 1,
+//!   "min_core_version": "0.106.0",
+//!   "runtime": "wasm",
+//!   "entry": "module.wasm",
+//!   "ui": { "form": "embedded", "placement": "pane" },
+//!   "capabilities": {
+//!     "read": ["works", "tree", "body", "outline"],
+//!     "own_data": true,
+//!     "cross_read": [],
+//!     "ask_questions": false,
+//!     "network": false
+//!   }
+//! }
+//! ```
+//!
+//! **认证状态、权限提示文案、付费状态都不在清单里**：认证由核心验签后写进注册表；
+//! 提示由宿主渲染并本地化；核心不知道谁付了钱（模块自己离线核对通行证）。
 //!
 //! # 已定的协议原则
 //!
@@ -23,6 +57,23 @@
 //! 5. **版本**：从 `v1` 起，带兼容性声明。
 
 #![forbid(unsafe_code)]
+
+pub mod capability;
+pub mod error;
+pub mod id;
+pub mod localized;
+pub mod manifest;
+pub mod version;
+
+pub use capability::{CoreDataArea, ModuleCapabilities, MAX_CROSS_READ, MAX_READ_AREAS};
+pub use error::ManifestError;
+pub use id::{is_valid_module_id, MAX_MODULE_ID_CHARS, MAX_SEGMENT_CHARS};
+pub use localized::{is_language_tag, localized_text};
+pub use manifest::{
+    ModuleAuthor, ModuleManifest, ModuleRuntime, ModuleUiForm, UiPlacement, MAX_AUTHOR_CHARS,
+    MAX_DESCRIPTION_CHARS, MAX_ENTRY_CHARS, MAX_HOMEPAGE_CHARS, MAX_NAME_CHARS,
+};
+pub use version::{parse_semver, Version};
 
 /// 协议版本。破坏性变更才递增，且必须同步更新公开文档。
 pub const PROTOCOL_VERSION: u32 = 1;
