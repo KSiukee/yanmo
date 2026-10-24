@@ -8,7 +8,8 @@
 //! - [`ReadHandler`]：核心侧实现它，传输层不需要知道 `Store`；
 //! - 能力码 ↔ [`CoreDataArea`] 的解析。
 //!
-//! 一次连接只服务一个宿主、token 一次性、只绑回环——这些在 `yanmo-ipc` 的
+//! 一次连接只服务一个宿主、只绑回环；一次性模式 token 用一次，常驻模式
+//! 同一启动器内可重连（token 只在内存/回环）——这些在 `yanmo-ipc` 的
 //! `serve_one` / `Client` 里落。
 
 use std::io::{Read, Write};

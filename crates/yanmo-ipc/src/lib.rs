@@ -1,4 +1,4 @@
-//! 研墨模块宿主的本机 IPC **传输**：回环 TCP + 一次性 token + 长度前缀 JSON。
+//! 研墨模块宿主的本机 IPC **传输**：回环 TCP + 一次性/可重连 token + 长度前缀 JSON。
 //!
 //! # 为什么单独成 crate
 //!
@@ -13,11 +13,14 @@
 //! 2. 宿主 `Client::connect` 第一帧发 `Handshake { token }`；
 //! 3. 启动器验一次 token（不匹配回 `ok:false` 并断开）；
 //! 4. 之后每帧 `Request { id, capability, arg }` → `Response { id, ok, data }`；
-//! 5. [`serve_one`] 只服务**一个**宿主，返回后监听器销毁，token 不能复用。
+//! 5. [`serve_one`] 只服务**一个**宿主，返回后监听器销毁；常驻宿主用
+//!    [`serve_repeated`] 在同一监听器/ token 上重连。
 //!
 //! 能力码 / 帧格式 / 错误码都在 `yanmo_proto::ipc` 里；这里只做 socket 与线程。
 
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use yanmo_proto::ipc as wire;
@@ -112,6 +115,30 @@ pub fn serve_one_with_timeout<H: ReadHandler>(
         wire::write_frame(&mut stream, &serde_json::to_vec(&response)?)?;
     }
     Err(IpcError::new(IpcError::TOO_MANY, "request limit reached"))
+}
+
+/// 常驻宿主用：**同一个监听器反复接新连接**（一条连接最多
+/// [`wire::MAX_REQUESTS`] 个请求）。宿主撞上限后重连，服务端继续服务。
+///
+/// `stop` 由启动器在宿主退出后置真；每次 `accept` 最长等 `accept_timeout`，
+/// 所以退出最多慢一个短超时，不会把启动器挂住。
+pub fn serve_repeated<H: ReadHandler>(
+    listener: TcpListener,
+    token: String,
+    handler: &mut H,
+    stop: Arc<AtomicBool>,
+    accept_timeout: Duration,
+) -> Result<(), IpcError> {
+    while !stop.load(Ordering::Relaxed) {
+        let connection = listener.try_clone().map_err(IpcError::from)?;
+        match serve_one_with_timeout(connection, token.clone(), handler, accept_timeout) {
+            Ok(()) => {}
+            // 单条连接的错（超时 / 撞上限 / 握手失败 / 被重置）都不该
+            // 把监听器带走：常驻宿主下一轮还要重连。
+            Err(_) => {}
+        }
+    }
+    Ok(())
 }
 
 /// 宿主侧：连回环、握手、按能力读。

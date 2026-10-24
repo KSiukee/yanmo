@@ -23,6 +23,7 @@ mod job;
 
 use std::fs;
 use std::io::{BufRead, Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -30,7 +31,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use yanmo_core::store::{new_ipc_token, ModuleIpcHandler, Store};
-use yanmo_ipc::{bind_loopback, serve_one};
+use yanmo_ipc::{bind_loopback, serve_one, serve_repeated};
 use yanmo_proto::ipc::IpcError;
 use yanmo_proto::manifest::ModuleManifest;
 
@@ -129,11 +130,24 @@ pub fn launch(request: &LaunchRequest) -> Result<LaunchReport, LaunchError> {
     let db_path = request.db_path.clone();
     let server_module = module_id.clone();
     let server_token = token.clone();
+    let resident = request.resident;
+    let stop_server = Arc::new(AtomicBool::new(false));
+    let server_stop = stop_server.clone();
     let server = std::thread::spawn(move || {
         let store = Store::open(&db_path)
             .map_err(|error| IpcError::new(error.code(), error.to_string()))?;
         let mut handler = ModuleIpcHandler::new(store, server_module);
-        serve_one(listener, server_token, &mut handler)
+        if resident {
+            serve_repeated(
+                listener,
+                server_token,
+                &mut handler,
+                server_stop,
+                Duration::from_millis(250),
+            )
+        } else {
+            serve_one(listener, server_token, &mut handler)
+        }
     });
 
     let mut command = Command::new(&request.host_bin);
@@ -234,6 +248,7 @@ pub fn launch(request: &LaunchRequest) -> Result<LaunchReport, LaunchError> {
         }
     }
 
+    stop_server.store(true, Ordering::Relaxed);
     let ipc_error = match server.join() {
         Ok(Ok(())) => None,
         Ok(Err(error)) => Some(format!("{}: {}", error.code, error.detail)),

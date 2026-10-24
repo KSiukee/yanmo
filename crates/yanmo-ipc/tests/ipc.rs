@@ -4,10 +4,12 @@
 //! `module_ipc` 测试里接真库验。
 
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use yanmo_ipc::{bind_loopback, serve_one, serve_one_with_timeout, Client};
+use yanmo_ipc::{bind_loopback, serve_one, serve_one_with_timeout, serve_repeated, Client};
 use yanmo_proto::capability::CoreDataArea;
 use yanmo_proto::ipc::{self, IpcError, ReadHandler};
 
@@ -120,4 +122,33 @@ fn capability_codes_round_trip() {
         assert_eq!(ipc::parse_capability(area.as_str()), Some(area));
     }
     assert_eq!(ipc::parse_capability("sql"), None);
+}
+
+#[test]
+fn a_repeated_server_accepts_a_second_connection() {
+    let listener = bind_loopback().unwrap();
+    let addr = listener.local_addr().unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+    let server_stop = stop.clone();
+    let handle = std::thread::spawn(move || {
+        let mut handler = Mock;
+        serve_repeated(
+            listener,
+            "secret".to_string(),
+            &mut handler,
+            server_stop,
+            Duration::from_millis(200),
+        )
+    });
+
+    {
+        let mut first = Client::connect(addr, "secret").unwrap();
+        assert_eq!(first.read(CoreDataArea::Works, None).unwrap(), r#"{"works":[]}"#);
+    }
+    {
+        let mut second = Client::connect(addr, "secret").unwrap();
+        assert_eq!(second.read(CoreDataArea::Works, None).unwrap(), r#"{"works":[]}"#);
+    }
+    stop.store(true, Ordering::Relaxed);
+    handle.join().unwrap().unwrap();
 }

@@ -17,7 +17,8 @@
 
 pub mod error;
 pub mod package;
-pub mod sandbox;
+pub mod core_link;
+mod sandbox;
 mod sandbox_config;
 
 pub use error::{HostError, HostResult};
@@ -25,4 +26,5 @@ pub use package::{
     ModulePackage, MAX_ENTRY_BYTES, MAX_MANIFEST_BYTES, MAX_PACKAGE_BYTES, MAX_PACKAGE_ENTRIES,
 };
 pub use sandbox::{run_package, run_package_with_core, run_package_with_core_shared, RunReport, RunStatus};
+pub use core_link::CoreLink;
 pub use sandbox_config::SandboxConfig;

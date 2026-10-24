@@ -30,6 +30,7 @@ use yanmo_proto::ipc::IpcError;
 use yanmo_ipc::Client;
 
 use crate::error::{HostError, HostResult};
+use crate::core_link::CoreLink;
 use crate::package::ModulePackage;
 use crate::sandbox_config::SandboxConfig;
 
@@ -59,7 +60,7 @@ struct HostState {
     max_emit_bytes: usize,
     max_total_emit_bytes: usize,
     max_emits: usize,
-    core: Option<Arc<Mutex<Client>>>,
+    core: Option<Arc<Mutex<CoreLink>>>,
     declared: BTreeSet<CoreDataArea>,
     max_read_arg_bytes: usize,
     max_read_result_bytes: usize,
@@ -82,7 +83,7 @@ pub fn run_package_with_core(
     config: SandboxConfig,
     core: Option<Client>,
 ) -> HostResult<RunReport> {
-    let core = core.map(|client| Arc::new(Mutex::new(client)));
+    let core = core.map(|client| Arc::new(Mutex::new(CoreLink::from_client(client))));
     run_package_with_core_shared(package, config, core)
 }
 
@@ -90,7 +91,7 @@ pub fn run_package_with_core(
 pub fn run_package_with_core_shared(
     package: &ModulePackage,
     config: SandboxConfig,
-    core: Option<Arc<Mutex<Client>>>,
+    core: Option<Arc<Mutex<CoreLink>>>,
 ) -> HostResult<RunReport> {
     config.validate()?;
     let declared: BTreeSet<CoreDataArea> =

@@ -16,7 +16,8 @@ use std::io::BufRead;
 
 use serde_json::json;
 use yanmo_host::{
-    run_package_with_core, run_package_with_core_shared, HostError, ModulePackage, SandboxConfig,
+    run_package_with_core, run_package_with_core_shared, CoreLink, HostError, ModulePackage,
+    SandboxConfig,
 };
 use yanmo_ipc::Client;
 
@@ -78,25 +79,36 @@ fn run() -> Result<(), HostError> {
     } else {
         value_of(&args, "--token").map(str::to_string)
     };
-    let client = match (value_of(&args, "--core"), token) {
-        (None, None) => None,
-        (Some(addr), Some(token)) => {
-            let addr: SocketAddr = addr.parse().map_err(|_| {
-                HostError::new(HostError::CORE, "invalid --core address (expected ip:port)")
-            })?;
-            Some(Client::connect(addr, &token).map_err(|error| {
+    let core_text = value_of(&args, "--core").map(str::to_string);
+    if core_text.is_some() != token.is_some() {
+        return Err(HostError::new(
+            HostError::CORE,
+            "--core and --token must be given together",
+        ));
+    }
+    let core_addr: Option<SocketAddr> = match core_text.as_deref() {
+        Some(addr) => Some(addr.parse().map_err(|_| {
+            HostError::new(HostError::CORE, "invalid --core address (expected ip:port)")
+        })?),
+        None => None,
+    };
+    let client = if resident {
+        None
+    } else {
+        match (core_addr, token.as_deref()) {
+            (Some(addr), Some(token)) => Some(Client::connect(addr, token).map_err(|error| {
                 HostError::new(HostError::CORE, format!("{}: {}", error.code, error.detail))
-            })?)
-        }
-        _ => {
-            return Err(HostError::new(
-                HostError::CORE,
-                "--core and --token must be given together",
-            ))
+            })?),
+            _ => None,
         }
     };
     if resident {
-        let core = client.map(|client| Arc::new(Mutex::new(client)));
+        let core = match (core_addr, token) {
+            (Some(addr), Some(token)) => {
+                Some(Arc::new(Mutex::new(CoreLink::new(addr, token))))
+            }
+            _ => None,
+        };
         let stdin = std::io::stdin();
         for line in stdin.lock().lines() {
             let line = line.map_err(|error| HostError::new(HostError::CORE, error.to_string()))?;
@@ -118,9 +130,12 @@ fn run() -> Result<(), HostError> {
                         let _ = std::io::stdout().flush();
                     }
                     Err(error) => {
-                        let payload =
-                            json!({ "ok": false, "code": error.code, "detail": error.detail });
-                        eprintln!("{payload}");
+                        println!(
+                            "{}",
+                            json!({ "ok": false, "code": error.code, "detail": error.detail })
+                        );
+                        use std::io::Write;
+                        let _ = std::io::stdout().flush();
                     }
                 },
                 "stop" => return Ok(()),
