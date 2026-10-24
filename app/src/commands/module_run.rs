@@ -11,11 +11,11 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use serde::Serialize;
 use tauri::State;
 
 use crate::error::ApiError;
 use crate::storage::AppData;
+use super::module_run_types::{ModuleRunStarted, ModuleStatus};
 use yanmo_core::store::Store;
 
 /// 一次运行在壳里的登记（子进程 + 已收到的输出）。
@@ -28,6 +28,7 @@ struct RunSlot {
     stopped: bool,
     exit_code: Option<i32>,
     timed_out: bool,
+    last_activity: std::time::Instant,
 }
 
 impl Default for RunSlot {
@@ -41,6 +42,7 @@ impl Default for RunSlot {
             stopped: false,
             exit_code: None,
             timed_out: false,
+            last_activity: std::time::Instant::now(),
         }
     }
 }
@@ -49,25 +51,6 @@ impl Default for RunSlot {
 #[derive(Default)]
 pub struct ModuleRuns {
     runs: Arc<Mutex<HashMap<String, Arc<Mutex<RunSlot>>>>>,
-}
-
-/// 启动回执（真正结果用 `module_status` 取）。
-#[derive(Debug, Clone, Serialize)]
-pub struct ModuleRunStarted {
-    pub module_id: String,
-}
-
-/// 一次运行的状态快照。
-#[derive(Debug, Clone, Serialize)]
-pub struct ModuleStatus {
-    pub known: bool,
-    pub running: bool,
-    pub stopped: bool,
-    pub timed_out: bool,
-    pub exit_code: Option<i32>,
-    pub emitted: Vec<String>,
-    pub stderr: String,
-    pub error: Option<String>,
 }
 
 impl ModuleRuns {
@@ -88,6 +71,7 @@ impl ModuleRuns {
         let slot = Arc::new(Mutex::new(RunSlot {
             child: Some(child),
             stdin,
+            last_activity: std::time::Instant::now(),
             running: true,
             ..RunSlot::default()
         }));
@@ -119,7 +103,9 @@ impl ModuleRuns {
         stdin
             .write_all(format!("{command}\n").as_bytes())
             .and_then(|_| stdin.flush())
-            .map_err(|error| ApiError::new("shell.module_launch_failed").caused_by(error))
+            .map_err(|error| ApiError::new("shell.module_launch_failed").caused_by(error))?;
+        guard.last_activity = std::time::Instant::now();
+        Ok(())
     }
 
     fn status(&self, module_id: &str) -> ModuleStatus {
@@ -134,6 +120,7 @@ impl ModuleRuns {
             running: guard.running,
             stopped: guard.stopped,
             timed_out: guard.timed_out,
+            idle_seconds: if guard.running { guard.last_activity.elapsed().as_secs() } else { 0 },
             exit_code: guard.exit_code,
             emitted: Vec::new(),
             stderr: guard.error.clone(),
@@ -250,21 +237,6 @@ impl Drop for ModuleRuns {
     }
 }
 
-impl ModuleStatus {
-    fn unknown() -> Self {
-        Self {
-            known: false,
-            running: false,
-            stopped: false,
-            timed_out: false,
-            exit_code: None,
-            emitted: Vec::new(),
-            stderr: String::new(),
-            error: None,
-        }
-    }
-}
-
 fn pump(mut reader: impl Read + Send + 'static, slot: Arc<Mutex<RunSlot>>, stdout: bool) {
     thread::spawn(move || {
         let mut buffer = [0u8; 4096];
@@ -345,6 +317,8 @@ pub fn module_run(
         .arg(&host)
         .arg("--timeout-secs")
         .arg("3600")
+        .arg("--idle-secs")
+        .arg("300")
         .arg("--resident")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

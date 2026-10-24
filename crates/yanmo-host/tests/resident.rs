@@ -75,3 +75,33 @@ fn resident_host_runs_twice_and_stops_on_command() {
     let status = child.wait().unwrap();
     assert!(status.success(), "收到 stop 后宿主应干净退出");
 }
+
+#[test]
+fn resident_host_idles_out() {
+    let dir = TempDir::new().unwrap();
+    package(dir.path());
+    let mut child = Command::new(env!("CARGO_BIN_EXE_yanmo-host"))
+        .args([
+            "--module",
+            dir.path().to_str().unwrap(),
+            "--resident",
+            "--idle-secs",
+            "1",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut reader = BufReader::new(child.stdout.take().unwrap());
+    stdin.write_all(b"run\n").unwrap();
+    stdin.flush().unwrap();
+    let mut line = String::new();
+    reader.read_line(&mut line).unwrap();
+    assert_eq!(report(&line)["status"]["kind"], "ok");
+
+    let started = std::time::Instant::now();
+    assert!(child.wait().unwrap().success(), "空闲超时也应干净退出");
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+}

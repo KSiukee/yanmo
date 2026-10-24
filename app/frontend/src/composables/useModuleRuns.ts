@@ -46,6 +46,7 @@ export function useModuleRuns(onFinished: (status: ModuleStatus) => void) {
       running: true,
       stopped: false,
       timed_out: false,
+      idle_seconds: 0,
       exit_code: null,
       emitted: [],
       stderr: "",

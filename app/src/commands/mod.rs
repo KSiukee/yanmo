@@ -38,6 +38,7 @@ pub mod lines;
 /// 模块管理页：列表、激活/冻结、收藏/置顶、卸载（保留数据）。
 pub mod module;
 pub mod module_run;
+pub mod module_run_types;
 /// 命令登记处：壳上所有命令的唯一一张清单（入口只接上它）。
 pub mod registry;
 /// 稿子放哪：位置查询、换位置、打开文件夹。

@@ -49,6 +49,7 @@
   "modules.stop": "停止",
   "modules.run_started": "「{name}」正在跑。",
   "modules.run_stopped": "已停止。",
+  "modules.run_health": "运行中 · 已空闲 {idle} 秒（5 分钟自动停）",
   "modules.run_again": "再跑一次",
   "modules.run_ok": "跑完了：{emitted}",
   "modules.run_ok_empty": "跑完了（没有输出）。",

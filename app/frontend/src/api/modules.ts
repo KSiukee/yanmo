@@ -92,6 +92,7 @@ export interface ModuleStatus {
   running: boolean;
   stopped: boolean;
   timed_out: boolean;
+  idle_seconds: number;
   exit_code: number | null;
   emitted: string[];
   stderr: string;

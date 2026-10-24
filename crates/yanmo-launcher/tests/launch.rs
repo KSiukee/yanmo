@@ -111,6 +111,7 @@ fn launch_runs_the_sandbox_and_reads_a_work() {
         host_bin,
         timeout: Duration::from_secs(30),
         resident: false,
+        idle_secs: 60,
     })
     .unwrap();
 
@@ -130,6 +131,7 @@ fn a_missing_manifest_is_reported() {
         host_bin: host_bin().unwrap_or_else(|| PathBuf::from("yanmo-host")),
         timeout: Duration::from_secs(5),
         resident: false,
+        idle_secs: 60,
     })
     .unwrap_err();
     assert_eq!(error.code, LaunchError::MANIFEST);
@@ -144,6 +146,7 @@ fn a_missing_host_binary_is_reported_before_anything_starts() {
         host_bin: dir.path().join("no-such-host"),
         timeout: Duration::from_secs(5),
         resident: false,
+        idle_secs: 60,
     })
     .unwrap_err();
     assert_eq!(error.code, LaunchError::SPAWN);

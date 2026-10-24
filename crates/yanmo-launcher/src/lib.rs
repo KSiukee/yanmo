@@ -49,6 +49,8 @@ pub struct LaunchRequest {
     pub timeout: Duration,
     /// 常驻模式：宿主等 `run`/`stop` 命令，核心连接跨运行复用。
     pub resident: bool,
+    /// 常驻宿主空闲多少秒后自己退出（默认 300；0 按 300 算）。
+    pub idle_secs: u64,
 }
 
 /// 一次启动的结果（给壳/管理页）。
@@ -157,6 +159,8 @@ pub fn launch(request: &LaunchRequest) -> Result<LaunchReport, LaunchError> {
         .arg("--core")
         .arg(addr.to_string())
         .arg("--token-stdin")
+        .arg("--idle-secs")
+        .arg(request.idle_secs.max(1).min(3600).to_string())
         .stdin(Stdio::piped());
     if request.resident {
         command.arg("--resident");

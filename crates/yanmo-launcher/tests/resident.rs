@@ -74,6 +74,8 @@ fn resident_launcher_forwards_run_and_stop() {
             "--timeout-secs",
             "30",
             "--resident",
+            "--idle-secs",
+            "30",
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -157,6 +159,8 @@ fn resident_launcher_reconnects_after_request_limit() {
             "--timeout-secs",
             "60",
             "--resident",
+            "--idle-secs",
+            "30",
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

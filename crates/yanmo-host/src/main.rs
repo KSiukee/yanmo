@@ -38,6 +38,7 @@ fn run() -> Result<(), HostError> {
         .ok_or_else(|| HostError::new(HostError::PACKAGE, "missing --module <dir>"))?;
     let check_only = args.iter().any(|arg| arg == "--check");
     let resident = args.iter().any(|arg| arg == "--resident");
+    let idle_secs = number_of(&args, "--idle-secs").unwrap_or(300).clamp(1, 3600);
 
     let package = ModulePackage::open(&module)?;
     if check_only {
@@ -109,9 +110,23 @@ fn run() -> Result<(), HostError> {
             }
             _ => None,
         };
-        let stdin = std::io::stdin();
-        for line in stdin.lock().lines() {
-            let line = line.map_err(|error| HostError::new(HostError::CORE, error.to_string()))?;
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let stdin = std::io::stdin();
+            for line in stdin.lock().lines() {
+                if sender.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        loop {
+            let line = match receiver.recv_timeout(std::time::Duration::from_secs(idle_secs)) {
+                Ok(Ok(line)) => line,
+                Ok(Err(error)) => {
+                    return Err(HostError::new(HostError::CORE, error.to_string()));
+                }
+                Err(_) => return Ok(()),
+            };
             match line.trim() {
                 "run" => match run_package_with_core_shared(&package, config, core.clone()) {
                     Ok(report) => {
@@ -148,7 +163,6 @@ fn run() -> Result<(), HostError> {
                 }
             }
         }
-        return Ok(());
     }
 
     let report = run_package_with_core(&package, config, client)?;

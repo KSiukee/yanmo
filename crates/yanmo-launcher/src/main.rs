@@ -40,6 +40,9 @@ fn run() -> Result<(), LaunchError> {
         .map(PathBuf::from)
         .ok_or_else(|| LaunchError::new(LaunchError::SPAWN, "missing --host <file>"))?;
     let resident = args.iter().any(|arg| arg == "--resident");
+    let idle_secs = value_of(&args, "--idle-secs")
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(300);
     let timeout = value_of(&args, "--timeout-secs")
         .and_then(|value| value.parse::<u64>().ok())
         .map(|seconds| Duration::from_secs(seconds.clamp(1, 3600)))
@@ -51,6 +54,7 @@ fn run() -> Result<(), LaunchError> {
         host_bin: host,
         timeout,
         resident,
+        idle_secs,
     })?;
     if resident {
         // 宿主自己的报告直接走继承的 stdout；这里只把退出码变成进程退出码。
