@@ -1,0 +1,180 @@
+//! 研墨模块宿主的本机 IPC **传输**：回环 TCP + 一次性 token + 长度前缀 JSON。
+//!
+//! # 为什么单独成 crate
+//!
+//! 核心与协议层（`yanmo-core` / `yanmo-proto`）必须保持 **零 `std::net`**——"出货代码
+//! 零出网"是产品承诺。模块平台要一条本机回环通道，就把它放在这个**不进核心/壳依赖**
+//! 的独立 crate 里：宿主用 [`Client`]，启动器用 [`serve_one`]；不编这个 crate 就没有
+//! 这条通道（与宿主一样可编译期剥离）。
+//!
+//! # 形状
+//!
+//! 1. 启动器 `bind_loopback()` 拿一个只绑 127.0.0.1 的监听器；
+//! 2. 宿主 `Client::connect` 第一帧发 `Handshake { token }`；
+//! 3. 启动器验一次 token（不匹配回 `ok:false` 并断开）；
+//! 4. 之后每帧 `Request { id, capability, arg }` → `Response { id, ok, data }`；
+//! 5. [`serve_one`] 只服务**一个**宿主，返回后监听器销毁，token 不能复用。
+//!
+//! 能力码 / 帧格式 / 错误码都在 `yanmo_proto::ipc` 里；这里只做 socket 与线程。
+
+use std::net::{SocketAddr, TcpListener, TcpStream};
+
+use yanmo_proto::ipc as wire;
+use yanmo_proto::ipc::{IpcError, ReadHandler};
+
+pub use yanmo_proto::ipc::{Handshake, HandshakeAck, Request, Response};
+
+/// 只绑回环的监听器（端口由系统给）。
+pub fn bind_loopback() -> Result<TcpListener, IpcError> {
+    TcpListener::bind("127.0.0.1:0").map_err(IpcError::from)
+}
+
+/// 一次连接只服务一个宿主：验 token、逐帧应答、EOF 收工。
+///
+/// `listener` 按值传入——函数返回时它被丢弃，**同一个 token 无法再开第二条连接**。
+pub fn serve_one<H: ReadHandler>(
+    listener: TcpListener,
+    token: String,
+    handler: &mut H,
+) -> Result<(), IpcError> {
+    if token.is_empty() {
+        return Err(IpcError::new(IpcError::HANDSHAKE, "empty token"));
+    }
+    let (mut stream, _) = listener.accept().map_err(IpcError::from)?;
+    stream.set_read_timeout(Some(wire::IO_TIMEOUT)).map_err(IpcError::from)?;
+    stream.set_write_timeout(Some(wire::IO_TIMEOUT)).map_err(IpcError::from)?;
+
+    let handshake_frame = wire::read_frame(&mut stream)?;
+    let handshake: Handshake = serde_json::from_slice(&handshake_frame)?;
+    if !token_matches(&token, &handshake.token) {
+        let ack = HandshakeAck { ok: false, code: Some(IpcError::HANDSHAKE.to_string()) };
+        wire::write_frame(&mut stream, &serde_json::to_vec(&ack)?)?;
+        return Err(IpcError::new(IpcError::HANDSHAKE, "token mismatch"));
+    }
+    wire::write_frame(
+        &mut stream,
+        &serde_json::to_vec(&HandshakeAck { ok: true, code: None })?,
+    )?;
+
+    for _ in 0..wire::MAX_REQUESTS {
+        let Some(frame) = wire::read_frame_opt(&mut stream)? else {
+            return Ok(());
+        };
+        let request: Request = serde_json::from_slice(&frame)?;
+        let response = match wire::parse_capability(&request.capability) {
+            None => Response {
+                id: request.id,
+                ok: false,
+                data: None,
+                code: Some(IpcError::UNKNOWN_CAP.to_string()),
+                detail: Some(request.capability),
+            },
+            Some(area) => match handler.read(area, request.arg.as_deref()) {
+                Ok(data) if data.len().saturating_add(1024) > wire::MAX_FRAME_BYTES => Response {
+                    id: request.id,
+                    ok: false,
+                    data: None,
+                    code: Some(IpcError::RESPONSE_TOO_LARGE.to_string()),
+                    detail: Some(format!("{} bytes", data.len())),
+                },
+                Ok(data) => Response {
+                    id: request.id,
+                    ok: true,
+                    data: Some(data),
+                    code: None,
+                    detail: None,
+                },
+                Err(error) => Response {
+                    id: request.id,
+                    ok: false,
+                    data: None,
+                    code: Some(error.code),
+                    detail: Some(error.detail),
+                },
+            },
+        };
+        wire::write_frame(&mut stream, &serde_json::to_vec(&response)?)?;
+    }
+    Err(IpcError::new(IpcError::TOO_MANY, "request limit reached"))
+}
+
+/// 宿主侧：连回环、握手、按能力读。
+#[derive(Debug)]
+pub struct Client {
+    stream: TcpStream,
+    next_id: u64,
+}
+
+impl Client {
+    /// 连上启动器的 IPC；**非回环地址直接拒**（token 不出本机）。
+    pub fn connect(addr: SocketAddr, token: &str) -> Result<Self, IpcError> {
+        if !addr.ip().is_loopback() {
+            return Err(IpcError::new(IpcError::NOT_LOOPBACK, addr.to_string()));
+        }
+        let mut stream =
+            TcpStream::connect_timeout(&addr, wire::IO_TIMEOUT).map_err(IpcError::from)?;
+        stream.set_read_timeout(Some(wire::IO_TIMEOUT)).map_err(IpcError::from)?;
+        stream.set_write_timeout(Some(wire::IO_TIMEOUT)).map_err(IpcError::from)?;
+        wire::write_frame(
+            &mut stream,
+            &serde_json::to_vec(&Handshake { token: token.to_string() })?,
+        )?;
+        let ack: HandshakeAck = serde_json::from_slice(&wire::read_frame(&mut stream)?)?;
+        if !ack.ok {
+            return Err(IpcError::new(
+                IpcError::HANDSHAKE,
+                ack.code.unwrap_or_else(|| "rejected".to_string()),
+            ));
+        }
+        Ok(Self { stream, next_id: 1 })
+    }
+
+    /// 按区域读；`arg` 是整数 id 的十进制文本（`works` 不需要）。
+    pub fn read(
+        &mut self,
+        area: yanmo_proto::capability::CoreDataArea,
+        arg: Option<&str>,
+    ) -> Result<String, IpcError> {
+        self.request(area.as_str(), arg)
+    }
+
+    /// 低层入口（测试未知能力 / 将来扩展用）；**服务端仍按区域白名单拒**。
+    pub fn request(&mut self, capability: &str, arg: Option<&str>) -> Result<String, IpcError> {
+        let id = self.next_id;
+        self.next_id = self.next_id.saturating_add(1);
+        let request = Request {
+            id,
+            capability: capability.to_string(),
+            arg: arg.map(str::to_string),
+        };
+        wire::write_frame(&mut self.stream, &serde_json::to_vec(&request)?)?;
+        let response: Response = serde_json::from_slice(&wire::read_frame(&mut self.stream)?)?;
+        if response.id != id {
+            return Err(IpcError::new(
+                IpcError::PROTOCOL,
+                format!("response id {} for request {id}", response.id),
+            ));
+        }
+        if response.ok {
+            Ok(response.data.unwrap_or_default())
+        } else {
+            Err(IpcError::new(
+                response.code.unwrap_or_else(|| "ipc.denied".to_string()),
+                response.detail.unwrap_or_default(),
+            ))
+        }
+    }
+}
+
+fn token_matches(expected: &str, actual: &str) -> bool {
+    let expected = expected.as_bytes();
+    let actual = actual.as_bytes();
+    if expected.len() != actual.len() {
+        return false;
+    }
+    let mut difference = 0u8;
+    for (left, right) in expected.iter().zip(actual) {
+        difference |= left ^ right;
+    }
+    difference == 0
+}

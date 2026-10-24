@@ -23,4 +23,4 @@ pub use error::{HostError, HostResult};
 pub use package::{
     ModulePackage, MAX_ENTRY_BYTES, MAX_MANIFEST_BYTES, MAX_PACKAGE_BYTES, MAX_PACKAGE_ENTRIES,
 };
-pub use sandbox::{run_package, RunReport, RunStatus, SandboxConfig};
+pub use sandbox::{run_package, run_package_with_core, RunReport, RunStatus, SandboxConfig};

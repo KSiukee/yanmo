@@ -8,10 +8,12 @@
 //! `--check` 只做静态校验（清单 / 入口 / 包内文件），不执行载荷。
 //! 这个二进制是**独立进程**：核心与壳将来通过协议拉起它，而不是把沙箱链进自己进程。
 
+use std::net::SocketAddr;
 use std::process::ExitCode;
 
 use serde_json::json;
-use yanmo_host::{run_package, HostError, ModulePackage, SandboxConfig};
+use yanmo_host::{run_package_with_core, HostError, ModulePackage, SandboxConfig};
+use yanmo_ipc::Client;
 
 fn main() -> ExitCode {
     match run() {
@@ -54,8 +56,30 @@ fn run() -> Result<(), HostError> {
         max_total_emit_bytes: number_of(&args, "--max-total-emit")
             .unwrap_or(defaults.max_total_emit_bytes as u64) as usize,
         max_emits: number_of(&args, "--max-emits").unwrap_or(defaults.max_emits as u64) as usize,
+        max_read_arg_bytes: number_of(&args, "--max-read-arg")
+            .unwrap_or(defaults.max_read_arg_bytes as u64) as usize,
+        max_read_result_bytes: number_of(&args, "--max-read-result")
+            .unwrap_or(defaults.max_read_result_bytes as u64) as usize,
+        max_reads: number_of(&args, "--max-reads").unwrap_or(defaults.max_reads as u64) as usize,
     };
-    let report = run_package(&package, config)?;
+    let client = match (value_of(&args, "--core"), value_of(&args, "--token")) {
+        (None, None) => None,
+        (Some(addr), Some(token)) => {
+            let addr: SocketAddr = addr.parse().map_err(|_| {
+                HostError::new(HostError::CORE, "invalid --core address (expected ip:port)")
+            })?;
+            Some(Client::connect(addr, token).map_err(|error| {
+                HostError::new(HostError::CORE, format!("{}: {}", error.code, error.detail))
+            })?)
+        }
+        _ => {
+            return Err(HostError::new(
+                HostError::CORE,
+                "--core and --token must be given together",
+            ))
+        }
+    };
+    let report = run_package_with_core(&package, config, client)?;
     println!(
         "{}",
         json!({

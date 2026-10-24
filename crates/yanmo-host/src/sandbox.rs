@@ -17,12 +17,15 @@
 //! - **内存**：`StoreLimits` 限制线性内存上限，`memory.grow` 超限失败；
 //! - **输出**：单条 / 总字节 / 条数都有上限，超了整次运行失败（不截断冒充成功）。
 
+use std::collections::BTreeSet;
 use std::fs;
 
 use serde::Serialize;
 use wasmi::{
     Caller, Config, Engine, Extern, Linker, Module, Store, StoreLimits, StoreLimitsBuilder,
 };
+use yanmo_proto::capability::CoreDataArea;
+use yanmo_ipc::Client;
 
 use crate::error::{HostError, HostResult};
 use crate::package::ModulePackage;
@@ -40,6 +43,12 @@ pub struct SandboxConfig {
     pub max_total_emit_bytes: usize,
     /// 最多允许几条 `emit`
     pub max_emits: usize,
+    /// 单次 `read` 参数（整数 id 文本）上限
+    pub max_read_arg_bytes: usize,
+    /// 单次 `read` 结果上限（核心侧还有 1 MiB 帧上限）
+    pub max_read_result_bytes: usize,
+    /// 最多允许几次 `read`
+    pub max_reads: usize,
 }
 
 impl Default for SandboxConfig {
@@ -50,6 +59,9 @@ impl Default for SandboxConfig {
             max_emit_bytes: 64 * 1024,
             max_total_emit_bytes: 256 * 1024,
             max_emits: 64,
+            max_read_arg_bytes: 4 * 1024,
+            max_read_result_bytes: 256 * 1024,
+            max_reads: 64,
         }
     }
 }
@@ -60,7 +72,10 @@ impl SandboxConfig {
             && self.max_memory_bytes > 0
             && self.max_emit_bytes > 0
             && self.max_emits > 0
-            && self.max_total_emit_bytes >= self.max_emit_bytes;
+            && self.max_total_emit_bytes >= self.max_emit_bytes
+            && self.max_read_arg_bytes > 0
+            && self.max_read_result_bytes > 0
+            && self.max_reads > 0;
         if valid {
             Ok(())
         } else {
@@ -95,12 +110,33 @@ struct HostState {
     max_emit_bytes: usize,
     max_total_emit_bytes: usize,
     max_emits: usize,
+    core: Option<Client>,
+    declared: BTreeSet<CoreDataArea>,
+    max_read_arg_bytes: usize,
+    max_read_result_bytes: usize,
+    max_reads: usize,
+    reads: usize,
     violation: Option<HostError>,
 }
 
-/// 跑一次模块：**只调 `run()`，只给 `env.emit`**。
+/// 跑一次模块（**不接核心**）：只调 `run()`，只给 `env.emit`。
 pub fn run_package(package: &ModulePackage, config: SandboxConfig) -> HostResult<RunReport> {
+    run_package_with_core(package, config, None)
+}
+
+/// 跑一次模块，可选接上核心 IPC。
+///
+/// **`read` import 只在两个条件同时成立时存在**：模块清单声明了至少一块只读能力，
+/// 且宿主真的连上了核心。否则链接器里没有 `env.read`——模块写不出来，也就调不到。
+pub fn run_package_with_core(
+    package: &ModulePackage,
+    config: SandboxConfig,
+    core: Option<Client>,
+) -> HostResult<RunReport> {
     config.validate()?;
+    let declared: BTreeSet<CoreDataArea> =
+        package.manifest().capabilities.read.iter().copied().collect();
+    let allow_read = core.is_some() && !declared.is_empty();
     let wasm = fs::read(package.entry_path())?;
 
     let mut wasmi_config = Config::default();
@@ -110,7 +146,9 @@ pub fn run_package(package: &ModulePackage, config: SandboxConfig) -> HostResult
         .map_err(|error| HostError::new(HostError::WASM_INVALID, error.to_string()))?;
 
     for import in module.imports() {
-        if import.module() != "env" || import.name() != "emit" {
+        let allowed = import.module() == "env"
+            && (import.name() == "emit" || (import.name() == "read" && allow_read));
+        if !allowed {
             return Err(HostError::new(
                 HostError::IMPORT_NOT_ALLOWED,
                 format!("{}::{}", import.module(), import.name()),
@@ -128,6 +166,12 @@ pub fn run_package(package: &ModulePackage, config: SandboxConfig) -> HostResult
         max_emit_bytes: config.max_emit_bytes,
         max_total_emit_bytes: config.max_total_emit_bytes,
         max_emits: config.max_emits,
+        core,
+        declared,
+        max_read_arg_bytes: config.max_read_arg_bytes,
+        max_read_result_bytes: config.max_read_result_bytes,
+        max_reads: config.max_reads,
+        reads: 0,
         violation: None,
     };
     let mut store = Store::new(&engine, state);
@@ -144,6 +188,21 @@ pub fn run_package(package: &ModulePackage, config: SandboxConfig) -> HostResult
             |mut caller: Caller<'_, HostState>, ptr: i32, len: i32| -> i32 { emit(&mut caller, ptr, len) },
         )
         .map_err(|error| HostError::new(HostError::LINK, error.to_string()))?;
+    if allow_read {
+        linker
+            .func_wrap(
+                "env",
+                "read",
+                |mut caller: Caller<'_, HostState>,
+                 cap: i32,
+                 arg_ptr: i32,
+                 arg_len: i32,
+                 out_ptr: i32,
+                 out_cap: i32|
+                 -> i32 { read(&mut caller, cap, arg_ptr, arg_len, out_ptr, out_cap) },
+            )
+            .map_err(|error| HostError::new(HostError::LINK, error.to_string()))?;
+    }
 
     let pre = linker
         .instantiate(&mut store, &module)
@@ -215,6 +274,102 @@ fn emit(caller: &mut Caller<'_, HostState>, ptr: i32, len: i32) -> i32 {
 
 fn fail(caller: &mut Caller<'_, HostState>, code: &'static str, detail: &str) -> i32 {
     fail_from_state(caller.data_mut(), code, detail)
+}
+
+/// 稳定的能力 id（**已发布，别改**）：1 作品 / 2 目录 / 3 正文 / 4 大纲 /
+/// 5 碎片 / 6 设定卡 / 7 场景卡 / 8 伏笔。
+fn area_from_id(id: i32) -> Option<CoreDataArea> {
+    match id {
+        1 => Some(CoreDataArea::Works),
+        2 => Some(CoreDataArea::Tree),
+        3 => Some(CoreDataArea::Body),
+        4 => Some(CoreDataArea::Outline),
+        5 => Some(CoreDataArea::Fragments),
+        6 => Some(CoreDataArea::Entities),
+        7 => Some(CoreDataArea::Scenes),
+        8 => Some(CoreDataArea::Foreshadows),
+        _ => None,
+    }
+}
+
+/// guest ABI：`read(cap_id, arg_ptr, arg_len, out_ptr, out_cap) -> len | -1 | -2`。
+///
+/// - `-1`：宿主记下违规（整次运行失败）；
+/// - `-2`：结果比 `out_cap` 大 —— **这是缓冲区协商，不是违规**，guest 可以加大缓冲重试；
+/// - 其它负数不会出现。
+#[allow(clippy::too_many_arguments)]
+fn read(
+    caller: &mut Caller<'_, HostState>,
+    cap: i32,
+    arg_ptr: i32,
+    arg_len: i32,
+    out_ptr: i32,
+    out_cap: i32,
+) -> i32 {
+    let Some(area) = area_from_id(cap) else {
+        return fail(caller, HostError::READ_INVALID, "unknown capability id");
+    };
+    {
+        let state = caller.data();
+        if !state.declared.contains(&area) {
+            return fail(caller, HostError::CAPABILITY_DENIED, area.as_str());
+        }
+        if state.reads >= state.max_reads {
+            return fail(caller, HostError::READ_LIMIT, "too many reads");
+        }
+    }
+    if arg_ptr < 0 || arg_len < 0 || out_ptr < 0 || out_cap < 0 {
+        return fail(caller, HostError::READ_INVALID, "negative pointer or length");
+    }
+    let Some(Extern::Memory(memory)) = caller.get_export("memory") else {
+        return fail(caller, HostError::READ_INVALID, "module has no exported memory");
+    };
+
+    let arg = if arg_len == 0 {
+        None
+    } else {
+        let length = arg_len as usize;
+        if length > caller.data().max_read_arg_bytes {
+            return fail(caller, HostError::READ_LIMIT, "read argument is too large");
+        }
+        let mut buffer = vec![0u8; length];
+        if memory.read(&*caller, arg_ptr as usize, &mut buffer).is_err() {
+            return fail(caller, HostError::READ_INVALID, "read argument is out of bounds");
+        }
+        match String::from_utf8(buffer) {
+            Ok(text) => Some(text),
+            Err(_) => return fail(caller, HostError::READ_INVALID, "read argument is not UTF-8"),
+        }
+    };
+
+    let result = {
+        let state = caller.data_mut();
+        state.reads += 1;
+        let Some(core) = state.core.as_mut() else {
+            return fail_from_state(state, HostError::CORE, "no core link");
+        };
+        core.read(area, arg.as_deref())
+    };
+    let data = match result {
+        Ok(data) => data,
+        Err(error) => {
+            return fail(
+                caller,
+                HostError::CORE,
+                &format!("{}: {}", error.code, error.detail),
+            );
+        }
+    };
+    if data.len() > caller.data().max_read_result_bytes {
+        return fail(caller, HostError::READ_LIMIT, "core result is too large");
+    }
+    if data.len() > out_cap as usize {
+        return -2;
+    }
+    if memory.write(&mut *caller, out_ptr as usize, data.as_bytes()).is_err() {
+        return fail(caller, HostError::READ_INVALID, "result write is out of bounds");
+    }
+    data.len() as i32
 }
 
 fn fail_from_state(state: &mut HostState, code: &'static str, detail: &str) -> i32 {

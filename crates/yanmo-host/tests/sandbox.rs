@@ -3,16 +3,21 @@
 //! 测试里的 guest 全部用 WAT 现写；不需要预编译的 wasm 文件。
 
 use std::fs;
+use std::net::SocketAddr;
 use std::path::Path;
+use std::thread::JoinHandle;
 
 use tempfile::TempDir;
 use yanmo_host::{
-    run_package, HostError, ModulePackage, RunStatus, SandboxConfig,
+    run_package, run_package_with_core, HostError, ModulePackage, RunStatus, SandboxConfig,
 };
+use yanmo_proto::capability::CoreDataArea;
+use yanmo_ipc::{bind_loopback, serve_one, Client};
+use yanmo_proto::ipc::{IpcError, ReadHandler};
 
 const MODULE_ID: &str = "app.example.sandbox";
 
-fn manifest_json() -> String {
+fn manifest_json_with_read(reads: &[&str]) -> String {
     serde_json::json!({
         "id": MODULE_ID,
         "default_language": "zh-Hans",
@@ -24,13 +29,27 @@ fn manifest_json() -> String {
         "runtime": "wasm",
         "entry": "module.wasm",
         "ui": { "form": "headless" },
-        "capabilities": {}
+        "capabilities": {
+            "read": reads,
+            "own_data": true,
+            "cross_read": [],
+            "ask_questions": false,
+            "network": false
+        }
     })
     .to_string()
 }
 
+fn manifest_json() -> String {
+    manifest_json_with_read(&[])
+}
+
 fn package_with(dir: &Path, wat: &str) -> ModulePackage {
-    fs::write(dir.join("manifest.json"), manifest_json()).unwrap();
+    package_with_read(dir, wat, &[])
+}
+
+fn package_with_read(dir: &Path, wat: &str, reads: &[&str]) -> ModulePackage {
+    fs::write(dir.join("manifest.json"), manifest_json_with_read(reads)).unwrap();
     let wasm = wat::parse_str(wat).unwrap();
     fs::write(dir.join("module.wasm"), wasm).unwrap();
     ModulePackage::open(dir).unwrap()
@@ -247,4 +266,86 @@ fn the_independent_binary_runs_a_module_and_prints_json() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("\"module_id\""));
     assert!(stdout.contains("\"hi\""));
+}
+
+struct MockCore;
+
+impl ReadHandler for MockCore {
+    fn read(&mut self, area: CoreDataArea, arg: Option<&str>) -> Result<String, IpcError> {
+        match area {
+            CoreDataArea::Works => Ok(r#"[{"id":1,"title":"题本"}]"#.to_string()),
+            CoreDataArea::Tree => Ok(format!(r#"{{"work":{}}}"#, arg.unwrap_or("0"))),
+            _ => Err(IpcError::new("ipc.capability_unavailable", area.as_str())),
+        }
+    }
+}
+
+fn start_core(token: &str) -> (SocketAddr, JoinHandle<Result<(), IpcError>>) {
+    let listener = bind_loopback().unwrap();
+    let addr = listener.local_addr().unwrap();
+    let token = token.to_string();
+    let handle = std::thread::spawn(move || {
+        let mut handler = MockCore;
+        serve_one(listener, token, &mut handler)
+    });
+    (addr, handle)
+}
+
+const READ_WAT: &str = r#"
+    (module
+      (import "env" "emit" (func $emit (param i32 i32) (result i32)))
+      (import "env" "read" (func $read (param i32 i32 i32 i32 i32) (result i32)))
+      (memory (export "memory") 1)
+      (func (export "run") (result i32)
+        (local $n i32)
+        (local.set $n
+          (call $read (i32.const 1) (i32.const 0) (i32.const 0) (i32.const 100) (i32.const 4096)))
+        (if (i32.lt_s (local.get $n) (i32.const 0))
+          (then (return (local.get $n))))
+        (call $emit (i32.const 100) (local.get $n))))
+"#;
+
+#[test]
+fn a_declared_read_is_served_from_the_core() {
+    let (addr, server) = start_core("token");
+    let client = Client::connect(addr, "token").unwrap();
+    let dir = fresh();
+    let package = package_with_read(dir.path(), READ_WAT, &["works"]);
+
+    let report = run_package_with_core(&package, config(), Some(client)).unwrap();
+    assert_eq!(report.status, RunStatus::Ok);
+    assert_eq!(report.emitted, vec![r#"[{"id":1,"title":"题本"}]"#.to_string()]);
+    server.join().unwrap().unwrap();
+}
+
+#[test]
+fn read_without_a_declaration_is_not_linked() {
+    let (addr, server) = start_core("token");
+    let client = Client::connect(addr, "token").unwrap();
+    let dir = fresh();
+    let package = package_with(dir.path(), READ_WAT);
+
+    let error = run_package_with_core(&package, config(), Some(client)).unwrap_err();
+    assert_eq!(error.code, HostError::IMPORT_NOT_ALLOWED);
+    server.join().unwrap().unwrap();
+}
+
+#[test]
+fn read_without_a_core_link_is_not_linked() {
+    let dir = fresh();
+    let package = package_with_read(dir.path(), READ_WAT, &["works"]);
+    let error = run_package(&package, config()).unwrap_err();
+    assert_eq!(error.code, HostError::IMPORT_NOT_ALLOWED);
+}
+
+#[test]
+fn undeclared_areas_are_denied_by_the_host() {
+    let (addr, server) = start_core("token");
+    let client = Client::connect(addr, "token").unwrap();
+    let dir = fresh();
+    let package = package_with_read(dir.path(), READ_WAT, &["tree"]);
+
+    let error = run_package_with_core(&package, config(), Some(client)).unwrap_err();
+    assert_eq!(error.code, HostError::CAPABILITY_DENIED);
+    server.join().unwrap().unwrap();
 }

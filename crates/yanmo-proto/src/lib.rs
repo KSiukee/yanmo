@@ -61,6 +61,7 @@
 pub mod capability;
 pub mod error;
 pub mod id;
+pub mod ipc;
 pub mod localized;
 pub mod manifest;
 pub mod version;

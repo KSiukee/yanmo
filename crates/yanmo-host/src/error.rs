@@ -30,6 +30,10 @@ impl HostError {
     pub const EMIT_TOO_LARGE: &'static str = "host.emit_too_large";
     pub const EMIT_LIMIT: &'static str = "host.emit_limit";
     pub const EMIT_INVALID: &'static str = "host.emit_invalid";
+    pub const CAPABILITY_DENIED: &'static str = "host.capability_denied";
+    pub const READ_LIMIT: &'static str = "host.read_limit";
+    pub const READ_INVALID: &'static str = "host.read_invalid";
+    pub const CORE: &'static str = "host.core_error";
     pub const LINK: &'static str = "host.link_failed";
 
     pub fn new(code: &'static str, detail: impl Into<String>) -> Self {
