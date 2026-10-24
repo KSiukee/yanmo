@@ -372,6 +372,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "这次启动的来源不合规：{detail}" : ["detail"],
     MODULE_DROP_DATA_FAILED => "module.drop_data_failed"
         : "模块数据删不掉（没有改动任何东西）：{detail}" : ["detail"],
+    MODULE_COMM_POLICY_INVALID => "module.comm_policy_invalid"
+        : "模块通信预算不合规：{detail}" : ["detail"],
 }
 
 /// 按码把参数填进日志模板；模板不认识这个码就退回 `码(名字=取值, …)`。
