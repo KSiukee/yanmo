@@ -206,4 +206,9 @@ export const COMMANDS = {
   compileOpenFolder: "compile_open_folder",
   compileCollection: "compile_collection",
   compileCollectionOpenFolder: "compile_collection_open_folder",
+  modulesList: "modules_list",
+  moduleSetEnabled: "module_set_enabled",
+  moduleSetFavorite: "module_set_favorite",
+  moduleSetPinned: "module_set_pinned",
+  moduleUninstall: "module_uninstall",
 } as const;

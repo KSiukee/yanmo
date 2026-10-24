@@ -40,6 +40,7 @@ import CompileDialog from "./components/CompileDialog.vue";
 import MirrorConflictDialog from "./components/MirrorConflictDialog.vue";
 import TypesetDialog from "./components/TypesetDialog.vue";
 import SearchDialog from "./components/SearchDialog.vue";
+import ModuleDialog from "./components/ModuleDialog.vue";
 import WritingDialog from "./components/WritingDialog.vue";
 
 // 会话在布局层建**一次**：目录树、书架与正文编辑器说的必须是同一本书、同一章
@@ -104,6 +105,8 @@ void session.manuscript.refresh();
 const { visible: trashVisible } = session.trash;
 // 正文检索：顶栏那个按钮开的那个弹窗（状态机在 editor/search.ts）
 const { visible: searchVisible } = session.search;
+// 模块管理页：一个页面管所有模块（入口在顶栏；进来才读，不拖慢启动）
+const modulesVisible = ref(false);
 const { visible: snapshotsVisible } = session.snapshots;
 const { visible: typesetVisible } = session.typeset;
 const { visible: compileVisible } = session.compile;
@@ -147,6 +150,7 @@ const hint = computed(() => {
       @zen="toggleZen()"
       @grid="toggleGrid()"
       @entities="showLore()"
+      @modules="modulesVisible = true"
       @backup="void openBackup()"
       @settings="void openSettings()"
     />
@@ -238,6 +242,7 @@ const hint = computed(() => {
     <WorkFormDialog v-if="workForm" :session="session" :form="workForm" @close="closeForm" />
     <TrashDialog v-if="trashVisible" :session="session" />
     <SearchDialog v-if="searchVisible" :session="session" />
+    <ModuleDialog v-if="modulesVisible" @close="modulesVisible = false" />
     <SnapshotDialog v-if="snapshotsVisible" :session="session" />
     <TypesetDialog v-if="typesetVisible" :session="session" />
     <WritingDialog v-if="writingVisible" :session="session" />
