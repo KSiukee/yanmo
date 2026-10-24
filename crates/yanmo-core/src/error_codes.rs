@@ -336,6 +336,27 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : ["judge", "scope"],
     SOP_REVISION_NOT_FOUND => "sop.revision_not_found"
         : "找不到这条流程改动记录：{seq}" : ["seq"],
+    // ── 模块（注册表 / 授予 / 模块数据区）────────────────────────────────
+    MODULE_ALREADY_INSTALLED => "module.already_installed"
+        : "这个模块已经装过了：{module_id}" : ["module_id"],
+    MODULE_NOT_FOUND => "module.not_found"
+        : "找不到这个模块：{module_id}" : ["module_id"],
+    MODULE_MANIFEST_INVALID => "module.manifest_invalid"
+        : "模块清单不合规（{code} / {field}）" : ["code", "field"],
+    MODULE_ID_INVALID => "module.id_invalid"
+        : "模块 id 不合规：{module_id}" : ["module_id"],
+    MODULE_GRANT_NOT_DECLARED => "module.grant_not_declared"
+        : "不能授予模块没声明过的能力：{capability}" : ["capability"],
+    MODULE_GRANT_INVALID => "module.grant_invalid"
+        : "这份能力授予不合规：{detail}" : ["detail"],
+    MODULE_RECORD_CORRUPT => "module.record_corrupt"
+        : "模块记录坏了：{module_id}" : ["module_id"],
+    MODULE_DISABLED => "module.disabled"
+        : "模块「{module_id}」现在是冻结的" : ["module_id"],
+    MODULE_CAPABILITY_DENIED => "module.capability_denied"
+        : "这个模块没有「{capability}」这项能力" : ["capability"],
+    MODULE_SCHEMA_INVALID => "module.schema_invalid"
+        : "模块数据结构版本不合规：{version}" : ["version"],
 }
 
 /// 按码把参数填进日志模板；模板不认识这个码就退回 `码(名字=取值, …)`。

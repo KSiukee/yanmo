@@ -110,8 +110,11 @@ impl ModuleCapabilities {
         Self::default()
     }
 
-    /// 校验声明本身：重复、跨模块读自己的 id、非法的模块 id、超过上限都拒。
-    pub(crate) fn validate(&self, own_id: &str) -> Result<(), ManifestError> {
+    /// 校验声明 / 授予本身：重复、跨模块读自己的 id、非法的模块 id、超过上限都拒。
+    ///
+    /// 注册表在**授予**时也用它：授予同样是"这个模块能碰什么"的一份声明，
+    /// 不能因为来自界面就少校验一道。
+    pub fn validate(&self, own_id: &str) -> Result<(), ManifestError> {
         if self.read.len() > MAX_READ_AREAS {
             return Err(ManifestError::new(
                 ManifestError::CAPABILITY,

@@ -14,6 +14,7 @@ testing = []
 serde.workspace = true
 serde_json.workspace = true
 rusqlite.workspace = true
+yanmo-proto.workspace = true
 argon2 = "0.6.0"
 chacha20poly1305 = "0.11.0"
 zeroize = "1.9.0"

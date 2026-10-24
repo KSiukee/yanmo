@@ -224,6 +224,27 @@ impl Store {
         Ok(out)
     }
 
+    /// 这本书**所有种类**的碎片（最近的在前，最多 `limit` 条）。
+    ///
+    /// 与 [`Store::fragments`] 的区别：那个按种类分别查再合并（"只要这几类"时合适）；
+    /// 这个一次查全——模块只读门面要的正是"整池最近 N 条"，不该为一次读取把五种各查一遍
+    /// （那会把内存峰值抬到 N × 5）。
+    pub fn recent_fragments(&self, work_id: i64, limit: usize) -> Result<Vec<Fragment>> {
+        let sql = format!(
+            "SELECT {COLS} FROM fragments
+              WHERE work_id = ?1 AND deleted_at IS NULL
+              ORDER BY created_at DESC, id DESC
+              LIMIT ?2"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![work_id, limit as i64], read_raw)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(into_fragment(row?)?);
+        }
+        Ok(out)
+    }
+
     /// 指定种类各有几条（**只数没删的**）——面板上那些筛选项的数字。
     pub fn fragment_counts(&self, work_id: i64, kinds: &[FragmentKind]) -> Result<Vec<FragmentCount>> {
         let mut out = Vec::with_capacity(kinds.len());
