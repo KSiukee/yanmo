@@ -5,7 +5,9 @@
 //!
 //! ```text
 //! yanmo-launch --db <yanmo.db> --module <受管模块目录> --host <yanmo-host 可执行>
-//!              [--timeout-secs 60]
+//!              [--timeout-secs 60] [--resident] [--idle-secs 300]
+//! yanmo-launch --db <yanmo.db> --modules-root <受管模块根> --host <yanmo-host 可执行>
+//!              [--timeout-secs 60] [--idle-secs 300]
 //! ```
 
 use std::path::PathBuf;
@@ -13,7 +15,9 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use serde_json::json;
-use yanmo_launcher::{launch, LaunchError, LaunchRequest};
+use yanmo_launcher::{
+    launch, launch_platform, LaunchError, LaunchPlatformRequest, LaunchRequest,
+};
 
 fn main() -> ExitCode {
     match run() {
@@ -33,9 +37,14 @@ fn run() -> Result<(), LaunchError> {
     let db = value_of(&args, "--db")
         .map(PathBuf::from)
         .ok_or_else(|| LaunchError::new(LaunchError::DB, "missing --db <file>"))?;
-    let module = value_of(&args, "--module")
-        .map(PathBuf::from)
-        .ok_or_else(|| LaunchError::new(LaunchError::MANIFEST, "missing --module <dir>"))?;
+    let module = value_of(&args, "--module").map(PathBuf::from);
+    let modules_root = value_of(&args, "--modules-root").map(PathBuf::from);
+    if module.is_none() && modules_root.is_none() {
+        return Err(LaunchError::new(
+            LaunchError::MANIFEST,
+            "missing --module <dir> or --modules-root <dir>",
+        ));
+    }
     let host = value_of(&args, "--host")
         .map(PathBuf::from)
         .ok_or_else(|| LaunchError::new(LaunchError::SPAWN, "missing --host <file>"))?;
@@ -48,6 +57,23 @@ fn run() -> Result<(), LaunchError> {
         .map(|seconds| Duration::from_secs(seconds.clamp(1, 3600)))
         .unwrap_or(Duration::from_secs(60));
 
+    if let Some(modules_root) = modules_root {
+        let report = launch_platform(&LaunchPlatformRequest {
+            db_path: db,
+            modules_root,
+            host_bin: host,
+            timeout,
+            idle_secs,
+        })?;
+        if report.timed_out || report.exit_code.unwrap_or(1) != 0 {
+            return Err(LaunchError::new(
+                LaunchError::WAIT,
+                format!("host exit {:?}", report.exit_code),
+            ));
+        }
+        return Ok(());
+    }
+    let module = module.expect("checked above");
     let report = launch(&LaunchRequest {
         db_path: db,
         module_dir: module,

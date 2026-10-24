@@ -1,230 +1,183 @@
-//! 模块运行：**后台拉起独立启动器**，管理页能看状态、能停。
+//! 模块运行：**一个平台 launcher + 一个多模块宿主**。
 //!
-//! 壳不链接沙箱/IPC；这里只做三件事：核对受管包指纹、拉起 `yanmo-launch`、记录子进程。
-//! 停止 = 杀掉启动器进程；启动器的作业对象是 kill-on-close，宿主会跟着退。
+//! 壳只做三件事：核对受管包指纹、拉起/喂 `yanmo-launch --modules-root`、按模块
+//! id 记录宿主逐行交回的报告。停止是**停整个平台**（WASM 没有安全的单线程终止）。
 
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tauri::State;
 
 use crate::error::ApiError;
 use crate::storage::AppData;
-use super::module_run_types::{ModuleRunStarted, ModuleStatus};
 use yanmo_core::store::Store;
 
-/// 一次运行在壳里的登记（子进程 + 已收到的输出）。
-struct RunSlot {
+use super::module_run_types::{ModuleRunStarted, ModuleStatus};
+
+struct Platform {
     child: Option<Child>,
-    stdin: Option<std::process::ChildStdin>,
-    output: String,
-    error: String,
+    stdin: Option<ChildStdin>,
     running: bool,
-    stopped: bool,
-    exit_code: Option<i32>,
-    timed_out: bool,
-    last_activity: std::time::Instant,
+    statuses: HashMap<String, ModuleStatus>,
+    error: String,
+    last_activity: Instant,
 }
 
-impl Default for RunSlot {
+impl Default for Platform {
     fn default() -> Self {
         Self {
             child: None,
             stdin: None,
-            output: String::new(),
-            error: String::new(),
             running: false,
-            stopped: false,
-            exit_code: None,
-            timed_out: false,
-            last_activity: std::time::Instant::now(),
+            statuses: HashMap::new(),
+            error: String::new(),
+            last_activity: Instant::now(),
         }
     }
 }
 
-/// 运行登记表：按模块 id 保存**当前这一次**运行；同一模块同时只跑一个。
+/// 平台运行登记（全局一个；多模块状态按 id 分开）。
 #[derive(Default)]
 pub struct ModuleRuns {
-    runs: Arc<Mutex<HashMap<String, Arc<Mutex<RunSlot>>>>>,
+    platform: Arc<Mutex<Platform>>,
 }
 
 impl ModuleRuns {
-    fn slot(&self, module_id: &str) -> Option<Arc<Mutex<RunSlot>>> {
-        self.runs.lock().ok()?.get(module_id).cloned()
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, Platform>, ApiError> {
+        self.platform
+            .lock()
+            .map_err(|_| ApiError::new("shell.module_launch_failed").caused_by("platform lock poisoned"))
     }
 
-    fn is_running(&self, module_id: &str) -> bool {
-        self.slot(module_id)
-            .and_then(|slot| slot.lock().ok().map(|guard| guard.running))
-            .unwrap_or(false)
-    }
-
-    fn start(&self, module_id: &str, mut child: Child) -> Result<(), ApiError> {
+    fn ensure_platform(&self, data: &AppData) -> Result<(), ApiError> {
+        {
+            let platform = self.lock()?;
+            if platform.running {
+                return Ok(());
+            }
+        }
+        let host = resolve_bin("yanmo-host", "YANMO_HOST_BIN")?;
+        let launcher = resolve_bin("yanmo-launch", "YANMO_LAUNCH_BIN")?;
+        let modules = data.data_dir().join("modules");
+        let mut command = Command::new(&launcher);
+        command
+            .arg("--db")
+            .arg(data.db_path())
+            .arg("--modules-root")
+            .arg(&modules)
+            .arg("--host")
+            .arg(&host)
+            .arg("--timeout-secs")
+            .arg("3600")
+            .arg("--idle-secs")
+            .arg("300")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000);
+        }
+        let mut child = command.spawn().map_err(|error| {
+            ApiError::new("shell.module_launch_failed").caused_by(error)
+        })?;
+        let Some(stdin) = child.stdin.take() else {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(ApiError::new("shell.module_launch_failed")
+                .caused_by("platform stdin was not piped"));
+        };
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
-        let stdin = child.stdin.take();
-        let slot = Arc::new(Mutex::new(RunSlot {
-            child: Some(child),
-            stdin,
-            last_activity: std::time::Instant::now(),
-            running: true,
-            ..RunSlot::default()
-        }));
-        if let Ok(mut runs) = self.runs.lock() {
-            runs.insert(module_id.to_string(), slot.clone());
+        {
+            let mut platform = self.lock()?;
+            platform.child = Some(child);
+            platform.stdin = Some(stdin);
+            platform.running = true;
+            platform.statuses.clear();
+            platform.error.clear();
+            platform.last_activity = Instant::now();
+        }
+        let shared = self.platform.clone();
+        if let Some(stdout) = stdout {
+            thread::spawn(move || pump_stdout(stdout, shared));
         } else {
-            return Err(ApiError::new("shell.module_launch_failed").caused_by("run registry lock poisoned"));
+            return Err(ApiError::new("shell.module_launch_failed").caused_by("platform stdout missing"));
         }
-        if let Some(reader) = stdout {
-            pump(reader, slot.clone(), true);
+        if let Some(stderr) = stderr {
+            let shared = self.platform.clone();
+            thread::spawn(move || pump_stderr(stderr, shared));
         }
-        if let Some(reader) = stderr {
-            pump(reader, slot.clone(), false);
-        }
-        monitor(slot);
+        monitor(self.platform.clone());
         Ok(())
     }
 
-    fn send(&self, module_id: &str, command: &str) -> Result<(), ApiError> {
-        let Some(slot) = self.slot(module_id) else {
-            return Err(ApiError::new("shell.module_not_running"));
-        };
-        let mut guard = slot
-            .lock()
-            .map_err(|_| ApiError::new("shell.module_launch_failed").caused_by("run registry lock poisoned"))?;
-        let Some(stdin) = guard.stdin.as_mut() else {
+    fn send(&self, command: &str) -> Result<(), ApiError> {
+        let mut platform = self.lock()?;
+        let Some(stdin) = platform.stdin.as_mut() else {
             return Err(ApiError::new("shell.module_not_running"));
         };
         stdin
             .write_all(format!("{command}\n").as_bytes())
             .and_then(|_| stdin.flush())
             .map_err(|error| ApiError::new("shell.module_launch_failed").caused_by(error))?;
-        guard.last_activity = std::time::Instant::now();
+        platform.last_activity = Instant::now();
         Ok(())
     }
 
-    fn status(&self, module_id: &str) -> ModuleStatus {
-        let Some(slot) = self.slot(module_id) else {
-            return ModuleStatus::unknown();
-        };
-        let Ok(guard) = slot.lock() else {
-            return ModuleStatus::unknown();
-        };
-        let mut status = ModuleStatus {
-            known: true,
-            running: guard.running,
-            stopped: guard.stopped,
-            timed_out: guard.timed_out,
-            idle_seconds: if guard.running { guard.last_activity.elapsed().as_secs() } else { 0 },
-            exit_code: guard.exit_code,
-            emitted: Vec::new(),
-            stderr: guard.error.clone(),
-            error: None,
-        };
-        let report = guard
-            .output
-            .lines()
-            .rev()
-            .find(|line| line.trim_start().starts_with('{'))
-            .and_then(|line| serde_json::from_str::<serde_json::Value>(line).ok());
-        if let Some(value) = report {
-            status.exit_code = value
-                .get("exit_code")
-                .and_then(|value| value.as_i64())
-                .map(|code| code as i32)
-                .or(status.exit_code);
-            status.timed_out = value
-                .get("timed_out")
-                .and_then(|value| value.as_bool())
-                .unwrap_or(status.timed_out);
-            status.emitted = value
-                .get("emitted")
-                .and_then(|value| value.as_array())
-                .map(|items| {
-                    items
-                        .iter()
-                        .filter_map(|item| item.as_str().map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default();
-            status.stderr = value
-                .get("stderr")
-                .and_then(|value| value.as_str())
-                .unwrap_or_default()
-                .to_string();
-        } else if !guard.running && !guard.output.is_empty() {
-            status.error = Some("launcher report unreadable".to_string());
-        }
-        status
-    }
-
-    fn stop(&self, module_id: &str) -> Result<(), ApiError> {
-        let Some(slot) = self.slot(module_id) else {
-            return Ok(());
-        };
-        let mut guard = slot
-            .lock()
-            .map_err(|_| ApiError::new("shell.module_launch_failed").caused_by("run registry lock poisoned"))?;
-        if !guard.running {
+    pub fn stop_platform(&self) -> Result<(), ApiError> {
+        let mut platform = self.lock()?;
+        if !platform.running {
             return Ok(());
         }
-        let written = guard
-            .stdin
-            .as_mut()
-            .map(|stdin| stdin.write_all(b"stop\n").and_then(|_| stdin.flush()));
-        if !matches!(written, Some(Ok(()))) {
-            if let Some(child) = guard.child.as_mut() {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
-            guard.child = None;
-            guard.stdin = None;
-            guard.running = false;
-            guard.stopped = true;
-            return Ok(());
+        if let Some(stdin) = platform.stdin.as_mut() {
+            let _ = stdin.write_all(b"stop\n").and_then(|_| stdin.flush());
         }
-        guard.stopped = true;
-        drop(guard);
-        let watchdog = slot.clone();
+        for status in platform.statuses.values_mut() {
+            status.running = false;
+            status.stopped = true;
+        }
+        drop(platform);
+        let shared = self.platform.clone();
         thread::spawn(move || {
             thread::sleep(Duration::from_secs(5));
-            if let Ok(mut guard) = watchdog.lock() {
-                if guard.running {
-                    if let Some(child) = guard.child.as_mut() {
+            if let Ok(mut platform) = shared.lock() {
+                if platform.running {
+                    if let Some(child) = platform.child.as_mut() {
                         let _ = child.kill();
                         let _ = child.wait();
                     }
-                    guard.child = None;
-                    guard.stdin = None;
-                    guard.running = false;
-                            guard.stopped = true;
+                    platform.child = None;
+                    platform.stdin = None;
+                    platform.running = false;
+                    for status in platform.statuses.values_mut() {
+                        status.running = false;
+                        status.stopped = true;
+                    }
                 }
             }
         });
         Ok(())
     }
 
-    fn kill_all(&self) {
-        let slots: Vec<_> = self
-            .runs
-            .lock()
-            .map(|runs| runs.values().cloned().collect())
-            .unwrap_or_default();
-        for slot in slots {
-            if let Ok(mut guard) = slot.lock() {
-                if let Some(child) = guard.child.as_mut() {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                }
-                guard.child = None;
-                guard.stdin = None;
-                guard.running = false;
-                guard.stopped = true;
+    fn kill_platform(&self) {
+        if let Ok(mut platform) = self.platform.lock() {
+            if let Some(child) = platform.child.as_mut() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            platform.child = None;
+            platform.stdin = None;
+            platform.running = false;
+            for status in platform.statuses.values_mut() {
+                status.running = false;
+                status.stopped = true;
             }
         }
     }
@@ -232,55 +185,97 @@ impl ModuleRuns {
 
 impl Drop for ModuleRuns {
     fn drop(&mut self) {
-        // 壳退出不走优雅控制：直接把子进程收掉，别留孤儿。
-        self.kill_all();
+        self.kill_platform();
     }
 }
 
-fn pump(mut reader: impl Read + Send + 'static, slot: Arc<Mutex<RunSlot>>, stdout: bool) {
-    thread::spawn(move || {
-        let mut buffer = [0u8; 4096];
-        loop {
-            let read = match reader.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(read) => read,
-                Err(_) => break,
-            };
-            let text = String::from_utf8_lossy(&buffer[..read]);
-            if let Ok(mut guard) = slot.lock() {
-                if stdout {
-                    guard.output.push_str(&text);
-                } else {
-                    guard.error.push_str(&text);
-                }
-            }
+fn pump_stdout(reader: impl Read + Send + 'static, platform: Arc<Mutex<Platform>>) {
+    let reader = BufReader::new(reader);
+    for line in reader.lines() {
+        let Ok(line) = line else { break };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        let Some(module_id) = value.get("module_id").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        let Ok(mut platform) = platform.lock() else { break };
+        let status = platform
+            .statuses
+            .entry(module_id.to_string())
+            .or_insert_with(ModuleStatus::unknown);
+        status.known = true;
+        status.running = false;
+        status.timed_out = value
+            .get("timed_out")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        status.emitted = value
+            .get("emitted")
+            .and_then(|value| value.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        status.stderr = value
+            .get("stderr")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .to_string();
+        if value.get("ok").and_then(|value| value.as_bool()) == Some(false) {
+            let code = value
+                .get("code")
+                .and_then(|value| value.as_str())
+                .unwrap_or("module.run_failed");
+            let detail = value
+                .get("detail")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default();
+            status.error = Some(format!("{code}: {detail}"));
         }
-    });
+        platform.last_activity = Instant::now();
+    }
 }
 
-fn monitor(slot: Arc<Mutex<RunSlot>>) {
+fn pump_stderr(reader: impl Read + Send + 'static, platform: Arc<Mutex<Platform>>) {
+    let reader = BufReader::new(reader);
+    for line in reader.lines() {
+        let Ok(line) = line else { break };
+        if let Ok(mut platform) = platform.lock() {
+            platform.error.push_str(&line);
+            platform.error.push('\n');
+        }
+    }
+}
+
+fn monitor(platform: Arc<Mutex<Platform>>) {
     thread::spawn(move || loop {
         thread::sleep(Duration::from_millis(200));
-        let Ok(mut guard) = slot.lock() else {
+        let Ok(mut platform) = platform.lock() else {
             return;
         };
-        let Some(child) = guard.child.as_mut() else {
+        if !platform.running {
             return;
+        }
+        let exited = match platform.child.as_mut() {
+            Some(child) => match child.try_wait() {
+                Ok(Some(_)) => true,
+                Ok(None) => false,
+                Err(_) => true,
+            },
+            None => true,
         };
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                guard.exit_code = status.code();
-                guard.running = false;
-                guard.child = None;
-                return;
+        if exited {
+            platform.child = None;
+            platform.stdin = None;
+            platform.running = false;
+            for status in platform.statuses.values_mut() {
+                status.running = false;
             }
-            Ok(None) => {}
-            Err(error) => {
-                guard.error.push_str(&format!("wait: {error}"));
-                guard.running = false;
-                guard.child = None;
-                return;
-            }
+            return;
         }
     });
 }
@@ -300,39 +295,20 @@ pub fn module_run(
     }
     let managed = data.data_dir().join("modules").join(&module_id);
     data.with_store(|store: &mut Store| store.verify_module_package(&module_id, &managed))?;
-    if runs.is_running(&module_id) {
-        runs.send(&module_id, "run")?;
-        return Ok(ModuleRunStarted { module_id });
-    }
 
-    let host = resolve_bin("yanmo-host", "YANMO_HOST_BIN")?;
-    let launcher = resolve_bin("yanmo-launch", "YANMO_LAUNCH_BIN")?;
-    let mut command = Command::new(&launcher);
-    command
-        .arg("--db")
-        .arg(data.db_path())
-        .arg("--module")
-        .arg(&managed)
-        .arg("--host")
-        .arg(&host)
-        .arg("--timeout-secs")
-        .arg("3600")
-        .arg("--idle-secs")
-        .arg("300")
-        .arg("--resident")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    }
-    let child = command.spawn().map_err(|error| {
-        ApiError::new("shell.module_launch_failed").caused_by(error)
-    })?;
-    runs.start(&module_id, child)?;
-    runs.send(&module_id, "run")?;
+    runs.ensure_platform(&data)?;
+    runs.send(&format!("run {module_id}"))?;
+    let mut platform = runs.lock()?;
+    let status = platform
+        .statuses
+        .entry(module_id.clone())
+        .or_insert_with(ModuleStatus::unknown);
+    status.known = true;
+    status.running = true;
+    status.stopped = false;
+    status.error = None;
+    status.emitted.clear();
+    platform.last_activity = Instant::now();
     Ok(ModuleRunStarted { module_id })
 }
 
@@ -341,12 +317,27 @@ pub fn module_status(
     runs: State<'_, ModuleRuns>,
     module_id: String,
 ) -> Result<ModuleStatus, ApiError> {
-    Ok(runs.status(&module_id))
+    let platform = runs.lock()?;
+    let mut status = platform
+        .statuses
+        .get(&module_id)
+        .cloned()
+        .unwrap_or_else(ModuleStatus::unknown);
+    if status.known && status.running && platform.running {
+        status.idle_seconds = platform.last_activity.elapsed().as_secs();
+    } else {
+        status.idle_seconds = 0;
+    }
+    if !platform.running {
+        status.running = false;
+    }
+    Ok(status)
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn module_stop(runs: State<'_, ModuleRuns>, module_id: String) -> Result<(), ApiError> {
-    runs.stop(&module_id)
+pub fn module_stop(runs: State<'_, ModuleRuns>, _module_id: String) -> Result<(), ApiError> {
+    // 平台里只有一个宿主；停一个就是停整个平台。
+    runs.stop_platform()
 }
 
 fn resolve_bin(name: &str, env_name: &str) -> Result<PathBuf, ApiError> {

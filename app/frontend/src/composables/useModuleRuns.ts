@@ -76,6 +76,13 @@ export function useModuleRuns(onFinished: (status: ModuleStatus) => void) {
     return runs.value[moduleId]?.running === true;
   }
 
+  function markAllStopped() {
+    for (const status of Object.values(runs.value)) {
+      status.running = false;
+      status.stopped = true;
+    }
+  }
+
   function dispose() {
     if (timer !== undefined) {
       window.clearInterval(timer);
@@ -83,4 +90,13 @@ export function useModuleRuns(onFinished: (status: ModuleStatus) => void) {
     }
   }
 
-  return { runs, isRunning, markStarted, markStopped, loadStatuses, ensurePolling, dispose };}
+  return {
+    runs,
+    isRunning,
+    markStarted,
+    markStopped,
+    markAllStopped,
+    loadStatuses,
+    ensurePolling,
+    dispose,
+  };}

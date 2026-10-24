@@ -20,6 +20,7 @@
 #![allow(unsafe_code)] // 仅 `job` 模块的 Win32 调用；没有别的 unsafe。
 
 mod job;
+mod platform;
 
 use std::fs;
 use std::io::{BufRead, Read, Write};
@@ -36,6 +37,7 @@ use yanmo_proto::ipc::IpcError;
 use yanmo_proto::manifest::ModuleManifest;
 
 use job::JobGuard;
+pub use platform::{launch_platform, LaunchPlatformRequest};
 
 /// 宿主的作业对象内存上限（wasmi + 模块；够用且不至于拖垮机器）。
 pub const JOB_MEMORY_LIMIT: usize = 512 * 1024 * 1024;

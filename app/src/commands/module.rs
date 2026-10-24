@@ -8,6 +8,7 @@ use std::sync::Mutex;
 
 use tauri::State;
 
+use super::module_run::ModuleRuns;
 use crate::error::ApiError;
 use crate::storage::AppData;
 use yanmo_core::store::{
@@ -100,7 +101,12 @@ pub fn module_set_background(
 
 /// 卸载：**只移除注册表，模块数据默认保留**（删除数据是另一个显式动作）。
 #[tauri::command(rename_all = "snake_case")]
-pub fn module_uninstall(data: State<'_, AppData>, module_id: String) -> Result<(), ApiError> {
+pub fn module_uninstall(
+    data: State<'_, AppData>,
+    runs: State<'_, ModuleRuns>,
+    module_id: String,
+) -> Result<(), ApiError> {
+    runs.stop_platform()?;
     data.with_store(|store: &mut Store| store.uninstall_module(&module_id))
 }
 
@@ -126,6 +132,7 @@ pub fn module_import_pick(
 pub fn module_import_confirm(
     data: State<'_, AppData>,
     stage: State<'_, ImportStage>,
+    runs: State<'_, ModuleRuns>,
     granted: ModuleCapabilities,
     expected_fingerprint: String,
 ) -> Result<ModuleCard, ApiError> {
@@ -135,7 +142,7 @@ pub fn module_import_confirm(
             yanmo_core::error_codes::codes::MODULE_IMPORT_CHANGED,
         )));
     }
-    data.with_store(|store: &mut Store| {
+    let card = data.with_store(|store: &mut Store| {
         let managed = data.data_dir().join("modules").join(&staged.module_id);
         store.import_module_managed(
             &staged.dir,
@@ -146,7 +153,10 @@ pub fn module_import_confirm(
             &CertificationSet::built_in(),
         )?;
         store.module_card(&staged.module_id)
-    })
+    })?;
+    // 平台启动时扫描模块根建 handler；新导入的模块要让下一次启动重新扫。
+    runs.stop_platform()?;
+    Ok(card)
 }
 
 /// 放弃这次导入（清掉壳里暂存的路径）。
