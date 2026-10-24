@@ -12,6 +12,7 @@ import {
   moduleRun,
   moduleSetEnabled,
   moduleSetFavorite,
+  moduleSetBackground,
   moduleSetPinned,
   moduleStop,
   moduleUninstall,
@@ -31,7 +32,7 @@ const cards = ref<ModuleCard[]>([]);
 const busy = ref(false);
 const note = ref("");
 const preview = ref<ImportPreview | null>(null);
-const { isRunning: isRunningId, markStarted, markStopped, loadStatuses, dispose } =
+const { runs, isRunning: isRunningId, markStarted, markStopped, loadStatuses, dispose } =
   useModuleRuns((status: ModuleStatus) => {
     const emitted = status.emitted.join(" / ");
     note.value = status.timed_out
@@ -94,6 +95,29 @@ function toggleFavorite(card: ModuleCard) {
 
 function togglePinned(card: ModuleCard) {
   void act(() => moduleSetPinned(card.id, !card.pinned));
+}
+
+function toggleBackground(card: ModuleCard) {
+  void act(async () => {
+    await moduleSetBackground(card.id, !card.background);
+    note.value = t(
+      card.background ? "modules.background_disabled" : "modules.background_enabled",
+      { name: card.name },
+    );
+  });
+}
+
+function closeDialog() {
+  // 没开后台运行的，离开管理页就停；开了的继续跑（仍可再打开停）。
+  for (const [moduleId, status] of Object.entries(runs.value)) {
+    if (!status.running) continue;
+    const card = cards.value.find((item) => item.id === moduleId);
+    if (!card?.background) {
+      void moduleStop(moduleId);
+    }
+  }
+  dispose();
+  emit("close");
 }
 
 function uninstall(card: ModuleCard) {
@@ -171,7 +195,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="modules dialog" @click.self="emit('close')">
+  <div class="modules dialog" @click.self="closeDialog">
     <section class="modules__box dialog__box" role="dialog" aria-modal="true">
       <header class="modules__head dialog__head">
         <h2 class="modules__title dialog__title">{{ t("modules.title") }}</h2>
@@ -195,7 +219,7 @@ onUnmounted(() => {
           type="button"
           class="modules__button dialog__button"
           :title="t('modules.close_title')"
-          @click="emit('close')"
+          @click="closeDialog"
         >
           {{ t("common.close") }}
         </button>
@@ -294,6 +318,18 @@ onUnmounted(() => {
             </button>
             <button
               type="button"
+              class="modules__button dialog__button"
+              :disabled="busy"
+              @click="toggleBackground(card)"
+            >
+              {{
+                card.background
+                  ? t("modules.background_on")
+                  : t("modules.background_off")
+              }}
+            </button>
+            <button
+              type="button"
               class="modules__button dialog__button dialog__button--danger"
               :disabled="busy"
               @click="uninstall(card)"
@@ -309,78 +345,4 @@ onUnmounted(() => {
 
 <style scoped src="./dialog.css"></style>
 
-<style scoped>
-.modules__box {
-  width: min(760px, 100%);
-}
-
-.modules__list {
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.modules__card {
-  padding: 10px 12px;
-  border: 1px solid var(--ym-line);
-  border-radius: 6px;
-  background: var(--ym-paper);
-}
-
-.modules__card--frozen {
-  opacity: 0.72;
-}
-
-.modules__row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.modules__name {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.modules__version,
-.modules__meta,
-.modules__desc,
-.modules__reads {
-  color: var(--ym-ink-soft);
-  font-size: 12px;
-}
-
-.modules__meta,
-.modules__desc,
-.modules__reads,
-.modules__caps {
-  margin: 4px 0 0;
-  overflow-wrap: anywhere;
-}
-
-.modules__caps {
-  display: flex;
-  gap: 6px;
-}
-
-.modules__badge {
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--ym-paper-dim);
-  color: var(--ym-ink-soft);
-  font-size: 11px;
-}
-
-.modules__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-</style>
+<style scoped src="./module-dialog.css"></style>

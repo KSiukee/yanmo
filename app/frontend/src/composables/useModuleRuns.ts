@@ -82,5 +82,4 @@ export function useModuleRuns(onFinished: (status: ModuleStatus) => void) {
     }
   }
 
-  return { runs, isRunning, markStarted, markStopped, loadStatuses, ensurePolling, dispose };
-}
+  return { runs, isRunning, markStarted, markStopped, loadStatuses, ensurePolling, dispose };}

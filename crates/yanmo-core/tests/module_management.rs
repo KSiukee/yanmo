@@ -67,6 +67,19 @@ fn cards_show_what_the_management_page_needs() {
 }
 
 #[test]
+fn background_is_a_user_preference_not_autostart() {
+    let (_dir, mut store) = fresh();
+    install(&mut store, A, "甲");
+    assert!(!store.module_card(A).unwrap().background, "默认离开就停");
+    store.set_module_background(A, true).unwrap();
+    assert!(store.module_card(A).unwrap().background);
+    assert!(store.module_card(A).unwrap().enabled, "后台偏好不改变激活状态");
+    store.set_module_background(A, false).unwrap();
+    assert!(!store.module_card(A).unwrap().background);
+    assert!(store.set_module_background("app.example.none", true).is_err());
+}
+
+#[test]
 fn pinned_comes_first_then_favorite_then_install_order() {
     let (_dir, mut store) = fresh();
     install(&mut store, A, "甲");

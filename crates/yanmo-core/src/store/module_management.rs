@@ -29,6 +29,8 @@ pub struct ModuleCard {
     pub certified_at: i64,
     /// 已激活（未冻结）
     pub enabled: bool,
+    /// 离开管理页后是否允许继续跑（**不是自启**；默认否）
+    pub background: bool,
     pub favorite: bool,
     pub pinned: bool,
     /// 用户实际授予的只读区域码
@@ -48,7 +50,7 @@ impl Store {
     pub fn module_cards(&self) -> Result<Vec<ModuleCard>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, manifest, granted, enabled, certified, cert_edition, certified_at,
-                    favorite, pinned, payload_sha256, source, installed_at, updated_at
+                    background, favorite, pinned, payload_sha256, source, installed_at, updated_at
              FROM modules
              ORDER BY pinned DESC, favorite DESC, installed_at, id",
         )?;
@@ -63,10 +65,11 @@ impl Store {
                 row.get::<_, i64>(6)?,
                 row.get::<_, bool>(7)?,
                 row.get::<_, bool>(8)?,
-                row.get::<_, String>(9)?,
+                row.get::<_, bool>(9)?,
                 row.get::<_, String>(10)?,
-                row.get::<_, i64>(11)?,
+                row.get::<_, String>(11)?,
                 row.get::<_, i64>(12)?,
+                row.get::<_, i64>(13)?,
             ))
         })?;
         let mut cards = Vec::new();
@@ -79,6 +82,7 @@ impl Store {
                 certified,
                 cert_edition,
                 certified_at,
+                background,
                 favorite,
                 pinned,
                 fingerprint,
@@ -94,6 +98,7 @@ impl Store {
                 certified,
                 cert_edition,
                 certified_at,
+                background,
                 favorite,
                 pinned,
                 &fingerprint,
@@ -121,6 +126,33 @@ impl Store {
     /// 置顶（不影响功能，只影响管理页排序）。
     pub fn set_module_pinned(&mut self, module_id: &str, pinned: bool) -> Result<()> {
         self.set_module_preference(module_id, None, Some(pinned))
+    }
+
+    /// 后台运行偏好：离开管理页时是否允许继续跑。**不是自启**。
+    pub fn set_module_background(&mut self, module_id: &str, background: bool) -> Result<()> {
+        let exists: Option<i64> = self
+            .conn
+            .query_row("SELECT 1 FROM modules WHERE id = ?1", [module_id], |row| row.get(0))
+            .optional()?;
+        if exists.is_none() {
+            return Err(not_found(module_id));
+        }
+        let now = now_millis();
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "UPDATE modules SET background = ?2, updated_at = ?3 WHERE id = ?1",
+            params![module_id, background, now],
+        )?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "modules",
+            0,
+            "background",
+            serde_json::json!({ "module_id": module_id, "background": background }),
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     fn set_module_preference(
@@ -176,6 +208,7 @@ fn decode(
     certified: bool,
     cert_edition: i64,
     certified_at: i64,
+    background: bool,
     favorite: bool,
     pinned: bool,
     fingerprint: &str,
@@ -203,6 +236,7 @@ fn decode(
         cert_edition: cert_edition.max(0) as u32,
         certified_at,
         enabled,
+        background,
         favorite,
         pinned,
         reads: granted.read.iter().map(|area| area.as_str().to_string()).collect(),

@@ -85,6 +85,19 @@ pub fn module_set_pinned(
     data.with_store(|store: &mut Store| store.set_module_pinned(&module_id, pinned))
 }
 
+/// 后台运行偏好：离开管理页时是否允许继续跑（**不是自启**）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn module_set_background(
+    data: State<'_, AppData>,
+    module_id: String,
+    background: bool,
+) -> Result<ModuleCard, ApiError> {
+    data.with_store(|store: &mut Store| {
+        store.set_module_background(&module_id, background)?;
+        store.module_card(&module_id)
+    })
+}
+
 /// 卸载：**只移除注册表，模块数据默认保留**（删除数据是另一个显式动作）。
 #[tauri::command(rename_all = "snake_case")]
 pub fn module_uninstall(data: State<'_, AppData>, module_id: String) -> Result<(), ApiError> {

@@ -210,6 +210,7 @@ export const COMMANDS = {
   moduleSetEnabled: "module_set_enabled",
   moduleSetFavorite: "module_set_favorite",
   moduleSetPinned: "module_set_pinned",
+  moduleSetBackground: "module_set_background",
   moduleUninstall: "module_uninstall",
   moduleImportPick: "module_import_pick",
   moduleImportConfirm: "module_import_confirm",

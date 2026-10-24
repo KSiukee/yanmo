@@ -16,6 +16,8 @@ export interface ModuleCard {
   cert_edition: number;
   certified_at: number;
   enabled: boolean;
+  /** 离开管理页后是否允许继续跑（不是自启） */
+  background: boolean;
   favorite: boolean;
   pinned: boolean;
   reads: string[];
@@ -64,6 +66,9 @@ export const moduleSetFavorite = (module_id: string, favorite: boolean) =>
 
 export const moduleSetPinned = (module_id: string, pinned: boolean) =>
   call<void>(COMMANDS.moduleSetPinned, { module_id, pinned });
+
+export const moduleSetBackground = (module_id: string, background: boolean) =>
+  call<ModuleCard>(COMMANDS.moduleSetBackground, { module_id, background });
 
 export const moduleUninstall = (module_id: string) =>
   call<void>(COMMANDS.moduleUninstall, { module_id });
