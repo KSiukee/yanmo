@@ -279,6 +279,15 @@ onUnmounted(() => {
               type="button"
               class="modules__button dialog__button"
               :disabled="busy"
+              @click="runModule(card)"
+            >
+              {{ t("modules.run_again") }}
+            </button>
+            <button
+              v-if="isRunning(card)"
+              type="button"
+              class="modules__button dialog__button"
+              :disabled="busy"
               @click="stopModule(card)"
             >
               {{ t("modules.stop") }}

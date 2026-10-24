@@ -18,9 +18,11 @@
 pub mod error;
 pub mod package;
 pub mod sandbox;
+mod sandbox_config;
 
 pub use error::{HostError, HostResult};
 pub use package::{
     ModulePackage, MAX_ENTRY_BYTES, MAX_MANIFEST_BYTES, MAX_PACKAGE_BYTES, MAX_PACKAGE_ENTRIES,
 };
-pub use sandbox::{run_package, run_package_with_core, RunReport, RunStatus, SandboxConfig};
+pub use sandbox::{run_package, run_package_with_core, run_package_with_core_shared, RunReport, RunStatus};
+pub use sandbox_config::SandboxConfig;

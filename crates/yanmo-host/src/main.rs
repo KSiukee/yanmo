@@ -10,9 +10,14 @@
 
 use std::net::SocketAddr;
 use std::process::ExitCode;
+use std::sync::{Arc, Mutex};
+
+use std::io::BufRead;
 
 use serde_json::json;
-use yanmo_host::{run_package_with_core, HostError, ModulePackage, SandboxConfig};
+use yanmo_host::{
+    run_package_with_core, run_package_with_core_shared, HostError, ModulePackage, SandboxConfig,
+};
 use yanmo_ipc::Client;
 
 fn main() -> ExitCode {
@@ -31,6 +36,7 @@ fn run() -> Result<(), HostError> {
     let module = value_of(&args, "--module")
         .ok_or_else(|| HostError::new(HostError::PACKAGE, "missing --module <dir>"))?;
     let check_only = args.iter().any(|arg| arg == "--check");
+    let resident = args.iter().any(|arg| arg == "--resident");
 
     let package = ModulePackage::open(&module)?;
     if check_only {
@@ -89,6 +95,47 @@ fn run() -> Result<(), HostError> {
             ))
         }
     };
+    if resident {
+        let core = client.map(|client| Arc::new(Mutex::new(client)));
+        let stdin = std::io::stdin();
+        for line in stdin.lock().lines() {
+            let line = line.map_err(|error| HostError::new(HostError::CORE, error.to_string()))?;
+            match line.trim() {
+                "run" => match run_package_with_core_shared(&package, config, core.clone()) {
+                    Ok(report) => {
+                        println!(
+                            "{}",
+                            json!({
+                                "ok": true,
+                                "module_id": report.module_id,
+                                "status": report.status,
+                                "emitted": report.emitted,
+                                "fuel_used": report.fuel_used,
+                                "memory_bytes": report.memory_bytes,
+                            })
+                        );
+                        use std::io::Write;
+                        let _ = std::io::stdout().flush();
+                    }
+                    Err(error) => {
+                        let payload =
+                            json!({ "ok": false, "code": error.code, "detail": error.detail });
+                        eprintln!("{payload}");
+                    }
+                },
+                "stop" => return Ok(()),
+                "" => {}
+                other => {
+                    eprintln!(
+                        "{}",
+                        json!({ "ok": false, "code": "host.bad_command", "detail": other })
+                    );
+                }
+            }
+        }
+        return Ok(());
+    }
+
     let report = run_package_with_core(&package, config, client)?;
     println!(
         "{}",

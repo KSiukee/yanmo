@@ -1,0 +1,77 @@
+//! 常驻宿主：**同一进程里跑两次**，靠 stdin 的 `run` / `stop` 控制。
+//!
+//! 这一条不碰核心 IPC；只证明“宿主不退出、能复用、能停”。
+
+use std::fs;
+use std::io::{BufRead, BufReader, Write};
+use std::path::Path;
+use std::process::{Command, Stdio};
+
+use serde_json::Value;
+use tempfile::TempDir;
+
+fn package(dir: &Path) {
+    fs::write(
+        dir.join("manifest.json"),
+        serde_json::json!({
+            "id": "app.example.resident",
+            "default_language": "zh-Hans",
+            "name": { "zh-Hans": "常驻测试" },
+            "description": { "zh-Hans": "跑两次。" },
+            "author": { "name": "Example Studio" },
+            "version": "1.0.0",
+            "protocol": 1,
+            "runtime": "wasm",
+            "entry": "module.wasm",
+            "ui": { "form": "headless" },
+            "capabilities": { "read": [] }
+        })
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        dir.join("module.wasm"),
+        wat::parse_str(r#"(module (func (export "run") (result i32) (i32.const 0)))"#).unwrap(),
+    )
+    .unwrap();
+}
+
+fn report(line: &str) -> Value {
+    serde_json::from_str(line.trim()).expect("宿主每次运行应输出一行 JSON 报告")
+}
+
+#[test]
+fn resident_host_runs_twice_and_stops_on_command() {
+    let dir = TempDir::new().unwrap();
+    package(dir.path());
+    let mut child = Command::new(env!("CARGO_BIN_EXE_yanmo-host"))
+        .args(["--module", dir.path().to_str().unwrap(), "--resident"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let mut reader = BufReader::new(stdout);
+
+    let mut line = String::new();
+    stdin.write_all(b"run\n").unwrap();
+    stdin.flush().unwrap();
+    reader.read_line(&mut line).unwrap();
+    let first = report(&line);
+    assert_eq!(first["ok"], true);
+    assert_eq!(first["status"]["kind"], "ok");
+
+    line.clear();
+    stdin.write_all(b"run\n").unwrap();
+    stdin.flush().unwrap();
+    reader.read_line(&mut line).unwrap();
+    let second = report(&line);
+    assert_eq!(second["module_id"], first["module_id"]);
+
+    stdin.write_all(b"stop\n").unwrap();
+    stdin.flush().unwrap();
+    let status = child.wait().unwrap();
+    assert!(status.success(), "收到 stop 后宿主应干净退出");
+}

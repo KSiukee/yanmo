@@ -5028,7 +5028,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-app"
-version = "0.121.0"
+version = "0.122.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5042,7 +5042,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-cli"
-version = "0.121.0"
+version = "0.122.0"
 dependencies = [
  "serde_json",
  "tempfile",
@@ -5051,7 +5051,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-core"
-version = "0.121.0"
+version = "0.122.0"
 dependencies = [
  "argon2",
  "chacha20poly1305",
@@ -5071,7 +5071,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-host"
-version = "0.121.0"
+version = "0.122.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5084,7 +5084,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-ipc"
-version = "0.121.0"
+version = "0.122.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5093,7 +5093,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-launcher"
-version = "0.121.0"
+version = "0.122.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5107,7 +5107,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-proto"
-version = "0.121.0"
+version = "0.122.0"
 dependencies = [
  "serde",
  "serde_json",

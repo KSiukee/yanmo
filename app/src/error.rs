@@ -51,7 +51,7 @@ pub const SHELL_CODES: &[(&str, &[&str])] = &[
     ("shell.import_not_staged", &[]),
     ("shell.module_platform_unavailable", &[]),
     ("shell.module_launch_failed", &["detail"]),
-    ("shell.module_already_running", &[]),
+    ("shell.module_not_running", &[]),
     ("shell.mirror_issue_gone", &[]),
     ("shell.mirror_read_failed", &["path"]),
     ("shell.mirror_unknown_action", &["value"]),

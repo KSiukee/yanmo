@@ -22,7 +22,8 @@
 mod job;
 
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{BufRead, Read, Write};
+use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -45,6 +46,8 @@ pub struct LaunchRequest {
     pub module_dir: PathBuf,
     pub host_bin: PathBuf,
     pub timeout: Duration,
+    /// 常驻模式：宿主等 `run`/`stop` 命令，核心连接跨运行复用。
+    pub resident: bool,
 }
 
 /// 一次启动的结果（给壳/管理页）。
@@ -140,9 +143,13 @@ pub fn launch(request: &LaunchRequest) -> Result<LaunchReport, LaunchError> {
         .arg("--core")
         .arg(addr.to_string())
         .arg("--token-stdin")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stdin(Stdio::piped());
+    if request.resident {
+        command.arg("--resident");
+        command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+    } else {
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -172,7 +179,23 @@ pub fn launch(request: &LaunchRequest) -> Result<LaunchReport, LaunchError> {
         let _ = server.join();
         return Err(LaunchError::new(LaunchError::SPAWN, error.to_string()));
     }
-    drop(stdin);
+    if request.resident {
+        // 常驻：宿主 stdin 保持打开，把启动器收到的控制行转给宿主。
+        let host_stdin = Arc::new(Mutex::new(stdin));
+        std::thread::spawn(move || {
+            let stdin = std::io::stdin();
+            for line in stdin.lock().lines() {
+                let Ok(line) = line else { break };
+                let Ok(mut guard) = host_stdin.lock() else { break };
+                if guard.write_all(format!("{line}\n").as_bytes()).is_err() {
+                    break;
+                }
+                let _ = guard.flush();
+            }
+        });
+    } else {
+        drop(stdin);
+    }
 
     let started = Instant::now();
     let mut timed_out = false;
@@ -201,12 +224,14 @@ pub fn launch(request: &LaunchRequest) -> Result<LaunchReport, LaunchError> {
     };
 
     let mut stdout = String::new();
-    if let Some(mut pipe) = child.stdout.take() {
-        let _ = pipe.read_to_string(&mut stdout);
-    }
     let mut stderr = String::new();
-    if let Some(mut pipe) = child.stderr.take() {
-        let _ = pipe.read_to_string(&mut stderr);
+    if !request.resident {
+        if let Some(mut pipe) = child.stdout.take() {
+            let _ = pipe.read_to_string(&mut stdout);
+        }
+        if let Some(mut pipe) = child.stderr.take() {
+            let _ = pipe.read_to_string(&mut stderr);
+        }
     }
 
     let ipc_error = match server.join() {

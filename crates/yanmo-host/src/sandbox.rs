@@ -19,70 +19,19 @@
 
 use std::collections::BTreeSet;
 use std::fs;
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use wasmi::{
     Caller, Config, Engine, Extern, Linker, Module, Store, StoreLimits, StoreLimitsBuilder,
 };
 use yanmo_proto::capability::CoreDataArea;
+use yanmo_proto::ipc::IpcError;
 use yanmo_ipc::Client;
 
 use crate::error::{HostError, HostResult};
 use crate::package::ModulePackage;
-
-/// 一次沙箱运行的预算。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SandboxConfig {
-    /// 指令燃料（越大越晚停）
-    pub fuel: u64,
-    /// 线性内存上限（字节）
-    pub max_memory_bytes: usize,
-    /// 单条 `emit` 文本上限（字节）
-    pub max_emit_bytes: usize,
-    /// 全部 `emit` 文本合计上限（字节）
-    pub max_total_emit_bytes: usize,
-    /// 最多允许几条 `emit`
-    pub max_emits: usize,
-    /// 单次 `read` 参数（整数 id 文本）上限
-    pub max_read_arg_bytes: usize,
-    /// 单次 `read` 结果上限（核心侧还有 1 MiB 帧上限）
-    pub max_read_result_bytes: usize,
-    /// 最多允许几次 `read`
-    pub max_reads: usize,
-}
-
-impl Default for SandboxConfig {
-    fn default() -> Self {
-        Self {
-            fuel: 10_000_000,
-            max_memory_bytes: 16 * 1024 * 1024,
-            max_emit_bytes: 64 * 1024,
-            max_total_emit_bytes: 256 * 1024,
-            max_emits: 64,
-            max_read_arg_bytes: 4 * 1024,
-            max_read_result_bytes: 256 * 1024,
-            max_reads: 64,
-        }
-    }
-}
-
-impl SandboxConfig {
-    pub fn validate(&self) -> HostResult<()> {
-        let valid = self.fuel > 0
-            && self.max_memory_bytes > 0
-            && self.max_emit_bytes > 0
-            && self.max_emits > 0
-            && self.max_total_emit_bytes >= self.max_emit_bytes
-            && self.max_read_arg_bytes > 0
-            && self.max_read_result_bytes > 0
-            && self.max_reads > 0;
-        if valid {
-            Ok(())
-        } else {
-            Err(HostError::new(HostError::CONFIG, "sandbox limits must be non-zero and consistent"))
-        }
-    }
-}
+use crate::sandbox_config::SandboxConfig;
 
 /// 一次运行的结局（guest 自己返回非零也算"跑完了"，只是它报告了错误码）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -110,7 +59,7 @@ struct HostState {
     max_emit_bytes: usize,
     max_total_emit_bytes: usize,
     max_emits: usize,
-    core: Option<Client>,
+    core: Option<Arc<Mutex<Client>>>,
     declared: BTreeSet<CoreDataArea>,
     max_read_arg_bytes: usize,
     max_read_result_bytes: usize,
@@ -132,6 +81,16 @@ pub fn run_package_with_core(
     package: &ModulePackage,
     config: SandboxConfig,
     core: Option<Client>,
+) -> HostResult<RunReport> {
+    let core = core.map(|client| Arc::new(Mutex::new(client)));
+    run_package_with_core_shared(package, config, core)
+}
+
+/// 同 [`run_package_with_core`]，但核心连接可以**跨多次运行复用**（常驻宿主用）。
+pub fn run_package_with_core_shared(
+    package: &ModulePackage,
+    config: SandboxConfig,
+    core: Option<Arc<Mutex<Client>>>,
 ) -> HostResult<RunReport> {
     config.validate()?;
     let declared: BTreeSet<CoreDataArea> =
@@ -342,13 +301,20 @@ fn read(
         }
     };
 
-    let result = {
+    let core = {
         let state = caller.data_mut();
         state.reads += 1;
-        let Some(core) = state.core.as_mut() else {
-            return fail_from_state(state, HostError::CORE, "no core link");
-        };
-        core.read(area, arg.as_deref())
+        state.core.clone()
+    };
+    let Some(core) = core else {
+        return fail(caller, HostError::CORE, "no core link");
+    };
+    let result = match core.lock() {
+        Ok(mut client) => client.read(area, arg.as_deref()),
+        Err(_) => Err(IpcError::new(
+            IpcError::HANDSHAKE,
+            "core link lock poisoned",
+        )),
     };
     let data = match result {
         Ok(data) => data,
