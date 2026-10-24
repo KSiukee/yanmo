@@ -9,12 +9,14 @@
 //!
 //! 调用方必须**先关库**（连接还开着就动文件，是拿作者的稿子冒险）。这里不认识"谁开着库"。
 
+// i18n-allow-file: 换库失败的诊断由核心生成、界面原样展示（既有口径）；把这些诊断转成「码 + 参数」是待办，本文件不新增别的界面文案。
+
 use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
-use super::backup::read_manifest;
+use super::backup::{read_manifest, MODULES_FILE};
 use super::restore::source_invalid;
 use crate::error::{codes, Error, Result};
 use crate::paths::DB_FILE;
@@ -23,6 +25,8 @@ use crate::paths::DB_FILE;
 pub const KEEP_FOLDER: &str = "旧库留底";
 /// 换库时的临时名：先放稳，再在同一个目录里 `rename` 过去（不会出现"半个库"）。
 const STAGING_FILE: &str = "yanmo.db.restoring";
+/// 模块数据区的临时名（与核心库同一套"先放稳再换"）。
+const MODULES_STAGING_FILE: &str = "modules.db.restoring";
 
 /// 换库结果。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -32,17 +36,24 @@ pub struct RestoreOutcome {
     pub quarantine: String,
     pub bytes: u64,
     pub stamp: String,
+    /// 这份备份带没带模块数据（带了才换 `modules.db`；没带就保持现状）
+    pub modules_restored: bool,
 }
 
 /// 换库：**先把新库放稳，再把原库留底，最后当场体检一次**。
 ///
 /// 失败时原库会被搬回原处（[`RestoreOutcome`] 只在成功时返回）。
+///
+/// 模块数据（`modules.db`）跟着一起换：**同一份备份里的两个文件必须一起进去**，
+/// 否则恢复出来的核心注册表与模块数据会是两个时刻的。备份没带模块数据时
+/// **不动现有 `modules.db`**（那是作者的数据，不能被一次"恢复旧稿"顺手删掉）。
 pub fn swap_in(source: &Path, data_dir: &Path, stamp: &str) -> Result<RestoreOutcome> {
     let source_db = database_file(source)?;
     let target = data_dir.join(DB_FILE);
     if same_file(&source_db, &target) {
         return Err(source_invalid(source));
     }
+    let source_modules = modules_file(source)?;
     std::fs::create_dir_all(data_dir)?;
 
     // ① 复制到临时名（先把"要换上去的那一份"放稳，后续每一步都能退回来）
@@ -54,33 +65,31 @@ pub fn swap_in(source: &Path, data_dir: &Path, stamp: &str) -> Result<RestoreOut
     }
     let bytes = std::fs::metadata(&staged).map(|meta| meta.len()).unwrap_or(0);
 
+    let staged_modules = data_dir.join(MODULES_STAGING_FILE);
+    std::fs::remove_file(&staged_modules).ok();
+    if let Some(modules) = &source_modules {
+        if let Err(error) = copy_synced(modules, &staged_modules) {
+            std::fs::remove_file(&staged).ok();
+            std::fs::remove_file(&staged_modules).ok();
+            return Err(swap_failed(format!("把备份里的模块数据复制过来时失败：{error}")));
+        }
+    }
+
     // ② 原库整体留底（`.db` 与 `-wal`/`-shm` **必须一起走**：只搬 .db 会把不一致的 WAL 留给新库）
     let keep = data_dir.join(KEEP_FOLDER).join(stamp);
     let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new();
     let mut quarantine = String::new();
-    for suffix in ["", "-wal", "-shm"] {
-        let from = data_dir.join(format!("{DB_FILE}{suffix}"));
-        if !from.exists() {
-            continue;
-        }
-        if moved.is_empty() {
-            if let Err(error) = std::fs::create_dir_all(&keep) {
-                std::fs::remove_file(&staged).ok();
-                return Err(swap_failed(format!("建留底目录失败：{error}")));
-            }
-            quarantine = keep.to_string_lossy().to_string();
-        }
-        let to = keep.join(format!("{DB_FILE}{suffix}"));
-        match std::fs::rename(&from, &to) {
-            Ok(()) => moved.push((from, to)),
-            Err(error) => {
-                let rollback_failed = rollback(&moved);
-                std::fs::remove_file(&staged).ok();
-                return Err(swap_failed_after_rollback(
-                    format!("把原库搬去留底时失败：{error}"),
-                    rollback_failed,
-                ));
-            }
+    if let Err(error) = move_to_keep(data_dir, &keep, DB_FILE, &mut moved, &mut quarantine) {
+        std::fs::remove_file(&staged).ok();
+        std::fs::remove_file(&staged_modules).ok();
+        return Err(swap_failed_after_rollback(error, rollback(&moved)));
+    }
+    // 模块数据也留底——**只在这次要恢复模块数据时**才动它
+    if source_modules.is_some() {
+        if let Err(error) = move_to_keep(data_dir, &keep, MODULES_FILE, &mut moved, &mut quarantine) {
+            std::fs::remove_file(&staged).ok();
+            std::fs::remove_file(&staged_modules).ok();
+            return Err(swap_failed_after_rollback(error, rollback(&moved)));
         }
     }
 
@@ -88,27 +97,84 @@ pub fn swap_in(source: &Path, data_dir: &Path, stamp: &str) -> Result<RestoreOut
     if let Err(error) = std::fs::rename(&staged, &target) {
         let rollback_failed = rollback(&moved);
         std::fs::remove_file(&staged).ok();
+        std::fs::remove_file(&staged_modules).ok();
         return Err(swap_failed_after_rollback(
             format!("把新库放回数据目录时失败：{error}"),
             rollback_failed,
         ));
     }
+    // ④ 放模块数据（核心库已经就位；这一步失败要把核心库也撤回去）
+    if source_modules.is_some() {
+        let modules_target = data_dir.join(MODULES_FILE);
+        if let Err(error) = std::fs::rename(&staged_modules, &modules_target) {
+            remove_db_files(&target);
+            remove_db_files(&modules_target);
+            std::fs::remove_file(&staged_modules).ok();
+            return Err(swap_failed_after_rollback(
+                format!("把模块数据放回数据目录时失败：{error}"),
+                rollback(&moved),
+            ));
+        }
+    }
 
-    // ④ 当场再体检一次：不过就把它扔掉、把留底搬回来——**失败必须能回到原状**
-    match quick_check_file(&target) {
-        Ok(()) => Ok(RestoreOutcome {
+    // ⑤ 当场再体检一次：不过就把它扔掉、把留底搬回来——**失败必须能回到原状**
+    let mut problem = quick_check_file(&target).err();
+    if problem.is_none() && source_modules.is_some() {
+        problem = quick_check_file(&data_dir.join(MODULES_FILE)).err();
+    }
+    match problem {
+        None => Ok(RestoreOutcome {
             restored_from: source_db.to_string_lossy().to_string(),
             quarantine,
             bytes,
             stamp: stamp.to_string(),
+            modules_restored: source_modules.is_some(),
         }),
-        Err(problem) => {
-            std::fs::remove_file(&target).ok();
-            for suffix in ["-wal", "-shm"] {
-                std::fs::remove_file(data_dir.join(format!("{DB_FILE}{suffix}"))).ok();
+        Some(problem) => {
+            remove_db_files(&target);
+            if source_modules.is_some() {
+                remove_db_files(&data_dir.join(MODULES_FILE));
             }
             Err(swap_failed_after_rollback(problem, rollback(&moved)))
         }
+    }
+}
+
+/// 把一类库文件（`.db` 与它的 `-wal`/`-shm`）整体搬进留底目录。
+fn move_to_keep(
+    data_dir: &Path,
+    keep: &Path,
+    file_name: &str,
+    moved: &mut Vec<(PathBuf, PathBuf)>,
+    quarantine: &mut String,
+) -> std::result::Result<(), String> {
+    for suffix in ["", "-wal", "-shm"] {
+        let from = data_dir.join(format!("{file_name}{suffix}"));
+        if !from.exists() {
+            continue;
+        }
+        if moved.is_empty() {
+            if let Err(error) = std::fs::create_dir_all(keep) {
+                return Err(format!("建留底目录失败：{error}"));
+            }
+            *quarantine = keep.to_string_lossy().to_string();
+        }
+        let to = keep.join(format!("{file_name}{suffix}"));
+        if let Err(error) = std::fs::rename(&from, &to) {
+            return Err(format!("把 {file_name} 搬去留底时失败：{error}"));
+        }
+        moved.push((from, to));
+    }
+    Ok(())
+}
+
+/// 收掉刚放下去的库文件（含 WAL/SHM）；换库失败时用。
+fn remove_db_files(db: &Path) {
+    std::fs::remove_file(db).ok();
+    for suffix in ["-wal", "-shm"] {
+        let mut path = db.as_os_str().to_os_string();
+        path.push(suffix);
+        std::fs::remove_file(PathBuf::from(path)).ok();
     }
 }
 
@@ -123,6 +189,26 @@ fn database_file(source: &Path) -> Result<PathBuf> {
         return Ok(source.to_path_buf());
     }
     Err(source_invalid(source))
+}
+
+/// 备份包里的模块数据快照：清单说带了就必须在；没带（或裸库）就是 `None`。
+fn modules_file(source: &Path) -> Result<Option<PathBuf>> {
+    if !source.is_dir() {
+        return Ok(None);
+    }
+    let manifest = read_manifest(source).ok_or_else(|| source_invalid(source))?;
+    let Some(stamp) = manifest.modules else {
+        return Ok(None);
+    };
+    if stamp.file != MODULES_FILE {
+        return Err(source_invalid(source));
+    }
+    let path = source.join(MODULES_FILE);
+    if path.is_file() {
+        Ok(Some(path))
+    } else {
+        Err(source_invalid(source))
+    }
 }
 
 /// 把留底搬回原处，并收掉空掉的留底目录。

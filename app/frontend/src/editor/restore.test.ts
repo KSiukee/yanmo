@@ -65,6 +65,7 @@ function outcome(): RestoreOutcome {
     quarantine: "稿子/研墨/旧库留底/20260913-1400",
     bytes: 4096,
     stamp: "20260913-1400",
+    modules_restored: true,
   };
 }
 

@@ -46,6 +46,8 @@ pub const MANUAL_MARK: &str = "手动-";
 pub const MANIFEST_FILE: &str = "manifest.json";
 /// 包里的快照文件名。
 pub const SNAPSHOT_FILE: &str = "yanmo.db";
+/// 包里的模块数据快照文件名（与核心库并排的那个 `modules.db`）。
+pub const MODULES_FILE: &str = "modules.db";
 /// 账本文件名（数据目录里，库之外）。
 pub const LEDGER_FILE: &str = "backup-ledger.json";
 /// 清单的 kind 取值（防止把别家的 manifest.json 当成我们的）。
@@ -56,6 +58,10 @@ pub(super) const DRAFT_DIR: &str = "成稿";
 
 /// 包名口径与滚动清理（**从本文件搬出去的**：只留"哪个名字该轮掉"这一件事，见 `prune.rs`）。
 mod prune;
+/// 模块数据快照 / 体检（单独成件：它与核心库快照的失败口径不同，见文件头）。
+mod modules;
+pub use modules::ModuleBackupStamp;
+use modules::{snapshot_modules, verify_modules};
 // 转出去让老路径继续可用（`backup::package_name` 这种写法在壳与恢复列表那边已经在用）；
 // 纯逻辑那两条（按名字判日期 / 该轮掉哪些）是 `pub` 的——它要能在没有磁盘、没有时钟的情况下被测。
 pub use prune::{package_day, plan_prune};
@@ -98,6 +104,16 @@ pub struct BackupConfig {
     /// **绝不退回明文包**：宁可这次备份不做并说清原因，也不悄悄写一份比作者要求更弱的备份。
     #[serde(default)]
     pub seal: bool,
+    /// **备份里带不带模块数据**（默认带）。
+    ///
+    /// 模块数据是作者自己的数据（地图坐标、归纳结果……），默认跟着稿子一起备份；
+    /// 关掉之后包里只有核心库，模块数据保持原样（恢复时也不会动它）。
+    #[serde(default = "include_modules_default")]
+    pub include_modules: bool,
+}
+
+fn include_modules_default() -> bool {
+    true
 }
 
 impl Default for BackupConfig {
@@ -110,6 +126,7 @@ impl Default for BackupConfig {
             auto_on_close: true,
             tip_dismissed: false,
             seal: false,
+            include_modules: true,
         }
     }
 }
@@ -141,6 +158,9 @@ pub struct BackupManifest {
     pub device: String,
     pub snapshot_file: String,
     pub snapshot_bytes: u64,
+    /// 模块数据快照（没带模块数据就是 `None`；老包的清单里没有这一格）
+    #[serde(default)]
+    pub modules: Option<ModuleBackupStamp>,
     /// 库最后一次写入的时间（恢复时算"会丢多少天"要用）
     pub db_last_write_at: i64,
     pub works: Vec<WorkStamp>,
@@ -260,6 +280,8 @@ pub struct BackupRequest {
     pub tz_offset_minutes: i32,
     /// 来源机器名（多机共用备份盘时用来分辨）
     pub device: String,
+    /// 这次备份**带不带模块数据**（`modules.db`；没有这个文件时自然不带）
+    pub include_modules: bool,
     /// 这次是**作者亲手点的「立即备份」**（`true`）还是自动做的那一次（`false`）。
     ///
     /// 只影响一件事：包名带不带手动记号 ⇒ 滚动清理**不会删手动写出去的包**。
@@ -475,6 +497,13 @@ impl Store {
             .map_err(|e| Error::invalid_with(crate::error::codes::BACKUP_SNAPSHOT_FAILED, [("detail", e.to_string())]))?;
         let snapshot_bytes = std::fs::metadata(&snapshot).map(|m| m.len()).unwrap_or(0);
 
+        // 模块数据：与核心库**同一时刻**的一致性快照（没有 modules.db / 关掉勾选时就是 None）
+        let modules = if req.include_modules {
+            snapshot_modules(&req.data_dir, staging)?
+        } else {
+            None
+        };
+
         // 成稿导出（不装研墨也能读的第二层保险）+ 逐书指纹
         //
         // 落点：**一本书一个目录**——`成稿/<书名>/` 里放分章 txt 与一份 `work.json`。
@@ -526,6 +555,12 @@ impl Store {
         // 链式指纹：把"这一份的实质内容 + 上一份指纹"一起摘要
         let mut canonical = String::new();
         canonical.push_str(&format!("{stamp}|{}|{snapshot_bytes}|{}|", req.device, version::DATA_FORMAT_VERSION));
+        if let Some(modules) = &modules {
+            canonical.push_str(&format!("modules:{}:{}|", modules.file, modules.bytes));
+            for (module_id, schema) in &modules.schemas {
+                canonical.push_str(&format!("{module_id}:{schema}|"));
+            }
+        }
         for work in &works {
             canonical.push_str(&format!("{}:{}:{}:{}|", work.id, work.chapters, work.word_count, work.fingerprint));
         }
@@ -547,6 +582,7 @@ impl Store {
             device: req.device.clone(),
             snapshot_file: SNAPSHOT_FILE.to_string(),
             snapshot_bytes,
+            modules,
             db_last_write_at: last_write_at(&self.conn)?,
             works,
             previous_fingerprint,
@@ -695,6 +731,11 @@ impl Store {
                     }
                 }
             }
+        }
+
+        // 模块数据：清单说带了，就必须在、结构完好、版本账对得上
+        if let Some(stamp) = &manifest.modules {
+            problems.extend(verify_modules(package, stamp));
         }
 
         // 成稿文件：在、指纹对得上（文件被改坏/少了一个，这里就会说话）

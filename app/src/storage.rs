@@ -814,6 +814,7 @@ mod tests {
             keep: 7,
             tz_offset_minutes: 480,
             device: "测试机".to_string(),
+            include_modules: true,
             manual: false,
             seal: None,
         };

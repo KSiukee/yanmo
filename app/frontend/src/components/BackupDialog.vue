@@ -78,6 +78,12 @@ function toggleAuto(key: "auto_on_start" | "auto_on_close"): void {
   void save({ ...current.config, [key]: !current.config[key] });
 }
 
+function toggleIncludeModules(): void {
+  const current = status.value;
+  if (!current) return;
+  void save({ ...current.config, include_modules: !current.config.include_modules });
+}
+
 // 容量统一走 formatBytes（KB/MB/GB 一位小数）——**别在这里自己除**（上一版就是除错量纲，
 // 把几十 GB 显示成「11 MB」，差点吓着人）
 const sizeText = (bytes: number): string => formatBytes(bytes);
@@ -190,6 +196,15 @@ function openRestore(): void {
             @change="toggleAuto('auto_on_close')"
           />
           {{ t("backup.auto_close") }}
+        </label>
+        <label class="backup__option">
+          <input
+            type="checkbox"
+            :checked="config.include_modules"
+            @change="toggleIncludeModules()"
+          />
+          {{ t("backup.include_modules") }}
+          <span class="backup__hint">{{ t("backup.include_modules_hint") }}</span>
         </label>
       </div>
 

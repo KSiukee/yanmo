@@ -363,6 +363,8 @@ export interface BackupConfig {
   auto_on_close: boolean;
   /** 作者拒绝过那条"插个盘吧"的小条 */
   tip_dismissed: boolean;
+  /** 备份里带不带模块数据（默认带；关掉后包里只有稿子，恢复时也不动现有模块数据） */
+  include_modules: boolean;
 }
 
 /** 一块盘（界面给作者列勾选项）。 */
@@ -490,6 +492,8 @@ export interface RestoreOutcome {
   quarantine: string;
   bytes: number;
   stamp: string;
+  /** 这份备份带了模块数据、并且已经一起换上去；false = 现有模块数据保持原样 */
+  modules_restored: boolean;
 }
 
 /** 同级里与它重名的那一个（恢复前会摆给作者看）。 */

@@ -112,7 +112,7 @@ pub use backup::{
     gaps_for, has_other_volume, ledger_summary, package_day, plan_prune, read_ledger, read_manifest,
     BackupConfig,
     BackupLedger, BackupManifest, BackupReport, BackupRequest, BackupTarget, BackupVerify,
-    LedgerEntry, SealKey, TargetOutcome, WorkStamp,
+    LedgerEntry, ModuleBackupStamp, SealKey, TargetOutcome, WorkStamp,
 };
 pub use backup_seal::{is_sealed_package, open_sealed, seal_dir, sealed_path};
 pub use card::KIND_QUESTION;

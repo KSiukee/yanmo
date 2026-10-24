@@ -55,6 +55,7 @@ fn request(fixture: &Fixture, keep: usize) -> BackupRequest {
         keep,
         tz_offset_minutes: 480,
         device: "测试机".to_string(),
+        include_modules: true,
         manual: false,
         seal: None,
     }

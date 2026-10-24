@@ -64,6 +64,9 @@ async function chooseFromDisk(): Promise<void> {
       <!-- 换完库的交代：窗口马上会重启，这句话要说清"接下来会发生什么" -->
       <template v-if="done">
         <p class="restore__ok">{{ t("restore.done") }}</p>
+        <p class="dialog__note">
+          {{ done.modules_restored ? t("restore.modules_restored") : t("restore.modules_kept") }}
+        </p>
         <p v-if="done.quarantine" class="dialog__note">
           {{ t("restore.done_keep", { dir: done.quarantine }) }}
         </p>

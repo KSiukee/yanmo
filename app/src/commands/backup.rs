@@ -220,6 +220,7 @@ pub fn backup_now(
         keep: config.keep,
         tz_offset_minutes,
         device: device_name(),
+        include_modules: config.include_modules,
         manual,
         seal,
     };

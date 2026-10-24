@@ -18,6 +18,7 @@ function config(over: Partial<BackupConfig> = {}): BackupConfig {
     auto_on_start: true,
     auto_on_close: true,
     tip_dismissed: false,
+    include_modules: true,
     ...over,
   };
 }
