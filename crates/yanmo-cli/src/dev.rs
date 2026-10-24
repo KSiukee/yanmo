@@ -15,6 +15,7 @@ use crate::args::{Args, Usage};
 use crate::dev_fragment;
 use crate::dev_outline;
 use crate::dev_question;
+use crate::dev_question_intake;
 use crate::CliError;
 
 /// 开发档命令允许哪些选项（发布构建里没人会调到这里）。
@@ -32,6 +33,7 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
         // 而且变化理由各不相同，所以各自成文件——这里只是转交。
         _ => {
             dev_question::options(command)
+                .or_else(|| dev_question_intake::options(command))
                 .or_else(|| dev_fragment::options(command))
                 .or_else(|| dev_outline::options(command))
         }
@@ -193,9 +195,12 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
         }
         _ => match dev_question::execute(args, store)? {
             Some(value) => value,
-            None => match dev_fragment::execute(args, store)? {
+            None => match dev_question_intake::execute(args, store)? {
                 Some(value) => value,
-                None => return dev_outline::execute(args, store),
+                None => match dev_fragment::execute(args, store)? {
+                    Some(value) => value,
+                    None => return dev_outline::execute(args, store),
+                },
             },
         },
     };

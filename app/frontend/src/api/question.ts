@@ -35,6 +35,8 @@ export interface Gravity {
 export interface SelectedQuestion {
   card_id: number;
   template_key: string;
+  /** 从哪来：`core`（研墨自带）或模块 id——界面必须显示，模块不得假扮核心 */
+  source: string;
   /** 哪一类要素（`plan` 那一类的答案默认落"章纲"） */
   element: string;
   body: string;

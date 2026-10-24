@@ -23,6 +23,11 @@ use crate::time::now_millis;
 pub struct SelectedQuestion {
     pub card_id: i64,
     pub template_key: String,
+    /// 问题从哪来：核心自带（`core`）还是某个模块（模块 id）。
+    ///
+    /// 界面必须把它显示出来（模块的问题**不得假扮核心**）——所以它跟句子
+    /// 一起从选题出口给出去，界面不必再查一次卡。
+    pub source: String,
     /// 这条问题属于哪一类要素（`plan` 那一类答的就是"章纲"——界面按它给默认落点）。
     ///
     /// 作者自己写的卡与模块提交的卡没有模板键，按最中性的 `chapter` 算（"从哪儿开始"那一类）。
@@ -122,6 +127,7 @@ impl Store {
                 SelectedQuestion {
                     card_id,
                     template_key: card.template_key.clone(),
+                    source: card.source.clone(),
                     element: template(&card.template_key)
                         .map(|spec| spec.element)
                         .unwrap_or(ElementKind::Chapter),

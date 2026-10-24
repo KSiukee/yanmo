@@ -157,6 +157,10 @@ pub const HELP_DEV: &str = "\
                             主动问一句（推）：过了门槛才开口，开口就算「问过」；
                             --reason 写清是哪条时机（new_chapter / idle / chapter_done）；
                             认不出的时机按 idle 算，而空章里只有 new_chapter 问得出来
+  question-submit --work <id> --module-id <id> --body <文本> | --body-file <路径>
+                  [--anchor <依据>] [--importance <0~1>] [--undeclared] [--inactive]
+                            模拟一个模块提交叩问：来源写模块 id；未声明 / 未激活 /
+                            冒充 core / 没依据 / 超频都会被丢弃并留痕
   question-round --work <id> --node <章节 id> --items <JSON 数组>
                             一轮落章（先问后排版）：把一串答案**一次**落进这一章；
                             --items 形如 [{\"card_id\":1,\"body\":\"第一段\"}, …]，顺序即落下顺序

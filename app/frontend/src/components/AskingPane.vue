@@ -4,9 +4,10 @@
 // 单独成件的原因：它与"候选怎么排、答完落哪儿"的变化理由不一样——
 // 那边是机制与流程，这边只是"这一屏上摆哪几个按钮"。它**纯展示**：动作交回面板那层去调命令。
 import { t } from "../locales/index.ts";
+import { sourceLabel } from "./question.ts";
 
 const props = defineProps<{
-  card: { body: string };
+  card: { body: string; source: string };
   busy: boolean;
   /** 模式 A 才有「跳过」：跳过不处置、不落章，直接看下一张 */
   canSkip: boolean;
@@ -18,6 +19,8 @@ const emit = defineEmits<{
   defer: [];
   discard: [];
   muteClass: [];
+  /** 只对模块来的问题显示：不再听这个来源（核心不受牵连） */
+  muteSource: [string];
   inspire: [];
   skip: [];
 }>();
@@ -26,6 +29,11 @@ const emit = defineEmits<{
 <template>
   <section class="asking">
     <h3 class="sec">{{ t("flow.asking") }}</h3>
+    <p class="src-row">
+      <span class="src" :class="{ 'src--module': props.card.source !== 'core' }">
+        {{ sourceLabel(props.card.source) }}
+      </span>
+    </p>
     <p class="body">{{ props.card.body }}</p>
     <div class="row">
       <button class="act" :disabled="props.busy" @click="emit('praise')">
@@ -42,6 +50,15 @@ const emit = defineEmits<{
       </button>
       <button class="act" :disabled="props.busy" @click="emit('muteClass')">
         {{ t("flow.action.mute_class") }}
+      </button>
+      <button
+        v-if="props.card.source !== 'core'"
+        class="act"
+        :disabled="props.busy"
+        :title="t('flow.source.mute_title', { name: sourceLabel(props.card.source) })"
+        @click="emit('muteSource', props.card.source)"
+      >
+        {{ t("flow.source.mute") }}
       </button>
       <button class="act" :disabled="props.busy" @click="emit('inspire')">
         {{ t("flow.action.inspire") }}
@@ -62,6 +79,21 @@ const emit = defineEmits<{
 .body {
   margin: 0 0 8px;
   line-height: 1.6;
+}
+/* 来源：核心与模块**一眼可辨**（模块用强调色；核心保持安静） */
+.src-row {
+  margin: 0 0 4px;
+  font-size: 11px;
+  opacity: 0.8;
+}
+.src {
+  padding: 0 5px;
+  border: 1px solid var(--ym-line);
+  border-radius: 8px;
+}
+.src--module {
+  border-color: var(--ym-accent);
+  color: var(--ym-accent);
 }
 .row {
   display: flex;

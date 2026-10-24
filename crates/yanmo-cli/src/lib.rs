@@ -30,6 +30,9 @@ mod dev_outline;
 /// 开发档里的叩问命令面（同样只在 debug 构建里）。
 #[cfg(debug_assertions)]
 mod dev_question;
+/// 开发档里的**模块叩问通道**（模拟模块提交、验规则；同样只在 debug 构建里）。
+#[cfg(debug_assertions)]
+mod dev_question_intake;
 /// 交互菜单：**不带参数运行就是它**，给作者用的备用导出工具（任何构建都有）。
 pub mod menu;
 /// 从成稿导入（救援档里唯一会写库的那一条：默认干跑，`--yes` 才写）。

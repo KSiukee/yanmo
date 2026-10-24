@@ -24,6 +24,7 @@ mod foreshadow;
 mod fragment;
 mod input_source;
 mod manuscript_state;
+mod module_question;
 mod node;
 mod question_tone;
 mod rule_style;
@@ -47,6 +48,11 @@ pub use edit_origin::{DeliveryStamp, EditOrigin, WriteOrigin};
 pub use card_state::{transition, QuestionState, Transition, TRANSITIONS};
 pub use manuscript_state::{
     manuscript_transition, ManuscriptState, ManuscriptTransition, MANUSCRIPT_TRANSITIONS,
+};
+pub use module_question::{
+    clean_basis, is_core_source, is_valid_module_id, validate_draft, ModuleQuestion,
+    ModuleQuestionGrant, QuestionDropReason, CORE_SOURCE, MAX_BASIS_ANCHORS, MAX_BASIS_CHARS,
+    MAX_MODULE_ID_CHARS,
 };
 pub use submission::{
     verdict as submission_verdict, Submission, SubmissionResult, SubmitVerdict,

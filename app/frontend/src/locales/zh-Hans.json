@@ -567,6 +567,7 @@
   "flow.source.core": "研墨自带",
   "flow.source.module": "来自 {name}",
   "flow.source.mute": "不再问它提的问题",
+  "flow.source.mute_title": "不再听「{name}」的叩问（只静音它一个，不影响核心与别的模块）",
   "flow.input.typed": "键盘打的",
   "flow.input.voice": "口述转的",
   "flow.input.mixed": "口述加手改的",

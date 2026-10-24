@@ -105,6 +105,7 @@ const {
       @defer="openDefer"
       @discard="discard"
       @mute-class="muteClass"
+      @mute-source="muteSource"
       @inspire="openInspire"
       @skip="skip"
     />
@@ -183,6 +184,7 @@ const {
         :busy="busy"
         @ask="ask"
         @inspire="openInspire"
+        @mute-source="muteSource"
       />
     </section>
     <p v-else-if="!busy && board" class="pane__hint">{{ t("flow.empty") }}</p>

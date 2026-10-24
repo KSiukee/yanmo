@@ -19,7 +19,7 @@ use serde::Serialize;
 use super::card_move::move_card_in;
 use super::Store;
 use crate::error::Result;
-use crate::model::QuestionState;
+use crate::model::{QuestionState, CORE_SOURCE};
 use crate::question::{decide, PushDecision, PushQuota, PushReason, PushState};
 use crate::time::now_millis;
 
@@ -104,13 +104,20 @@ impl Store {
             PushDecision::Ask => {}
         }
 
-        // 挑一张：与面板同一套选题（跟着这一章走时，这一章的问题优先），取最靠前的那张
-        let picked = match node_id {
-            Some(node) => self.select_questions_for_chapter(work_id, node, 1)?,
-            None => self.select_questions(work_id, 1)?,
+        // 挑一张：与面板同一套选题（跟着这一章走时，这一章的问题优先）。
+        // **核心优先**：模块的叩问可以在面板里被翻到，但主动开口的那一次不能把核心的
+        // 位置挤掉（模块通道规则）——只要池里还有一张没被静音的核心卡，就先问它。
+        // 池里一条核心都没有时，才轮到模块的卡（它同样过配额与静默期）。
+        let mut picked = match node_id {
+            Some(node) => self.select_questions_for_chapter(work_id, node, usize::MAX)?,
+            None => self.select_questions(work_id, usize::MAX)?,
         };
-        let Some(question) = picked.into_iter().next() else {
-            return Ok(PushOutcome::NothingToAsk);
+        let question = match picked.iter().position(|question| question.source == CORE_SOURCE) {
+            Some(at) => picked.remove(at),
+            None => match picked.into_iter().next() {
+                Some(question) => question,
+                None => return Ok(PushOutcome::NothingToAsk),
+            },
         };
 
         // 算问过 + 记账：**同一个事务**

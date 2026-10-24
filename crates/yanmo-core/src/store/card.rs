@@ -29,6 +29,21 @@ impl Store {
     /// 校验都在写之前：正文不许空、重要度 0~1、派生关系成立（来源是**同一本书**里的卡；
     /// 系统自动派生的还不得越过链深上限——那两问在 `question_pool::validate_derivation`）。
     pub fn create_question_card(&mut self, new: &NewQuestionCard) -> Result<i64> {
+        let tx = self.conn.transaction()?;
+        let id = Self::create_question_card_in(&self.device_id, &tx, new)?;
+        tx.commit()?;
+        Ok(id)
+    }
+
+    /// 建卡本体的**事务内版本**：模块叩问通道（`store::question_intake`）要在
+    /// 「建卡 + 记频率账」同一个事务里落，所以把这一块拆出来。
+    ///
+    /// 校验与留痕口径与 [`Store::create_question_card`] **逐字一致**（同一个实现）。
+    pub(super) fn create_question_card_in(
+        device_id: &str,
+        tx: &rusqlite::Transaction<'_>,
+        new: &NewQuestionCard,
+    ) -> Result<i64> {
         if new.body.trim().is_empty() {
             return Err(Error::invalid(codes::CARD_BODY_EMPTY));
         }
@@ -38,15 +53,14 @@ impl Store {
                 [("value", new.importance.to_string())],
             ));
         }
-        let tx = self.conn.transaction()?;
-        if !work_alive(&tx, new.work_id)? {
+        if !work_alive(tx, new.work_id)? {
             return Err(Error::invalid_with(
                 codes::WORK_GONE,
                 [("work_id", new.work_id.to_string())],
             ));
         }
         validate_derivation(
-            &tx,
+            tx,
             new.work_id,
             new.derived_from,
             new.auto_derived,
@@ -77,8 +91,8 @@ impl Store {
         )?;
         let id = tx.last_insert_rowid();
         Self::record_in(
-            &self.device_id,
-            &tx,
+            device_id,
+            tx,
             "fragments",
             id,
             "create",
@@ -92,7 +106,6 @@ impl Store {
                 "auto_derived": new.auto_derived,
             }),
         )?;
-        tx.commit()?;
         Ok(id)
     }
 
