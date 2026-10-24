@@ -357,6 +357,15 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "这个模块没有「{capability}」这项能力" : ["capability"],
     MODULE_SCHEMA_INVALID => "module.schema_invalid"
         : "模块数据结构版本不合规：{version}" : ["version"],
+    MODULE_SCHEMA_VERSION => "module.schema_version"
+        : "模块数据结构版本对不上：现在是 {current}，收到的是 {found}（必须逐版升级）"
+        : ["current", "found"],
+    MODULE_SCHEMA_STEP_INVALID => "module.schema_step_invalid"
+        : "模块数据结构升级里有一步不合规：{detail}" : ["detail"],
+    MODULE_SCHEMA_FAILED => "module.schema_failed"
+        : "模块数据结构升级失败（没有改动任何东西）：{detail}" : ["detail"],
+    MODULE_SNAPSHOT_FAILED => "module.snapshot_failed"
+        : "模块数据快照写不出来：{detail}" : ["detail"],
 }
 
 /// 按码把参数填进日志模板；模板不认识这个码就退回 `码(名字=取值, …)`。

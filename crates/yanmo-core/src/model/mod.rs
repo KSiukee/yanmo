@@ -26,6 +26,7 @@ mod input_source;
 mod manuscript_state;
 mod module;
 mod module_question;
+mod module_schema;
 mod node;
 mod question_tone;
 mod rule_style;
@@ -51,6 +52,10 @@ pub use manuscript_state::{
     manuscript_transition, ManuscriptState, ManuscriptTransition, MANUSCRIPT_TRANSITIONS,
 };
 pub use module::{first_ungrantable, ModuleRecord};
+pub use module_schema::{
+    ModuleColumn, ModuleColumnType, ModuleMigration, ModuleSchemaStep, ModuleTable,
+    MAX_INDEX_COLUMNS, MAX_SCHEMA_COLUMNS, MAX_SCHEMA_NAME_CHARS, MAX_SCHEMA_STEPS,
+};
 pub use module_question::{
     clean_basis, is_core_source, is_valid_module_id, validate_draft, ModuleQuestion,
     ModuleQuestionGrant, QuestionDropReason, CORE_SOURCE, MAX_BASIS_ANCHORS, MAX_BASIS_CHARS,

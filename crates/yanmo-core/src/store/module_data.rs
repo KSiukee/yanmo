@@ -10,9 +10,10 @@
 //!
 //! # 核心管什么、不管什么
 //!
-//! 管：文件位置、命名空间前缀、每个模块的 schema 版本账、表数量统计。
-//! 不管：模块表的列与语义（那是模块自己的迁移），也**不在这里执行模块给的 SQL**——
-//! 模块迁移必须由宿主在受控接口里跑（见数据写入护栏那一族）。
+//! 管：文件位置、命名空间前缀、每个模块的 schema 版本账、**受控的结构升级**
+//! （建表 / 加列 / 建索引，见 [`ModuleMigration`]）、表数与行数统计。
+//! 不管：模块表的语义；也**不执行模块给的 SQL 字符串**——升级只接受结构动作，
+//! 表名 / 列名由核心拼前缀、加引号，模块给的名字永远只是一段后缀。
 //!
 //! # 命名空间
 //!
@@ -23,13 +24,27 @@
 use std::path::{Path, PathBuf};
 
 use rusqlite::{params, Connection};
+use serde::Serialize;
 
 use crate::error::{codes, Error, Result};
+use crate::model::{ModuleColumn, ModuleMigration, ModuleSchemaStep, ModuleTable};
 use crate::time::now_millis;
 
 /// 模块数据区的句柄（**独立于核心库**）。
 pub struct ModuleData {
     conn: Connection,
+    path: PathBuf,
+}
+
+/// 一个模块的数据规模（**按需算，不落库**，避免计数器过期）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ModuleStats {
+    /// 这个模块命名空间里的表数
+    pub tables: usize,
+    /// 这些表里的行数合计（`COUNT(*)` 之和）
+    pub rows: i64,
+    /// 整个 `modules.db`（含 `-wal`）的字节数——**不是这个模块单独的**
+    pub db_bytes: u64,
 }
 
 impl ModuleData {
@@ -40,7 +55,8 @@ impl ModuleData {
 
     /// 打开（或创建）模块数据区，并确保记账表存在。
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let conn = crate::db::open(path)?;
+        let path = path.as_ref().to_path_buf();
+        let conn = crate::db::open(&path)?;
         conn.execute(
             "CREATE TABLE IF NOT EXISTS module_schema (
                 module_id      TEXT PRIMARY KEY,
@@ -49,7 +65,12 @@ impl ModuleData {
             )",
             [],
         )?;
-        Ok(Self { conn })
+        Ok(Self { conn, path })
+    }
+
+    /// 这个数据区的文件路径。
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
     /// 模块表的统一前缀（`mod_<id>_`）。
@@ -69,27 +90,13 @@ impl ModuleData {
                 .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
     }
 
-    /// 记下（或更新）一个模块的 schema 版本。
+    /// 记下（或更新）一个模块的 schema 版本（**只给测试 / 恢复工具用**）。
     ///
-    /// 这是**模块自己的迁移账**：模块从 v1 升到 v2 时写 2；核心不解释这个数字，
-    /// 只负责在卸载 / 备份 / 恢复时能说清"它的数据是哪一版"。
+    /// 正常升级走 [`ModuleData::apply_migration`]：它把结构变更与版本号放在同一个事务里。
+    /// 这里单开一条是给"从备份恢复 / 手工修账"留的口子，别拿它绕过版本纪律。
     pub fn record_schema(&mut self, module_id: &str, version: i64) -> Result<()> {
         ensure_id(module_id)?;
-        if version < 0 {
-            return Err(Error::invalid_with(
-                codes::MODULE_SCHEMA_INVALID,
-                [("version", version.to_string())],
-            ));
-        }
-        self.conn.execute(
-            "INSERT INTO module_schema(module_id, schema_version, updated_at)
-             VALUES(?1, ?2, ?3)
-             ON CONFLICT(module_id) DO UPDATE SET
-                 schema_version = excluded.schema_version,
-                 updated_at = excluded.updated_at",
-            params![module_id, version, now_millis()],
-        )?;
-        Ok(())
+        Self::record_schema_in(&self.conn, module_id, version)
     }
 
     /// 读一个模块的 schema 版本（没记过 = `None`）。
@@ -103,6 +110,73 @@ impl ModuleData {
             Some(row) => Ok(Some(row.get(0)?)),
             None => Ok(None),
         }
+    }
+
+    /// 执行一次**受控**的模块结构升级。
+    ///
+    /// 三条纪律：
+    /// 1. **逐版**：当前是 v1 就只能交 v2；跳版 / 回退 / 重放都拒；
+    /// 2. **整体事务**：任何一步失败整体回滚，版本号不前进；
+    /// 3. **没有任意 SQL**：只执行建表 / 加列 / 建索引，名字由核心校验并加前缀。
+    pub fn apply_migration(
+        &mut self,
+        module_id: &str,
+        migration: &ModuleMigration,
+    ) -> Result<()> {
+        ensure_id(module_id)?;
+        migration.validate()?;
+
+        let current = self.schema_version(module_id)?.unwrap_or(0);
+        let expected = current + 1;
+        if migration.version != expected {
+            return Err(Error::invalid_with(
+                codes::MODULE_SCHEMA_VERSION,
+                [
+                    ("current", current.to_string()),
+                    ("found", migration.version.to_string()),
+                ],
+            ));
+        }
+
+        let mut statements = Vec::with_capacity(migration.steps.len());
+        for step in &migration.steps {
+            match step {
+                ModuleSchemaStep::CreateTable { table } => {
+                    statements.push(create_table_sql(module_id, table));
+                }
+                ModuleSchemaStep::AddColumn { table, column } => {
+                    statements.push(format!(
+                        "ALTER TABLE {} ADD COLUMN {} {}",
+                        quote(&table_ident(module_id, table)),
+                        quote(&column.name),
+                        column.kind.as_sql()
+                    ));
+                }
+                ModuleSchemaStep::CreateIndex { name, table, columns, unique } => {
+                    let columns = columns
+                        .iter()
+                        .map(|column| quote(column))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    statements.push(format!(
+                        "CREATE {}INDEX {} ON {} ({columns})",
+                        if *unique { "UNIQUE " } else { "" },
+                        quote(&index_ident(module_id, name)),
+                        quote(&table_ident(module_id, table))
+                    ));
+                }
+            }
+        }
+
+        let tx = self.conn.transaction()?;
+        for statement in &statements {
+            tx.execute(statement, []).map_err(|error| {
+                Error::invalid_with(codes::MODULE_SCHEMA_FAILED, [("detail", error.to_string())])
+            })?;
+        }
+        Self::record_schema_in(&tx, module_id, migration.version)?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// 这个模块命名空间里现有的表（按名字排序）。
@@ -127,6 +201,68 @@ impl ModuleData {
     pub fn table_count(&self, module_id: &str) -> Result<usize> {
         Ok(self.tables_of(module_id)?.len())
     }
+
+    /// 按需算这个模块的数据规模（表数 + 行数 + 整库体积）。
+    pub fn stats(&self, module_id: &str) -> Result<ModuleStats> {
+        let tables = self.tables_of(module_id)?;
+        let mut rows: i64 = 0;
+        for table in &tables {
+            let count: i64 = self.conn.query_row(
+                &format!("SELECT COUNT(*) FROM {}", quote(table)),
+                [],
+                |row| row.get(0),
+            )?;
+            rows = rows.saturating_add(count);
+        }
+        Ok(ModuleStats { tables: tables.len(), rows, db_bytes: self.file_bytes() })
+    }
+
+    /// 整个数据区的字节数（主文件 + `-wal`；WAL 没 checkpoint 时不能只看主文件）。
+    pub fn file_bytes(&self) -> u64 {
+        let main = std::fs::metadata(&self.path).map(|meta| meta.len()).unwrap_or(0);
+        let mut wal = self.path.clone().into_os_string();
+        wal.push("-wal");
+        let wal = std::fs::metadata(PathBuf::from(wal)).map(|meta| meta.len()).unwrap_or(0);
+        main.saturating_add(wal)
+    }
+
+    /// 把模块数据区做一份**一致性快照**（`VACUUM INTO`；目标文件必须不存在）。
+    ///
+    /// 备份链与"导出模块数据"共用这一条：它写出来的是自洽的单文件库，
+    /// **不是**把正在写的 `modules.db`（连同 `-wal`）直接复制一份。
+    pub fn snapshot_into(&self, target: impl AsRef<Path>) -> Result<()> {
+        let target = target.as_ref();
+        if target.exists() {
+            return Err(Error::invalid_with(
+                codes::MODULE_SNAPSHOT_FAILED,
+                [("detail", format!("target exists: {}", target.display()))],
+            ));
+        }
+        self.conn
+            .execute("VACUUM INTO ?1", params![target.to_string_lossy().to_string()])
+            .map_err(|error| {
+                Error::invalid_with(codes::MODULE_SNAPSHOT_FAILED, [("detail", error.to_string())])
+            })?;
+        Ok(())
+    }
+
+    fn record_schema_in(conn: &Connection, module_id: &str, version: i64) -> Result<()> {
+        if version < 0 {
+            return Err(Error::invalid_with(
+                codes::MODULE_SCHEMA_INVALID,
+                [("version", version.to_string())],
+            ));
+        }
+        conn.execute(
+            "INSERT INTO module_schema(module_id, schema_version, updated_at)
+             VALUES(?1, ?2, ?3)
+             ON CONFLICT(module_id) DO UPDATE SET
+                 schema_version = excluded.schema_version,
+                 updated_at = excluded.updated_at",
+            params![module_id, version, now_millis()],
+        )?;
+        Ok(())
+    }
 }
 
 fn ensure_id(module_id: &str) -> Result<()> {
@@ -138,4 +274,40 @@ fn ensure_id(module_id: &str) -> Result<()> {
             [("module_id", module_id.to_string())],
         ))
     }
+}
+
+/// 表名：`mod_<模块id>_<后缀>`。
+fn table_ident(module_id: &str, suffix: &str) -> String {
+    format!("mod_{module_id}_{suffix}")
+}
+
+/// 索引名：与表同一个命名空间前缀。
+fn index_ident(module_id: &str, suffix: &str) -> String {
+    format!("mod_{module_id}_{suffix}")
+}
+
+/// SQL 标识符加引号（名字已被校验成窄字符集；这里仍转义，防的是将来放宽校验）。
+fn quote(identifier: &str) -> String {
+    format!("\"{}\"", identifier.replace('"', "\"\""))
+}
+
+fn create_table_sql(module_id: &str, table: &ModuleTable) -> String {
+    let columns = table
+        .columns
+        .iter()
+        .map(|column| column_sql(column))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("CREATE TABLE {} ({columns})", quote(&table_ident(module_id, &table.name)))
+}
+
+fn column_sql(column: &ModuleColumn) -> String {
+    let mut sql = format!("{} {}", quote(&column.name), column.kind.as_sql());
+    if column.not_null || column.primary_key {
+        sql.push_str(" NOT NULL");
+    }
+    if column.primary_key {
+        sql.push_str(" PRIMARY KEY");
+    }
+    sql
 }

@@ -97,6 +97,39 @@ fn table_names_are_classified_by_prefix_and_suffix() {
 }
 
 #[test]
+fn a_snapshot_is_a_consistent_copy() {
+    let (dir, path) = fresh();
+    let mut data = ModuleData::open(&path).unwrap();
+    data.record_schema("app.example.map", 1).unwrap();
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute(
+            "CREATE TABLE \"mod_app.example.map_places\"(id INTEGER PRIMARY KEY)",
+            [],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO \"mod_app.example.map_places\"(id) VALUES (1)", [])
+            .unwrap();
+    }
+
+    let snapshot = dir.path().join("snapshot.db");
+    data.snapshot_into(&snapshot).unwrap();
+    let copy = rusqlite::Connection::open(&snapshot).unwrap();
+    let count: i64 = copy
+        .query_row("SELECT COUNT(*) FROM \"mod_app.example.map_places\"", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 1);
+    let check: String = copy.query_row("PRAGMA quick_check", [], |row| row.get(0)).unwrap();
+    assert_eq!(check, "ok");
+
+    assert_eq!(
+        data.snapshot_into(&snapshot).unwrap_err().code(),
+        codes::MODULE_SNAPSHOT_FAILED,
+        "目标已存在时不许覆盖"
+    );
+}
+
+#[test]
 fn the_module_database_sits_beside_the_core_database() {
     let core = PathBuf::from("data").join("yanmo.db");
     assert_eq!(ModuleData::path_beside(&core), PathBuf::from("data").join("modules.db"));
