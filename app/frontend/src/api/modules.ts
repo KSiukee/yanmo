@@ -76,15 +76,28 @@ export const moduleImportConfirm = (granted: ModuleCapabilities, expected_finger
 
 export const moduleImportCancel = () => call<void>(COMMANDS.moduleImportCancel);
 
-/** 跑一次模块的报告（宿主跑完的那一份）。 */
-export interface ModuleRunReport {
-  exit_code: number | null;
+/** 启动回执；真正结果用 `moduleStatus` 取。 */
+export interface ModuleRunStarted {
+  module_id: string;
+}
+
+/** 一次运行的状态快照。 */
+export interface ModuleStatus {
+  known: boolean;
+  running: boolean;
+  stopped: boolean;
   timed_out: boolean;
+  exit_code: number | null;
   emitted: string[];
   stderr: string;
-  ipc_error: string | null;
-  job_assigned: boolean;
+  error: string | null;
 }
 
 export const moduleRun = (module_id: string) =>
-  call<ModuleRunReport>(COMMANDS.moduleRun, { module_id });
+  call<ModuleRunStarted>(COMMANDS.moduleRun, { module_id });
+
+export const moduleStatus = (module_id: string) =>
+  call<ModuleStatus>(COMMANDS.moduleStatus, { module_id });
+
+export const moduleStop = (module_id: string) =>
+  call<void>(COMMANDS.moduleStop, { module_id });

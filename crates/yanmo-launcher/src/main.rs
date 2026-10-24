@@ -41,7 +41,7 @@ fn run() -> Result<(), LaunchError> {
         .ok_or_else(|| LaunchError::new(LaunchError::SPAWN, "missing --host <file>"))?;
     let timeout = value_of(&args, "--timeout-secs")
         .and_then(|value| value.parse::<u64>().ok())
-        .map(|seconds| Duration::from_secs(seconds.clamp(1, 600)))
+        .map(|seconds| Duration::from_secs(seconds.clamp(1, 3600)))
         .unwrap_or(Duration::from_secs(60));
 
     let report = launch(&LaunchRequest { db_path: db, module_dir: module, host_bin: host, timeout })?;

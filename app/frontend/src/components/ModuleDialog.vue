@@ -3,7 +3,7 @@
 //
 // 这一版先做"看得见、管得住"：列表、排序偏好、激活/冻结、卸载（默认保留数据）。
 // 后台运行 / 联网开关与启动按钮等宿主策略那一层接上再放出来——**不做假开关**。
-import { onMounted, ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 
 import {
   moduleImportCancel,
@@ -13,13 +13,16 @@ import {
   moduleSetEnabled,
   moduleSetFavorite,
   moduleSetPinned,
+  moduleStop,
   moduleUninstall,
   modulesList,
   type ImportPreview,
   type ModuleCapabilities,
   type ModuleCard,
+  type ModuleStatus,
 } from "../api/modules";
 import ModuleImportPanel from "./ModuleImportPanel.vue";
+import { useModuleRuns } from "../composables/useModuleRuns";
 import { t } from "../locales/index.ts";
 
 const emit = defineEmits<{ close: [] }>();
@@ -28,6 +31,15 @@ const cards = ref<ModuleCard[]>([]);
 const busy = ref(false);
 const note = ref("");
 const preview = ref<ImportPreview | null>(null);
+const { isRunning: isRunningId, markStarted, markStopped, loadStatuses, dispose } =
+  useModuleRuns((status: ModuleStatus) => {
+    const emitted = status.emitted.join(" / ");
+    note.value = status.timed_out
+      ? t("modules.run_timeout")
+      : emitted
+        ? t("modules.run_ok", { emitted })
+        : t("modules.run_ok_empty");
+  });
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -50,6 +62,7 @@ async function load() {
   busy.value = true;
   try {
     cards.value = await modulesList();
+    await loadStatuses(cards.value);
   } catch (error) {
     note.value = t("modules.load_failed", { detail: messageOf(error) });
   } finally {
@@ -93,14 +106,22 @@ function uninstall(card: ModuleCard) {
 
 function runModule(card: ModuleCard) {
   void act(async () => {
-    const report = await moduleRun(card.id);
-    if (report.timed_out) {
-      note.value = t("modules.run_timeout");
-      return;
-    }
-    const emitted = report.emitted.join(" / ");
-    note.value = emitted ? t("modules.run_ok", { emitted }) : t("modules.run_ok_empty");
+    await moduleRun(card.id);
+    markStarted(card.id);
+    note.value = t("modules.run_started", { name: card.name });
   });
+}
+
+function stopModule(card: ModuleCard) {
+  void act(async () => {
+    await moduleStop(card.id);
+    note.value = t("modules.run_stopped");
+    markStopped(card.id);
+  });
+}
+
+function isRunning(card: ModuleCard): boolean {
+  return isRunningId(card.id);
 }
 
 async function pickImport() {
@@ -142,6 +163,10 @@ async function cancelImport() {
 
 onMounted(() => {
   void load();
+});
+
+onUnmounted(() => {
+  dispose();
 });
 </script>
 
@@ -226,6 +251,16 @@ onMounted(() => {
           </p>
           <div class="modules__actions">
             <button
+              v-if="isRunning(card)"
+              type="button"
+              class="modules__button dialog__button"
+              :disabled="busy"
+              @click="stopModule(card)"
+            >
+              {{ t("modules.stop") }}
+            </button>
+            <button
+              v-else
               type="button"
               class="modules__button dialog__button"
               :disabled="busy || !card.enabled"

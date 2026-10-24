@@ -255,6 +255,44 @@ const NETWORK_TOKENS: &[&str] = &[
 ];
 
 #[test]
+fn release_bundle_ships_the_module_platform() {
+    // 正式出包用 `tauri.release.conf.json` 覆盖 `externalBin`：命令行工具 + 模块平台
+    // 的宿主/启动器。三个都必须是本仓公开源码编出来的构建产物，且仍不许 `resources`
+    // / `files` 这种"把仓库别处打进去"的口子。
+    let app = package_root();
+    let conf: serde_json::Value =
+        serde_json::from_str(&read(&app.join("tauri.release.conf.json")))
+            .expect("发布配置应当是合法 JSON");
+    let bundle = conf.get("bundle").expect("bundle 段");
+    for key in ["resources", "files"] {
+        let value = bundle.get(key);
+        assert!(
+            value.is_none() || value == Some(&serde_json::Value::Object(Default::default())),
+            "发布配置的 bundle.{key} 不许出现：{value:?}"
+        );
+    }
+    let externals = bundle
+        .get("externalBin")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let allowed = ["binaries/yanmo-cli", "binaries/yanmo-host", "binaries/yanmo-launch"];
+    for entry in &externals {
+        let path = entry.as_str().unwrap_or_default();
+        assert!(
+            allowed.contains(&path) && !path.contains(".."),
+            "发布配置的 externalBin 只放行命令行工具与模块平台：{path:?}"
+        );
+    }
+    for expected in allowed {
+        assert!(
+            externals.iter().any(|entry| entry.as_str() == Some(expected)),
+            "发布配置的 externalBin 里少了 {expected}——模块启动/取稿路会缺件"
+        );
+    }
+}
+
+#[test]
 fn shipped_code_has_no_network_paths() {
     let root = workspace_root();
     let mut hits = Vec::new();

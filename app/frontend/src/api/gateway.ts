@@ -215,4 +215,6 @@ export const COMMANDS = {
   moduleImportConfirm: "module_import_confirm",
   moduleImportCancel: "module_import_cancel",
   moduleRun: "module_run",
+  moduleStatus: "module_status",
+  moduleStop: "module_stop",
 } as const;

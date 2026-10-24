@@ -46,7 +46,8 @@ import sys
 import time
 from pathlib import Path
 import green_package  # 绿色版打包（本体拆在 tools/green_package.py）
-import cli_package  # 命令行工具随包（本体拆在 tools/cli_package.py）
+import cli_package
+import module_package  # 命令行工具随包（本体拆在 tools/cli_package.py）
 
 # 控制台编码**不由我们决定**：GitHub 的 Windows 跑手默认代码页是 cp1252，直接打印中文会
 # UnicodeEncodeError（真踩过：出包六步全绿，卡在下一步的发布说明上，Release 一步都没走到）。
@@ -274,14 +275,8 @@ def run_tests(skip: bool) -> tuple[bool, str, str]:
 
 
 def bundle(tauri_cmd: list, no_bundle: bool) -> tuple[bool, str]:
-    """**只走 Tauri 自己的构建路径**（生产协议 + 前端内嵌 + 打包）。"""
-    cmd = [*tauri_cmd, "build"]
-    if no_bundle:
-        cmd.append("--no-bundle")
-    code, out = run(cmd, cwd=APP, timeout=7200)
-    return code == 0, out
-
-
+    """发布配置打包（模块平台由 module_package 负责编 + 放）。"""
+    return module_package.bundle(tauri_cmd, no_bundle, APP, run)
 def collect(out_dir: Path, version: str, no_bundle: bool) -> tuple[Path | None, str]:
     """把产物收进 `dist/`，名字带版本号。
 
@@ -433,11 +428,16 @@ def main() -> int:
         return 1
 
     # 第 3 步必须在跑测试之前：app 的构建脚本**编译期**就要 `externalBin` 那个资源存在
-    print("[3/7] 命令行工具（随包）")
+    print("[3/7] 命令行工具与模块平台（随包）")
     ok, out = cli_package.build_and_stage(ROOT, tools.get("cargo_cmd", ""))
     say(ok, "命令行工具", out if ok else "编出来 / 放到位失败")
     if not ok:
         return fail("命令行工具（cargo build -p yanmo-cli → app/binaries）", out)
+
+    ok, out = module_package.build_and_stage(ROOT, tools.get("cargo_cmd", ""))
+    say(ok, "模块平台", out if ok else "编出来 / 放到位失败")
+    if not ok:
+        return fail("模块平台（cargo build -p yanmo-host -p yanmo-launcher → app/binaries）", out)
 
     print("[4/7] 前端依赖与构建")
     npm = find_tool("npm", "npm.cmd", "npm.exe", env="NPM")

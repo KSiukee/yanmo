@@ -1,0 +1,9 @@
+{
+  "bundle": {
+    "externalBin": [
+      "binaries/yanmo-cli",
+      "binaries/yanmo-host",
+      "binaries/yanmo-launch"
+    ]
+  }
+}

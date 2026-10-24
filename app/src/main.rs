@@ -158,6 +158,8 @@ fn main() {
             app.manage(data);
             // 导入闸：选好的模块文件夹只暂存在壳里（界面拿不到路径）。
             app.manage(crate::commands::module::ImportStage::default());
+            // 模块运行登记：后台启动器子进程；退出时 Drop 会全部停掉。
+            app.manage(crate::commands::module_run::ModuleRuns::default());
             // 上一次运行崩在"解开加密包之后、换库之前"留下的那份明文：启动时扫掉。
             // 名字里带的是**那次运行的 pid**，所以要按名字扫（`sweep_stale_sealed_temp`），
             // 不能拿本进程 pid 拼出来的那一个名字去找——那一个必然不存在。别人的东西一律不碰。
