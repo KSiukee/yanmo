@@ -13,7 +13,8 @@
 //! # 留痕
 //!
 //! `op_log.entity = "modules"`、`entity_id = 0`（模块 id 是文本，放 payload 里），
-//! `op` 为 `install` / `grant` / `freeze` / `enable` / `certify` / `uncertify`。
+//! `op` 为 `install` / `grant` / `freeze` / `enable` / `certify` / `uncertify`
+//! （启动与卸载的留痕在 [`super::module_lifecycle`]）。
 
 use rusqlite::{params, OptionalExtension};
 use serde_json::json;
@@ -287,4 +288,5 @@ impl Store {
     ) -> Result<bool> {
         Ok(self.module_record(module_id)?.can_read(area))
     }
+
 }

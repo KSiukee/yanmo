@@ -49,6 +49,7 @@ mod manuscript_submit;
 mod mirror;
 mod mirror_plan;
 mod module_data;
+mod module_lifecycle;
 mod module_read;
 mod module_registry;
 mod node;

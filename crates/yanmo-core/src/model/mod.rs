@@ -25,6 +25,7 @@ mod fragment;
 mod input_source;
 mod manuscript_state;
 mod module;
+mod module_lifecycle;
 mod module_question;
 mod module_schema;
 mod node;
@@ -52,6 +53,7 @@ pub use manuscript_state::{
     manuscript_transition, ManuscriptState, ManuscriptTransition, MANUSCRIPT_TRANSITIONS,
 };
 pub use module::{first_ungrantable, ModuleRecord};
+pub use module_lifecycle::{ModuleLaunchPermit, ModuleLaunchSource, ModuleState};
 pub use module_schema::{
     ModuleColumn, ModuleColumnType, ModuleMigration, ModuleSchemaStep, ModuleTable,
     MAX_INDEX_COLUMNS, MAX_SCHEMA_COLUMNS, MAX_SCHEMA_NAME_CHARS, MAX_SCHEMA_STEPS,

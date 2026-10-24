@@ -366,6 +366,12 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "模块数据结构升级失败（没有改动任何东西）：{detail}" : ["detail"],
     MODULE_SNAPSHOT_FAILED => "module.snapshot_failed"
         : "模块数据快照写不出来：{detail}" : ["detail"],
+    MODULE_CHAIN_UNAVAILABLE => "module.chain_unavailable"
+        : "模块之间的链还没接通（要等链路可见与限频那一族）；现在只允许你主动打开或触发的动作" : [],
+    MODULE_LAUNCH_SOURCE_INVALID => "module.launch_source_invalid"
+        : "这次启动的来源不合规：{detail}" : ["detail"],
+    MODULE_DROP_DATA_FAILED => "module.drop_data_failed"
+        : "模块数据删不掉（没有改动任何东西）：{detail}" : ["detail"],
 }
 
 /// 按码把参数填进日志模板；模板不认识这个码就退回 `码(名字=取值, …)`。

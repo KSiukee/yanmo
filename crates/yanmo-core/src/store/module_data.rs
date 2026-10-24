@@ -246,6 +246,34 @@ impl ModuleData {
         Ok(())
     }
 
+    /// 删掉一个模块的**全部数据**（显式动作；卸载默认不调它）。
+    ///
+    /// 这是"连数据一起删"的唯一入口：先由界面二次确认，再调它。整个删除在一个事务里，
+    /// 任何一张表删不掉（比如被别的表引用）就整体回滚，不留半套。
+    /// 返回删掉了几张表；`module_schema` 里那一行也一起清掉。
+    pub fn drop_namespace(&mut self, module_id: &str) -> Result<usize> {
+        ensure_id(module_id)?;
+        let tables = self.tables_of(module_id)?;
+        let tx = self.conn.transaction()?;
+        for table in &tables {
+            tx.execute(&format!("DROP TABLE {}", quote(table)), []).map_err(|error| {
+                Error::invalid_with(
+                    codes::MODULE_DROP_DATA_FAILED,
+                    [("detail", error.to_string())],
+                )
+            })?;
+        }
+        tx.execute("DELETE FROM module_schema WHERE module_id = ?1", [module_id])
+            .map_err(|error| {
+                Error::invalid_with(
+                    codes::MODULE_DROP_DATA_FAILED,
+                    [("detail", error.to_string())],
+                )
+            })?;
+        tx.commit()?;
+        Ok(tables.len())
+    }
+
     fn record_schema_in(conn: &Connection, module_id: &str, version: i64) -> Result<()> {
         if version < 0 {
             return Err(Error::invalid_with(

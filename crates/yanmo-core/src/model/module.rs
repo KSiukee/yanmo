@@ -12,6 +12,8 @@ use serde::Serialize;
 use yanmo_proto::capability::{CoreDataArea, ModuleCapabilities};
 use yanmo_proto::manifest::ModuleManifest;
 
+use super::module_lifecycle::ModuleState;
+
 /// 注册表里的一条模块记录。
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ModuleRecord {
@@ -30,6 +32,20 @@ pub struct ModuleRecord {
 impl ModuleRecord {
     pub fn id(&self) -> &str {
         &self.manifest.id
+    }
+
+    /// 激活状态：装了默认就是激活；用户停用即冻结。
+    pub fn state(&self) -> ModuleState {
+        if self.enabled {
+            ModuleState::Active
+        } else {
+            ModuleState::Frozen
+        }
+    }
+
+    /// 现在能不能被调用 / 唤醒（冻结即不能）。
+    pub fn is_active(&self) -> bool {
+        self.enabled
     }
 
     /// 现在能不能读核心的这块数据：**没冻结 + 授予了这一块**。

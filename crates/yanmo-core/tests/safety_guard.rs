@@ -93,6 +93,14 @@ const ALLOWED: &[Allowance] = &[
               要么带沙箱记号文件；**目录里有稿库又没有记号时一律拒绝**（`--dir` 参数打错也删不掉真稿库）。\
               另一处删的是沙箱内部刚建的备份落点",
     },
+    Allowance {
+        file: "crates/yanmo-core/src/store/module_data.rs",
+        rule: "drop-table",
+        count: 1,
+        why: "模块数据的**显式**「连数据一起删」：只删本模块命名空间里的表（表名由核心\
+              校验并加模块前缀，模块给不出任意表名），整段在一个事务里，任何一张删不掉就整体回滚；\
+              卸载默认不调它，界面二次确认之后才走这条",
+    },
 ];
 
 fn workspace_root() -> PathBuf {
