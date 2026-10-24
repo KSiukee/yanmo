@@ -12,6 +12,8 @@
 import { ref, watch, type Ref } from "vue";
 
 import type { Appearance, AppearancePatch, NamingRewrite } from "../api/core";
+import type { BackgroundOutcome } from "../api/background";
+import { t } from "../locales/index.ts";
 import type { TypographyField } from "./typography";
 
 /** 右侧第二栏露哪一块（与核心 `ASIDE_TABS` 的稳定码一致）。 */
@@ -31,6 +33,10 @@ export interface AppearanceTransport {
   previewNaming: (work_id: number) => Promise<NamingRewrite[]>;
   /** 编号写法：照预览那份清单执行（作者点过确认才走到这里） */
   applyNaming: (work_id: number, rewrites: NamingRewrite[]) => Promise<number>;
+  /** 正文背景图：读现状 / 请作者挑一张 / 清掉（文件那一半全在壳里） */
+  backgroundImage: () => Promise<BackgroundOutcome>;
+  backgroundPick: (title: string, filter_label: string) => Promise<BackgroundOutcome>;
+  backgroundClear: () => Promise<BackgroundOutcome>;
 }
 
 export interface AppearanceOptions {
@@ -87,6 +93,15 @@ export interface AppearanceState {
    */
   setTheme: (value: string) => Promise<void>;
   /**
+   * 护眼滤色的幅度（0~100；**`0` = 关**，一个像素都不染）。**只写全局那一层**
+   * （跟眼睛与房间光线有关，跟哪本书无关）——核心那边这项不参与每书覆盖，
+   * 所以这里也不给"只设这本书"的口子。
+   *
+   * 它只改屏幕观感：整窗铺一层暖黄的膜，正文、导出与落盘字节一个都不动。
+   * 深浅两套配色合计出来的上限由界面算（见 `editor/eye-care.ts`）。
+   */
+  setEyeCare: (value: number) => Promise<void>;
+  /**
    * 用眼提醒：开关 + 两个阈值（连着写满多少分钟 / 今天写到多少字）。
    *
    * **只写全局那一层**（与配色同一条口径：这两个数与哪本书无关）——所以这里也不给
@@ -114,6 +129,34 @@ export interface AppearanceState {
    * 传 `0` = 清掉这一项（回默认档）。它只影响观感：写完编辑区立刻变，正文一个字不动。
    */
   setTypography: (field: TypographyField, value: number) => Promise<void>;
+  /**
+   * 设稿纸横线的线型（`solid` / `dashed`；传 `"auto"` = 清掉这一层，回默认"不显示"）。
+   *
+   * 与排版三项同一条口径：**只写全局那一层**（第一版先只暴露全局，每书覆盖的机制已经在了）。
+   * 它只影响观感：写完编辑区立刻变，正文一个字不动。
+   */
+  setRuleStyle: (value: string) => Promise<void>;
+  /**
+   * 正文背景：底色 / 底纹 / 图片层的不透明度与铺法。
+   *
+   * 与排版三项同一条口径：**只写全局那一层**（第一版先只暴露全局，每书覆盖的机制已经在了）。
+   * 纯观感——写完编辑区立刻变，正文一个字不动，也不进导出。
+   *
+   * 传 `"auto"`（底色 / 底纹 / 铺法）= 清掉这一层、回默认；不透明度传**负数** = 清掉这一层
+   * （`0` 是正经取值：图留着但看不见）。
+   */
+  setBackgroundColor: (value: string) => Promise<void>;
+  setBackgroundLayout: (value: string) => Promise<void>;
+  setBackgroundFit: (value: string) => Promise<void>;
+  setBackgroundOpacity: (value: number) => Promise<void>;
+  /** 现在的背景图长什么样（文件名 / 能不能画 / 多少字节）——打开面板时问一次 */
+  background: Ref<BackgroundOutcome | null>;
+  /** 请作者挑一张图（壳复制进数据目录；取消时什么都不变） */
+  pickBackground: () => Promise<void>;
+  /** 清掉背景图（库里清空 + 数据目录里那几张删掉） */
+  clearBackground: () => Promise<void>;
+  /** 问一次"现在的背景图还在不在"（比如刚打开设置面板时） */
+  refreshBackground: () => Promise<void>;
   /** 整本书换编号写法的清单（还没问回来是 null；空数组 = 不用换） */
   namingPlan: Ref<NamingRewrite[] | null>;
   /** 问一次"这本书哪些章会换" */
@@ -127,6 +170,8 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
   const workValues = ref<Appearance | null>(null);
   const visible = ref(false);
   const namingPlan = ref<NamingRewrite[] | null>(null);
+  /** 背景图现在长什么样（文件名 / 能不能画 / 多少字节）；**不是偏好**，是一次动作的回执 */
+  const backgroundOutcome = ref<BackgroundOutcome | null>(null);
   const busy = ref(false);
   const report = (error: unknown) => {
     options.onError?.(error instanceof Error ? error.message : String(error));
@@ -149,7 +194,9 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
     values,
     workValues,
     visible,
-    busy,    load: async () => {
+    busy,
+    background: backgroundOutcome,
+    load: async () => {
       try {
         values.value = await options.transport.read(null);
       } catch {
@@ -162,6 +209,8 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
       // 并算一次"已有章节要不要换写法"——面板上那行提示一打开就是准的
       await state.loadWork();
       await state.previewNaming();
+      // 背景图问一次"还在不在"：库里有名字但文件被删掉时，面板要说清"图没了，回纯色"
+      await state.refreshBackground();
       visible.value = true;
     },
     close: () => {
@@ -225,6 +274,10 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
         // 只写全局（null）：配色不进每书覆盖。
         options.transport.write(null, { theme: value }),
       ),
+    setEyeCare: (value) =>
+      // 只写全局（null）：护眼滤色不进每书覆盖。`0` 是正经取值（＝关），所以不拿它当"清掉"——
+      // 核心那边负数才是清掉这一层（与图片不透明度同一个口径）。
+      act(() => options.transport.write(null, { eye_care: value })),
     setBreakReminder: (enabled, minutes, words) =>
       // 三项一次带上（与叩问那两个数同一条做法）：核心那边是稀疏合并，没传的不动。
       // 只写全局（null）：用眼提醒跟哪本书无关。
@@ -276,6 +329,70 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
       await act(() => options.transport.write(null, { [field]: value }));
       // 全局换了 → "这本书生效的那一份"也跟着换：顺手重读，编辑区与面板立刻一致
       await state.loadWork();
+    },
+    setRuleStyle: async (value) => {
+      // 传 "auto" = 清掉这一层（核心那边就是"回默认：不显示"）；别的取值核心会校验。
+      // 与 setTypography 同一条路：写全局那一层，再重读"这本书生效的那一份"。
+      await act(() => options.transport.write(null, { editor_rule_style: value }));
+      await state.loadWork();
+    },
+    setBackgroundColor: async (value) => {
+      // 同上：`"auto"` = 清掉这一层（回默认纸白）；别的取值核心会校验
+      await act(() => options.transport.write(null, { editor_bg_color: value }));
+      await state.loadWork();
+    },
+    setBackgroundLayout: async (value) => {
+      await act(() => options.transport.write(null, { editor_bg_layout: value }));
+      await state.loadWork();
+    },
+    setBackgroundFit: async (value) => {
+      await act(() => options.transport.write(null, { editor_bg_fit: value }));
+      await state.loadWork();
+    },
+    setBackgroundOpacity: async (value) => {
+      // 传负数 = 清掉这一层（回默认 35）；`0` 是正经取值（图留着但看不见），
+      // 所以这里不拿 0 当"清掉"——那会把"先藏起来"变成一个改不掉的空档
+      await act(() => options.transport.write(null, { editor_bg_opacity: value }));
+      await state.loadWork();
+    },
+    refreshBackground: async () => {
+      try {
+        backgroundOutcome.value = await options.transport.backgroundImage();
+      } catch (error) {
+        // 读不到就当作"没有图"：这不是挡住设置面板的理由（面板别的项照样能用）
+        backgroundOutcome.value = null;
+        report(error);
+      }
+    },
+    pickBackground: async () => {
+      if (busy.value) return;
+      busy.value = true;
+      try {
+        // 窗口标题与筛选项由界面给（**壳不产文案**）；取消时 `cancelled` 为 true
+        const outcome = await options.transport.backgroundPick(
+          t("settings.background_pick_title"),
+          t("settings.background_pick_filter"),
+        );
+        backgroundOutcome.value = outcome;
+        // 换图会顺手把这一项落库，所以"这本书生效的那一份"要重读一次
+        await state.loadWork();
+      } catch (error) {
+        report(error);
+      } finally {
+        busy.value = false;
+      }
+    },
+    clearBackground: async () => {
+      if (busy.value) return;
+      busy.value = true;
+      try {
+        backgroundOutcome.value = await options.transport.backgroundClear();
+        await state.loadWork();
+      } catch (error) {
+        report(error);
+      } finally {
+        busy.value = false;
+      }
     },
     resetToDefault: () => act(() => options.transport.reset(null)),
   };

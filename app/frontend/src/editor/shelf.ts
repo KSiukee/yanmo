@@ -70,6 +70,10 @@ export interface NewWorkDraft {
    * **不改书的结构**——所以建书页问一次就够，之后在目录栏里随时能改。
    */
   volumeTarget: number | null;
+  /** 体裁；空串 = 先不填（**没填过 ≠ 没有体裁**） */
+  genre: string;
+  /** 标签，一行一个；空串 = 一个都不填 */
+  tags: string;
 }
 
 /** 书架要用的动作（会话层注入真命令，测试注入替身）。 */
@@ -86,16 +90,24 @@ export interface ShelfTransport {
   writeNaming: (work_id: number, naming: string) => Promise<void>;
   /** 写"一卷大概多少章"（留 null 就是没设过，不调它） */
   writeVolumeTarget: (work_id: number, chapters: number) => Promise<void>;
+  /** 写分类归属（体裁 + 标签，一次落好） */
+  writeClassify: (work_id: number, genre: string, tags: string) => Promise<void>;
 }
 
-/** 「编辑作品」表单填的那两样：书名与简介。
+/** 「编辑作品」表单填的那几样：书名、简介、**体裁与标签**。
  *
  * 类型与命名规则**不在编辑表单里改**——它们各有自己的改法：类型决定目录长什么样，
  * 命名规则走「整本换写法」的预览确认流程（两套改法迟早打架）。
+ *
+ * 体裁与标签在这里改：它们是**作者手填的一点点元数据**，与"这本书叫什么"同一件事
+ * （新建那张表也问同一组），没有别的改法会跟它打架。
  */
 export interface EditWorkDraft {
   title: string;
   summary: string;
+  genre: string;
+  /** 标签，一行一个（**原样递核心**，归一与上限都在那边） */
+  tags: string;
 }
 
 export interface ShelfOptions {
@@ -230,6 +242,10 @@ export function useShelf(options: ShelfOptions): Shelf {
     if (draft.volumeTarget !== null && draft.volumeTarget > 0) {
       await options.transport.writeVolumeTarget(work_id, draft.volumeTarget);
     }
+    // 分类归属（体裁 / 标签）也一样：两栏都空就不白跑一趟（新书本来就是空的）
+    if (draft.genre.trim() || draft.tags.trim()) {
+      await options.transport.writeClassify(work_id, draft.genre, draft.tags);
+    }
     if (await options.openWork(work_id)) visible.value = false;
     // 收空壳放在**切过去之后**：万一收不动，作者也已经在新书里了，不至于卡住
     if (shell !== null && shell !== work_id) {
@@ -272,6 +288,9 @@ export function useShelf(options: ShelfOptions): Shelf {
         }
         await options.transport.rename(work_id, title);
         await options.transport.writeSummary(work_id, draft.summary.trim());
+        // 分类归属也一并落好：**清空这一栏也是一次真实的写**（＝回到"没填过"），
+        // 所以这里不像新建那条路那样跳过空白——作者把标签删光了，就该真删掉。
+        await options.transport.writeClassify(work_id, draft.genre, draft.tags);
       }),
     adopt: (work_id, draft) =>
       act(async () => {
@@ -287,6 +306,9 @@ export function useShelf(options: ShelfOptions): Shelf {
           if (draft.naming !== null) await options.transport.writeNaming(work_id, draft.naming);
           if (draft.volumeTarget !== null && draft.volumeTarget > 0) {
             await options.transport.writeVolumeTarget(work_id, draft.volumeTarget);
+          }
+          if (draft.genre.trim() || draft.tags.trim()) {
+            await options.transport.writeClassify(work_id, draft.genre, draft.tags);
           }
           return;
         }

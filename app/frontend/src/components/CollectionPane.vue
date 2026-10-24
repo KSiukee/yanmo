@@ -8,6 +8,7 @@ import { computed, ref, watch } from "vue";
 import type { EditorSession } from "../editor/session";
 import { compileCollection, compileCollectionOpenFolder, type CollectionFormat } from "../api/collection";
 import { pieceProgress, wordProgress, type SortMode } from "../editor/collection";
+import { parseTags } from "../editor/classify.ts";
 import { formatCaliberNumber, formatWhen, formatWords } from "../editor/display";
 import { t } from "../locales/index.ts";
 
@@ -81,6 +82,14 @@ function wordsOf(entry: { word_count: number; char_count: number; chars_no_punct
   return formatCaliberNumber(entry, caliber.value);
 }
 
+/** 这一篇的分类归属（体裁 · 主题）——**只显示作者自己填的那些字**，不替他补。
+ *
+ *  一个都没填就返回空串：集视图里不摆一排"—"，那会让人以为这一栏坏了。 */
+function classifyOf(entry: { genre: string; tags: string }): string {
+  const theme = parseTags(entry.tags)[0] ?? "";
+  return [entry.genre.trim(), theme].filter(Boolean).join(" · ");
+}
+
 /** 导出这一本集子：**按集内顺序**合成一份成品（核心渲染 + 壳落盘）。 */
 async function exportCollection(format: CollectionFormat) {
   const id = view.value?.id;
@@ -134,6 +143,9 @@ function openArticle(id: number) {
       <button type="button" class="collection__button" :disabled="busy" @click="applySort('length')">
         {{ t("collection.sort_length") }}
       </button>
+      <button type="button" class="collection__button" :disabled="busy" @click="applySort('theme')">
+        {{ t("collection.sort_theme") }}
+      </button>
     </div>
     <ol class="collection__list">
       <li v-for="(entry, index) in view?.entries ?? []" :key="entry.id" class="collection__row">
@@ -142,6 +154,7 @@ function openArticle(id: number) {
         <span class="collection__meta">
           {{ t(`manuscript.status.${entry.status}`) }} · {{ wordsOf(entry) }} ·
           {{ formatWhen(entry.updated_at) }}
+          <span v-if="classifyOf(entry)" class="collection__class">{{ classifyOf(entry) }}</span>
         </span>
         <span class="collection__actions">
           <button

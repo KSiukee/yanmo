@@ -6,7 +6,7 @@
 //! 3. 书的覆盖 **只覆盖它真设过的项**，其余继承全局；
 //! 4. 坏 JSON 不报错、当没设过——界面不该被一条坏记录卡住。
 
-use yanmo_core::model::{NodeKind, SideTab, WorkKind};
+use yanmo_core::model::{NodeKind, RuleStyle, SideTab, WorkKind};
 use yanmo_core::store::{Appearance, Store};
 use yanmo_core::text::WordCaliber;
 use yanmo_core::typeset::QuoteStyle;
@@ -631,4 +631,111 @@ fn the_break_reminder_is_on_by_default_and_refuses_a_useless_threshold() {
         .unwrap();
     let broken = store.appearance(None).unwrap();
     assert_eq!((broken.break_minutes, broken.break_words), (45, 1500), "坏值回默认");
+}
+
+/// 稿纸线型（实线 / 虚线 / 不显示）与排版三项是**同一条底线**：默认不显示、能记住、
+/// 能每书覆盖、认不出的码当场拒，**而正文与导出一个字节都不许变**。
+#[test]
+fn the_rule_style_is_remembered_per_book_and_never_touches_the_text() {
+    use yanmo_core::store::ExportFormat;
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let volume = store.list_nodes(work.id).unwrap()[0].id;
+    let chapter = store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap();
+    store.write_body(chapter, "第一段。\n第二段。").unwrap();
+    let body_before = store.read_body(chapter).unwrap();
+    let export_before: Vec<u8> = store
+        .render_work(work.id, ExportFormat::Text)
+        .unwrap()
+        .iter()
+        .flat_map(|file| file.content.clone())
+        .collect();
+
+    // 没设过 → 不显示（默认只有一处：核心的 `RuleStyle::default()`）
+    assert_eq!(store.appearance(None).unwrap().editor_rule_style, RuleStyle::None);
+
+    // 设全局：实线。只改这一项也要落库——`is_empty()` 漏了它就会被当成空记录删掉
+    store
+        .set_appearance(
+            None,
+            &Appearance { editor_rule_style: Some("solid".to_string()), ..Default::default() },
+        )
+        .unwrap();
+    assert!(
+        raw(&store, "appearance").is_some_and(|json| json.contains("solid")),
+        "只改这一项也要落库（漏了它，作者选完重开就没了）"
+    );
+
+    // 每书覆盖：书的覆盖盖在全局上，全局那份不动
+    store
+        .set_appearance(
+            Some(work.id),
+            &Appearance { editor_rule_style: Some("dashed".to_string()), ..Default::default() },
+        )
+        .unwrap();
+    let other = store.create_work(WorkKind::Novel, "另一本").unwrap();
+    assert_eq!(
+        store.appearance(Some(work.id)).unwrap().editor_rule_style,
+        RuleStyle::Dashed,
+        "这一本单独设过"
+    );
+    assert_eq!(
+        store.appearance(Some(other.id)).unwrap().editor_rule_style,
+        RuleStyle::Solid,
+        "别的书跟全局"
+    );
+    assert_eq!(
+        store.appearance(None).unwrap().editor_rule_style,
+        RuleStyle::Solid,
+        "书的覆盖不许动全局那一份"
+    );
+
+    // ★ 正文与导出：一个字节都不许变
+    assert_eq!(store.read_body(chapter).unwrap(), body_before, "画线不许碰正文");
+    let export_after: Vec<u8> = store
+        .render_work(work.id, ExportFormat::Text)
+        .unwrap()
+        .iter()
+        .flat_map(|file| file.content.clone())
+        .collect();
+    assert_eq!(export_after, export_before, "画线不许进导出");
+
+    // 认不出的码**当场拒**（不是悄悄当没设过），被拒之后库里那份原样不动
+    let err = store
+        .set_appearance(
+            None,
+            &Appearance { editor_rule_style: Some("dotted".to_string()), ..Default::default() },
+        )
+        .unwrap_err();
+    assert_eq!(err.code(), yanmo_core::error::codes::UNKNOWN_RULE_STYLE);
+    assert_eq!(store.appearance(None).unwrap().editor_rule_style, RuleStyle::Solid);
+
+    // `"auto"` = 清掉这一层（回默认：不显示）；书的覆盖清掉就是**回到继承全局**
+    store
+        .set_appearance(
+            Some(work.id),
+            &Appearance { editor_rule_style: Some("auto".to_string()), ..Default::default() },
+        )
+        .unwrap();
+    assert_eq!(store.appearance(Some(work.id)).unwrap().editor_rule_style, RuleStyle::Solid);
+    store
+        .set_appearance(
+            None,
+            &Appearance { editor_rule_style: Some("auto".to_string()), ..Default::default() },
+        )
+        .unwrap();
+    assert_eq!(store.appearance(None).unwrap().editor_rule_style, RuleStyle::None);
+
+    // 坏记录当没设过（旧版本 / 手改 JSON 写进来的荒谬值）：读侧不报错，回全局那份
+    store
+        .conn()
+        .execute(
+            "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES(?1, ?2, 0)",
+            rusqlite::params![
+                format!("work.{}.appearance", other.id),
+                r#"{"editor_rule_style":"wavy"}"#
+            ],
+        )
+        .unwrap();
+    assert_eq!(store.appearance(Some(other.id)).unwrap().editor_rule_style, RuleStyle::None);
 }

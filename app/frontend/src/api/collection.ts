@@ -22,6 +22,10 @@ export interface ArticleEntry {
   /** 这一篇什么时候写成的（集内「按时间排」用它） */
   created_at: number;
   updated_at: number;
+  /** **体裁**（空串＝作者没填过）——集内「按主题排」按它分组 */
+  genre: string;
+  /** **标签**（一行一个，空串＝一个都没填）——组内再按第一个标签聚 */
+  tags: string;
 }
 
 /** 一个集的一屏：篇目（按集内顺序）+ 目标 + 现有规模。 */

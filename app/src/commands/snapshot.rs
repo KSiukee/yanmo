@@ -12,7 +12,7 @@ use tauri::State;
 use crate::error::ApiError;
 use crate::storage::AppData;
 use yanmo_core::diff::DiffKind;
-use yanmo_core::store::{SnapshotSummary, Store};
+use yanmo_core::store::{SnapshotSummary, SourceBreakdown, Store};
 use yanmo_core::text;
 
 /// 差异行前后各留几句相同的上下文（再远就折起来）。
@@ -75,6 +75,8 @@ pub struct RestoreAck {
     pub chars_no_punct: i64,
     pub word_count: i64,
     pub fingerprint: String,
+    /// 回滚之后的来源分布（没动到的字保留原来的来源；回滚本身没有观测者，记「未记录」）
+    pub sources: SourceBreakdown,
 }
 
 fn kind_name(kind: DiffKind) -> &'static str {
@@ -143,6 +145,7 @@ pub fn snapshot_restore(data: State<'_, AppData>, snapshot_id: i64) -> Result<Re
         Ok(RestoreAck {
             node_id,
             fingerprint: text::content_hash(&body),
+            sources: store.source_breakdown(node_id)?,
             body,
             char_count: stats.char_count,
             chars_no_punct: stats.chars_no_punct,

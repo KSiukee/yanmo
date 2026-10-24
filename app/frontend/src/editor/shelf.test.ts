@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { ref } from "vue";
 
 import type { ExportAck, ShelfEntry } from "../api/core";
-import { looksLikeFirstRun, useShelf } from "./shelf.ts";
+import { looksLikeFirstRun, useShelf, type NewWorkDraft } from "./shelf.ts";
 
 /** 核心首启自动建的那本**无名空壳**（只有一本、没名字、一个字没写）。 */
 function shellEntry(over: Partial<ShelfEntry> = {}): ShelfEntry {
@@ -26,6 +26,11 @@ function shellEntry(over: Partial<ShelfEntry> = {}): ShelfEntry {
     updated_at: 0,
     ...over,
   } as ShelfEntry;
+}
+
+/** 建书页那一份草稿（只写关心的那几样，其余按"没填"补齐）。 */
+function draft(over: Partial<NewWorkDraft> = {}): NewWorkDraft {
+  return { kind: "article", title: "", summary: "", naming: null, volumeTarget: null, genre: "", tags: "", ...over };
 }
 
 function harness(onError?: (message: string) => void, listed: ShelfEntry[] = []) {
@@ -53,6 +58,10 @@ function harness(onError?: (message: string) => void, listed: ShelfEntry[] = [])
       writeVolumeTarget: async (work_id: number, chapters: number) => {
         calls.push(`volume:${work_id}:${chapters}`);
       },
+      writeClassify: async (work_id: number, genre: string, tags: string) => {
+        // 标签里可能有换行：压成 | 便于断言（**递过去的仍是原样**，归一在核心）
+        calls.push(`classify:${work_id}:${genre}:${tags.replace(/\n/g, "|")}`);
+      },
     },
     workId: ref<number | null>(null),
     openWork: async (work_id: number | null) => {
@@ -66,7 +75,15 @@ function harness(onError?: (message: string) => void, listed: ShelfEntry[] = [])
 
 test("建书页填齐了：建 → 简介 → 命名规则 → 开写", async () => {
   const { shelf, calls } = harness();
-  await shelf.create({ kind: "novel", title: "长夜", summary: "一个人的夜路。", naming: "chinese" });
+  await shelf.create({
+    kind: "novel",
+    title: "长夜",
+    summary: "一个人的夜路。",
+    naming: "chinese",
+    volumeTarget: null,
+    genre: "",
+    tags: "",
+  });
   assert.deepEqual(calls, [
     "create:novel:长夜",
     "summary:9:一个人的夜路。",
@@ -77,7 +94,15 @@ test("建书页填齐了：建 → 简介 → 命名规则 → 开写", async ()
 
 test("没填简介 / 没选命名规则：不写多余的覆盖", async () => {
   const { shelf, calls } = harness();
-  await shelf.create({ kind: "collection", title: "故园随笔", summary: "   ", naming: null });
+  await shelf.create({
+    kind: "collection",
+    title: "故园随笔",
+    summary: "   ",
+    naming: null,
+    volumeTarget: null,
+    genre: "",
+    tags: "",
+  });
   assert.deepEqual(calls, ["create:collection:故园随笔", "open:9"], "空简介与跟随设置都不写库");
 });
 
@@ -89,6 +114,8 @@ test("建书页填了「一卷大概多少章」：也一次落好；没填就�
     summary: "",
     naming: null,
     volumeTarget: 30,
+    genre: "",
+    tags: "",
   });
   assert.deepEqual(filled.calls, ["create:novel:长夜", "volume:9:30", "open:9"], "开写之前落好");
 
@@ -99,14 +126,73 @@ test("建书页填了「一卷大概多少章」：也一次落好；没填就�
     summary: "",
     naming: null,
     volumeTarget: null,
+    genre: "",
+    tags: "",
   });
   assert.deepEqual(blank.calls, ["create:novel:长夜", "open:9"], "没填就不写");
 });
 
 test("简介两头的空白不算内容", async () => {
   const { shelf, calls } = harness();
-  await shelf.create({ kind: "article", title: "小记", summary: "  短短一句。  ", naming: null });
+  await shelf.create({
+    kind: "article",
+    title: "小记",
+    summary: "  短短一句。  ",
+    naming: null,
+    volumeTarget: null,
+    genre: "",
+    tags: "",
+  });
   assert.deepEqual(calls, ["create:article:小记", "summary:9:短短一句。", "open:9"]);
+});
+
+// ── 分类归属（体裁 / 标签）：与简介同一条路，一次落好 ───────────────────────
+
+test("建书页填了体裁与标签：与简介一样一次落好，且在开写之前", async () => {
+  const { shelf, calls } = harness();
+  await shelf.create({
+    kind: "article",
+    title: "夜航",
+    summary: "",
+    naming: null,
+    volumeTarget: null,
+    genre: "  科幻 ",
+    tags: "太空歌剧\n群像",
+  });
+  assert.deepEqual(calls, [
+    "create:article:夜航",
+    // 体裁与标签**原样递核心**（去空白与去重都在那边，界面不替它收拾）
+    "classify:9:  科幻 :太空歌剧|群像",
+    "open:9",
+  ]);
+});
+
+test("两栏都空：不白跑一趟（新书本来就是空的）", async () => {
+  const { shelf, calls } = harness();
+  await shelf.create({
+    kind: "article",
+    title: "夜航",
+    summary: "",
+    naming: null,
+    volumeTarget: null,
+    genre: "   ",
+    tags: "\n  \n",
+  });
+  assert.deepEqual(calls, ["create:article:夜航", "open:9"], "空白不算内容");
+});
+
+test("编辑作品：体裁与标签跟着改名、简介一起落（清空也是合法的一次写入）", async () => {
+  const { shelf, calls } = harness();
+  await shelf.edit(7, { title: "新名字", summary: "一句话", genre: "悬疑", tags: "密室" });
+  assert.deepEqual(calls, ["rename:7:新名字", "summary:7:一句话", "classify:7:悬疑:密室"]);
+
+  const cleared = harness();
+  await cleared.shelf.edit(7, { title: "新名字", summary: "", genre: "", tags: "" });
+  assert.deepEqual(
+    cleared.calls,
+    ["rename:7:新名字", "summary:7:", "classify:7::"],
+    "清空这一栏＝回到「没填过」——也是一次真实的写",
+  );
 });
 
 // ── 作品表单统一与首启引导的判据 ────────────────────────────────────────────
@@ -128,16 +214,16 @@ test("首启判据：只有一本、没名字、一个字没写——才给那�
 
 test("编辑作品：改名 + 简介一次落好（空书名当场拦住，不惊动核心）", async () => {
   const { shelf, calls } = harness();
-  await shelf.edit(7, { title: "  新名字  ", summary: "  一句话  " });
-  assert.deepEqual(calls, ["rename:7:新名字", "summary:7:一句话"]);
+  await shelf.edit(7, { title: "  新名字  ", summary: "  一句话  ", genre: "", tags: "" });
+  assert.deepEqual(calls, ["rename:7:新名字", "summary:7:一句话", "classify:7::"]);
 
-  // 空书名：**不进核心**（核心会回 word.title_empty，那是"写错地方"的错，
+  // 空书名：**不进核心**（核心会回 work.title_empty，那是"写错地方"的错，
   // 不是作者做错了什么——在表单这一层给一句他看得懂的话）
   let reported = "";
   const guarded = harness((message) => {
     reported = message;
   });
-  await guarded.shelf.edit(7, { title: "   ", summary: "随便" });
+  await guarded.shelf.edit(7, { title: "   ", summary: "随便", genre: "", tags: "" });
   assert.deepEqual(guarded.calls, [], "空书名不该落到核心");
   assert.equal(reported, "书名不能为空");
 });
@@ -159,7 +245,7 @@ test("作品表单的开合：书架与首启提示都能打开它（新建 / �
 test("建了自己的书：第一次打开自动建的那本空壳顺手收进回收站，并且**说一声**", async () => {
   const shell = shellEntry();
   const { shelf, calls } = harness(undefined, [shell]);
-  await shelf.create({ kind: "novel", title: "长夜", summary: "", naming: null });
+  await shelf.create(draft({ kind: "novel", title: "长夜" }));
   assert.deepEqual(
     calls,
     ["create:novel:长夜", "open:9", "remove:1"],
@@ -171,14 +257,14 @@ test("建了自己的书：第一次打开自动建的那本空壳顺手收进�
 test("已经起过名的书：建新书时不许动它", async () => {
   const named = { id: 1, title: "旧书", word_count: 0 } as ShelfEntry;
   const { shelf, calls } = harness(undefined, [named]);
-  await shelf.create({ kind: "novel", title: "长夜", summary: "", naming: null });
+  await shelf.create(draft({ kind: "novel", title: "长夜" }));
   assert.deepEqual(calls, ["create:novel:长夜", "open:9"], "有名字的书不是「空壳」，一个字都不许动");
 });
 
 test("写过一个字的书：建新书时也不许动它", async () => {
   const written = { id: 1, title: "", word_count: 12 } as ShelfEntry;
   const { shelf, calls } = harness(undefined, [written]);
-  await shelf.create({ kind: "novel", title: "长夜", summary: "", naming: null });
+  await shelf.create(draft({ kind: "novel", title: "长夜" }));
   assert.deepEqual(calls, ["create:novel:长夜", "open:9"], "写过字的更不许动");
 });
 
@@ -190,7 +276,7 @@ test("接手空壳（类型没改）：名字落在**原来那本**上，一本�
   await shelf.refresh(); // 提示条上的入口用的是**已经拉回来的书架**（启动时就会拉一次）
   shelf.openAdoptShell();
   assert.deepEqual(shelf.form.value, { mode: "adopt", entry: shell });
-  await shelf.adopt(shell.id, { kind: "article", title: "  长夜  ", summary: "  一句话  ", naming: null });
+  await shelf.adopt(shell.id, draft({ kind: "article", title: "  长夜  ", summary: "  一句话  " }));
   assert.deepEqual(
     calls,
     ["rename:1:长夜", "summary:1:一句话"],
@@ -200,7 +286,7 @@ test("接手空壳（类型没改）：名字落在**原来那本**上，一本�
 
 test("接手空壳（换成长篇）：按新类型另建一本，空壳照旧收进回收站并说一声", async () => {
   const { shelf, calls } = harness(undefined, [shellEntry()]);
-  await shelf.adopt(1, { kind: "novel", title: "长夜", summary: "", naming: "chinese" });
+  await shelf.adopt(1, draft({ kind: "novel", title: "长夜", naming: "chinese" }));
   assert.deepEqual(calls, ["create:novel:长夜", "naming:9:chinese", "open:9", "remove:1"]);
   assert.match(shelf.note.value, /回收站/, "收走了要说一声（可捞回）");
 });
@@ -210,7 +296,7 @@ test("接手空壳：空名字当场拦住，一个字都不写库", async () =>
   const { shelf, calls } = harness((message) => {
     reported = message;
   }, [shellEntry()]);
-  await shelf.adopt(1, { kind: "article", title: "   ", summary: "随便", naming: null });
+  await shelf.adopt(1, draft({ kind: "article", title: "   ", summary: "随便" }));
   assert.deepEqual(calls, [], "空书名不该落到核心");
   assert.equal(reported, "书名不能为空");
 });

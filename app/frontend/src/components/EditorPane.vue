@@ -14,7 +14,8 @@ import {
   pickCount,
 } from "../editor/wordcount.ts";
 import { goalProgress, goalReached, pickDayCount } from "../editor/writing-days.ts";
-import { typographyStyle } from "../editor/typography.ts";
+import { sourceHighlights, sourceLabelKey, sourceRows } from "../editor/source-view.ts";
+import { editorSurface } from "../editor/pane-style.ts";
 import { shortcutKeys } from "../editor/shortcuts.ts";
 import { useSplitAction } from "./split-action.ts";
 import type { EditorSession } from "../editor/session";
@@ -32,6 +33,7 @@ const {
   editor,
   chapterTitle,
   saveState,
+  sources,
   exitState,
   failure,
   crashNotice,
@@ -53,11 +55,17 @@ const { on: zenOn, exit: exitZen } = props.session.zen;
 const fullscreenOn = props.session.fullscreenOn;
 const wideMeasure = computed(() => zenOn.value || fullscreenOn.value);
 
-// 正文排版（字号 / 行距 / 字距）：**显示层**，绑成 CSS 变量交给样式表用。
+// 正文排版（字号 / 行距 / 字距）、稿纸横线与正文背景：**显示层**，绑成 CSS 变量交给样式表用。
 // 取"这本书生效的那一份"（每书覆盖优先），没打开书就退回全局；档位与换算全在
-// editor/typography.ts 那一处——组件里不写死 px 与倍数。
-const bodyStyle = computed(() =>
-  typographyStyle(props.session.appearance.workValues.value ?? props.session.appearance.values.value),
+// editor/typography.ts / rule.ts / background.ts 那一处——组件里不写死 px、倍数或颜色。
+// 三样**合起来**那一步在 editor/pane-style.ts（这一件贴着 400 行的棘轮，算法不往这儿塞）。
+const display = computed(
+  () => props.session.appearance.workValues.value ?? props.session.appearance.values.value,
+);
+// ★ 图那一段是壳在设置面板里读回来的（`appearance.background`）：
+//   组件手里只有渲染用的 data URL，**永远没有路径**。
+const surface = computed(() =>
+  editorSurface(display.value, props.session.appearance.background.value),
 );
 
 // 今日进度：账本在核心（`writing_days`），会话在每次落盘成功后刷一次。
@@ -84,6 +92,29 @@ const countText = computed(() =>
 const countTitle = computed(() =>
   t("editor.caliber.switch_title", { name: t(caliberLabelKey(caliber.value)) }),
 );
+// 来源读数：**只露不是「键入」的那几档**——打字是常态，不必提醒；
+// 真正值得一眼看见的是"其中有多少不是打出来的"（粘贴 / 模块 / 未记录）。
+// 全部都是键入时这一格不出现（不占位置，也不制造"一切正常"的噪声）。
+const sourceLines = computed(() => sourceHighlights(sources.value, caliber.value));
+const sourceHint = computed(() =>
+  sourceLines.value.length === 0
+    ? ""
+    : t("editor.source.hint", { parts: sourceParts(sourceLines.value) }),
+);
+const sourceTitle = computed(() => {
+  const rows = sourceRows(sources.value, caliber.value);
+  return rows.length === 0
+    ? ""
+    : t("editor.source.title", {
+        caliber: t(caliberLabelKey(caliber.value)),
+        parts: sourceParts(rows),
+      });
+});
+
+/** 「键入 900 · 粘贴 300」——单位与档名都从字典取，组件里不拼中文。 */
+function sourceParts(lines: { source: string; count: number }[]): string {
+  return lines.map((line) => `${t(sourceLabelKey(line.source))} ${line.count}`).join(" · ");
+}
 const languageText = computed(() => t(languageLabelKey(language.value)));
 const languageTitle = computed(() =>
   t("editor.language.switch_title", { name: languageText.value }),
@@ -227,6 +258,11 @@ function statusText(status: AutosaveState["status"]): string {
           >
             {{ countText }}
           </button>
+          <!-- 来源读数：只有真出现「不是打出来的字」时才在状态栏露一行。
+               悬停能看到完整分布（含键入），这里只露要留意的几档。 -->
+          <span v-if="sourceHint" class="editor__sources" :title="sourceTitle">
+            {{ sourceHint }}
+          </span>
           <button
             type="button"
             class="editor__lang"
@@ -348,7 +384,10 @@ function statusText(status: AutosaveState["status"]): string {
       :editor="editor"
       class="editor__area"
       :class="{ 'editor__area--wide': wideMeasure }"
-      :style="bodyStyle"
+      :data-rule="surface.rule"
+      :data-bg="surface.bg"
+      :data-bg-layout="surface.bgLayout"
+      :style="surface.style"
     />
 
     <ExitDialog

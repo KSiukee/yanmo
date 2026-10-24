@@ -33,6 +33,7 @@ use rusqlite::{params, OptionalExtension};
 use super::mirror_plan::{MirrorEntry, MirrorFile, MirrorRecord};
 use super::{tree_path, Store};
 use crate::error::Result;
+use crate::model::EditOrigin;
 use crate::text::content_hash;
 use crate::time::now_millis;
 
@@ -287,6 +288,9 @@ impl Store {
             return Ok(false);
         }
         let stats = super::content::stats_of(text);
+        // 外部改动没有观测者：改到的那一段记「未记录」；**没动到的段落保留原来的来源**
+        // （采纳一次外部改动，不该让整章回到"什么都不知道"）
+        let runs = super::content::trace_body_change(&self.conn, node_id, &current, text, EditOrigin::Unknown)?;
         let tx = self.conn.transaction()?;
         super::snapshot::write_snapshot_in(&tx, node_id, &current, REASON_ADOPT, false)?;
         Self::record_in(
@@ -297,14 +301,14 @@ impl Store {
             "snapshot",
             serde_json::json!({ "reason": REASON_ADOPT }),
         )?;
-        super::content::put_body(&tx, node_id, text, stats)?;
+        super::content::put_body_with_runs(&tx, node_id, text, stats, &runs)?;
         Self::record_in(
             &self.device_id,
             &tx,
             "node_contents",
             node_id,
             "adopt_mirror",
-            serde_json::json!({ "char_count": stats.char_count }),
+            serde_json::json!({ "char_count": stats.char_count, "origin": "unknown" }),
         )?;
         tx.commit()?;
         Ok(true)

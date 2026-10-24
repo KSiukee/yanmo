@@ -10,12 +10,21 @@ import assert from "node:assert/strict";
 import { ref } from "vue";
 
 import type { Appearance, AppearancePatch, NamingRewrite } from "../api/core";
+import type { BackgroundOutcome } from "../api/background";
 import { useAppearance } from "./appearance.ts";
 
 function fakeCore(workNaming: string | null = null) {
   const writes: Array<{ work_id: number | null; patch: AppearancePatch }> = [];
   const applied: NamingRewrite[][] = [];
+  const picks: number[] = [];
   let plan: NamingRewrite[] = [];
+  let picture: BackgroundOutcome = {
+    name: null,
+    data_url: null,
+    bytes: null,
+    present: false,
+    cancelled: false,
+  };
   const view = (naming: string | null): Appearance => ({
     jump_to_end_on_latest: true,
     word_count_caliber: null,
@@ -30,8 +39,12 @@ function fakeCore(workNaming: string | null = null) {
   return {
     writes,
     applied,
+    picks,
     setPlan(next: NamingRewrite[]) {
       plan = next;
+    },
+    setPicture(next: BackgroundOutcome) {
+      picture = next;
     },
     transport: {
       read: async (work_id: number | null) => view(work_id === null ? "arabic" : workNaming),
@@ -44,6 +57,15 @@ function fakeCore(workNaming: string | null = null) {
       applyNaming: async (_work_id: number, rewrites: NamingRewrite[]) => {
         applied.push(rewrites);
         return rewrites.length;
+      },
+      backgroundImage: async () => picture,
+      backgroundPick: async () => {
+        picks.push(1);
+        return picture;
+      },
+      backgroundClear: async () => {
+        picks.push(-1);
+        return { name: null, data_url: null, bytes: null, present: false, cancelled: false };
       },
     },
   };
@@ -172,4 +194,116 @@ test("用眼提醒：三项一次写全局那一层（不进每书覆盖）", as
     work_id: null,
     patch: { break_reminder: true, break_minutes: 45, break_words: 1500 },
   });
+});
+
+// ── 正文背景（底色 / 底纹 / 图片）───────────────────────────────────────────
+
+test("背景那三档：都只写全局那一层，`auto` 原样交给核心当「清掉这一层」", async () => {
+  const core = fakeCore();
+  const state = useAppearance({
+    transport: core.transport,
+    workId: ref<number | null>(7),
+    onError: () => {},
+  });
+
+  await state.setBackgroundColor("green");
+  await state.setBackgroundLayout("grid");
+  await state.setBackgroundFit("tile");
+  assert.deepEqual(core.writes.map((entry) => entry.patch), [
+    { editor_bg_color: "green" },
+    { editor_bg_layout: "grid" },
+    { editor_bg_fit: "tile" },
+  ]);
+  assert.ok(
+    core.writes.every((entry) => entry.work_id === null),
+    "与排版同一条口径：写全局那一层（每书覆盖的机制留着，界面不暴露）",
+  );
+
+  await state.setBackgroundColor("auto");
+  assert.deepEqual(core.writes[3].patch, { editor_bg_color: "auto" });
+});
+
+test("不透明度：0 是正经取值（图留着但看不见），不许拿它当「清掉」", async () => {
+  const core = fakeCore();
+  const state = useAppearance({
+    transport: core.transport,
+    workId: ref<number | null>(7),
+    onError: () => {},
+  });
+
+  await state.setBackgroundOpacity(0);
+  await state.setBackgroundOpacity(60);
+  assert.deepEqual(
+    core.writes.map((entry) => entry.patch),
+    [{ editor_bg_opacity: 0 }, { editor_bg_opacity: 60 }],
+    "0 与 60 都原样递过去（清掉这一层由负数表达，见下一行）",
+  );
+
+  await state.setBackgroundOpacity(-1);
+  assert.deepEqual(core.writes[2].patch, { editor_bg_opacity: -1 }, "负数＝清掉这一层");
+});
+
+test("背景图：选图 / 清图都把壳的回执收下来（界面拿到的只有文件名与 data URL）", async () => {
+  const core = fakeCore();
+  core.setPicture({
+    name: "夜航.png",
+    data_url: "data:image/png;base64,AAAA",
+    bytes: 2048,
+    present: true,
+    cancelled: false,
+  });
+  const state = useAppearance({
+    transport: core.transport,
+    workId: ref<number | null>(7),
+    onError: () => {},
+  });
+
+  await state.pickBackground();
+  assert.equal(state.background.value?.name, "夜航.png");
+  assert.equal(state.background.value?.present, true);
+  assert.ok(state.background.value?.data_url?.startsWith("data:image/png"), "渲染靠这一段 data URL");
+
+  await state.clearBackground();
+  assert.equal(state.background.value?.name, null, "清掉之后就没有图了");
+  assert.deepEqual(core.picks, [1, -1], "一次选图、一次清图，各走各自那条命令");
+});
+
+test("图被删掉：白跑一趟也要如实说「还在不在」（present 为 false 时界面回纯色）", async () => {
+  const core = fakeCore();
+  core.setPicture({
+    name: "gone.png",
+    data_url: null,
+    bytes: null,
+    present: false,
+    cancelled: false,
+  });
+  const state = useAppearance({
+    transport: core.transport,
+    workId: ref<number | null>(7),
+    onError: () => {},
+  });
+
+  await state.refreshBackground();
+  assert.equal(state.background.value?.name, "gone.png", "库里还记着它");
+  assert.equal(state.background.value?.present, false, "但文件已经不在了——界面据此回纯色");
+  assert.equal(state.background.value?.data_url, null);
+});
+
+test("读背景图失败：不挡住设置面板（当作没有图，报一句就完了）", async () => {
+  const core = fakeCore();
+  const failures: string[] = [];
+  const state = useAppearance({
+    transport: {
+      ...core.transport,
+      backgroundImage: async () => {
+        throw new Error("读不出来");
+      },
+    },
+    workId: ref<number | null>(7),
+    onError: (message) => failures.push(message),
+  });
+
+  await state.refreshBackground();
+  assert.equal(state.background.value, null, "当作没有图，面板别的项照常能用");
+  assert.deepEqual(failures, ["读不出来"], "如实报一句");
 });

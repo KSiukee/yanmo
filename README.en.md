@@ -13,8 +13,8 @@ no feature locked behind a paywall. Open source under **AGPL-3.0-or-later**.
 ![Yanmo: chapter tree on the left, manuscript in the middle, "questions" panel on the right](./assets/screenshots/editor.png)
 
 *Chapter tree (left) · manuscript (middle) · **questions** (right). The questions panel asks you
-about plot, outline and uncollected foreshadowing — that line is **not shipped yet**, the screenshot
-is from a development build. The current release is 0.68.1.*
+about plot, outline and uncollected foreshadowing — **shipped since 0.54**. The current release
+is 0.105.0.*
 
 ## What it is
 
@@ -71,12 +71,15 @@ computer means copying the folder (the built-in backup and restore tools are the
   dialogs and the editor — takes effect at once and is remembered across restarts)
 
 **Planned, not shipped yet:** the "questions" panel (it asks *you* questions about what happens next;
-rules produce the question, AI only polishes the wording), a writing-trail record that can show a
-manuscript is your own, full-text search UI, and an `.md` mirror of every chapter on disk.
+rules produce the question, AI only polishes the wording), a writing-trail record that journals **how**
+the text was produced — timeline, version chain, whether a block appeared in one step, how much was
+pasted, whether a module was running — and is explicit that this is **not** proof that no AI was
+involved (platforms judge text features, not local timestamps); full-text search UI, and an `.md`
+mirror of every chapter on disk.
 
 ## Download
 
-- **Latest release (0.68.1)**: <https://github.com/KSiukee/yanmo/releases>
+- **Latest release (0.105.0)**: <https://github.com/KSiukee/yanmo/releases>
 - Every asset ships with a matching `.sha256` file:
 
   ```bat

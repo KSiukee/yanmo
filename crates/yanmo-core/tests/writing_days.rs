@@ -8,7 +8,7 @@
 //! 5. 区间聚合只回有记录的日子（空日子由界面补），边界是闭区间；
 //! 6. 连续天数从今天往回数，今天还没写就从昨天数，断档就停。
 
-use yanmo_core::model::WorkKind;
+use yanmo_core::model::{WorkKind, WriteOrigin};
 use yanmo_core::store::{Appearance, Store};
 use yanmo_core::time::{local_date, now_millis};
 
@@ -51,15 +51,15 @@ fn editor_saves_are_counted_as_net_change() {
     assert_eq!(store.writing_today(Some(work_id), 0).unwrap().chars, 0);
 
     // 作者又写了 4 个字：只记这 4 个
-    store.write_body_counted(chapter, "雨下了整夜，屋檐在滴水。", 0).unwrap();
+    store.write_body_counted(chapter, "雨下了整夜，屋檐在滴水。", 0, WriteOrigin::typed()).unwrap();
     assert_eq!(store.writing_today(Some(work_id), 0).unwrap().chars, 6, "12 字减基线 6 字");
 
     // 同一章里删掉一段：扣回来（净增减，与状态栏的字数变化一致）
-    store.write_body_counted(chapter, "雨下了整夜。", 0).unwrap();
+    store.write_body_counted(chapter, "雨下了整夜。", 0, WriteOrigin::typed()).unwrap();
     assert_eq!(store.writing_today(Some(work_id), 0).unwrap().chars, 0);
 
     // 再写一笔，仍记在同一行上（一天一行）
-    store.write_body_counted(chapter, "雨下了整夜。天亮了。", 0).unwrap();
+    store.write_body_counted(chapter, "雨下了整夜。天亮了。", 0, WriteOrigin::typed()).unwrap();
     let today = store.writing_today(Some(work_id), 0).unwrap();
     assert_eq!(today.chars, 4, "10 字减基线 6 字");
     let rows: i64 = store
@@ -78,19 +78,19 @@ fn untracked_writes_and_zero_deltas_leave_the_ledger_alone() {
     store.write_body(chapter, "第一版。").unwrap();
     assert_eq!(store.writing_today(Some(work_id), 0).unwrap().chars, 0);
 
-    store.write_body_counted(chapter, "第一版加长。", 0).unwrap();
+    store.write_body_counted(chapter, "第一版加长。", 0, WriteOrigin::typed()).unwrap();
     assert_eq!(store.writing_today(Some(work_id), 0).unwrap().chars, 2);
 
     // 换一个同字数的写法：正文变了但增减是 0，账本不该多出一行
-    store.write_body_counted(chapter, "第一版加短。", 0).unwrap();
+    store.write_body_counted(chapter, "第一版加短。", 0, WriteOrigin::typed()).unwrap();
     assert_eq!(store.writing_today(Some(work_id), 0).unwrap().chars, 2, "同字数换字：增减为 0，账本不动");
 
     // 内容没变时核心直接返回，账本也不动
-    store.write_body_counted(chapter, "第一版加短。", 0).unwrap();
+    store.write_body_counted(chapter, "第一版加短。", 0, WriteOrigin::typed()).unwrap();
     assert_eq!(store.writing_today(Some(work_id), 0).unwrap().chars, 2, "同字数换字：增减为 0，账本不动");
 
     // 紧急抢救算数（那些字是作者刚敲的，上一次落盘没成功才走到这里）
-    store.emergency_snapshot(chapter, "抢救回来的一段话。", "desync", 0).unwrap();
+    store.emergency_snapshot(chapter, "抢救回来的一段话。", "desync", 0, WriteOrigin::typed()).unwrap();
     assert!(store.writing_today(Some(work_id), 0).unwrap().chars > 2);
 }
 
@@ -100,8 +100,8 @@ fn the_day_bucket_follows_the_author_timezone() {
     let (_, chapter) = book(&mut store, "长夜");
     let (_, other) = book(&mut store, "短歌");
 
-    store.write_body_counted(chapter, "东八区写的。", 480).unwrap();
-    store.write_body_counted(other, "UTC 写的。", 0).unwrap();
+    store.write_body_counted(chapter, "东八区写的。", 480, WriteOrigin::typed()).unwrap();
+    store.write_body_counted(other, "UTC 写的。", 0, WriteOrigin::typed()).unwrap();
 
     let mut stmt = store
         .conn()
@@ -136,8 +136,8 @@ fn books_keep_their_own_ledger_and_also_sum_up() {
     let (_dir, mut store) = fresh();
     let (first, a) = book(&mut store, "长夜");
     let (second, b) = book(&mut store, "短歌");
-    store.write_body_counted(a, "三字。", 0).unwrap();
-    store.write_body_counted(b, "五个字的正文。", 0).unwrap();
+    store.write_body_counted(a, "三字。", 0, WriteOrigin::typed()).unwrap();
+    store.write_body_counted(b, "五个字的正文。", 0, WriteOrigin::typed()).unwrap();
 
     assert_eq!(store.writing_today(Some(first), 0).unwrap().chars, 3);
     assert_eq!(store.writing_today(Some(second), 0).unwrap().chars, 7);
@@ -152,7 +152,7 @@ fn books_keep_their_own_ledger_and_also_sum_up() {
 fn calendar_range_is_closed_and_skips_empty_days() {
     let (_dir, mut store) = fresh();
     let (work_id, chapter) = book(&mut store, "长夜");
-    store.write_body_counted(chapter, "今天写的。", 0).unwrap();
+    store.write_body_counted(chapter, "今天写的。", 0, WriteOrigin::typed()).unwrap();
     seed_day(&store, work_id, &days_ago(3), 100);
     seed_day(&store, work_id, &days_ago(1), 50);
     seed_day(&store, work_id, &days_ago(9), 999);
@@ -234,7 +234,7 @@ fn counts_never_leak_across_books_via_a_stale_baseline() {
     // 两本书里同名同字数的正文：基线必须各取各的
     store.write_body(a, "同样的开头。").unwrap();
     store.write_body(b, "同样的开头。").unwrap();
-    store.write_body_counted(a, "同样的开头。补一句。", 0).unwrap();
+    store.write_body_counted(a, "同样的开头。补一句。", 0, WriteOrigin::typed()).unwrap();
     assert_eq!(store.writing_today(Some(first), 0).unwrap().chars, 4);
     assert_eq!(store.writing_today(Some(second), 0).unwrap().chars, 0, "另一本书不该被动到");
 }

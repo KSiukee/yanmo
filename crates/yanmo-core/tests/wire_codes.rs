@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use yanmo_core::model::{
     AnswerTarget, ChapterNumbering, EntityKind, ForeshadowState, FragmentKind, InputSource,
-    NamingStyle, NodeKind, QuestionState, QuestionTone, SceneField, SideTab,
+    NamingStyle, NodeKind, QuestionState, QuestionTone, RuleStyle, SceneField, SideTab,
 };
 use yanmo_core::question::{DeferKind, DeferPreset};
 use yanmo_core::text::WordCaliber;
@@ -57,6 +57,9 @@ fn every_wire_enum_serializes_as_its_stable_code() {
     }
     for numbering in ChapterNumbering::ALL {
         same_code(numbering, numbering.as_str());
+    }
+    for style in RuleStyle::ALL {
+        same_code(style, style.as_str());
     }
     for target in AnswerTarget::ALL {
         same_code(target, target.as_str());

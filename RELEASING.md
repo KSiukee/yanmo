@@ -212,6 +212,27 @@ diff -r before after        # 演练中没有改动的内容必须一字不差
 - 这一版改了什么、怎么确认自己是否受影响；
 - 如果你手上是旧版，稿子怎么先导出/备份出来。
 
+## 构建缓存会膨胀（出包机器上尤其明显）
+
+`target/` 不是"编一次就那么大"的：**同一份代码在不同构建指纹下会各编一套**（出包会往环境里塞
+自己的变量、加上反复跑测试），被取代的那几套 cargo 不会回收。实测在一台经常出包与测试的机器上，
+它攒到过 **148 GB**（其中 `debug/incremental` 一项 68 GB、31.6 万个碎文件）。
+
+两道闸：
+
+1. 仓库根的 `.cargo/config.toml` 已经把**增量编译默认关掉**（那是上面那个大头的主要来源）。
+   真要临时要回它（例如盯着一处慢慢调）：`CARGO_INCREMENTAL=1 cargo check`。
+2. 定期看一眼、顺手清一清：
+
+   ```bash
+   python3 tools/clean-cache.py                 # 只报数：哪块多大、多少个文件
+   python3 tools/clean-cache.py --clean         # 删最没用的那一块（debug/incremental）
+   python3 tools/clean-cache.py --clean --all-debug   # 连整个 debug 一起删（下次测试要全量重编）
+   ```
+
+   **它不会碰 `release/`**——那份能直接双击的 exe 就在里面。真要连它一起删，得显式给
+   `--clean --release`，并知道那意味着下次得重新出包。
+
 ## 相关文档
 
 - 安全承诺、做不到的部分、零出网与命令行入口的自验步骤：[SECURITY.md](./SECURITY.md)

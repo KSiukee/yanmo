@@ -13,8 +13,9 @@
 use rusqlite::{params, OptionalExtension};
 use serde_json::json;
 
-use super::{ContentStats, Store};
+use super::{ContentStats, Store, WriteOutcome};
 use crate::error::{codes, Error, Result};
+use crate::model::WriteOrigin;
 use crate::text;
 use crate::time::now_millis;
 
@@ -40,13 +41,17 @@ impl Store {
     ///
     /// 走**记账**那条写正文：这些字是作者刚敲的（上一次落盘没成功才走到这里），
     /// 不记的话「今日进度」会少掉这一段。`tz_offset_minutes` 决定算哪一天。
+    ///
+    /// `origin` 由壳带上（抢救的是"手上这一版"，它同样是键入 / 粘贴来的）：
+    /// 来源账不能因为"这一笔是抢救"就整篇记成"未记录"。
     pub fn emergency_snapshot(
         &mut self,
         node_id: i64,
         body: &str,
         reason: &str,
         tz_offset_minutes: i32,
-    ) -> Result<ContentStats> {
+        origin: WriteOrigin,
+    ) -> Result<WriteOutcome> {
         self.node_work(node_id)?;
         // 快照与留痕同一个事务（评审：中等 6）：报失败必须意味着"快照真的没留下"
         let tx = self.conn.transaction()?;
@@ -60,7 +65,7 @@ impl Store {
             json!({ "reason": reason }),
         )?;
         tx.commit()?;
-        self.write_body_counted(node_id, body, tz_offset_minutes)
+        self.write_body_counted(node_id, body, tz_offset_minutes, origin)
     }
 
     /// 内容变了才留快照（**幂等**）。返回是否真的写了新快照。
@@ -168,8 +173,10 @@ impl Store {
             &body,
             None,
             Some(("snapshots", "restore", json!({ "snapshot_id": snapshot_id }))),
+            // 回滚没有观测者：不猜是谁写的。没动到的段照样保留原来的来源
+            &WriteOrigin::unknown(),
         )?;
-        Ok((node_id, body, stats))
+        Ok((node_id, body, stats.counts))
     }
 
     /// 滚动保留：清掉该章**多余**的自动快照，只留最近 `keep` 份；手动版本一份不动。

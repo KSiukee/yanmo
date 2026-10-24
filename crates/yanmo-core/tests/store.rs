@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use yanmo_core::model::{NodeKind, WorkKind};
+use yanmo_core::model::{NodeKind, WorkKind, WriteOrigin};
 use yanmo_core::store::Store;
 
 fn fresh() -> (tempfile::TempDir, Store) {
@@ -207,7 +207,7 @@ fn op_log_write_failure_rolls_the_data_back() {
 
     // ② 高频写路径（落盘）：报失败 ↔ 正文没变
     assert!(
-        store.write_body_counted(piece, "留痕失败时不该留下的正文", 480).is_err(),
+        store.write_body_counted(piece, "留痕失败时不该留下的正文", 480, WriteOrigin::typed()).is_err(),
         "留痕写不进去必须报失败"
     );
     assert_eq!(store.read_body(piece).unwrap(), "原来的正文", "报失败必须意味着正文没改");

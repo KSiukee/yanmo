@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/yanmo-core", "crates/yanmo-proto", "crates/yanmo-cli", "app"]
 
 [workspace.package]
-version = "0.100.0"
+version = "0.105.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 repository = ""
@@ -17,3 +17,17 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 # 核心与协议：零 UI 依赖——可被单元测试与命令行直接驱动（不依赖任何界面框架）
 yanmo-core = { path = "crates/yanmo-core" }
 yanmo-proto = { path = "crates/yanmo-proto" }
+# ★★ 构建产物体积（2026-10-14 定：「构建完只许留一两个构建物，或者不留」）：
+#   实测全工作区 target/ 攒到过 160 GB（最大一处 132 GB），而真正要用的产物不到 200 MB。
+#   两条一起上，把峰压下来：
+#     · incremental = false —— 增量缓存**只缓存本工作区的 crate**，而版本号一变就整片作废，
+#       实测这一项能占几十 GB；
+#     · debug = 1 —— 只留行号表（panic/回溯照样给 file:line），丢掉完整类型与变量信息
+#       （完整的调试符号是另一个大头）。
+#   ⚠⚠ 这两条**挡不住 `deps/` 的累计**（cargo 从不回收旧的 deps/<crate>-<hash>）——
+#     实测配了这两条的项目照样涨到 132 GB ⇒ **主路是"构建完清一次"**：
+#       python tools/clean-cache.py（先报数，再按你说的删）
+#   ⚠ 改完第一次编译是全量重建（旧产物指纹作废）。
+[profile.dev]
+incremental = false
+debug = 1

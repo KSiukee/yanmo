@@ -13,28 +13,37 @@
 
 mod answer_target;
 mod author;
+mod background;
 mod card;
 mod card_state;
 mod collision_side;
+mod edit_origin;
 mod entity_card;
+mod eye_care;
 mod foreshadow;
 mod fragment;
 mod input_source;
 mod manuscript_state;
 mod node;
 mod question_tone;
+mod rule_style;
 mod scene_card;
 mod side_tab;
 mod spark_target;
 mod story_line;
 mod submission;
+mod tags;
 mod theme;
 mod work;
 
 pub use answer_target::AnswerTarget;
 pub use author::{Author, AuthorBlock, ResolvedAuthor};
+pub use background::{
+    BackgroundColor, BackgroundFit, BackgroundLayout, DEFAULT_BG_OPACITY, MAX_BG_OPACITY,
+};
 pub use card::{NewQuestionCard, QuestionCard};
 pub use collision_side::{canonical_order, CollisionKind, CollisionSide};
+pub use edit_origin::{DeliveryStamp, EditOrigin, WriteOrigin};
 pub use card_state::{transition, QuestionState, Transition, TRANSITIONS};
 pub use manuscript_state::{
     manuscript_transition, ManuscriptState, ManuscriptTransition, MANUSCRIPT_TRANSITIONS,
@@ -44,6 +53,7 @@ pub use submission::{
     DEFAULT_COOLDOWN_DAYS,
 };
 pub use entity_card::{Attribute, EntityCard, EntityKind, NewEntityCard};
+pub use eye_care::{DEFAULT_EYE_CARE, MAX_EYE_CARE};
 // 行映射与「不猜着读」的解析归存储层用：不在公开面上（壳用不到，也不该用）
 pub(crate) use entity_card::{into_entity_card, RawEntityCard};
 pub use foreshadow::{Foreshadow, ForeshadowState, NewForeshadow};
@@ -51,9 +61,14 @@ pub use fragment::{Fragment, FragmentCount, FragmentKind};
 pub use input_source::InputSource;
 pub use node::{ChapterNumbering, NamingStyle, Node, NodeKind};
 pub use question_tone::QuestionTone;
+pub use rule_style::RuleStyle;
 pub use scene_card::{SceneField, SceneFields};
 pub use side_tab::SideTab;
 pub use spark_target::SparkTarget;
 pub use story_line::StoryLine;
+pub use tags::{
+    join_tags, normalize_genre, normalize_tags, parse_tags, WorkClassify, MAX_GENRE_CHARS,
+    MAX_TAG_CHARS, MAX_TAGS,
+};
 pub use theme::Theme;
 pub use work::{Work, WorkKind, WorkLanguage};

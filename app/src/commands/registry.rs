@@ -83,6 +83,10 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::appearance::appearance_read,
         crate::commands::appearance::appearance_write,
         crate::commands::appearance::appearance_reset,
+        // 正文背景图（作者选的那张图进数据目录；界面只拿文件名与 data URL，拿不到路径）
+        crate::commands::background::background_image,
+        crate::commands::background::background_pick,
+        crate::commands::background::background_clear,
         crate::commands::question::question_drafts,
         crate::commands::question::question_sync,
         crate::commands::question::question_board,
@@ -157,6 +161,8 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::work::rename_work,
         crate::commands::work::set_work_language,
         crate::commands::work::set_work_summary,
+        // 分类归属（体裁 + 标签，人填）：短篇集「按主题」排序与作品表单回填都看它
+        crate::commands::work::set_work_classify,
         crate::commands::work::set_work_target_words,
         crate::commands::work::work_storyline,
         crate::commands::work::work_set_storyline,

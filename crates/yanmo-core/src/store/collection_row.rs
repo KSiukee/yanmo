@@ -27,6 +27,13 @@ pub struct ArticleEntry {
     /// 这一篇什么时候写成的（`created_at`）——集内「按时间排」用它，不是最后改动那一下。
     pub created_at: i64,
     pub updated_at: i64,
+    /// **体裁**（v20 起；`''` = 作者没填过）——集内「按主题」那一档按它分组。
+    ///
+    /// 读模型带上它，是因为那一档排序发生在**界面**（它是"怎么摆这一屏"的事，
+    /// 不是"库里存什么"的事）；界面要按体裁分组，就得先拿到每一篇的体裁。
+    pub genre: String,
+    /// **标签**（v20 起；一行一个，`''` = 一个都没填）——组内再按作者自己写的标签聚。
+    pub tags: String,
 }
 
 /// 一个集的一屏：篇目（按集内顺序）+ 目标 + 现有规模。
@@ -154,11 +161,14 @@ impl Store {
                 row.get::<_, i64>(5)?,
                 row.get::<_, i64>(6)?,
                 row.get::<_, i64>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, String>(9)?,
             ))
         })?;
         let mut out = Vec::new();
         for row in rows {
-            let (id, title, status, words, chars, chars_no_punct, created_at, updated_at) = row?;
+            let (id, title, status, words, chars, chars_no_punct, created_at, updated_at, genre, tags) =
+                row?;
             out.push(ArticleEntry {
                 id,
                 title,
@@ -168,6 +178,8 @@ impl Store {
                 chars_no_punct,
                 created_at,
                 updated_at,
+                genre,
+                tags,
             });
         }
         Ok(out)
@@ -182,4 +194,6 @@ const ARTICLE_COLS: &str = "w.id, w.title, w.status,
         COALESCE(SUM(n.char_count), 0),
         COALESCE(SUM(n.chars_no_punct), 0),
         w.created_at,
-        w.updated_at";
+        w.updated_at,
+        w.genre,
+        w.tags";

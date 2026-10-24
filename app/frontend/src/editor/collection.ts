@@ -8,6 +8,7 @@
 // - **字数按当前口径比**：目标填的是哪个口径，就和那个口径的当前值比（作者看到的是同一个数）。
 
 import type { ArticleEntry, CollectionView } from "../api/collection";
+import { sortByTheme } from "./classify.ts";
 
 /**
  * 「够 N 篇就能编成一个集了」的那个 N。
@@ -86,20 +87,22 @@ export function entryWords(entry: ArticleEntry, caliber: string): number {
   return entryCount(entry, caliber);
 }
 
-/** 集内排序的两种走法（**按主题**那种要先有体裁/标签，属于分类维度那一摊，不在这里）。 */
-export type SortMode = "written" | "length";
+/** 集内排序的三种走法（前两档看每一篇自己的数，第三档看**人填的分类**）。 */
+export type SortMode = "written" | "length" | "theme";
 
 /**
  * 集内一键排序：按给定走法排一排，**不动原来那份**。
  *
  * - `written`：写成先后（早的在前）——集子的目录要的是这个，所以用 `created_at`
  *   而不是「最后动过」（刚改过的那篇不该窜到目录头上去）；
- * - `length`：字多的在前（按当前口径，与集汇总同一个数法）。
+ * - `length`：字多的在前（按当前口径，与集汇总同一个数法）；
+ * - `theme`：**按主题**（先按体裁聚、组内按各篇的第一个标签；判据全在 `classify.ts`）。
  *
  * 并列时保持现在的相对先后（排序是稳定的）：手拖过的顺序不会被无谓打乱。
  */
 export function sortEntries(entries: ArticleEntry[], mode: SortMode, caliber: string): ArticleEntry[] {
   if (mode === "length") return byLength(entries, caliber);
+  if (mode === "theme") return sortByTheme(entries);
   return entries.slice().sort((a, b) => a.created_at - b.created_at);
 }
 

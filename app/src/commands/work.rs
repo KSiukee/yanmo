@@ -23,6 +23,10 @@ pub struct ShelfEntryDto {
     pub title: String,
     /// 作品简介（作者手填，空串＝没写过）：投稿包的大纲要用它
     pub summary: String,
+    /// **体裁**（v20 起；空串＝没填过）——作品表单回填这一格，集内「按主题」也看它
+    pub genre: String,
+    /// **标签**（v20 起；一行一个，空串＝一个都没填）
+    pub tags: String,
     /// 这本书里章的个数（**单篇文章是 0**，界面此时只报字数）
     pub chapters: i64,
     /// 字数合计（各章预聚合字数之和，不扫正文）——按词
@@ -43,6 +47,8 @@ fn to_dto(entry: ShelfEntry) -> ShelfEntryDto {
         kind: entry.work.kind.as_str().to_string(),
         title: entry.work.title,
         summary: entry.work.summary,
+        genre: entry.work.genre,
+        tags: entry.work.tags,
         chapters: entry.chapters,
         word_count: entry.word_count,
         char_count: entry.char_count,
@@ -168,6 +174,36 @@ pub fn set_work_summary(
     summary: String,
 ) -> Result<(), ApiError> {
     data.with_store(|store: &mut Store| store.set_work_summary(work_id, &summary))
+}
+
+/// 写**分类归属**（体裁 + 标签）的回执，取的是**归一过、库里真有的那一份**。
+///
+/// 与作品语言那条同一个用意：界面填的原样（可能带空格、带重复、带空行）不一定是
+/// 库里那一份——归一规则在核心一处（`model::tags`），界面拿回执覆盖自己那份输入框，
+/// 作者一眼就看见"软件把我写的收拾成了什么样"。
+#[derive(Debug, Serialize)]
+pub struct WorkClassifyAck {
+    pub work_id: i64,
+    pub genre: String,
+    /// 标签，**一行一个**（界面按行拆开显示）
+    pub tags: String,
+}
+
+/// 写体裁与标签（人填的两格，**不做 AI 自动分类**）。
+///
+/// 超限（标签超过一打 / 单个标签太长 / 体裁太长）由核心**如实拒**，不悄悄截断；
+/// 空串合法：那是"没填过"。
+#[tauri::command(rename_all = "snake_case")]
+pub fn set_work_classify(
+    data: State<'_, AppData>,
+    work_id: i64,
+    genre: String,
+    tags: String,
+) -> Result<WorkClassifyAck, ApiError> {
+    data.with_store(|store: &mut Store| {
+        let saved = store.set_work_classify(work_id, &genre, &tags)?;
+        Ok(WorkClassifyAck { work_id, genre: saved.genre, tags: saved.tags })
+    })
 }
 
 /// 设定 / 清除**目标字数**（这本书打算写多少字）。

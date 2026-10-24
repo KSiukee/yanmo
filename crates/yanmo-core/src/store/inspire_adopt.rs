@@ -30,7 +30,7 @@ use super::inspire::{Spark, SPARKS_PER_BOARD};
 use super::question_land::{check_landing_node, merged_outline};
 use super::Store;
 use crate::error::{codes, Error, Result};
-use crate::model::{FragmentKind, NodeKind, SparkTarget};
+use crate::model::{EditOrigin, FragmentKind, NodeKind, SparkTarget};
 use crate::time::now_millis;
 
 /// 采纳一条灵感的回执：落点 + 落到哪儿去了（正文那一段字由界面插）。
@@ -121,7 +121,10 @@ impl Store {
                     naming,
                 )?;
                 let stats = super::content::stats_of(&spark.body);
-                super::content::put_body(&tx, id, &spark.body, stats)?;
+                // 这一段字不是今天新打的，但它是怎么记下的（键入 / 口述）是知道的
+                let origin = EditOrigin::parse(&spark.source).unwrap_or(EditOrigin::Unknown);
+                let runs = super::source_run::seeded(&spark.body, origin);
+                super::content::put_body_with_runs(&tx, id, &spark.body, stats, &runs)?;
                 Self::record_in(
                     &self.device_id,
                     &tx,

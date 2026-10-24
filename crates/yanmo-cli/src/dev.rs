@@ -7,7 +7,7 @@
 //! 发布版把它们剃掉是有意的：**命令面越小，需要被信任的代码就越少**。
 
 use serde_json::{json, Value};
-use yanmo_core::model::{NodeKind, WorkKind};
+use yanmo_core::model::{EditOrigin, NodeKind, WorkKind, WriteOrigin};
 use yanmo_core::store::{BackupRequest, BackupTarget, SessionReport, Store};
 use yanmo_core::text;
 
@@ -22,7 +22,7 @@ pub fn options(command: &str) -> Option<&'static [&'static str]> {
     match command {
         "begin" | "report" | "abandon" => Some(&[]),
         "note-open" | "fingerprint" | "end" => Some(&["node"]),
-        "write" => Some(&["node", "body", "body-file", "tz"]),
+        "write" => Some(&["node", "body", "body-file", "tz", "origin", "module-id", "model"]),
         "backup" => Some(&["to", "keep", "tz", "device"]),
         "new-work" => Some(&["kind", "title"]),
         "new-node" => Some(&["work", "parent", "kind", "title"]),
@@ -65,25 +65,40 @@ pub fn execute(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError
         "write" => {
             let node = args.required_i64("node")?;
             let body = body_of(args)?;
+            let origin = write_origin(args)?;
             // 给了 `--tz <分钟>` 就走**编辑器那条路**（顺带记进「每日码字」账本）；
             // 不给就只写正文——备份恢复、脚本灌数据这类"不是作者今天敲的字"走这条路。
+            // `--origin` 只跟 `--tz` 一起用：它是"壳看见了什么"，没有观测者的写入
+            // 就该如实记 `unknown`，不该让脚本替作者声称"这是打出来的"。
             // 时区偏移只有调用方知道（核心不猜作者在哪），东八区是 480。
-            let stats = match args.optional("tz") {
-                None => store.write_body(node, &body)?,
+            let (stats, sources) = match args.optional("tz") {
+                None => {
+                    if origin.kind != EditOrigin::Unknown {
+                        return Err(Usage::from(
+                            "--origin 只在带 --tz 的编辑器落盘那条路上有意义；不给 --tz 就记「未记录」",
+                        )
+                        .into());
+                    }
+                    let stats = store.write_body(node, &body)?;
+                    (stats, store.source_breakdown(node)?)
+                }
                 Some(text) => {
                     let tz: i32 = text
                         .parse()
                         .map_err(|_| Usage::from("--tz 需要是一个整数（分钟，东八区 480）"))?;
-                    store.write_body_counted(node, &body, tz)?
+                    let outcome = store.write_body_counted(node, &body, tz, origin.clone())?;
+                    (outcome.counts, outcome.sources)
                 }
             };
             json!({
                 "ok": true,
                 "command": "write",
                 "node_id": node,
+                "origin": origin.kind.as_str(),
                 "char_count": stats.char_count,
                 "word_count": stats.word_count,
                 "fingerprint": text::content_hash(&body),
+                "sources": sources,
             })
         }
         "fingerprint" => {
@@ -193,4 +208,23 @@ pub(super) fn body_of(args: &Args) -> Result<String, CliError> {
         return Ok(std::fs::read_to_string(path)?);
     }
     Ok(args.required("body")?.to_string())
+}
+
+/// 这一笔的来源（`--origin`）：不给＝`unknown`（**不猜**成打字）。
+///
+/// 模块交付要带 `--module-id` 与 `--model`；缺了核心会拒收（这条规矩在数据层，
+/// 命令行绕不过去）。
+fn write_origin(args: &Args) -> Result<WriteOrigin, CliError> {
+    let Some(text) = args.optional("origin") else {
+        return Ok(WriteOrigin::unknown());
+    };
+    let kind = EditOrigin::parse(text).map_err(|_| {
+        Usage::from("--origin 只认 typed / pasted / module / voice / system / mixed / unknown")
+    })?;
+    if kind != EditOrigin::Module {
+        return Ok(WriteOrigin::of(kind));
+    }
+    let module_id = args.optional("module-id").unwrap_or("");
+    let model = args.optional("model").unwrap_or("");
+    Ok(WriteOrigin::module(module_id, model, 0)?)
 }

@@ -11,7 +11,7 @@
 
 use std::collections::BTreeMap;
 
-use yanmo_core::model::{NodeKind, WorkKind};
+use yanmo_core::model::{NodeKind, WorkKind, WriteOrigin};
 use yanmo_core::store::{Appearance, ExportFormat, Store};
 
 /// 一份"像真在用的库"：两本书（一本长篇带卷、一本零层级单篇），正文带标点与中文，
@@ -43,7 +43,7 @@ fn build(path: &std::path::Path) -> Fixture {
             .create_node(novel, Some(volume), NodeKind::Chapter, &format!("第{}章 灯", at + 1))
             .unwrap();
         // 用**带记账**的写法（编辑器落盘走的就是这条）：账本才有真实行可比
-        store.write_body_counted(chapter, body, 480).unwrap();
+        store.write_body_counted(chapter, body, 480, WriteOrigin::typed()).unwrap();
         // 每章留一份快照：升级之后版本历史也得在
         store.snapshot_if_changed(chapter, "manual").unwrap();
         chapters.push(chapter);
@@ -52,7 +52,7 @@ fn build(path: &std::path::Path) -> Fixture {
     // 零层级单篇：作品类型不同、没有卷，正文在多行之外还带尾部换行
     let piece_work = store.create_work(WorkKind::Article, "零篇").unwrap().id;
     let piece = store.create_node(piece_work, None, NodeKind::Piece, "零层级那一篇").unwrap();
-    store.write_body_counted(piece, BODIES[3], 480).unwrap();
+    store.write_body_counted(piece, BODIES[3], 480, WriteOrigin::typed()).unwrap();
 
     // 偏好（全局 + 每书覆盖各一层）与回收站里的一项
     store
@@ -77,7 +77,7 @@ fn build(path: &std::path::Path) -> Fixture {
     let doomed = store
         .create_node(novel, Some(volume), NodeKind::Chapter, "会被删掉的一章")
         .unwrap();
-    store.write_body_counted(doomed, "删之前的正文也留着。", 480).unwrap();
+    store.write_body_counted(doomed, "删之前的正文也留着。", 480, WriteOrigin::typed()).unwrap();
     store.soft_delete_node(doomed).unwrap();
 
     Fixture { novel, chapters, piece, piece_work }

@@ -10,7 +10,7 @@ import type { ArticleEntry, CollectionView } from "../api/collection";
 import { useCollection, type CollectionTransport } from "./collection-view.ts";
 import { t } from "../locales/index.ts";
 
-function entry(id: number, created_at: number): ArticleEntry {
+function entry(id: number, created_at: number, classify: { genre?: string; tags?: string } = {}): ArticleEntry {
   return {
     id,
     title: `piece ${id}`,
@@ -20,6 +20,8 @@ function entry(id: number, created_at: number): ArticleEntry {
     chars_no_punct: 90,
     created_at,
     updated_at: 0,
+    genre: classify.genre ?? "",
+    tags: classify.tags ?? "",
   };
 }
 
@@ -94,4 +96,21 @@ test("一键排序：没开着集的时候什么都不做", async () => {
   await state.sort("length", "chars");
 
   assert.deepEqual(reorders, [], "没有集就没有可排的东西");
+});
+
+test("第三档「按主题」也走同一条写回的路（算出来的顺序有去处）", async () => {
+  // 现在是「悬疑、科幻、空」——按主题排完应当是「悬疑、科幻、空」，所以这里换个起点：
+  // 「科幻、空、悬疑」→「悬疑、科幻、空」（组间按体裁名字面量序）
+  const scifi = entry(2, 200, { genre: "科幻", tags: "太空" });
+  const blank = entry(3, 300);
+  const mystery = entry(1, 100, { genre: "悬疑", tags: "密室" });
+  const { reorders, transport } = transportOf([scifi, blank, mystery]);
+  const state = useCollection({ transport });
+  await state.enter(7);
+
+  await state.sort("theme", "chars");
+
+  assert.deepEqual(reorders, [[1, 2, 3]], "同类挨着、空的垫底，顺序真的写回");
+  assert.deepEqual(state.view.value?.entries.map((item) => item.id), [1, 2, 3]);
+  assert.equal(state.note.value, t("collection.note_sorted"));
 });

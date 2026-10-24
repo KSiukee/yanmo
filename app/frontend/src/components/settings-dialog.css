@@ -101,6 +101,27 @@
   color: var(--ym-danger);
 }
 
+/* 只提示、不挡人的那两句（"图太实了字可能不好认"）：用提醒色，但不是错误色——
+   它与 `.settings__hint--bad` 是两件事：那个是"这样存不下去"，这个是"这样看可能不舒服"。 */
+.settings__hint--warn {
+  color: var(--ym-warn);
+}
+
+/* ── 正文背景那一栏（底色 / 底纹 / 图片） ─────────────────────────────── */
+
+/* 背景图预览：画的是**同一段 data URL 与同一份不透明度**（就地看到这一层的样子）。
+   它就是一张缩小的"纸"：高度固定、按铺满铺，深浅两套配色下底色都给一层打底。 */
+.settings__preview {
+  height: 72px;
+  margin: 8px 0 0;
+  border: 1px solid var(--ym-line);
+  border-radius: 4px;
+  background-color: var(--ym-bg-layer, var(--ym-paper));
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
 /* 设置面板里的下拉（比如新建条目的命名规则）：与输入框同一套长相 */
 .settings__select {
   padding: 3px 6px;

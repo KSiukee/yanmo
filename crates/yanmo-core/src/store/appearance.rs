@@ -19,7 +19,11 @@ use serde::{Deserialize, Serialize};
 
 use super::Store;
 use crate::error::Result;
-use crate::model::{ChapterNumbering, NamingStyle, QuestionTone, SideTab, Theme};
+use crate::model::{
+    BackgroundColor, BackgroundFit, BackgroundLayout, ChapterNumbering, NamingStyle, QuestionTone,
+    RuleStyle, SideTab, Theme, DEFAULT_BG_OPACITY, DEFAULT_EYE_CARE, MAX_BG_OPACITY,
+    MAX_EYE_CARE,
+};
 use crate::text::WordCaliber;
 use crate::time::now_millis;
 use crate::typeset::QuoteStyle;
@@ -96,6 +100,13 @@ pub struct Appearance {
     /// 正文字距（em 的百分之几：5 = 0.05em；`None` = 没改过）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editor_letter_spacing: Option<i64>,
+    /// 正文底下那层稿纸横线用哪种线（`RuleStyle` 的稳定码：`none` / `solid` / `dashed`）。
+    /// `None` = 没改过 → **不显示**（与研墨一直以来的样子一致），由读侧落定。
+    ///
+    /// 一格横线多高是**排版算出来的**（字号 × 行距，见界面 `editor/rule.ts`），核心不存那个
+    /// 高度——存一份就会腐烂（作者一改行距，这边还记着上一次）。纯显示层：不进导出。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor_rule_style: Option<String>,
     /// 叩问问话的语气（`QuestionTone` 的稳定代码：warm / neutral / direct）。
     ///
     /// `None` = 没改过 → **温柔**那档。（`neutral` 就是"不加语气"，也就是把这层关掉。）
@@ -139,6 +150,46 @@ pub struct Appearance {
     /// 同样**只走全局**。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub break_words: Option<i64>,
+    /// 护眼滤色的幅度（百分比；`0` = 关，`None` = 没改过 → 也是关）。
+    ///
+    /// 这一层是**整窗的一层暖黄膜**（只染研墨自己的窗口）：它压在什么底上（浅色稿纸还是
+    /// 深色暖黑）决定了"最深能到多少"，那件事只有界面当场知道——所以库里只存作者调的
+    /// 幅度，深浅合计出来的上限由界面算（见 `model::eye_care` 的文件头）。
+    ///
+    /// `0` 是**正经取值**（＝完全不染，一个像素都不动），所以不能拿它当"清掉这一层"
+    /// （与图片不透明度同一个坑）；越界夹进 0~100，不报错——它是纯观感。
+    ///
+    /// ★ 与配色、用眼提醒同一条口径：本项**只走全局**、不参与每书覆盖
+    /// （跟眼睛与房间光线有关，跟哪本书无关）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eye_care: Option<i64>,
+    /// 正文底色（`BackgroundColor` 的稳定码：`paper` / `cream` / `green` / `gray`）。
+    ///
+    /// `None` = 没改过 → **纸白**（与研墨一直以来的编辑区底色一致）。
+    /// 每书覆盖走同一条路（机制先留着，界面第一版只暴露全局）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor_bg_color: Option<String>,
+    /// 正文底纹（`BackgroundLayout` 的稳定码：`none` / `grid` / `dots` / `grain`）。
+    ///
+    /// `None` = 没改过 → **不铺**。一格的边长由界面按"字号 × 行距"算出来，核心不存
+    /// （存一份就会腐烂：作者一改行距，这边还记着上一次——与稿纸横线同一条理由）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor_bg_layout: Option<String>,
+    /// 背景图**在数据目录里的文件名**（`None` = 没设过）。
+    ///
+    /// ★ **不存路径**：图由壳在"作者选图"那一步复制进数据目录（跟着稿子走，
+    /// 备份与搬家都带上它），库里只留一个名字。界面拿不到路径，也就拼不出目录外的东西。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor_bg_image: Option<String>,
+    /// 背景图铺法（`BackgroundFit` 的稳定码：`cover` / `contain` / `tile`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor_bg_fit: Option<String>,
+    /// 背景图那一层的不透明度（百分比；`None` = 没改过 → 35）。
+    ///
+    /// `0` 是正经取值（＝图片层完全看不见，但图还留着）；越界由写侧**夹进 0~100**，
+    /// 与排版三项同一条路——它是纯观感，写坏一个数不该报错挡人。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor_bg_opacity: Option<i64>,
 }
 
 /// 正文排版的**可读范围**：超出就夹住（手滑打 1000 号字不该把版面炸了，也不该报错挡人）。
@@ -172,6 +223,39 @@ fn break_threshold(value: i64, max: i64, code: &'static str) -> Result<i64> {
     }
 }
 
+/// `"auto"` = **清掉这一层**（回默认 / 回继承）；否则交给 `parse` 认码，认不出当场拒。
+///
+/// 与命名规则、配色、稿纸线型走的是同一条路（界面要能表达"这一项不要单独设了"，
+/// 而"不传"表达的是"这项不改"——两者不是一回事）。
+fn clear_or(value: &str, parse: impl Fn(&str) -> Result<&'static str>) -> Result<Option<String>> {
+    if value == "auto" {
+        return Ok(None);
+    }
+    Ok(Some(parse(value)?.to_string()))
+}
+
+/// 把库里那一格**当文件名**读：只认"最后一段名字"，别的一律当没设过。
+///
+/// 为什么这么严：这跟"界面拿不到路径"是同一件事的两面——界面上递过来的是文件名，
+/// 但库里那一格可能是老版本、手改过的库、或将来某个调用点写坏的。**在这里把目录成分
+/// 一刀切掉**，壳那边再拼数据目录，就没有任何一条路能让它指到别处去。
+///
+/// 坏值（空、`.`/`..`、带路径分隔符、带盘符的绝对路径）一律 `None` = 没设过，
+/// 界面回"没有背景图"——**不报错**：作者看到的应当是"图没了，回纯色"，
+/// 而不是一个把他挡在外面的错误框。
+pub(crate) fn image_name(raw: &str) -> Option<String> {
+    let name = raw.trim().rsplit(['/', '\\']).next().unwrap_or("");
+    if name.is_empty() || name == "." || name == ".." {
+        return None;
+    }
+    // 去掉 Windows 上不允许出现在文件名里的字符（冒号一并去掉：它能拼出盘符）
+    let cleaned: String = name
+        .chars()
+        .filter(|c| !matches!(c, ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+        .collect();
+    (!cleaned.is_empty()).then_some(cleaned)
+}
+
 impl Appearance {
     /// 一项都没改过——那就没必要在库里留这个键。
     fn is_empty(&self) -> bool {
@@ -184,6 +268,7 @@ impl Appearance {
             && self.editor_font_size.is_none()
             && self.editor_line_height.is_none()
             && self.editor_letter_spacing.is_none()
+            && self.editor_rule_style.is_none()
             && self.question_tone.is_none()
             && self.question_push_per_day.is_none()
             && self.question_push_cooldown_minutes.is_none()
@@ -192,6 +277,12 @@ impl Appearance {
             && self.break_reminder.is_none()
             && self.break_minutes.is_none()
             && self.break_words.is_none()
+            && self.eye_care.is_none()
+            && self.editor_bg_color.is_none()
+            && self.editor_bg_layout.is_none()
+            && self.editor_bg_image.is_none()
+            && self.editor_bg_fit.is_none()
+            && self.editor_bg_opacity.is_none()
     }
 
     /// 把 `over`（书的覆盖）盖在 `self`（全局）上：**只覆盖它真设过的项**。
@@ -213,6 +304,11 @@ impl Appearance {
             editor_font_size: over.editor_font_size.or(self.editor_font_size),
             editor_line_height: over.editor_line_height.or(self.editor_line_height),
             editor_letter_spacing: over.editor_letter_spacing.or(self.editor_letter_spacing),
+            // 稿纸线型：每书覆盖也走同一条路（第一版界面只暴露全局，机制先留着）
+            editor_rule_style: over
+                .editor_rule_style
+                .clone()
+                .or_else(|| self.editor_rule_style.clone()),
             question_tone: over.question_tone.clone().or_else(|| self.question_tone.clone()),
             question_push_per_day: over.question_push_per_day.or(self.question_push_per_day),
             question_push_cooldown_minutes: over
@@ -228,12 +324,28 @@ impl Appearance {
             break_reminder: self.break_reminder,
             break_minutes: self.break_minutes,
             break_words: self.break_words,
+            // 护眼滤色：与配色同一条口径——**只认全局那一层**（`over` 里那份被有意丢掉）。
+            eye_care: self.eye_care,
+            // 正文背景那一族：每书覆盖也走同一条路（第一版界面只暴露全局，机制先留着）
+            editor_bg_color: over.editor_bg_color.clone().or_else(|| self.editor_bg_color.clone()),
+            editor_bg_layout: over
+                .editor_bg_layout
+                .clone()
+                .or_else(|| self.editor_bg_layout.clone()),
+            // 图片也是"每书可换一张"：跟着书走
+            editor_bg_image: over.editor_bg_image.clone().or_else(|| self.editor_bg_image.clone()),
+            editor_bg_fit: over.editor_bg_fit.clone().or_else(|| self.editor_bg_fit.clone()),
+            editor_bg_opacity: over.editor_bg_opacity.or(self.editor_bg_opacity),
         }
     }
 }
 
 /// 读出来给人用的那一份：每一项都已经落到具体值（不再有空档）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+///
+/// ⚠️ 不能是 `Copy`：背景图那一格是一个 **`Option<String>`**（文件名），
+/// 也就是说这一份里第一次有了"要搬走的内存"。它本来就是**读出来看一眼**的东西，
+/// 谁要留就 `clone()`——这比把文件名偷偷丢掉强。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ResolvedAppearance {
     pub jump_to_end_on_latest: bool,
     /// 作者选过的口径；`None` = 没选过（界面用作品语言的默认口径顶上）。
@@ -252,6 +364,8 @@ pub struct ResolvedAppearance {
     pub editor_font_size: Option<i64>,
     pub editor_line_height: Option<i64>,
     pub editor_letter_spacing: Option<i64>,
+    /// 稿纸横线的线型（没改过就是不显示）。
+    pub editor_rule_style: RuleStyle,
     /// 叩问问话的语气（没改过就是温柔那档；`neutral` = 不加语气）。
     pub question_tone: QuestionTone,
     /// 写的时候最多主动问几次（0 = 不打扰）；只限"推"。
@@ -266,6 +380,21 @@ pub struct ResolvedAppearance {
     pub break_reminder: bool,
     pub break_minutes: i64,
     pub break_words: i64,
+    /// 护眼滤色的幅度（0~100；**0 = 关**，没改过也是 0）。**只走全局**这一层。
+    ///
+    /// 这里存的是作者调的幅度，不是那层膜的最终深度——深浅两套配色合计出来的上限由界面算
+    /// （见 `model::eye_care` 的文件头）。
+    pub eye_care: i64,
+    /// 正文底色（没改过就是纸白）。
+    pub editor_bg_color: BackgroundColor,
+    /// 正文底纹（没改过就是不铺）。
+    pub editor_bg_layout: BackgroundLayout,
+    /// 背景图在数据目录里的文件名；`None` = 没设过（也**不带路径**）。
+    pub editor_bg_image: Option<String>,
+    /// 背景图铺法（没改过就是"铺满"）。
+    pub editor_bg_fit: BackgroundFit,
+    /// 背景图那一层的不透明度（0~100；没改过就是 35）。
+    pub editor_bg_opacity: i64,
 }
 
 impl Default for ResolvedAppearance {
@@ -282,6 +411,7 @@ impl Default for ResolvedAppearance {
             editor_font_size: None,
             editor_line_height: None,
             editor_letter_spacing: None,
+            editor_rule_style: RuleStyle::default(),
             // 叩问：默认温柔（贴心那档）、一天最多 3 次、两次之间隔 60 分钟
             // ——"主动开口"必须稀缺，写作最怕被打断
             question_tone: QuestionTone::default(),
@@ -294,6 +424,14 @@ impl Default for ResolvedAppearance {
             break_reminder: true,
             break_minutes: DEFAULT_BREAK_MINUTES,
             break_words: DEFAULT_BREAK_WORDS,
+            // 护眼滤色：默认**关**（0）——没提过这件事的人屏幕上与一直以来的样子一样
+            eye_care: DEFAULT_EYE_CARE,
+            // 正文背景：默认与研墨一直以来的样子**一模一样**（纸白、不铺、没有图）
+            editor_bg_color: BackgroundColor::default(),
+            editor_bg_layout: BackgroundLayout::default(),
+            editor_bg_image: None,
+            editor_bg_fit: BackgroundFit::default(),
+            editor_bg_opacity: DEFAULT_BG_OPACITY,
         }
     }
 }
@@ -344,6 +482,12 @@ impl Store {
             editor_letter_spacing: merged
                 .editor_letter_spacing
                 .and_then(|value| typography_value(value, LETTER_SPACING_RANGE)),
+            // 线型：认不出来的码当没设过（与口径 / 引号 / 配色同一条规矩），回"不显示"
+            editor_rule_style: merged
+                .editor_rule_style
+                .as_deref()
+                .and_then(|code| RuleStyle::parse(code).ok())
+                .unwrap_or_default(),
             // 语气：认不出来的代码当没设过（与口径 / 引号同一条规矩），回"温柔"
             question_tone: merged
                 .question_tone
@@ -385,6 +529,35 @@ impl Store {
                 .break_words
                 .filter(|value| (1..=MAX_BREAK_WORDS).contains(value))
                 .unwrap_or(defaults.break_words),
+            // 护眼滤色：越界的坏值**当没设过**、回默认（不报错，与排版那三项同一条规矩）；
+            // `0` 是正经取值（＝关），所以过滤器是 `0..=MAX`，不是"非正数当没设过"
+            eye_care: merged
+                .eye_care
+                .filter(|value| (0..=MAX_EYE_CARE).contains(value))
+                .unwrap_or(defaults.eye_care),
+            // 正文背景三层：认不出来的码**当没设过**（与口径 / 引号 / 线型同一条规矩），
+            // 回默认那一档；不透明度夹进 0~100（它是纯观感，不值得为它报错挡人）
+            editor_bg_color: merged
+                .editor_bg_color
+                .as_deref()
+                .and_then(|code| BackgroundColor::parse(code).ok())
+                .unwrap_or_default(),
+            editor_bg_layout: merged
+                .editor_bg_layout
+                .as_deref()
+                .and_then(|code| BackgroundLayout::parse(code).ok())
+                .unwrap_or_default(),
+            // 图片：只认一个**文件名**（去掉任何目录成分；剩下的交给壳在数据目录里找）
+            editor_bg_image: merged.editor_bg_image.as_deref().and_then(image_name),
+            editor_bg_fit: merged
+                .editor_bg_fit
+                .as_deref()
+                .and_then(|code| BackgroundFit::parse(code).ok())
+                .unwrap_or_default(),
+            editor_bg_opacity: merged
+                .editor_bg_opacity
+                .map(|value| value.clamp(0, MAX_BG_OPACITY))
+                .unwrap_or(defaults.editor_bg_opacity),
         })
     }
 
@@ -478,6 +651,15 @@ impl Store {
         if let Some(value) = patch.editor_letter_spacing {
             stored.editor_letter_spacing = typography_value(value, LETTER_SPACING_RANGE);
         }
+        // 稿纸线型：`"auto"` = 清掉这一层（回默认"不显示"），与命名 / 语气 / 配色同一条路；
+        // 别的取值只认那三个稳定码（写进来不认识的，等于给界面埋一个"不知道该画哪种线"的空档）
+        if let Some(value) = patch.editor_rule_style.as_deref() {
+            stored.editor_rule_style = if value == "auto" {
+                None
+            } else {
+                Some(RuleStyle::parse(value)?.as_str().to_string())
+            };
+        }
         if let Some(value) = patch.chapter_numbering.as_deref() {
             // `"auto"` = 清掉这一层（回到默认：跨卷延续）——与命名规则同一条路
             if value == "auto" {
@@ -559,6 +741,35 @@ impl Store {
                 )?);
             }
         }
+        // 护眼滤色：与配色 / 用眼提醒同一条口径——**只落全局那一层**（每书传上来的有意不写，
+        // 读那边的合并本来就不认它）。`0` 是正经取值（＝关，一个像素都不染），所以不能拿
+        // "非正数"当清掉；负数才是清掉这一层（与图片不透明度同一个坑）、越界夹住不报错。
+        if work_id.is_none() {
+            if let Some(value) = patch.eye_care {
+                stored.eye_care = (value >= 0).then(|| value.min(MAX_EYE_CARE));
+            }
+        }
+        // ── 正文背景那一族（三层各自独立，与排版同一条路）──────────────────
+        // 底色 / 底纹 / 铺法：`"auto"` = 清掉这一层（回默认），别的取值只认那几个稳定码
+        // （写进来不认识的，等于给界面埋一个"不知道该画什么"的空档）
+        if let Some(value) = patch.editor_bg_color.as_deref() {
+            stored.editor_bg_color = clear_or(value, |code| BackgroundColor::parse(code).map(|v| v.as_str()))?;
+        }
+        if let Some(value) = patch.editor_bg_layout.as_deref() {
+            stored.editor_bg_layout =
+                clear_or(value, |code| BackgroundLayout::parse(code).map(|v| v.as_str()))?;
+        }
+        if let Some(value) = patch.editor_bg_fit.as_deref() {
+            stored.editor_bg_fit = clear_or(value, |code| BackgroundFit::parse(code).map(|v| v.as_str()))?;
+        }
+        // 不透明度：负数 = 清掉这一层（回默认 35）；`0` 是正经取值（＝图还留着但看不见），
+        // 所以不能像排版那样拿"≤0"当清掉——那会把"先藏起来"变成一个改不掉的空档
+        // （与叩问那两项同一个坑）。越界夹进 0~100。
+        if let Some(value) = patch.editor_bg_opacity {
+            stored.editor_bg_opacity = (value >= 0).then(|| value.min(MAX_BG_OPACITY));
+        }
+        // 图片只走**专门的那一条路**（`set_background_image`：壳把文件复制好再叫它），
+        // 这里有意不收 `editor_bg_image`：界面手里没有文件名，谁都不该凭空写一个进来。
         let tx = self.conn.transaction()?;
         write_appearance(&tx, work_id, &stored)?;
         Self::record_in(
@@ -582,10 +793,38 @@ impl Store {
                 "break_reminder": patch.break_reminder,
                 "break_minutes": patch.break_minutes,
                 "break_words": patch.break_words,
+                "eye_care": patch.eye_care,
                 "editor_font_size": patch.editor_font_size,
                 "editor_line_height": patch.editor_line_height,
                 "editor_letter_spacing": patch.editor_letter_spacing,
+                "editor_rule_style": patch.editor_rule_style,
+                "editor_bg_color": patch.editor_bg_color,
+                "editor_bg_layout": patch.editor_bg_layout,
+                "editor_bg_fit": patch.editor_bg_fit,
+                "editor_bg_opacity": patch.editor_bg_opacity,
             }),
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// 记下"背景图换成了哪一个文件"（**由壳在复制完之后调用**）。
+    ///
+    /// 单独一条路、而不是混进 [`Store::set_appearance`]：图片这一步**先有文件、后有记录**
+    /// （壳把图写进数据目录成功之后才叫这里），与别的偏好"只动一个数"不是一回事。
+    /// 传 `None` = 清掉这一层。图多大由壳当场告诉界面（那是那一次动作的回执，不是偏好）。
+    pub fn set_background_image(&mut self, work_id: Option<i64>, name: Option<&str>) -> Result<()> {
+        let mut stored = self.read_appearance(work_id)?;
+        stored.editor_bg_image = name.and_then(image_name);
+        let tx = self.conn.transaction()?;
+        write_appearance(&tx, work_id, &stored)?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "settings",
+            work_id.unwrap_or(0),
+            "set_background_image",
+            serde_json::json!({ "name": stored.editor_bg_image }),
         )?;
         tx.commit()?;
         Ok(())

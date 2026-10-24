@@ -3,28 +3,17 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::json;
 
+use super::work_row::{build, read_row, COLS};
 use super::Store;
 use crate::error::{codes, Error, Result};
 use crate::model::{ManuscriptState, NodeKind, Work, WorkKind, WorkLanguage};
 use crate::time::now_millis;
-
-/// 作品字段列表（顺序与 [`WorkRow`] 对应）。
-///
-/// `storyline`（v14）与 `status`（v17）都**加在末尾**而不是插在语义相近的列旁边：
-/// 这一个列表的下标与 [`WorkRow`] 一一对应，插在中间就要把后面每一个下标都挪一遍
-/// ——那是纯手滑的机会（加列只加在末尾，这一条从 v14 起就没破过）。
-const COLS: &str = "id, kind, title, language, target_words, summary, created_at, updated_at, \
-                     opened_at, storyline, status";
 
 /// 书架排序口径：**最近打开的在前**；没打开过的按最近编辑。
 ///
 /// 书架与"该编辑哪一本"共用这一份——排序口径只留一处，免得两处慢慢走偏。
 const ORDER_BY_OPENED: &str =
     "ORDER BY opened_at IS NULL, opened_at DESC, updated_at DESC, id DESC";
-
-/// 一行的原始取值——先取成朴素类型，再**在 Rust 侧校验**（不在 SQL 里猜着读）。
-type WorkRow =
-    (i64, String, String, String, Option<i64>, String, i64, i64, Option<i64>, String, String);
 
 /// 书架的一行：作品本身 + 它的规模。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,38 +27,6 @@ pub struct ShelfEntry {
     pub char_count: i64,
     /// 同上，逐字（不含标点）
     pub chars_no_punct: i64,
-}
-
-fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkRow> {
-    Ok((
-        row.get(0)?,
-        row.get(1)?,
-        row.get(2)?,
-        row.get(3)?,
-        row.get(4)?,
-        row.get(5)?,
-        row.get(6)?,
-        row.get(7)?,
-        row.get(8)?,
-        row.get(9)?,
-        row.get(10)?,
-    ))
-}
-
-fn build(row: WorkRow) -> Result<Work> {
-    Ok(Work {
-        id: row.0,
-        kind: WorkKind::parse(&row.1)?,
-        title: row.2,
-        language: WorkLanguage::parse(&row.3)?,
-        target_words: row.4,
-        summary: row.5,
-        created_at: row.6,
-        updated_at: row.7,
-        opened_at: row.8,
-        storyline: row.9,
-        status: ManuscriptState::parse(&row.10)?,
-    })
 }
 
 /// 新建作品的根节点模板：**只是给个起点，不是结构约束**（深度不写死）。
@@ -153,6 +110,10 @@ impl Store {
             opened_at: Some(now),
             // 新稿子都是草稿（v17）：状态从此归作者自己标
             status: ManuscriptState::Draft,
+            // 体裁与标签出生时都是空的（v20）：**没填过**，不是"没有体裁"——
+            // 建书页面上填了的话，由紧接着的 `set_work_classify` 落下去（与简介同一条路）
+            genre: String::new(),
+            tags: String::new(),
         })
     }
 
@@ -201,11 +162,13 @@ impl Store {
                     row.get(8)?,
                     row.get(9)?,
                     row.get(10)?,
+                    row.get(11)?,
+                    row.get(12)?,
                 ),
-                row.get::<_, i64>(11)?,
-                row.get::<_, i64>(12)?,
                 row.get::<_, i64>(13)?,
                 row.get::<_, i64>(14)?,
+                row.get::<_, i64>(15)?,
+                row.get::<_, i64>(16)?,
             ))
         })?;
         let mut out = Vec::new();

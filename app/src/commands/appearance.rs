@@ -28,6 +28,8 @@ pub struct AppearanceDto {
     pub editor_font_size: Option<i64>,
     pub editor_line_height: Option<i64>,
     pub editor_letter_spacing: Option<i64>,
+    /// 稿纸横线的线型（`none` / `solid` / `dashed`；**只影响观感，不进导出**）
+    pub editor_rule_style: String,
     /// 叩问问话的语气（`warm` / `neutral` / `direct`；`neutral` 就是"不加语气"）
     pub question_tone: String,
     /// 写的时候最多主动问几次（0 = 不打扰）；**只限"推"**，面板随时能开
@@ -42,6 +44,18 @@ pub struct AppearanceDto {
     pub break_reminder: bool,
     pub break_minutes: i64,
     pub break_words: i64,
+    /// 护眼滤色的幅度（0~100；**0 = 关**，一个像素都不染）。**只走全局**这一层
+    pub eye_care: i64,
+    /// 正文底色（`paper` / `cream` / `green` / `gray`；**只影响观感，不进导出**）
+    pub editor_bg_color: String,
+    /// 正文底纹（`none` / `grid` / `dots` / `grain`；一格多大由界面按字号 × 行距算）
+    pub editor_bg_layout: String,
+    /// 背景图**在数据目录里的文件名**；null = 没有图（**永远不给路径**——界面拿不到目录）
+    pub editor_bg_image: Option<String>,
+    /// 背景图铺法（`cover` / `contain` / `tile`）
+    pub editor_bg_fit: String,
+    /// 背景图那一层的不透明度（0~100）
+    pub editor_bg_opacity: i64,
 }
 
 impl From<ResolvedAppearance> for AppearanceDto {
@@ -56,6 +70,7 @@ impl From<ResolvedAppearance> for AppearanceDto {
             editor_font_size: value.editor_font_size,
             editor_line_height: value.editor_line_height,
             editor_letter_spacing: value.editor_letter_spacing,
+            editor_rule_style: value.editor_rule_style.as_str().to_string(),
             question_tone: value.question_tone.as_str().to_string(),
             question_push_per_day: value.question_push_per_day,
             question_push_cooldown_minutes: value.question_push_cooldown_minutes,
@@ -64,6 +79,12 @@ impl From<ResolvedAppearance> for AppearanceDto {
             break_reminder: value.break_reminder,
             break_minutes: value.break_minutes,
             break_words: value.break_words,
+            eye_care: value.eye_care,
+            editor_bg_color: value.editor_bg_color.as_str().to_string(),
+            editor_bg_layout: value.editor_bg_layout.as_str().to_string(),
+            editor_bg_image: value.editor_bg_image,
+            editor_bg_fit: value.editor_bg_fit.as_str().to_string(),
+            editor_bg_opacity: value.editor_bg_opacity,
         }
     }
 }
@@ -85,6 +106,9 @@ pub struct AppearancePatch {
     pub editor_font_size: Option<i64>,
     pub editor_line_height: Option<i64>,
     pub editor_letter_spacing: Option<i64>,
+    /// 稿纸线型：`solid` / `dashed` / `none`；传 `"auto"` = 清掉这一层（回默认：不显示）。
+    /// **只写传进来的那一层**（与排版三项同一条口径：每书覆盖的机制留着，界面第一版只暴露全局）
+    pub editor_rule_style: Option<String>,
     /// 叩问语气：`warm` / `neutral` / `direct`；传 `"auto"` = 清掉这一层（回默认：温柔）
     pub question_tone: Option<String>,
     /// 主动问的次数（0 = 不打扰）与冷却分钟；传负数 = 清掉这一层（回默认）
@@ -101,6 +125,18 @@ pub struct AppearancePatch {
     pub break_reminder: Option<bool>,
     pub break_minutes: Option<i64>,
     pub break_words: Option<i64>,
+    /// 护眼滤色的幅度（0~100；越界由核心夹住）。**0 是正经取值（＝关，一个像素都不染）**，
+    /// 所以不拿 0 当"清掉"；传负数 = 清掉这一层（回默认关）。
+    /// **只落全局那一层**（传了 `work_id` 也不会写进每书记录）
+    pub eye_care: Option<i64>,
+    /// 正文底色（`paper` / `cream` / `green` / `gray`）；传 `"auto"` = 清掉这一层（回默认纸白）
+    pub editor_bg_color: Option<String>,
+    /// 正文底纹（`none` / `grid` / `dots` / `grain`）；传 `"auto"` = 清掉这一层（回默认不铺）
+    pub editor_bg_layout: Option<String>,
+    /// 背景图铺法（`cover` / `contain` / `tile`）；传 `"auto"` = 清掉这一层（回默认铺满）
+    pub editor_bg_fit: Option<String>,
+    /// 背景图那一层的不透明度（0~100；越界由核心夹住）；传负数 = 清掉这一层（回默认 35）
+    pub editor_bg_opacity: Option<i64>,
 }
 
 impl From<AppearancePatch> for Appearance {
@@ -115,6 +151,7 @@ impl From<AppearancePatch> for Appearance {
             editor_font_size: patch.editor_font_size,
             editor_line_height: patch.editor_line_height,
             editor_letter_spacing: patch.editor_letter_spacing,
+            editor_rule_style: patch.editor_rule_style,
             question_tone: patch.question_tone,
             question_push_per_day: patch.question_push_per_day,
             question_push_cooldown_minutes: patch.question_push_cooldown_minutes,
@@ -123,6 +160,15 @@ impl From<AppearancePatch> for Appearance {
             break_reminder: patch.break_reminder,
             break_minutes: patch.break_minutes,
             break_words: patch.break_words,
+            eye_care: patch.eye_care,
+            editor_bg_color: patch.editor_bg_color,
+            editor_bg_layout: patch.editor_bg_layout,
+            // 图片**不从这条 patch 走**：它由 `background_pick` 那条路在文件复制成功之后
+            // 通过 `Store::set_background_image` 落库（见 commands/background.rs）。
+            // 这里写死 `None` = "这项不改"——界面手上也没有文件名可以传。
+            editor_bg_image: None,
+            editor_bg_fit: patch.editor_bg_fit,
+            editor_bg_opacity: patch.editor_bg_opacity,
         }
     }
 }

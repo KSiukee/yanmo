@@ -16,6 +16,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { asError, CoreError, CoreUnavailableError, findRefArgs, healText } from "./errors";
+import type { SaveOrigin, SourceBreakdown } from "./source";
 import { t } from "../locales/index.ts";
 
 // 错误类型从 `api/errors.ts` 转出：用的人照旧从网关取，不必知道它住在哪。
@@ -64,6 +65,8 @@ export interface EditorSnapshot {
   cursor: EditorCursor | null;
   /** 打开的是场景卡时的那四格；别的节点是 null */
   scene: SceneFields | null;
+  /** 这一章的字从哪来（老稿子是一档「未记录」） */
+  sources: SourceBreakdown;
 }
 
 /** 场景卡的四格（**只对场景卡有**：别的节点读出来是 null）。 */
@@ -152,6 +155,8 @@ export interface Appearance {
   editor_font_size: number | null;
   editor_line_height: number | null;
   editor_letter_spacing: number | null;
+  /** 正文底下那层稿纸横线用哪种线（none / solid / dashed）；**只影响观感，不进导出** */
+  editor_rule_style: string;
   /** 叩问问话的语气（warm / neutral / direct）；neutral 就是"不加语气"＝把这层关掉 */
   question_tone: string;
   /** 写的时候最多主动问几次（0 = 不打扰）；**只限"推"**，面板随时能开 */
@@ -168,6 +173,18 @@ export interface Appearance {
   break_minutes: number;
   /** 今天写到多少字提醒一次（默认 1500；上限 20000） */
   break_words: number;
+  /** 护眼滤色的幅度（0~100；**0 = 关**，一个像素都不染）；**只走全局**这一层 */
+  eye_care: number;
+  /** 正文底色（paper / cream / green / gray）；**只影响观感，不进导出** */
+  editor_bg_color: string;
+  /** 正文底纹（none / grid / dots / grain）；一格多大由界面按字号 × 行距算 */
+  editor_bg_layout: string;
+  /** 背景图**在数据目录里的文件名**；null = 没有图（**永远不给路径**） */
+  editor_bg_image: string | null;
+  /** 背景图铺法（cover / contain / tile） */
+  editor_bg_fit: string;
+  /** 背景图那一层的不透明度（0~100） */
+  editor_bg_opacity: number;
 }
 
 /** 要改的偏好项：**只写传进来的**，没传的保持原样。 */
@@ -185,6 +202,18 @@ export interface AppearancePatch {
   editor_font_size?: number;
   editor_line_height?: number;
   editor_letter_spacing?: number;
+  /** 稿纸线型：none / solid / dashed；传 "auto" 就是**清掉这一层**（回默认：不显示） */
+  editor_rule_style?: string;
+  /** 正文底色：paper / cream / green / gray；传 "auto" 就是**清掉这一层**（回默认：纸白） */
+  editor_bg_color?: string;
+  /** 正文底纹：none / grid / dots / grain；传 "auto" 就是**清掉这一层**（回默认：不铺） */
+  editor_bg_layout?: string;
+  /** 背景图铺法：cover / contain / tile；传 "auto" 就是**清掉这一层**（回默认：铺满） */
+  editor_bg_fit?: string;
+  /** 背景图那一层的不透明度（0~100，越界由核心夹住）；传负数 = 清掉这一层（回默认 35）。
+   *  **0 是正经取值**（图留着但看不见），所以不拿 0 当"清掉"。
+   *  图片的**文件名不从这个 patch 走**：它由 `background_pick` 在文件复制成功之后落库。 */
+  editor_bg_opacity?: number;
   /** warm / neutral / direct；传 "auto" 就是**清掉这一层**（回默认：温柔） */
   question_tone?: string;
   /** 主动问的次数（0 = 不打扰）与冷却分钟；传负数 = 清掉这一层（回默认） */
@@ -198,6 +227,9 @@ export interface AppearancePatch {
   break_reminder?: boolean;
   break_minutes?: number;
   break_words?: number;
+  /** 护眼滤色的幅度（0~100，越界由核心夹住）；传负数 = 清掉这一层（回默认关）。
+   *  **0 是正经取值**（＝关），所以不拿 0 当"清掉"。**只写全局那一层** */
+  eye_care?: number;
 }
 
 /** 某一天的字数（三个口径都给，界面按当前口径显示）。 */
@@ -295,6 +327,10 @@ export interface ShelfEntry {
   title: string;
   /** 作品简介（作者手填，空串＝没写过）：投稿包的大纲要用它 */
   summary: string;
+  /** **体裁**（空串＝没填过；开放取值，核心不设闭集）——作品表单回填这一格 */
+  genre: string;
+  /** **标签**（一行一个，空串＝一个都没填）——集内「按主题」排序也看它 */
+  tags: string;
   /** 这本书里章的个数（单篇文章是 0，此时只报字数） */
   chapters: number;
   /** 字数合计（按词口径） */
@@ -527,6 +563,8 @@ export interface SnapshotRestoreAck {
   chars_no_punct: number;
   word_count: number;
   fingerprint: string;
+  /** 回滚之后的来源分布（没动到的字保留原来源） */
+  sources: SourceBreakdown;
 }
 
 /** 回收站里的一项。 */
@@ -549,6 +587,8 @@ export interface SaveAck {
   word_count: number;
   /** 落盘后库里的内容指纹（写后读回校验的比对基准） */
   fingerprint: string;
+  /** 这一章现在的来源分布（与字数同一笔账的另一面） */
+  sources: SourceBreakdown;
 }
 
 /** 上一次会话的交代。 */
@@ -707,7 +747,7 @@ export interface WorkBrief {
 export const workBrief = (work_id: number) =>
   call<WorkBrief>(COMMANDS.workBrief, { work_id });
 
-/** 新建一本书，返回它的 id。 */
+/** 新建一本书，返回它的 id（体裁/标签留空＝先不填，之后在「编辑作品」里补）。 */
 export const createWork = (kind: string, title: string) =>
   call<number>(COMMANDS.createWork, { kind, title });
 
@@ -750,6 +790,20 @@ export interface WorkLanguageAck {
   language: string;
   word_caliber: string;
 }
+
+/** 写分类归属（体裁 + 标签）的回执：取的是**归一过、库里真有的那一份**。
+ *
+ *  界面填的原样（可能带空格、带重复、带空行）不一定是库里那一份，所以写完照这份覆盖输入框。 */
+export interface WorkClassifyAck {
+  work_id: number;
+  genre: string;
+  /** 标签，**一行一个** */
+  tags: string;
+}
+
+/** 写体裁与标签（人填；超限由核心如实拒，空串＝没填过）。 */
+export const setWorkClassify = (work_id: number, genre: string, tags: string) =>
+  call<WorkClassifyAck>(COMMANDS.setWorkClassify, { work_id, genre, tags });
 
 /** 改作品语言（zh / en / ja）——字数默认口径跟它走；返回**写完回读**的两个码。 */
 export const setWorkLanguage = (work_id: number, language: string) =>
@@ -941,9 +995,15 @@ export const saveCursor = (node_id: number, cursor: EditorCursor) =>
  *
  * `tz_offset_minutes` 是本地时区相对 UTC 的偏移（东八区 = 480，见 `editor/backup.ts`
  * 的 `localOffsetMinutes`）：核心拿它算"这一笔算哪一天"，账本在 `writing_days`。
+ * `origin` 是壳观测到的**这一笔的来源**（键入 / 粘贴 / 混合…）：核心只记它说的，
+ * 没给就如实记「未记录」。
  */
-export const saveBody = (node_id: number, body: string, tz_offset_minutes: number) =>
-  call<SaveAck>(COMMANDS.saveBody, { node_id, body, tz_offset_minutes });
+export const saveBody = (
+  node_id: number,
+  body: string,
+  tz_offset_minutes: number,
+  origin?: SaveOrigin,
+) => call<SaveAck>(COMMANDS.saveBody, { node_id, body, tz_offset_minutes, origin: origin ?? null });
 
 /** 写当前章的"一句话"（投稿包的大纲要用它）；正文一个字都不动。 */
 export const setNodeSummary = (node_id: number, summary: string) =>
@@ -969,7 +1029,15 @@ export const emergencySnapshot = (
   body: string,
   reason: string,
   tz_offset_minutes: number,
-) => call<SaveAck>(COMMANDS.emergencySnapshot, { node_id, body, reason, tz_offset_minutes });
+  origin?: SaveOrigin,
+) =>
+  call<SaveAck>(COMMANDS.emergencySnapshot, {
+    node_id,
+    body,
+    reason,
+    tz_offset_minutes,
+    origin: origin ?? null,
+  });
 
 /** 上次会话的交代（崩溃检测）。 */
 export const sessionReport = () => call<SessionNotice>(COMMANDS.sessionReport);

@@ -14,6 +14,7 @@ import LocationDialog from "./LocationDialog.vue";
 import MirrorSettings from "./MirrorSettings.vue";
 import SettingsResetConfirm from "./SettingsResetConfirm.vue";
 import TypographySettings from "./TypographySettings.vue";
+import BackgroundSettings from "./BackgroundSettings.vue";
 import AskingSettings from "./AskingSettings.vue";
 import AppearanceSettings from "./AppearanceSettings.vue";
 import AuthorSettings from "./AuthorSettings.vue";
@@ -204,6 +205,8 @@ async function runRewrite() {
       </section>
       <section v-if="activeSection === 'typography'" class="settings__section">
         <TypographySettings :session="session" />
+        <!-- 正文背景（底色 / 底纹 / 自定义图片）：与排版同属"看正文的观感"，但自成一组 -->
+        <BackgroundSettings :session="session" />
       </section>
       <!-- 新建条目：命名规则（写哪一层由"作用范围"决定） -->
       <section v-if="activeSection === 'naming'" class="settings__section">

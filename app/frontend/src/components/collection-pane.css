@@ -84,6 +84,16 @@
   color: var(--ym-ink-soft);
 }
 
+/* 分类归属（体裁 · 主题）：**只显示作者自己填的字**；一个都没填时整块不出现。 */
+.collection__class {
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--ym-line);
+  border-radius: 8px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
 .collection__actions {
   display: flex;
   gap: 4px;

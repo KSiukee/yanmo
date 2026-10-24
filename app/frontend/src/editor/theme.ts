@@ -15,9 +15,10 @@
 //
 // 为什么还留一份启动缓存（localStorage）：见 `readCachedTheme` 那段——**省一次白闪**。
 //
-// ⚠️ 将来若再加"再叠一层色"的开关（护眼滤色那一类：黄底、幅度可调），**别改这套变量**：
-// 它该在外面再叠一层，而且幅度要与深色**合计**设个上限——深色配强黄色滤色会把对比度两头
-// 一起吃掉，糊成一团。那一层得知道自己压在什么底上，读这里的 `effective` 就是。
+// ⚠️ 已经加上了一层「再叠一层色」的开关（护眼滤色：整窗黄底、幅度可调）——它**不改这套变量**：
+// 它是在外面另挂一层（`editor/eye-care.ts` + style.css 的 `.ym-eye-care`），而且幅度要与深色
+// **合计**设个上限（深色配强黄滤色会把对比度两头一起吃掉，糊成一团）。那一层就是读这里的
+// `effective` 才知道自己压在什么底上的。
 
 import { computed, getCurrentScope, onScopeDispose, ref, watch, type ComputedRef, type Ref } from "vue";
 

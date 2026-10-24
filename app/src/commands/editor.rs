@@ -7,13 +7,13 @@
 //! - 读回校验只回传**指纹**，不把整章正文再搬一遍；
 //! - 关窗走**闸门**：界面先落盘，存不下去就别想走（重试 / 导出逃生 / 仍然退出）。
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::error::ApiError;
 use crate::storage::AppData;
-use yanmo_core::model::SceneFields;
-use yanmo_core::store::{EditorCursor, EditorTarget, Store};
+use yanmo_core::model::{EditOrigin, SceneFields, WriteOrigin};
+use yanmo_core::store::{EditorCursor, EditorTarget, SourceBreakdown, Store};
 
 /// 打开编辑器时拿到的一章。
 #[derive(Debug, Serialize)]
@@ -43,6 +43,8 @@ pub struct EditorSnapshot {
     ///
     /// 四格随快照一起给：界面上那一小张表单不该为它再跑一趟（与"章纲一句话"同一处出口）。
     pub scene: Option<SceneFields>,
+    /// 这一章的字从哪来（分档字数；老稿子是一档「未记录」）
+    pub sources: SourceBreakdown,
 }
 
 /// 光标与滚动位置。
@@ -89,6 +91,7 @@ pub(super) fn snapshot_of(store: &Store, target: EditorTarget) -> yanmo_core::Re
         title: target.title,
         summary: store.node_summary(target.node_id)?,
         scene,
+        sources: store.source_breakdown(target.node_id)?,
         fingerprint: store.body_fingerprint(target.node_id)?,
         cursor: store.load_cursor(target.node_id)?.map(|c| CursorDto {
             anchor: c.anchor,
@@ -116,6 +119,51 @@ pub struct SaveAck {
     /// 库里真的是不是它——所以这里必须给手上这份的哈希，读回来的值反而会让校验失去意义
     /// （2026-09-15 代码质量评审：轻微 9）。
     pub fingerprint: String,
+    /// 这一章现在的来源分布（与字数同一笔账的另一面，界面不必再跑一趟）
+    pub sources: SourceBreakdown,
+}
+
+/// 界面报上来的「这一笔是怎么写的」。
+///
+/// 只有壳看得见粘贴 / 键入；核心**只记它说的**（没报就是 `unknown`）。
+/// 模块交付要带 `module_id` 与 `model`——缺了核心拒收，这里不代填。
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct OriginDto {
+    /// 稳定码：typed / pasted / module / voice / system / mixed / unknown
+    pub kind: String,
+    /// 这次落盘期间剪贴板里的 plain text 字数（壳的观测值，只作证据）
+    pub clipboard_chars: i64,
+    pub module_id: Option<String>,
+    pub model: Option<String>,
+}
+
+impl OriginDto {
+    fn into_origin(self) -> Result<WriteOrigin, ApiError> {
+        let kind = if self.kind.trim().is_empty() {
+            EditOrigin::Unknown
+        } else {
+            EditOrigin::parse(self.kind.trim())?
+        };
+        if kind == EditOrigin::Module {
+            return Ok(WriteOrigin::module(
+                self.module_id.as_deref().unwrap_or(""),
+                self.model.as_deref().unwrap_or(""),
+                self.clipboard_chars,
+            )?);
+        }
+        let mut origin = WriteOrigin::of(kind);
+        origin.clipboard_chars = self.clipboard_chars.max(0);
+        Ok(origin)
+    }
+}
+
+/// 没报来源（旧壳 / 界面漏传）＝如实记"未记录"，不冒充打字。
+fn write_origin(origin: Option<OriginDto>) -> Result<WriteOrigin, ApiError> {
+    match origin {
+        Some(dto) => dto.into_origin(),
+        None => Ok(WriteOrigin::unknown()),
+    }
 }
 
 /// 逃生导出的结果。
@@ -254,14 +302,17 @@ pub fn save_body(
     node_id: i64,
     body: String,
     tz_offset_minutes: i32,
+    origin: Option<OriginDto>,
 ) -> Result<SaveAck, ApiError> {
+    let origin = write_origin(origin)?;
     let ack = data.with_store(|store| {
-        let stats = store.write_body_counted(node_id, &body, tz_offset_minutes)?;
+        let outcome = store.write_body_counted(node_id, &body, tz_offset_minutes, origin)?;
         Ok(SaveAck {
-            char_count: stats.char_count,
-            chars_no_punct: stats.chars_no_punct,
-            word_count: stats.word_count,
+            char_count: outcome.counts.char_count,
+            chars_no_punct: outcome.counts.chars_no_punct,
+            word_count: outcome.counts.word_count,
             fingerprint: yanmo_core::text::content_hash(&body),
+            sources: outcome.sources,
         })
     })?;
     // 落盘之后**顺手叫一声**镜像（磁盘即 `.md`）：只投个信号，不在这里等它写文件
@@ -291,14 +342,17 @@ pub fn emergency_snapshot(
     body: String,
     reason: String,
     tz_offset_minutes: i32,
+    origin: Option<OriginDto>,
 ) -> Result<SaveAck, ApiError> {
+    let origin = write_origin(origin)?;
     let ack = data.with_store(|store| {
-        let stats = store.emergency_snapshot(node_id, &body, &reason, tz_offset_minutes)?;
+        let outcome = store.emergency_snapshot(node_id, &body, &reason, tz_offset_minutes, origin)?;
         Ok(SaveAck {
-            char_count: stats.char_count,
-            chars_no_punct: stats.chars_no_punct,
-            word_count: stats.word_count,
+            char_count: outcome.counts.char_count,
+            chars_no_punct: outcome.counts.chars_no_punct,
+            word_count: outcome.counts.word_count,
             fingerprint: yanmo_core::text::content_hash(&body),
+            sources: outcome.sources,
         })
     })?;
     // 抢救回来的字也是字：镜像照样要跟上（同 `save_body`）

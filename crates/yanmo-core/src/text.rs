@@ -93,34 +93,77 @@ fn is_word_char(c: char) -> bool {
     is_cjk(c) || is_kana_or_hangul(c) || c.is_alphanumeric()
 }
 
-/// 逐字口径：**非空白、非零宽**的字符全算（标点、emoji 也算——它们各占一个字位）。
-pub fn count_chars(text: &str) -> i64 {
-    text.chars().filter(|c| !c.is_whitespace() && !is_zero_width(*c)).count() as i64
+/// 一份字数的三个口径——**同一遍扫描一起算**。
+///
+/// 三个口径的规则只在上面的 [`tally_by_source`] 里写一遍；单口径的
+/// `count_chars` / `count_chars_no_punct` / `count_words` 都是它的薄包装，
+/// 免得同一套判定散成三份、改一处漏两处。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Tally {
+    /// 逐字（含标点）：非空白、非零宽的字符
+    pub chars: i64,
+    /// 逐字（不含标点）：汉字 / 假名 / 谚文 / 字母 / 数字
+    pub chars_no_punct: i64,
+    /// 按词：CJK 逐字 + 其它连续字母数字串计 1
+    pub words: i64,
 }
 
-/// 逐字（不含标点）口径：只算 `is_word_char`。
-pub fn count_chars_no_punct(text: &str) -> i64 {
-    text.chars().filter(|c| is_word_char(*c)).count() as i64
+/// 数一遍（三个口径一起）。
+pub fn tally(text: &str) -> Tally {
+    tally_by_source(text, 1, |_| 0)[0]
 }
 
-/// 按词口径：CJK（表意·假名·谚文）逐字计 1；其它连续字母/数字串计 1（英文按词）；标点不计。
-pub fn count_words(text: &str) -> i64 {
-    let mut words = 0i64;
+/// **按来源分桶**数一遍：同一套规则，把每个字记到它所属的来源上。
+///
+/// `source_of` 收到的是**字节下标**（指向某个字符的起点），返回桶号
+/// （超出 `buckets` 的按最后一桶算——调用方给错不该让字数崩掉）。
+///
+/// 按词口径的归属：一个词记在**它第一个字符**所在的桶上。英文词被一次编辑
+/// 从中间切开时，总词数不会因为"跨了两个来源"而多算一个——这是刻意的：
+/// **三个口径加起来必须永远等于总数**，否则界面上"其中"就对不上总数。
+pub fn tally_by_source(
+    text: &str,
+    buckets: usize,
+    mut source_of: impl FnMut(usize) -> usize,
+) -> Vec<Tally> {
+    let mut out = vec![Tally::default(); buckets.max(1)];
     let mut in_run = false;
-    for c in text.chars() {
+    for (index, c) in text.char_indices() {
+        let bucket = source_of(index).min(out.len() - 1);
+        if !c.is_whitespace() && !is_zero_width(c) {
+            out[bucket].chars += 1;
+        }
+        if is_word_char(c) {
+            out[bucket].chars_no_punct += 1;
+        }
         if is_cjk(c) || is_kana_or_hangul(c) {
-            words += 1;
+            out[bucket].words += 1;
             in_run = false;
         } else if c.is_alphanumeric() {
             if !in_run {
-                words += 1;
+                out[bucket].words += 1;
                 in_run = true;
             }
         } else {
             in_run = false;
         }
     }
-    words
+    out
+}
+
+/// 逐字口径：**非空白、非零宽**的字符全算（标点、emoji 也算——它们各占一个字位）。
+pub fn count_chars(text: &str) -> i64 {
+    tally(text).chars
+}
+
+/// 逐字（不含标点）口径：只算 `is_word_char`。
+pub fn count_chars_no_punct(text: &str) -> i64 {
+    tally(text).chars_no_punct
+}
+
+/// 按词口径：CJK（表意·假名·谚文）逐字计 1；其它连续字母/数字串计 1（英文按词）；标点不计。
+pub fn count_words(text: &str) -> i64 {
+    tally(text).words
 }
 
 /// 字数口径：**存进设置、进 JSON，值必须稳定**（改值 = 改数据契约）。
@@ -277,6 +320,29 @@ mod tests {
         }
         assert_eq!(WordCaliber::parse("nonsense"), None);
         assert_eq!(WordCaliber::ALL[0], WordCaliber::Chars, "循环顺序的第一档是逐字（含标点）");
+    }
+
+    #[test]
+    fn per_source_tally_sums_to_the_same_total_in_all_three_calibers() {
+        let text = "第一段。\n\n第二段 rust and 中文";
+        let whole = tally(text);
+        // 前半（到第 4 个字符为止）算一个来源，其余算另一个
+        let split = text.char_indices().nth(4).map(|(at, _)| at).unwrap();
+        let parts = tally_by_source(text, 2, |at| usize::from(at >= split));
+        assert_eq!(parts.iter().map(|p| p.chars).sum::<i64>(), whole.chars);
+        assert_eq!(parts.iter().map(|p| p.chars_no_punct).sum::<i64>(), whole.chars_no_punct);
+        assert_eq!(parts.iter().map(|p| p.words).sum::<i64>(), whole.words);
+        assert_eq!(parts.len(), 2);
+    }
+
+    #[test]
+    fn a_word_cut_by_a_source_boundary_is_counted_once() {
+        // "rust" 被切成 "ru" + "st"：总词数仍按 1 个算（记在第一个字符那一桶）
+        let text = "rust";
+        let parts = tally_by_source(text, 2, |at| usize::from(at >= 2));
+        assert_eq!(parts[0].words, 1);
+        assert_eq!(parts[1].words, 0);
+        assert_eq!(parts[0].chars + parts[1].chars, 4);
     }
 
     #[test]

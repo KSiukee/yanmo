@@ -12,6 +12,7 @@ import { t } from "./locales/index.ts";
 import { useEditorSession } from "./editor/session";
 import { useAsideTab } from "./editor/aside";
 import { useTheme } from "./editor/theme.ts";
+import { useEyeCare } from "./editor/eye-care.ts";
 import { useMirrorReview, watchMirrorAtStartup } from "./editor/mirror-review.ts";
 import { useQuestionPush } from "./editor/question-push.ts";
 import { breakTipText, useBreakReminder } from "./editor/break-reminder.ts";
@@ -72,10 +73,11 @@ const pushedCard = ref<SelectedQuestion | null>(null);
 // 取与存都在 editor/aside.ts，布局层只拿"现在露哪块"和"换一块"。
 const { tab: asideTab, pick: pickAside } = useAsideTab(session.appearance);
 
-// 界面配色（浅色 / 深色 / 跟随系统）：**读回来就画上、改了立刻换**。
-// 判断与落地都在 editor/theme.ts；这里只接一次线（它写的是 <html data-theme>，
-// 不需要往下传任何值，所以不接它的返回值）。
-useTheme(session.appearance);
+// 界面配色（浅色 / 深色 / 跟随系统）+ 护眼滤色（整窗一层暖黄的膜）：判断与落地分别在
+// editor/theme.ts 与 editor/eye-care.ts。滤色那一层要**合计**深浅（深色底上收窄），
+// 所以它读的是配色算出来的 "effective"。
+const theme = useTheme(session.appearance);
+useEyeCare(session.appearance, theme.effective);
 
 // 用眼提醒 + 章长提醒：**只在"他要停下来"的时刻说一句**——切章 / 切书 / 关窗前那一下，
 // 判据与记账全在 editor/break-reminder.ts（章长那条的判据在核心，与叩问同源）；

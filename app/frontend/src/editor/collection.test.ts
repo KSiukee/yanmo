@@ -45,6 +45,8 @@ function entry(partial: Partial<ArticleEntry> = {}): ArticleEntry {
     chars_no_punct: 18,
     created_at: 0,
     updated_at: 0,
+    genre: "",
+    tags: "",
     ...partial,
   };
 }
@@ -120,4 +122,31 @@ test("集内排序：按字数（多的在前，按当前口径），且不动�
   assert.deepEqual(sortedIds(list, "length", "chars_no_punct"), [1, 2], "口径换了名次就换");
   assert.deepEqual(list.map((item) => item.id), [1, 2], "原数组不许被改（界面那份还在用）");
   assert.deepEqual(sortEntries(list, "written", "chars").map((item) => item.id), [1, 2], "写成先后那一档也走同一个入口");
+});
+
+test("集内排序：按主题——先按体裁聚，组内看第一个标签，没填的排最后", () => {
+  // 顺序故意打乱：两个科幻（主题分别 太空 / 太空）、一个悬疑、一个没填分类
+  const space = entry({ id: 1, genre: "科幻", tags: "太空\n群像" });
+  const mystery = entry({ id: 2, genre: "悬疑", tags: "密室" });
+  const blank = entry({ id: 3, genre: "", tags: "" });
+  const space2 = entry({ id: 4, genre: "科幻", tags: "太空" });
+  const list = [space, mystery, blank, space2];
+
+  // 组间按体裁名**字面量序**（「悬疑」60AC 在「科幻」79D1 前）——软件不替作者
+  // 规定哪个体裁更靠前，只管把同一撮的挨在一起
+  assert.deepEqual(sortedIds(list, "theme", "chars"), [2, 1, 4, 3], "同类挨着，组内按标签，空的垫底");
+  assert.deepEqual(list.map((item) => item.id), [1, 2, 3, 4], "原数组不许被改");
+
+  // 组内**没写标签的**也排在组尾（不跟有主题的混在一起）
+  const noTag = entry({ id: 5, genre: "科幻", tags: "" });
+  assert.deepEqual(sortedIds([noTag, mystery, space], "theme", "chars"), [2, 1, 5]);
+});
+
+test("按主题那一档：一个分类都没填时**一篇文章都不动**（不假装懂主题）", () => {
+  const a = entry({ id: 1, created_at: 900 });
+  const b = entry({ id: 2, created_at: 100 });
+  const list = [a, b];
+  assert.deepEqual(sortedIds(list, "theme", "chars"), [1, 2], "体裁与标签都空＝没有可聚的东西");
+  // 对照：另外两档这时候是会动的（说明这个不动是**判据的结果**，不是接口失灵）
+  assert.deepEqual(sortedIds(list, "written", "chars"), [2, 1]);
 });

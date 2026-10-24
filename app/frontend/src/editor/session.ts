@@ -77,6 +77,7 @@ import {
   setNodeSummary,
   saveNodeFields,
   setWorkSummary,
+  setWorkClassify,
   treeSetVolumeTarget,
   workBrief,
   typesetApply,
@@ -114,8 +115,13 @@ import {
   setWorkTargetWords,
 } from "../api/manuscript";
 import { Autosave, type AutosaveState } from "./autosave";
+import { saveTransport } from "./save-transport";
+import { WriteOrigins } from "./write-origin";
+import { watchWriteSource } from "./write-watch";
+import type { SourceBreakdown } from "../api/source";
 import { useAddChapter, type AddChapter } from "./add-chapter";
 import { useAppearance, type AppearanceState } from "./appearance";
+import { backgroundClear, backgroundImage, backgroundPick } from "../api/background";
 import { useWriting, type WritingState } from "./writing";
 import { localOffsetMinutes, useBackup, type BackupState } from "./backup";
 import { ChapterSwitch } from "./chapters";
@@ -167,6 +173,8 @@ export interface EditorSession {
   editor: ShallowRef<Editor | undefined>;
   chapterTitle: Ref<string>;
   saveState: Ref<AutosaveState>;
+  /** 这一章的字从哪来（核心按来源分档算好的字数；老稿子是一档「未记录」） */
+  sources: Ref<SourceBreakdown>;
   exitState: Ref<ExitGateState>;
   neighbors: Ref<ChapterNeighbors | null>;
   switching: Ref<boolean>;
@@ -297,6 +305,8 @@ export function useEditorSession(): EditorSession {
   const failure = ref<string | null>(null);
   const crashNotice = ref<string | null>(null);
   const saveState = ref<AutosaveState>({ ...IDLE });
+  /** 这一章的字从哪来：换章时由快照给，之后每次落盘的回执刷新（见 makeAutosave） */
+  const sources = ref<SourceBreakdown>({ shares: [] });
   const exitState = ref<ExitGateState>({ blocked: false, message: "", escapePath: null, busy: false });
   const neighbors = ref<ChapterNeighbors | null>(null);
   const switching = ref(false);
@@ -329,10 +339,13 @@ export function useEditorSession(): EditorSession {
   });
 
   const autosave = shallowRef<Autosave | null>(null);
+  /** 这一章正在收集的写入来源（换章换新的——来源属于"这一笔"，不属于会话） */
+  let writeOrigins: WriteOrigins | null = null;
   let gate: ExitGate | null = null;
   let stopCloseListener: (() => void) | null = null;
   let stopProbeListener: (() => void) | null = null;
   let stopCompositionWatch: (() => void) | null = null;
+  let stopSourceWatch: (() => void) | null = null;
   /** 启动诊断的清理句柄（焦点/输入法事件监听） */
   let stopDiagnoseWatch: (() => void) | null = null;
   /** 全局快捷键的解绑句柄（键位与分寸见 editor/shortcuts.ts） */
@@ -356,15 +369,22 @@ export function useEditorSession(): EditorSession {
   // ── 落盘控制器（一章一个，旧的先退场） ─────────────────────────────
   function makeAutosave(snapshot: EditorSnapshot): Autosave {
     autosave.value?.dispose();
+    // 换章换一套观测：上一章没落成的来源已经随它的 flush 送走了，不该串到这一章
+    const origins = new WriteOrigins();
+    writeOrigins = origins;
     const engine = new Autosave({
       node_id: snapshot.node_id,
-      transport: {
+      transport: saveTransport({
+        origins,
         // 落盘带上本地时区偏移：核心拿它算"这一笔算哪一天"（账本见 store::writing）
-        save: (node_id, body) => saveBody(node_id, body, localOffsetMinutes()),
+        tz: localOffsetMinutes,
+        onSources: (next) => {
+          sources.value = next;
+        },
+        save: saveBody,
         fingerprint: bodyFingerprint,
-        emergency: (node_id, body, reason) =>
-          emergencySnapshot(node_id, body, reason, localOffsetMinutes()),
-      },
+        emergency: emergencySnapshot,
+      }),
       onState: (next) => {
         saveState.value = next;
         // 每次落盘成功刷一次"今日"：这一笔刚记进账本（核心那边与正文同一个事务）。
@@ -400,6 +420,8 @@ export function useEditorSession(): EditorSession {
     };
     language.value = asLanguage(snapshot.work_language);
     caliber.value = asCaliber(snapshot.word_caliber);
+    // 来源跟着章走：核心在快照里就算好了（老稿子是一档「未记录」）
+    sources.value = snapshot.sources;
     // 换书就重读目标（每本书可以各设各的）与偏好（每书覆盖项），并刷今日
     void appearance.loadWork();
     void writing.loadGoal();
@@ -536,7 +558,11 @@ export function useEditorSession(): EditorSession {
   function insertText(text: string, at: "cursor" | "end"): boolean {
     const instance = editor.value;
     if (!instance || currentNodeId.value === null) return false;
-    return insertIntoChapter(instance, text, at, instance.isFocused || openedHadCursor);
+    // 作答落章 / 采纳这类"程序把字放进去"的改动：来源记「软件写入」（不是键入）
+    writeOrigins?.note("system");
+    const inserted = insertIntoChapter(instance, text, at, instance.isFocused || openedHadCursor);
+    if (!inserted) writeOrigins?.forget("system"); // 什么都没插进去：这条观测不成立
+    return inserted;
   }
 
   /**
@@ -594,6 +620,7 @@ export function useEditorSession(): EditorSession {
   function applyRestored(ack: SnapshotRestoreAck) {
     if (currentNodeId.value !== ack.node_id) return; // 回滚途中切了章：不动现在这一章
     editor.value?.commands.setContent(textToHtml(ack.body), { emitUpdate: false });
+    sources.value = ack.sources;
     autosave.value?.attach(ack.body, {
       char_count: ack.char_count,
       chars_no_punct: ack.chars_no_punct,
@@ -610,6 +637,8 @@ export function useEditorSession(): EditorSession {
    */
   async function applyTypeset(text: string) {
     editor.value?.commands.setContent(textToHtml(text), { emitUpdate: false });
+    // 排版清理是**程序改的字**（不是作者敲的、也不是粘的）：来源如实记「软件写入」
+    writeOrigins?.note("system");
     autosave.value?.changed(text);
     await flushCurrent();
     void directory.refresh(); // 字数变了：目录里那行小字要跟上
@@ -879,6 +908,10 @@ export function useEditorSession(): EditorSession {
         reset: resetAppearance,
         previewNaming: namingRewritePreview,
         applyNaming: namingRewriteApply,
+        // 背景图那一半在壳里（作者选图 → 壳复制进数据目录 → 只回文件名与一段 data URL）
+        backgroundImage,
+        backgroundPick,
+        backgroundClear,
       },
       // "只设这本书"要知道当前是哪一本（workId 在下面才声明，所以这里用取值函数）
       workId,
@@ -951,6 +984,9 @@ export function useEditorSession(): EditorSession {
         writeNaming: (work_id, naming) => writeAppearance(work_id, { naming }).then(() => undefined),
         // 建书页填的「一卷大概多少章」：写进这本书的分卷口径（只影响提示，不改结构）
         writeVolumeTarget: treeSetVolumeTarget,
+        // 分类归属（体裁 + 标签）：归一与上限都在核心，这里只是把作者写的原样递过去
+        writeClassify: (work_id, genre, tags) =>
+          setWorkClassify(work_id, genre, tags).then(() => undefined),
       },
       workId,
       openWork: (target) => switchWork(target),
@@ -1223,8 +1259,15 @@ export function useEditorSession(): EditorSession {
       // 早拉一步只会拿到空列表，提示就永远不出现（真机上就是这么翻的车）。
       void shelf.refresh();
       stopCompositionWatch = watchComposition();
-      // 启动诊断：盯着"焦点在不在正文里""输入法有没有组字"（壳没开诊断时这些上报是空转）
+      // 来源观测：只认三件事——敲了键、粘了东西、程序改了字。**没看见就不报**。
       const dom = editor.value?.view.dom;
+      if (dom) {
+        stopSourceWatch = watchWriteSource(dom as HTMLElement, {
+          typed: () => writeOrigins?.note("typed"),
+          pasted: (chars) => writeOrigins?.notePaste(chars),
+        });
+      }
+      // 启动诊断：盯着"焦点在不在正文里""输入法有没有组字"（壳没开诊断时这些上报是空转）
       if (dom) stopDiagnoseWatch = watchFocusAndIme(dom as HTMLElement);
       await refreshNeighbors();
       // 先等窗口被激活再定初始焦点：见 whenWindowFocused 的说明（Win10 输入法）。
@@ -1294,6 +1337,7 @@ export function useEditorSession(): EditorSession {
     stopCloseListener?.();
     stopProbeListener?.();
     stopCompositionWatch?.();
+    stopSourceWatch?.();
     stopDiagnoseWatch?.();
     stopDialogFocusWatch?.();
     // 卸挂之前把手上这一版落下去，**落完再 dispose**。
@@ -1367,6 +1411,7 @@ export function useEditorSession(): EditorSession {
     closePanel,
     chapterTitle,
     saveState,
+    sources,
     exitState,
     neighbors,
     switching,

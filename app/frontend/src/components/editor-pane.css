@@ -222,6 +222,95 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
+  /* ── 正文背景：**底色 + 底纹**（纯显示层；图片那一层在下面用 ::before 铺） ──────
+     底色走 `data-bg` 属性（`style.css` 的两套色板各给四档——放那儿是为了让深浅
+     两套配色**各认自己的一组**，JS 里一个颜色都不写死）。
+     底纹按"一格 = 字号 × 行距"铺（`--ym-bg-step`，与稿纸横线同一把尺子，见 editor/background.ts）：
+     四种纹路都只是几种 repeating 渐变的组合，没有图片、不进包、更不进导出。 */
+  background-color: var(--ym-bg-page, var(--ym-paper));
+  --ym-bg-step: 32px;
+  --ym-bg-grid: repeating-linear-gradient(
+    to bottom,
+    transparent 0 calc(var(--ym-bg-step) - 1px),
+    var(--ym-bg-pattern) calc(var(--ym-bg-step) - 1px) var(--ym-bg-step)
+  );
+  --ym-bg-grid-v: repeating-linear-gradient(
+    to right,
+    transparent 0 calc(var(--ym-bg-step) - 1px),
+    var(--ym-bg-pattern) calc(var(--ym-bg-step) - 1px) var(--ym-bg-step)
+  );
+  /* 点阵：先用径向渐变画一个点，再用 background-size 把它铺成一格一个 */
+  --ym-bg-dots: radial-gradient(var(--ym-bg-pattern) 1px, transparent 1.4px);
+  /* 旧纸：两道很淡的斜纹，错开半个周期，看着像纸纤维 */
+  --ym-bg-grain: repeating-linear-gradient(
+      45deg,
+      transparent 0 6px,
+      var(--ym-bg-pattern) 6px 7px
+    ),
+    repeating-linear-gradient(135deg, transparent 0 11px, var(--ym-bg-pattern) 11px 12px);
+  /* 稿纸横线那一层：**形状配方**（颜色一律取自色板变量，见 style.css 的两套色板）。
+     一格的高度 `--ym-rule-step` 由界面按"字号 × 行距"算出来、绑在同一个元素上
+     （见 editor/rule.ts）——所以线永远落在每一行的底下，改字号或行距它会跟着走。 */
+  --ym-rule-band: repeating-linear-gradient(
+    to bottom,
+    transparent 0 calc(var(--ym-rule-step) - 1px),
+    var(--ym-rule) calc(var(--ym-rule-step) - 1px) var(--ym-rule-step)
+  );
+  /* 虚线那一档：把上面那层按横向节奏切成短划（实线不切，整条连着） */
+  --ym-rule-dash: 7px;
+  --ym-rule-cut: repeating-linear-gradient(
+    to right,
+    var(--ym-ink) 0 var(--ym-rule-dash),
+    transparent var(--ym-rule-dash) calc(var(--ym-rule-dash) * 2)
+  );
+  /* 背景图那一层要拿它当"画布的定位框"：::before 用 absolute + inset:0 铺满可视区，
+     所以这一格必须是定位元素（不然它会跑到编辑区外面去）。 */
+  position: relative;
+}
+
+/* ── 背景图那一层（假元素，垫在字与底纹底下） ─────────────────────────────
+   为什么用假元素、而不是给编辑区自己铺一层 `background-image`：
+   图片要能**单独调不透明度**（作者要的是"垫一层气氛"，不是把字糊掉），
+   而编辑区身上还叠着底纹那几层渐变——合成在一处就没法只让图淡下去。
+
+   `background-attachment: fixed`：图**钉在窗口上看**，正文滚它不滚——
+   否则一张铺满的图会跟字一起走，读到下半章时那半张图已经没了（观感会很怪）。
+   尺寸与铺法两个变量由 `editor/background.ts` 按作者选的那一档绑上来。 */
+.editor__area::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--ym-bg-image);
+  background-size: var(--ym-bg-image-size, cover);
+  background-repeat: var(--ym-bg-image-repeat, no-repeat);
+  background-position: center;
+  background-attachment: fixed;
+  opacity: var(--ym-bg-image-opacity, 0);
+  pointer-events: none; /* 它只是张纸：别把鼠标事件从正文手里抢走 */
+}
+
+/* 四种底纹（`data-bg-layout`）：一格的边长与稿纸横线同一把尺子（字号 × 行距） */
+.editor__area[data-bg-layout="grid"] {
+  background-image: var(--ym-bg-grid), var(--ym-bg-grid-v);
+}
+.editor__area[data-bg-layout="dots"] {
+  background-image: var(--ym-bg-dots);
+  background-size: var(--ym-bg-step) var(--ym-bg-step);
+}
+.editor__area[data-bg-layout="grain"] {
+  background-image: var(--ym-bg-grain);
+}
+
+/* 四档底色（`data-bg`）：只是把"哪一档"翻成一根色板变量——
+   颜色本身在 `style.css` 的两套色板里（深浅各一组），这里一个颜色都不写死。 */
+.editor__area[data-bg="cream"] {
+  --ym-bg-page: var(--ym-bg-cream);
+}
+.editor__area[data-bg="green"] {
+  --ym-bg-page: var(--ym-bg-green);
+}
+.editor__area[data-bg="gray"] {
+  --ym-bg-page: var(--ym-bg-gray);
 }
 
 .editor__area :deep(.ProseMirror) {
@@ -248,8 +337,31 @@
 
 /* 中文写作的第一条排版规则：首行缩进两字符（视觉用 2em，导出走 OOXML 的 firstLineChars）。 */
 .editor__area :deep(.ProseMirror p) {
+  /* 自己成一个图层，外加给下面那层横线当定位的框：这样它被稳稳压在本段文字底下，
+     既不会跑到编辑区底色后面（长稿下"线不见了"就是这么来的），也不会盖住字。 */
+  position: relative;
+  isolation: isolate;
   margin: 0 0 0.6em;
   text-indent: 2em;
+}
+
+/* 稿纸横线：垫在正文底下的一层（假元素），按行距一格一条——线跟着字走。
+   为什么用假元素、而不是给段落自己铺一层背景：虚线那一档要在**只切这几条线**的地方
+   切一刀（蒙版），而蒙版加在段落身上会把字一起切掉。两档共用同一份配方（`--ym-rule-band`），
+   虚线再在它上面切一刀；「不显示」压根不画——连这一层都不存在。 */
+.editor__area[data-rule="solid"] :deep(.ProseMirror p)::before,
+.editor__area[data-rule="dashed"] :deep(.ProseMirror p)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--ym-rule-band);
+}
+
+/* 虚线：只在那几条线上切（蒙版要的是"不透明"，所以用色板里的墨色，不是它的颜色） */
+.editor__area[data-rule="dashed"] :deep(.ProseMirror p)::before {
+  -webkit-mask-image: var(--ym-rule-cut);
+  mask-image: var(--ym-rule-cut);
 }
 
 /* ── 这一章的"一句话"（投稿包的大纲要用它） ───────────────────────── */
@@ -320,4 +432,22 @@
   white-space: nowrap;
   color: var(--ym-ink-soft);
   cursor: default;
+}
+
+/* 来源读数：这一章里**不是打出来的**那几档（粘贴 / 模块 / 未记录…）。
+   与卡顿读数同一条分寸——纯读数、不可点；而且**只有真出现时才占位置**
+   （全键入的那一章状态栏与以前一模一样）。太长了就省略，完整分布看悬停提示。 */
+.editor__sources {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ym-ink-soft);
+  cursor: default;
+}
+
+.editor__sources:hover {
+  color: var(--ym-ink);
 }

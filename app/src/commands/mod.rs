@@ -10,6 +10,9 @@
 //! - 按域分文件（[`system`] / [`editor`] / [`tree`] / [`appearance`] / [`typeset`] / [`compile`] / [`snapshot`] / [`work`] / [`trash`] / [`backup`] / [`restore`] / [`location`] / [`writing`]），域之间不互相调用——要复用的逻辑下沉进核心。
 
 pub mod appearance;
+/// 正文背景图：作者选图 → 壳复制进数据目录 → 只回一个文件名与渲染用的 data URL
+/// （**界面拿不到路径**，也没有任何文件系统能力）。
+pub mod background;
 /// 多处备份：备份、体检、备份列表与设置。
 /// 作者信息：投稿时随稿子走的那点身份（笔名/真名/联系方式/简历；敏感项默认不写进稿件）。
 pub mod author;

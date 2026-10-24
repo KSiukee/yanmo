@@ -22,6 +22,7 @@ use crate::exitwatch::RequestOutcome;
 mod acceptance;
 mod acceptance_args;
 mod acceptance_guard;
+mod background;
 mod commands;
 mod diagnose;
 mod error;

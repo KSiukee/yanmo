@@ -1,13 +1,15 @@
 <script setup lang="ts">
-// 「外观」那一栏：界面配色（浅色 / 深色 / 跟随系统）+ **用眼提醒**（开关与两个阈值）。
+// 「外观」那一栏：界面配色（浅色 / 深色 / 跟随系统）+ **护眼滤色**（整窗一层黄，幅度可调）
+// + **用眼提醒**（开关与两个阈值）。
 // 「用眼提醒」也落在这里：它跟配色同属"跟人不跟书、只走全局"的那一族设置（阈值跟哪本书无关）。
 //
 // 为什么单独成组件：设置面板本身已经很长（上帝棘轮盯着 400 行）；这一栏自成一体
-// （一个三选一 + 一段说明），而且**将来还会长**（护眼滤色那一类就落在这里）——
-// 拆出来两边都清清爽爽（与 TypographySettings 同一条分寸）。
+// （一个三选一 + 一根滑杆 + 一段说明），而且**将来还会长**——拆出来两边都清清爽爽
+// （与 TypographySettings 同一条分寸）。
 //
-// 组件只管"显示与改"：真值在核心（`appearance.theme`，跟人不跟书、只走全局），
-// 落到屏幕上那一步在 `editor/theme.ts`（App.vue 接了线，改完立刻见效）。
+// 组件只管"显示与改"：真值在核心（`appearance.theme` / `appearance.eye_care`，跟人不跟书、
+// 只走全局），落到屏幕上那两步在 `editor/theme.ts` 与 `editor/eye-care.ts`
+// （App.vue 接了线，改完立刻见效）。
 //
 // 用眼提醒那一块只在"作者要停下来的时刻"说一句（换章 / 合上稿子之前）——
 // 判据与记账在 `editor/break-reminder.ts`，这里只管"显示与改"。
@@ -16,10 +18,15 @@ import { computed } from "vue";
 import { t } from "../locales/index.ts";
 import type { EditorSession } from "../editor/session";
 import { asThemeChoice, THEME_CHOICES, type ThemeChoice } from "../editor/theme.ts";
+import {
+  asEyeCare,
+  eyeCareIsStrong,
+  MAX_EYE_CARE,
+} from "../editor/eye-care.ts";
 import { BREAK_MINUTES_RANGE, BREAK_WORDS_RANGE } from "../editor/break-reminder.ts";
 
 const props = defineProps<{ session: EditorSession }>();
-const { values, busy, setTheme, setBreakReminder } = props.session.appearance;
+const { values, busy, setTheme, setEyeCare, setBreakReminder } = props.session.appearance;
 
 /** 现在选的是哪一档（读不出来就显示默认那一档，并禁用） */
 const current = computed(() => asThemeChoice(values.value));
@@ -35,6 +42,20 @@ const LABELS: Record<ThemeChoice, string> = {
 function onPick(event: Event) {
   const code = (event.target as HTMLInputElement).value;
   void setTheme(code);
+}
+
+// ── 护眼滤色：整窗一层暖黄的膜，一根滑杆（0 = 关）────────────────────
+// 值从核心读回来（默认关；核心那边也是这个默认）；它还没回话时滑杆是禁用的，
+// 与配色、用眼提醒同一条分寸。
+// 拉到多少才"够"是作者自己的事（跟房间光线有关）——最深能到多少却有一部分是**算出来的**：
+// 深色底下要收窄（见 editor/eye-care.ts 的 DARK_SCALE），免得黑底配强黄把字糊了。
+const eyeCare = computed(() => asEyeCare(values.value));
+const eyeCareStrong = computed(() => eyeCareIsStrong(values.value));
+
+/** 拖滑杆：只改观感（整窗那一层膜），写完核心回读。`0` 是正经取值（＝关），不是"清掉"。 */
+function onEyeCare(event: Event) {
+  const value = Number.parseInt((event.target as HTMLInputElement).value, 10);
+  if (Number.isFinite(value)) void setEyeCare(value);
 }
 
 // ── 用眼提醒：开关 + 两个阈值 ────────────────────────────────────
@@ -86,6 +107,29 @@ function onBreakWords(event: Event) {
     </span>
   </p>
   <p class="settings__hint">{{ t("settings.theme_hint") }}</p>
+
+  <!-- 护眼滤色：整窗一层暖黄的膜（只染研墨自己的窗口），幅度 0 = 关、一个像素都不染 -->
+  <p class="settings__group">{{ t("settings.group_eye_care") }}</p>
+  <p class="settings__row">
+    <span class="settings__label">{{ t("settings.eye_care") }}</span>
+    <input
+      class="settings__range"
+      type="range"
+      min="0"
+      :max="MAX_EYE_CARE"
+      step="5"
+      :value="eyeCare"
+      :disabled="busy || unavailable"
+      @input="onEyeCare"
+    />
+    <span class="settings__value">
+      {{ eyeCare === 0 ? t("settings.eye_care_off") : `${eyeCare}%` }}
+    </span>
+  </p>
+  <p v-if="eyeCareStrong" class="settings__hint settings__hint--warn">
+    {{ t("settings.eye_care_hint_strong") }}
+  </p>
+  <p class="settings__hint">{{ t("settings.eye_care_hint") }}</p>
   <p class="settings__group">{{ t("settings.group_break") }}</p>
   <label class="settings__row">
     <input

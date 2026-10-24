@@ -22,7 +22,7 @@ use serde_json::json;
 use super::question_answer::KIND_ANSWER;
 use super::Store;
 use crate::error::{codes, Error, Result};
-use crate::model::{AnswerTarget, NodeKind, QuestionCard};
+use crate::model::{AnswerTarget, EditOrigin, NodeKind, QuestionCard};
 use crate::time::now_millis;
 
 /// 一轮里的一条：答的是哪张卡、作者最终认定的那段字（"先问后排版"用）。
@@ -206,7 +206,10 @@ impl Store {
                         naming,
                     )?;
                     let stats = super::content::stats_of(&body);
-                    super::content::put_body(&tx, id, &body, stats)?;
+                    // 这段字就是作者刚才那条答案（键入 / 口述）：来源照它的记录走
+                    let origin = EditOrigin::parse(&answer.source).unwrap_or(EditOrigin::Unknown);
+                    let runs = super::source_run::seeded(&body, origin);
+                    super::content::put_body_with_runs(&tx, id, &body, stats, &runs)?;
                     Self::record_in(
                         &self.device_id,
                         &tx,

@@ -36,7 +36,9 @@ use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
 use serde_json::json;
 
-use super::content::{put_body, stats_of};
+use super::content::{put_body, put_body_with_runs, stats_of};
+use super::source_ledger::read_runs;
+use super::source_run;
 use super::node::node_kind_in;
 use super::node_edit::{create_node_in, move_node_in, sibling_ids, soft_delete_node_in};
 use super::snapshot::write_snapshot_in;
@@ -89,6 +91,8 @@ impl Store {
         let cut = spans[at].0;
         let head = body[..cut].trim_end().to_string();
         let tail = body[cut..].to_string();
+        // 拆章不是"重写"：两半各自的字还是原来的来源，账要跟着切（不是清掉）
+        let ledger = read_runs(&self.conn, node_id)?.unwrap_or_default();
 
         let naming = self.naming_style(work_id)?;
         let parent: Option<i64> = self
@@ -109,10 +113,12 @@ impl Store {
 
         let tx = self.conn.transaction()?;
         let snapshot_id = write_snapshot_in(&tx, node_id, &body, SPLIT_SNAPSHOT_REASON, false)?;
-        put_body(&tx, node_id, &head, stats_of(&head))?;
+        // 来源账跟着字走：前半留在原章、后半随新章，切点处被收掉的空行没有字
+        let (head_runs, tail_runs) = source_run::split_at(&ledger, cut, head.len(), body.len());
+        put_body_with_runs(&tx, node_id, &head, stats_of(&head), &head_runs)?;
         let new_node_id = create_node_in(&tx, work_id, parent, kind, title, naming)?;
         move_node_in(&tx, new_node_id, parent, index)?;
-        put_body(&tx, new_node_id, &tail, stats_of(&tail))?;
+        put_body_with_runs(&tx, new_node_id, &tail, stats_of(&tail), &tail_runs)?;
         Self::record_in(
             &self.device_id,
             &tx,
@@ -152,6 +158,9 @@ impl Store {
     /// 撤销只该把两章合回去，**不该顺手把那几段字销毁**——回收站里随时捞得回来。
     ///
     /// 撤销前也留一份底（`before_restore`，与"回滚"同一条纪律）：撤错了还能再换回来。
+    ///
+    /// ⚠️ 来源账：撤销是"把两半合回去"，而快照里只存正文、不存来源段。所以这一章的
+    /// 来源账会被清掉（读不到＝未记录）——比拿两半的账硬拼一份更诚实。
     pub fn undo_split(&mut self, old_node_id: i64, new_node_id: i64, snapshot_id: i64) -> Result<()> {
         self.node_work(old_node_id)?;
         let saved: Option<(i64, String)> = self

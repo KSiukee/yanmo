@@ -25,6 +25,22 @@
   --ym-paper: #faf7f2;
   --ym-paper-dim: #f1ece3;
   --ym-line: #ddd5c8;
+  /* 稿纸横线（正文底下那一层）；比 --ym-line 再淡一档——它是纸上的格，不是界面的框线 */
+  --ym-rule: #e6dfd2;
+  /* ── 正文背景那一族（设置 → 排版 → 正文背景）────────────────────────────
+     四档底色各一根变量（`data-bg` 属性选它，见 editor-pane.css）；未设时回退 --ym-paper。
+     与 `--ym-rule` 同一条分寸：它们是**纸**，比界面线条更淡，不该抢字的注意力。
+     底纹的颜色单独一根（`--ym-bg-pattern`）：方格 / 点阵 / 旧纸都用它。 */
+  --ym-bg-page: #faf7f2;
+  --ym-bg-cream: #f6efdc;
+  --ym-bg-green: #e8f0e4;
+  --ym-bg-gray: #f0f0ee;
+  --ym-bg-pattern: #dcd4c6;
+  /* ── 护眼滤色那一层（设置 → 外观）─────────────────────────────────────
+     整窗一张暖黄的膜：颜色只有这一处，**不透明度**由 `editor/eye-care.ts` 算
+     （幅度 0 ＝ 连这一层都不挂）。深浅两套写**同一个色**——差别在做多深上：
+     深色底上整条曲线收窄，免得黑底配强黄把字糊了。 */
+  --ym-eye-care-veil: rgb(255 197 110);
   --ym-accent: #8a5a3b;
   /* 朱色的淡淡一层：拖到哪儿 / 选中在哪一层的底纹 */
   --ym-accent-soft: rgb(138 90 59 / 14%);
@@ -68,6 +84,16 @@
   --ym-paper: #1b1917;
   --ym-paper-dim: #232120;
   --ym-line: #3b3733;
+  --ym-rule: #302d2a;
+  /* 正文背景那一族（与浅色那套**逐名对齐**，见上）：暖黑上"米黄 / 淡青 / 浅灰"
+     都是**压暗过**的一档——直接拿浅色那几个值会白得晃眼，夜里写字像开着手电。 */
+  --ym-bg-page: #1b1917;
+  --ym-bg-cream: #241f18;
+  --ym-bg-green: #1a201b;
+  --ym-bg-gray: #1e1e1f;
+  /* 护眼滤色：与浅色那套**同色**（差别在膜做多深，见上） */
+  --ym-eye-care-veil: rgb(255 197 110);
+  --ym-bg-pattern: #2f2c28;
   --ym-accent: #c9946b;
   --ym-accent-soft: rgb(201 148 107 / 18%);
   --ym-hover: rgb(255 255 255 / 5%);
@@ -119,4 +145,18 @@ body {
   color: var(--ym-ink);
   background: var(--ym-paper);
   -webkit-font-smoothing: antialiased;
+}
+
+/* 护眼滤色那一层：**整窗一张膜**（`editor/eye-care.ts` 挂上去、撤下来）。
+ * - 盖在一切之上（含各类弹窗）：它要染的是整个窗口，不是某一栏；
+ * - `pointer-events: none`：它只是一层膜，点哪儿都该点到膜**下面**的东西；
+ * - 不透明度由 JS 给（幅度 × 深浅收窄）：这里只认颜色与形状，颜色字面量只许住本文件。
+ * 幅度 0 时这一层**根本不存在**（不是画一层透明的）——那一下一个像素都不染。 */
+.ym-eye-care {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  background: var(--ym-eye-care-veil);
+  opacity: var(--ym-eye-care-strength, 0);
 }

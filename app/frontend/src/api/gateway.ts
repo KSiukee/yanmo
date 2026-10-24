@@ -173,6 +173,13 @@ export const COMMANDS = {
   emptyTrash: "empty_trash",
   exportWork: "export_work",
   setWorkSummary: "set_work_summary",
+  // 分类归属（体裁 + 标签，人填的两格）
+  setWorkClassify: "set_work_classify",
+  // 正文背景图：作者选的那张图由壳复制进数据目录；界面只拿文件名与渲染用的 data URL
+  // （类型与薄封装在 api/background.ts）
+  backgroundImage: "background_image",
+  backgroundPick: "background_pick",
+  backgroundClear: "background_clear",
   setWorkTargetWords: "set_work_target_words",
   workStoryline: "work_storyline",
   workSetStoryline: "work_set_storyline",

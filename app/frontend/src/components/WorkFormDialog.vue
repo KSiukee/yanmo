@@ -16,6 +16,7 @@ import { computed, nextTick, ref, watch } from "vue";
 
 import { t } from "../locales/index.ts";
 import type { EditorSession } from "../editor/session";
+import { GENRE_PRESETS, parseTags } from "../editor/classify.ts";
 import { shelfKindLabel } from "../editor/shelf";
 import type { WorkForm } from "../editor/shelf";
 
@@ -34,11 +35,18 @@ const { values: appearanceValues } = props.session.appearance;
 const title = ref(entry.value?.title ?? "");
 const kind = ref(entry.value?.kind ?? "novel");
 const summary = ref(entry.value?.summary ?? "");
+/** 体裁：**开放取值**——下拉给常用档，选不中直接打字，打什么存什么 */
+const genre = ref(entry.value?.genre ?? "");
+/** 标签：一行一个（作者打几行就是几个；归一与上限在核心，超限由它如实拒） */
+const tags = ref(entry.value?.tags ?? "");
 /** `""` = 跟随设置（不写这本书的覆盖）；否则是 NamingStyle 的稳定代码 */
 const naming = ref("");
 /** 「一卷大概多少章」：空着 = 先不填（那是"没设过"，不是 0） */
 const volumeTarget = ref("");
 const titleEl = ref<HTMLInputElement | null>(null);
+
+/** 填了几行标签（只用来给一句实话："现在 3 个"——不替核心判合不合规） */
+const tagCount = computed(() => parseTags(tags.value).length);
 
 /** 长篇才谈得上"卷 / 章怎么叫" */
 const numbered = computed(() => kind.value === "novel");
@@ -69,9 +77,17 @@ function submit() {
     naming: numbered.value && naming.value !== "" ? naming.value : null,
     // 卷长只在长篇上问（单篇 / 短篇集不分卷）；空着或 ≤0 都当"没填"
     volumeTarget: numbered.value && Number.isFinite(chapters) && chapters > 0 ? chapters : null,
+    // 体裁与标签**原样递核心**：它去空白、去重、去空行，超限如实拒
+    genre: genre.value,
+    tags: tags.value,
   };
   if (props.form.mode === "edit") {
-    void edit(props.form.entry.id, { title: name, summary: summary.value });
+    void edit(props.form.entry.id, {
+      title: name,
+      summary: summary.value,
+      genre: genre.value,
+      tags: tags.value,
+    });
   } else if (props.form.mode === "adopt") {
     void adoptShell(props.form.entry.id, draft);
   } else {
@@ -131,6 +147,38 @@ function submit() {
             :placeholder="t('shelf.summary_placeholder')"
           />
         </label>
+
+        <!-- 分类归属（体裁 / 标签）：新建与编辑都给——它是**人填的一点点元数据**，
+             与"这本书叫什么"同一件事；短篇集里「按主题排」就用这两栏当判据。 -->
+        <label class="newwork__row">
+          <span class="newwork__label">{{ t("shelf.field_genre") }}</span>
+          <input
+            v-model="genre"
+            class="newwork__input dialog__input"
+            type="text"
+            list="ym-genre-presets"
+            :placeholder="t('shelf.genre_placeholder')"
+            @keydown.esc="emit('close')"
+          />
+        </label>
+        <datalist id="ym-genre-presets">
+          <option v-for="key in GENRE_PRESETS" :key="key" :value="t(key)"></option>
+        </datalist>
+        <p class="newwork__hint">{{ t("shelf.genre_hint") }}</p>
+
+        <label class="newwork__row newwork__row--block">
+          <span class="newwork__label">{{ t("shelf.field_tags") }}</span>
+          <textarea
+            v-model="tags"
+            class="newwork__summary"
+            rows="3"
+            :placeholder="t('shelf.tags_placeholder')"
+          />
+        </label>
+        <p class="newwork__hint">{{ t("shelf.tags_hint") }}</p>
+        <p v-if="tagCount > 0" class="newwork__hint">
+          {{ t("shelf.tags_count", { count: tagCount }) }}
+        </p>
 
         <!-- 卷 / 章命名：只有**新建长篇**时给（单篇与短篇集不编号；编辑时不碰它，见文件头） -->
         <template v-if="pickKind">

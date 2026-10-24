@@ -132,6 +132,12 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "要应用的排版改动（第 {index} 处）不在这份稿子里——稿子可能已经改过了，请重新预览"
         : ["index"],
     WORK_TITLE_EMPTY => "work.title_empty" : "作品标题不能为空" : [],
+    WORK_TOO_MANY_TAGS => "work.too_many_tags"
+        : "标签最多 {max} 个（这一栏现在有 {got} 个）" : ["max", "got"],
+    WORK_TAG_TOO_LONG => "work.tag_too_long"
+        : "标签太长了（「{tag}」超过 {max} 字）" : ["max", "tag"],
+    WORK_GENRE_TOO_LONG => "work.genre_too_long"
+        : "体裁那一栏太长了（{got} 字，最多 {max} 字）" : ["max", "got"],
     WORK_NOT_FOUND => "work.not_found" : "作品不存在：{work_id}" : ["work_id"],
     WORK_GONE => "work.gone" : "作品不存在或已删除：{work_id}" : ["work_id"],
     WORK_NOT_TRASHED => "work.not_trashed" : "回收站里没有这本书：{work_id}" : ["work_id"],
@@ -202,10 +208,28 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "认不出的第二栏分区：{value}（只认 flow / creator / sop）" : ["value"],
     UNKNOWN_THEME => "value.unknown_theme"
         : "认不出的配色：{value}（只认 light / dark / system）" : ["value"],
+    UNKNOWN_RULE_STYLE => "value.unknown_rule_style"
+        : "认不出的稿纸线型：{value}（只认 solid / dashed / none）" : ["value"],
     BREAK_MINUTES_OUT_OF_RANGE => "break.minutes_out_of_range"
         : "连着写的分钟数要落在 1~{max}：{value}" : ["value", "max"],
     BREAK_WORDS_OUT_OF_RANGE => "break.words_out_of_range"
         : "今日字数的提醒阈值要落在 1~{max}：{value}" : ["value", "max"],
+    // 正文背景那一族：三层各自的取值 + 图片本身用不了 / 读不出来的那几种情形。
+    // 「不透明度」没有自己的码：它是 0~100 的夹取（与排版三项同一条路），写坏了不该报错挡人。
+    UNKNOWN_BACKGROUND_COLOR => "value.unknown_background_color"
+        : "认不出的正文底色：{value}（只认 paper / cream / green / gray）" : ["value"],
+    UNKNOWN_BACKGROUND_LAYOUT => "value.unknown_background_layout"
+        : "认不出的正文底纹：{value}（只认 none / grid / dots / grain）" : ["value"],
+    UNKNOWN_BACKGROUND_FIT => "value.unknown_background_fit"
+        : "认不出的背景图铺法：{value}（只认 cover / contain / tile）" : ["value"],
+    BACKGROUND_NOT_A_FILE => "background.not_a_file"
+        : "挑的不是一个文件——请选一张图片文件" : [],
+    BACKGROUND_IMAGE_TOO_BIG => "background.image_too_big"
+        : "这张图有 {size} MB，超过 {max} MB 的上限——换一张小一点的图" : ["size", "max"],
+    BACKGROUND_IMAGE_KIND => "background.image_kind"
+        : "只认 PNG / JPEG / WebP / GIF 这几种图——换一张试试" : [],
+    BACKGROUND_IMAGE_READER => "background.image_reader"
+        : "没能把这张图读出来：{detail}" : ["detail"],
     UNKNOWN_ENTITY_KIND => "value.unknown_entity_kind"
         : "认不出的设定卡类型：{value}（只认 person / setting）" : ["value"],
     UNKNOWN_SCENE_FIELD => "value.unknown_scene_field"
@@ -251,6 +275,12 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "只有事件才有故事时间：{fragment_id}" : ["fragment_id"],
     INPUT_SOURCE_UNKNOWN => "input.source_unknown"
         : "认不出的输入方式：{value}（只认 typed / voice / mixed）" : ["value"],
+    UNKNOWN_EDIT_ORIGIN => "value.unknown_edit_origin"
+        : "认不出的变更来源：{value}（只认 typed / pasted / module / voice / system / mixed / unknown）"
+        : ["value"],
+    SOURCE_STAMP_INVALID => "source.stamp_invalid"
+        : "正文的来源标注不合格（{field}）——模块交付必须带模块 id 与模型名，别的来源不许夹带署名"
+        : ["field"],
     QUESTION_DEFER_NEEDS_ANCHOR => "question.defer_needs_anchor"
         : "这张卡上找不到可用的章节锚点，「写完这一章再问」这一档用不了：{card_id}" : ["card_id"],
     QUESTION_DEFER_TIME_NOT_FUTURE => "question.defer_time_not_future"
