@@ -6,13 +6,19 @@
 import { onMounted, ref } from "vue";
 
 import {
+  moduleImportCancel,
+  moduleImportConfirm,
+  moduleImportPick,
   moduleSetEnabled,
   moduleSetFavorite,
   moduleSetPinned,
   moduleUninstall,
   modulesList,
+  type ImportPreview,
+  type ModuleCapabilities,
   type ModuleCard,
 } from "../api/modules";
+import ModuleImportPanel from "./ModuleImportPanel.vue";
 import { t } from "../locales/index.ts";
 
 const emit = defineEmits<{ close: [] }>();
@@ -20,6 +26,7 @@ const emit = defineEmits<{ close: [] }>();
 const cards = ref<ModuleCard[]>([]);
 const busy = ref(false);
 const note = ref("");
+const preview = ref<ImportPreview | null>(null);
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -77,6 +84,43 @@ function uninstall(card: ModuleCard) {
   });
 }
 
+async function pickImport() {
+  if (busy.value) return;
+  busy.value = true;
+  note.value = "";
+  try {
+    const picked = await moduleImportPick(t("modules.import_pick_title"));
+    if (!picked) return;
+    preview.value = picked;
+  } catch (error) {
+    note.value = t("modules.import_failed", { detail: messageOf(error) });
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function confirmImport(grant: ModuleCapabilities) {
+  const current = preview.value;
+  if (!current || busy.value) return;
+  busy.value = true;
+  note.value = "";
+  try {
+    const card = await moduleImportConfirm(grant, current.fingerprint);
+    preview.value = null;
+    note.value = t("modules.import_ok", { name: card.name });
+    cards.value = await modulesList();
+  } catch (error) {
+    note.value = t("modules.import_failed", { detail: messageOf(error) });
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function cancelImport() {
+  await moduleImportCancel().catch(() => undefined);
+  preview.value = null;
+}
+
 onMounted(() => {
   void load();
 });
@@ -87,6 +131,14 @@ onMounted(() => {
     <section class="modules__box dialog__box" role="dialog" aria-modal="true">
       <header class="modules__head dialog__head">
         <h2 class="modules__title dialog__title">{{ t("modules.title") }}</h2>
+        <button
+          type="button"
+          class="modules__button dialog__button"
+          :disabled="busy"
+          @click="pickImport"
+        >
+          {{ t("modules.import") }}
+        </button>
         <button
           type="button"
           class="modules__button dialog__button"
@@ -106,6 +158,16 @@ onMounted(() => {
       </header>
 
       <p v-if="note" class="modules__note dialog__note">{{ note }}</p>
+
+      <ModuleImportPanel
+        v-if="preview"
+        :key="preview.fingerprint"
+        :preview="preview"
+        :busy="busy"
+        @confirm="confirmImport"
+        @cancel="cancelImport"
+      />
+
       <p v-if="cards.length === 0" class="modules__empty dialog__empty">
         {{ t("modules.empty") }}
       </p>
@@ -132,6 +194,13 @@ onMounted(() => {
           </p>
           <p v-if="card.description" class="modules__desc">{{ card.description }}</p>
           <p class="modules__reads">{{ t("modules.reads", { reads: readsLabel(card) }) }}</p>
+          <p v-if="card.fingerprint" class="modules__reads">
+            {{
+              t("modules.import_fingerprint", {
+                fingerprint: `${card.fingerprint.slice(0, 16)}…`,
+              })
+            }}
+          </p>
           <p v-if="card.own_data || card.network" class="modules__caps">
             <span v-if="card.own_data" class="modules__badge">{{ t("modules.own_data") }}</span>
             <span v-if="card.network" class="modules__badge">{{ t("modules.network") }}</span>
@@ -251,4 +320,5 @@ onMounted(() => {
   gap: 6px;
   margin-top: 8px;
 }
+
 </style>

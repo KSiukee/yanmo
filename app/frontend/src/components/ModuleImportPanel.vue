@@ -1,0 +1,152 @@
+<script setup lang="ts">
+// 导入预览：**只展示事实 + 逐项同意**。不判断正版，也不执行任何东西。
+//
+// 单独成件：它跟"模块列表"的变化理由不同（权限清单会长、协议提示会变），
+// 留在管理弹窗里会把那个文件顶成上帝类。
+import { ref } from "vue";
+
+import type { ImportPreview, ModuleCapabilities } from "../api/modules";
+import { t } from "../locales/index.ts";
+
+defineProps<{
+  preview: ImportPreview;
+  busy: boolean;
+}>();
+
+const emit = defineEmits<{
+  confirm: [grant: ModuleCapabilities];
+  cancel: [];
+}>();
+
+const grant = ref<ModuleCapabilities>({
+  read: [],
+  own_data: false,
+  cross_read: [],
+  ask_questions: false,
+  network: false,
+});
+</script>
+
+<template>
+  <section class="module-import">
+    <h3 class="module-import__title">{{ t("modules.import_preview") }}</h3>
+    <p class="module-import__meta">
+      {{ preview.name }} v{{ preview.version }} · {{ preview.author }} · {{ preview.module_id }}
+    </p>
+    <p class="module-import__meta">
+      {{
+        t("modules.import_fingerprint", {
+          fingerprint: `${preview.fingerprint.slice(0, 16)}…`,
+        })
+      }}
+    </p>
+    <p v-if="!preview.compatible" class="module-import__protocol">
+      {{
+        t("modules.import_protocol_bad", {
+          actual: preview.protocol,
+          expected: preview.expected_protocol,
+        })
+      }}
+    </p>
+    <p class="module-import__declared">{{ t("modules.declared") }}</p>
+    <div class="module-import__grants">
+      <label v-for="area in preview.declared.read" :key="area" class="module-import__grant">
+        <input v-model="grant.read" type="checkbox" :value="area" />
+        {{ t(`modules.grant.read.${area}`) }}
+      </label>
+      <label v-if="preview.declared.own_data" class="module-import__grant">
+        <input v-model="grant.own_data" type="checkbox" />
+        {{ t("modules.grant.own_data") }}
+      </label>
+      <label v-if="preview.declared.ask_questions" class="module-import__grant">
+        <input v-model="grant.ask_questions" type="checkbox" />
+        {{ t("modules.grant.ask_questions") }}
+      </label>
+      <label v-if="preview.declared.network" class="module-import__grant">
+        <input v-model="grant.network" type="checkbox" />
+        {{ t("modules.grant.network") }}
+      </label>
+      <label v-for="id in preview.declared.cross_read" :key="id" class="module-import__grant">
+        <input v-model="grant.cross_read" type="checkbox" :value="id" />
+        {{ t("modules.grant.cross_read") }} {{ id }}
+      </label>
+    </div>
+    <p class="module-import__hint">{{ t("modules.import_no_grant") }}</p>
+    <div class="module-import__actions">
+      <button
+        type="button"
+        class="dialog__button"
+        :disabled="busy || !preview.compatible"
+        @click="emit('confirm', grant)"
+      >
+        {{ t("modules.import_confirm") }}
+      </button>
+      <button type="button" class="dialog__button" :disabled="busy" @click="emit('cancel')">
+        {{ t("modules.import_cancel") }}
+      </button>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.module-import {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--ym-line);
+  border-radius: 6px;
+  background: var(--ym-paper-dim);
+}
+
+.module-import__title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.module-import__meta,
+.module-import__declared {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+.module-import__meta {
+  color: var(--ym-ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.module-import__declared {
+  margin-top: 8px;
+  font-weight: 600;
+}
+
+.module-import__protocol {
+  margin: 6px 0 0;
+  color: var(--ym-danger);
+  font-size: 12px;
+}
+
+.module-import__grants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.module-import__grant {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.module-import__hint {
+  margin: 8px 0 0;
+  color: var(--ym-ink-soft);
+  font-size: 11px;
+}
+
+.module-import__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+</style>

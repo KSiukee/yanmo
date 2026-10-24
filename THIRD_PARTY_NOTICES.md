@@ -20,6 +20,7 @@
 | [getrandom](https://github.com/rust-random/getrandom) | MIT 或 Apache-2.0 | 系统随机数（盐、随机数、数据钥匙） | 传递依赖 subtle 为 BSD-3-Clause |
 | [wasmi](https://github.com/wasmi-labs/wasmi) | MIT | 模块沙箱的 WASM 运行时（fuel / 内存上限 / 无 WASI） | **只在独立宿主进程 `yanmo-host` 里链接**；核心与壳不依赖它 |
 | [windows-sys](https://github.com/microsoft/windows-rs) | MIT 或 Apache-2.0 | Windows API（盘符探测 / 作业对象） | 只在 Windows 上编；启动器的作业对象用它 |
+| [sha2](https://github.com/RustCrypto/hashes) | MIT 或 Apache-2.0 | 导入闸算载荷 SHA-256 指纹 | 传递依赖 digest / block-buffer / crypto-common 同为 MIT 或 Apache-2.0 |
 
 ## 测试依赖（不随产品分发）
 

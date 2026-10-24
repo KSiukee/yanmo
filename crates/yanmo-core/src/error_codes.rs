@@ -374,6 +374,13 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "模块数据删不掉（没有改动任何东西）：{detail}" : ["detail"],
     MODULE_COMM_POLICY_INVALID => "module.comm_policy_invalid"
         : "模块通信预算不合规：{detail}" : ["detail"],
+    MODULE_PACKAGE_INVALID => "module.package_invalid"
+        : "模块包不合规：{detail}" : ["detail"],
+    MODULE_PROTOCOL_INCOMPATIBLE => "module.protocol_incompatible"
+        : "这个模块要求协议 {actual}，当前研墨支持 {expected}——请更新研墨"
+        : ["actual", "expected"],
+    MODULE_IMPORT_CHANGED => "module.import_changed"
+        : "模块包在预览之后变了，请重新选择" : [],
 }
 
 /// 按码把参数填进日志模板；模板不认识这个码就退回 `码(名字=取值, …)`。

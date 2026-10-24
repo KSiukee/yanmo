@@ -81,6 +81,18 @@ impl Store {
         manifest: &ModuleManifest,
         granted: &ModuleCapabilities,
     ) -> Result<()> {
+        self.insert_module(manifest, granted, "", "", "install")
+    }
+
+    /// 落注册表的唯一入口（导入闸会带载荷指纹与来源）。
+    pub(crate) fn insert_module(
+        &mut self,
+        manifest: &ModuleManifest,
+        granted: &ModuleCapabilities,
+        payload_sha256: &str,
+        source: &str,
+        op: &str,
+    ) -> Result<()> {
         manifest.validate().map_err(map_manifest_error)?;
         granted.validate(&manifest.id).map_err(map_grant_error)?;
         if let Some(capability) = first_ungrantable(&manifest.capabilities, granted) {
@@ -113,14 +125,16 @@ impl Store {
         let tx = self.conn.transaction()?;
         tx.execute(
             "INSERT INTO modules(id, manifest, version, protocol, certified, enabled, granted,
-                                 installed_at, updated_at)
-             VALUES(?1, ?2, ?3, ?4, 0, 1, ?5, ?6, ?6)",
+                                 payload_sha256, source, installed_at, updated_at)
+             VALUES(?1, ?2, ?3, ?4, 0, 1, ?5, ?6, ?7, ?8, ?8)",
             params![
                 manifest.id,
                 manifest_text,
                 manifest.version,
                 manifest.protocol,
                 granted_text,
+                payload_sha256,
+                source,
                 now
             ],
         )?;
@@ -129,12 +143,14 @@ impl Store {
             &tx,
             "modules",
             0,
-            "install",
+            op,
             json!({
                 "module_id": manifest.id,
                 "version": manifest.version,
                 "protocol": manifest.protocol,
                 "granted": granted,
+                "payload_sha256": payload_sha256,
+                "source": source,
             }),
         )?;
         tx.commit()?;

@@ -31,6 +31,10 @@ pub struct ModuleCard {
     pub reads: Vec<String>,
     pub own_data: bool,
     pub network: bool,
+    /// 导入时算的入口 `.wasm` SHA-256（老库 / 测试里可能是空串）
+    pub fingerprint: String,
+    /// 导入来源短标签（如 `folder`；不是本机路径）
+    pub source: String,
     pub installed_at: i64,
     pub updated_at: i64,
 }
@@ -40,7 +44,7 @@ impl Store {
     pub fn module_cards(&self) -> Result<Vec<ModuleCard>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, manifest, granted, enabled, certified, favorite, pinned,
-                    installed_at, updated_at
+                    payload_sha256, source, installed_at, updated_at
              FROM modules
              ORDER BY pinned DESC, favorite DESC, installed_at, id",
         )?;
@@ -53,8 +57,10 @@ impl Store {
                 row.get::<_, bool>(4)?,
                 row.get::<_, bool>(5)?,
                 row.get::<_, bool>(6)?,
-                row.get::<_, i64>(7)?,
-                row.get::<_, i64>(8)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, i64>(9)?,
+                row.get::<_, i64>(10)?,
             ))
         })?;
         let mut cards = Vec::new();
@@ -67,6 +73,8 @@ impl Store {
                 certified,
                 favorite,
                 pinned,
+                fingerprint,
+                source,
                 installed_at,
                 updated_at,
             ) = row?;
@@ -78,11 +86,21 @@ impl Store {
                 certified,
                 favorite,
                 pinned,
+                &fingerprint,
+                &source,
                 installed_at,
                 updated_at,
             )?);
         }
         Ok(cards)
+    }
+
+    /// 一条管理页卡片；没装过 → `module.not_found`。
+    pub fn module_card(&self, module_id: &str) -> Result<ModuleCard> {
+        self.module_cards()?
+            .into_iter()
+            .find(|card| card.id == module_id)
+            .ok_or_else(|| not_found(module_id))
     }
 
     /// 收藏（不影响功能，只影响管理页排序）。
@@ -148,6 +166,8 @@ fn decode(
     certified: bool,
     favorite: bool,
     pinned: bool,
+    fingerprint: &str,
+    source: &str,
     installed_at: i64,
     updated_at: i64,
 ) -> Result<ModuleCard> {
@@ -174,6 +194,8 @@ fn decode(
         reads: granted.read.iter().map(|area| area.as_str().to_string()).collect(),
         own_data: granted.own_data,
         network: granted.network,
+        fingerprint: fingerprint.to_string(),
+        source: source.to_string(),
         installed_at,
         updated_at,
     })

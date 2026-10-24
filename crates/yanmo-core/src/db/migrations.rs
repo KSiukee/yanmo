@@ -18,7 +18,7 @@ use super::{
     migrations_v7, migrations_v8, migrations_v9, migrations_v10, migrations_v11,
     migrations_v12, migrations_v13, migrations_v14, migrations_v15, migrations_v16,
     migrations_v17, migrations_v18, migrations_v19, migrations_v20, migrations_v21,
-    migrations_v22, migrations_v23,
+    migrations_v22, migrations_v23, migrations_v24,
 };
 use crate::error::{Error, Result};
 use crate::time::now_millis;
@@ -175,6 +175,12 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "module_management",
         steps: migrations_v23::STEPS,
         prepare: Some(migrations_v23::prepare),
+    },
+    Migration {
+        version: 24,
+        name: "module_import",
+        steps: migrations_v24::STEPS,
+        prepare: Some(migrations_v24::prepare),
     },
 ];
 

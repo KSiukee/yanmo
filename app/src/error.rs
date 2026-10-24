@@ -48,6 +48,7 @@ pub const SHELL_CODES: &[(&str, &[&str])] = &[
     ("backup.restore_unseal_failed", &["detail"]),
     ("shell.mirror_dir_create_failed", &["path"]),
     ("shell.mirror_unavailable", &[]),
+    ("shell.import_not_staged", &[]),
     ("shell.mirror_issue_gone", &[]),
     ("shell.mirror_read_failed", &["path"]),
     ("shell.mirror_unknown_action", &["value"]),

@@ -211,4 +211,7 @@ export const COMMANDS = {
   moduleSetFavorite: "module_set_favorite",
   moduleSetPinned: "module_set_pinned",
   moduleUninstall: "module_uninstall",
+  moduleImportPick: "module_import_pick",
+  moduleImportConfirm: "module_import_confirm",
+  moduleImportCancel: "module_import_cancel",
 } as const;
