@@ -10,6 +10,8 @@ serde.workspace = true
 serde_json.workspace = true
 yanmo-proto.workspace = true
 yanmo-ipc = { path = "../yanmo-ipc" }
+ureq = { version = "2", default-features = false, features = ["native-tls"] }
+url = "2"
 wasmi = "0.40"
 
 [dev-dependencies]

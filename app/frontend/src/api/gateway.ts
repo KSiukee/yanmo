@@ -211,6 +211,7 @@ export const COMMANDS = {
   moduleSetFavorite: "module_set_favorite",
   moduleSetPinned: "module_set_pinned",
   moduleSetBackground: "module_set_background",
+  moduleSetNetwork: "module_set_network",
   moduleUninstall: "module_uninstall",
   moduleImportPick: "module_import_pick",
   moduleImportConfirm: "module_import_confirm",

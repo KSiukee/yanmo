@@ -44,6 +44,7 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
     }
 
     let mut handlers: HashMap<String, ModuleIpcHandler> = HashMap::new();
+    let mut network_modules: Vec<String> = Vec::new();
     for entry in fs::read_dir(&request.modules_root).map_err(|error| {
         LaunchError::new(LaunchError::MANIFEST, format!("{}: {error}", request.modules_root.display()))
     })? {
@@ -62,6 +63,13 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
             .map_err(|error| LaunchError::new(LaunchError::MANIFEST, error.to_string()))?;
         let store = Store::open(&request.db_path)
             .map_err(|error| LaunchError::new(LaunchError::DB, error.to_string()))?;
+        if store
+            .module_card(&manifest.id)
+            .map(|card| card.network)
+            .unwrap_or(false)
+        {
+            network_modules.push(manifest.id.clone());
+        }
         handlers.insert(
             manifest.id.clone(),
             ModuleIpcHandler::new(store, manifest.id),
@@ -104,7 +112,11 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
         .arg("--token-stdin")
         .arg("--resident")
         .arg("--idle-secs")
-        .arg(request.idle_secs.max(1).min(3600).to_string())
+        .arg(request.idle_secs.max(1).min(3600).to_string());
+    if !network_modules.is_empty() {
+        command.arg("--network-modules").arg(network_modules.join(","));
+    }
+    command
         .stdin(Stdio::piped())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());

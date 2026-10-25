@@ -135,3 +135,37 @@ fn preferences_are_logged_and_unknown_modules_are_rejected() {
         yanmo_core::error_codes::codes::MODULE_NOT_FOUND
     );
 }
+
+#[test]
+fn network_is_a_grant_and_requires_a_declaration() {
+    let (_dir, mut store) = fresh();
+    install(&mut store, A, "甲");
+    assert!(!store.module_card(A).unwrap().network, "默认不联网");
+    let error = store.set_module_network(A, true).unwrap_err();
+    assert_eq!(error.code(), yanmo_core::error_codes::codes::MODULE_GRANT_NOT_DECLARED);
+
+    let value = json!({
+        "id": B,
+        "default_language": "zh-Hans",
+        "name": { "zh-Hans": "乙" },
+        "description": { "zh-Hans": "一句话。" },
+        "author": { "name": "Example Studio" },
+        "version": "1.2.3",
+        "protocol": 1,
+        "runtime": "wasm",
+        "entry": "module.wasm",
+        "ui": { "form": "headless" },
+        "capabilities": { "read": [], "network": true }
+    });
+    let manifest = ModuleManifest::from_json(&value.to_string()).unwrap();
+    store
+        .install_module(
+            &manifest,
+            &ModuleCapabilities { network: false, ..ModuleCapabilities::none() },
+        )
+        .unwrap();
+    store.set_module_network(B, true).unwrap();
+    assert!(store.module_card(B).unwrap().network);
+    store.set_module_network(B, false).unwrap();
+    assert!(!store.module_card(B).unwrap().network);
+}

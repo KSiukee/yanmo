@@ -23,6 +23,7 @@ export interface ModuleCard {
   reads: string[];
   own_data: boolean;
   network: boolean;
+  network_declared: boolean;
   fingerprint: string;
   source: string;
   installed_at: number;
@@ -69,6 +70,9 @@ export const moduleSetPinned = (module_id: string, pinned: boolean) =>
 
 export const moduleSetBackground = (module_id: string, background: boolean) =>
   call<ModuleCard>(COMMANDS.moduleSetBackground, { module_id, background });
+
+export const moduleSetNetwork = (module_id: string, network: boolean) =>
+  call<ModuleCard>(COMMANDS.moduleSetNetwork, { module_id, network });
 
 export const moduleUninstall = (module_id: string) =>
   call<void>(COMMANDS.moduleUninstall, { module_id });

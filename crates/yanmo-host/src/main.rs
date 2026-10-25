@@ -42,6 +42,9 @@ fn run() -> Result<(), HostError> {
     let resident = args.iter().any(|arg| arg == "--resident");
     let modules_root = value_of(&args, "--modules-root").map(PathBuf::from);
     let idle_secs = number_of(&args, "--idle-secs").unwrap_or(300).clamp(1, 3600);
+    let network_modules: Vec<String> = value_of(&args, "--network-modules")
+        .map(|value| value.split(',').filter(|id| !id.is_empty()).map(str::to_string).collect())
+        .unwrap_or_default();
     if module.is_none() && modules_root.is_none() {
         return Err(HostError::new(
             HostError::PACKAGE,
@@ -81,6 +84,11 @@ fn run() -> Result<(), HostError> {
         max_read_result_bytes: number_of(&args, "--max-read-result")
             .unwrap_or(defaults.max_read_result_bytes as u64) as usize,
         max_reads: number_of(&args, "--max-reads").unwrap_or(defaults.max_reads as u64) as usize,
+        allow_network: args.iter().any(|arg| arg == "--allow-network"),
+        max_network_requests: number_of(&args, "--max-network-requests")
+            .unwrap_or(defaults.max_network_requests as u64) as usize,
+        max_network_bytes: number_of(&args, "--max-network-bytes")
+            .unwrap_or(defaults.max_network_bytes as u64) as usize,
     };
     let token_stdin = args.iter().any(|arg| arg == "--token-stdin");
     let token = if token_stdin {
@@ -203,6 +211,9 @@ fn run() -> Result<(), HostError> {
                     .arg("--core")
                     .arg(addr.to_string())
                     .arg("--token-stdin");
+            }
+            if network_modules.iter().any(|id| id == module_id) {
+                command.arg("--allow-network");
             }
             #[cfg(windows)]
             {

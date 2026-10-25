@@ -54,7 +54,7 @@ pub struct RunReport {
     pub memory_bytes: u64,
 }
 
-struct HostState {
+pub(super) struct HostState {
     limits: StoreLimits,
     emitted: Vec<String>,
     emitted_bytes: usize,
@@ -63,6 +63,11 @@ struct HostState {
     max_emits: usize,
     core: Option<Arc<Mutex<CoreLink>>>,
     cancel: Option<Arc<AtomicBool>>,
+    pub(super) module_id: String,
+    pub(super) network_requests: usize,
+    pub(super) network_bytes: usize,
+    pub(super) max_network_requests: usize,
+    pub(super) max_network_bytes: usize,
     declared: BTreeSet<CoreDataArea>,
     max_read_arg_bytes: usize,
     max_read_result_bytes: usize,
@@ -110,6 +115,7 @@ pub fn run_package_with_core_shared_cancellable(
     let declared: BTreeSet<CoreDataArea> =
         package.manifest().capabilities.read.iter().copied().collect();
     let allow_read = core.is_some() && !declared.is_empty();
+    let allow_network = config.allow_network && package.manifest().capabilities.network;
     let wasm = fs::read(package.entry_path())?;
 
     let mut wasmi_config = Config::default();
@@ -120,7 +126,9 @@ pub fn run_package_with_core_shared_cancellable(
 
     for import in module.imports() {
         let allowed = import.module() == "env"
-            && (import.name() == "emit" || (import.name() == "read" && allow_read));
+            && (import.name() == "emit"
+                || (import.name() == "read" && allow_read)
+                || (import.name() == "http_get" && allow_network));
         if !allowed {
             return Err(HostError::new(
                 HostError::IMPORT_NOT_ALLOWED,
@@ -141,6 +149,11 @@ pub fn run_package_with_core_shared_cancellable(
         max_emits: config.max_emits,
         core,
         cancel,
+        module_id: package.manifest().id.clone(),
+        network_requests: 0,
+        network_bytes: 0,
+        max_network_requests: config.max_network_requests,
+        max_network_bytes: config.max_network_bytes,
         declared,
         max_read_arg_bytes: config.max_read_arg_bytes,
         max_read_result_bytes: config.max_read_result_bytes,
@@ -176,6 +189,10 @@ pub fn run_package_with_core_shared_cancellable(
                  -> i32 { read(&mut caller, cap, arg_ptr, arg_len, out_ptr, out_cap) },
             )
             .map_err(|error| HostError::new(HostError::LINK, error.to_string()))?;
+    }
+
+    if allow_network {
+        crate::sandbox_network::link_http(&mut linker)?;
     }
 
     let pre = linker
@@ -215,7 +232,6 @@ pub fn run_package_with_core_shared_cancellable(
         memory_bytes,
     })
 }
-
 fn emit(caller: &mut Caller<'_, HostState>, ptr: i32, len: i32) -> i32 {
     if caller
         .data()

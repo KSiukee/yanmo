@@ -13,6 +13,7 @@ import {
   moduleSetEnabled,
   moduleSetFavorite,
   moduleSetBackground,
+  moduleSetNetwork,
   moduleSetPinned,
   moduleStop,
   moduleUninstall,
@@ -99,6 +100,17 @@ function toggleFavorite(card: ModuleCard) {
 
 function togglePinned(card: ModuleCard) {
   void act(() => moduleSetPinned(card.id, !card.pinned));
+}
+
+function toggleNetwork(card: ModuleCard) {
+  if (!card.network && !window.confirm(t("modules.network_confirm"))) return;
+  void act(async () => {
+    await moduleSetNetwork(card.id, !card.network);
+    note.value = t(
+      card.network ? "modules.network_off_done" : "modules.network_on_done",
+      { name: card.name },
+    );
+  });
 }
 
 function toggleBackground(card: ModuleCard) {
@@ -331,6 +343,17 @@ onUnmounted(() => {
               @click="togglePinned(card)"
             >
               {{ card.pinned ? t("modules.unpin") : t("modules.pin") }}
+            </button>
+            <button
+              v-if="card.network_declared"
+              type="button"
+              class="modules__button dialog__button"
+              :disabled="busy"
+              @click="toggleNetwork(card)"
+            >
+              {{
+                card.network ? t("modules.network_on") : t("modules.network_off")
+              }}
             </button>
             <button
               type="button"

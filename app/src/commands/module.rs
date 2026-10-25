@@ -99,6 +99,22 @@ pub fn module_set_background(
     })
 }
 
+/// 模块级联网开关：改授予，清单没声明的一律拒；切完停平台，下次启动生效。
+#[tauri::command(rename_all = "snake_case")]
+pub fn module_set_network(
+    data: State<'_, AppData>,
+    runs: State<'_, ModuleRuns>,
+    module_id: String,
+    network: bool,
+) -> Result<ModuleCard, ApiError> {
+    let card = data.with_store(|store: &mut Store| {
+        store.set_module_network(&module_id, network)?;
+        store.module_card(&module_id)
+    })?;
+    runs.stop_platform()?;
+    Ok(card)
+}
+
 /// 卸载：**只移除注册表，模块数据默认保留**（删除数据是另一个显式动作）。
 #[tauri::command(rename_all = "snake_case")]
 pub fn module_uninstall(

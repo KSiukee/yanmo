@@ -37,6 +37,8 @@ pub struct ModuleCard {
     pub reads: Vec<String>,
     pub own_data: bool,
     pub network: bool,
+    /// 清单是否声明了联网（决定管理页是否显示联网开关）
+    pub network_declared: bool,
     /// 导入时算的入口 `.wasm` SHA-256（老库 / 测试里可能是空串）
     pub fingerprint: String,
     /// 导入来源短标签（如 `folder`；不是本机路径）
@@ -126,6 +128,14 @@ impl Store {
     /// 置顶（不影响功能，只影响管理页排序）。
     pub fn set_module_pinned(&mut self, module_id: &str, pinned: bool) -> Result<()> {
         self.set_module_preference(module_id, None, Some(pinned))
+    }
+
+    /// 模块级联网开关：改的是**授予**；清单没声明 network 的一律拒。
+    pub fn set_module_network(&mut self, module_id: &str, network: bool) -> Result<()> {
+        let record = self.module_record(module_id)?;
+        let mut granted = record.granted.clone();
+        granted.network = network;
+        self.grant_module(module_id, &granted)
     }
 
     /// 后台运行偏好：离开管理页时是否允许继续跑。**不是自启**。
@@ -242,6 +252,7 @@ fn decode(
         reads: granted.read.iter().map(|area| area.as_str().to_string()).collect(),
         own_data: granted.own_data,
         network: granted.network,
+        network_declared: manifest.capabilities.network,
         fingerprint: fingerprint.to_string(),
         source: source.to_string(),
         installed_at,

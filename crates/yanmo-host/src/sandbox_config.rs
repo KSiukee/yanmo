@@ -23,6 +23,12 @@ pub struct SandboxConfig {
     pub max_read_result_bytes: usize,
     /// 最多允许几次 `read`
     pub max_reads: usize,
+    /// 本次运行是否允许 `env.http_get`（模块声明 + 用户授予 + 全局开关之后）
+    pub allow_network: bool,
+    /// 本次运行最多几次网络请求
+    pub max_network_requests: usize,
+    /// 单次网络响应正文上限（字节）
+    pub max_network_bytes: usize,
 }
 
 impl Default for SandboxConfig {
@@ -36,6 +42,9 @@ impl Default for SandboxConfig {
             max_read_arg_bytes: 4 * 1024,
             max_read_result_bytes: 256 * 1024,
             max_reads: 64,
+            allow_network: false,
+            max_network_requests: 8,
+            max_network_bytes: 512 * 1024,
         }
     }
 }
@@ -49,7 +58,9 @@ impl SandboxConfig {
             && self.max_total_emit_bytes >= self.max_emit_bytes
             && self.max_read_arg_bytes > 0
             && self.max_read_result_bytes > 0
-            && self.max_reads > 0;
+            && self.max_reads > 0
+            && (!self.allow_network
+                || (self.max_network_requests > 0 && self.max_network_bytes > 0));
         if valid {
             Ok(())
         } else {

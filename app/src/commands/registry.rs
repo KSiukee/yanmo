@@ -224,6 +224,7 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::module::module_set_favorite,
         crate::commands::module::module_set_pinned,
         crate::commands::module::module_set_background,
+        crate::commands::module::module_set_network,
         crate::commands::module::module_uninstall,
         crate::commands::module::module_import_pick,
         crate::commands::module::module_import_confirm,

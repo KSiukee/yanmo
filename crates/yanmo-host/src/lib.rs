@@ -16,9 +16,11 @@
 #![forbid(unsafe_code)]
 
 pub mod error;
-pub mod package;
+pub mod network;
+mod package;
 pub mod core_link;
 mod sandbox;
+mod sandbox_network;
 mod sandbox_config;
 
 pub use error::{HostError, HostResult};

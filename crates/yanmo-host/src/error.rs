@@ -36,6 +36,7 @@ impl HostError {
     pub const CORE: &'static str = "host.core_error";
     pub const LINK: &'static str = "host.link_failed";
     pub const STOPPED: &'static str = "host.stopped";
+    pub const NETWORK_LIMIT: &'static str = "host.network_limit";
 
     pub fn new(code: &'static str, detail: impl Into<String>) -> Self {
         Self { code, detail: detail.into() }

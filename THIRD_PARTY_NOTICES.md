@@ -22,6 +22,7 @@
 | [windows-sys](https://github.com/microsoft/windows-rs) | MIT 或 Apache-2.0 | Windows API（盘符探测 / 作业对象） | 只在 Windows 上编；启动器的作业对象用它 |
 | [sha2](https://github.com/RustCrypto/hashes) | MIT 或 Apache-2.0 | 导入闸算载荷 SHA-256 指纹 | 传递依赖 digest / block-buffer / crypto-common 同为 MIT 或 Apache-2.0 |
 | [ed25519-dalek](https://github.com/dalek-cryptography/ed25519-dalek) | BSD-3-Clause | 认证清单 Ed25519 验签 | 传递依赖 curve25519-dalek / subtle 同为 BSD-3-Clause |
+| [ureq](https://github.com/algesten/ureq) | MIT 或 Apache-2.0 | 模块受控 HTTP GET 出口（宿主进程内） | 传递依赖 url / idna / native-tls / schannel 等为 MIT/Apache-2.0/Unicode-3.0 |
 
 ## 测试依赖（不随产品分发）
 
