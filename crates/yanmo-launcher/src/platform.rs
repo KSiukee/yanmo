@@ -175,6 +175,8 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
         let _ = server.join();
         return Err(LaunchError::new(LaunchError::SPAWN, error.to_string()));
     }
+    let shell_gone = Arc::new(AtomicBool::new(false));
+    let shell_gone_watch = shell_gone.clone();
     let host_stdin = Arc::new(Mutex::new(stdin));
     std::thread::spawn(move || {
         let stdin = std::io::stdin();
@@ -186,11 +188,22 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
             }
             let _ = guard.flush();
         }
+        // 壳的 stdin 关了（正常退出或强杀）：平台不再有主人，收掉宿主。
+        shell_gone_watch.store(true, Ordering::Relaxed);
     });
 
     let started = Instant::now();
     let mut timed_out = false;
     let status = loop {
+        if shell_gone.load(Ordering::Relaxed) {
+            if let Some(guard) = &job {
+                guard.terminate();
+            }
+            let _ = child.kill();
+            break child
+                .wait()
+                .map_err(|error| LaunchError::new(LaunchError::WAIT, error.to_string()))?;
+        }
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) => {}

@@ -191,3 +191,52 @@ fn platform_launcher_routes_module_identity() {
     stdin.flush().unwrap();
     assert!(child.wait().unwrap().success());
 }
+
+#[test]
+fn platform_launcher_stops_when_parent_stdin_closes() {
+    let Some(host_bin) = host_bin() else {
+        eprintln!("skip: yanmo-host binary not built (run `cargo build -p yanmo-host`)");
+        return;
+    };
+    let dir = TempDir::new().unwrap();
+    package(dir.path(), "app.example.longrun");
+    let db = dir.path().join("yanmo.db");
+    Store::open(&db).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_yanmo-launch"))
+        .args([
+            "--db",
+            db.to_str().unwrap(),
+            "--modules-root",
+            dir.path().to_str().unwrap(),
+            "--host",
+            host_bin.to_str().unwrap(),
+            "--timeout-secs",
+            "60",
+            "--idle-secs",
+            "60",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    stdin
+        .write_all(b"run app.example.longrun\n")
+        .unwrap();
+    stdin.flush().unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(120));
+    drop(stdin);
+
+    let started = std::time::Instant::now();
+    loop {
+        if child.try_wait().unwrap().is_some() {
+            break;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "壳 stdin 关闭后平台应在 5 秒内收掉宿主"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
