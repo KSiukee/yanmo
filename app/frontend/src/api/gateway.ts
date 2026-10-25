@@ -212,6 +212,7 @@ export const COMMANDS = {
   moduleSetPinned: "module_set_pinned",
   moduleSetBackground: "module_set_background",
   moduleSetNetwork: "module_set_network",
+  moduleUiOpen: "module_ui_open",
   networkOffline: "network_offline",
   credentialsList: "credentials_list",
   credentialAdd: "credential_add",

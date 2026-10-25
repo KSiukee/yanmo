@@ -39,6 +39,8 @@ pub struct ModuleCard {
     pub network: bool,
     /// 清单是否声明了联网（决定管理页是否显示联网开关）
     pub network_declared: bool,
+    /// 清单的界面形态：embedded / standalone / headless
+    pub ui_form: String,
     /// 导入时算的入口 `.wasm` SHA-256（老库 / 测试里可能是空串）
     pub fingerprint: String,
     /// 导入来源短标签（如 `folder`；不是本机路径）
@@ -334,6 +336,12 @@ fn decode(
         own_data: granted.own_data,
         network: granted.network,
         network_declared: manifest.capabilities.network,
+        ui_form: match manifest.ui {
+            yanmo_proto::manifest::ModuleUiForm::Embedded { .. } => "embedded",
+            yanmo_proto::manifest::ModuleUiForm::Standalone => "standalone",
+            yanmo_proto::manifest::ModuleUiForm::Headless => "headless",
+        }
+        .to_string(),
         fingerprint: fingerprint.to_string(),
         source: source.to_string(),
         installed_at,

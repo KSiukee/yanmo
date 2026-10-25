@@ -24,6 +24,7 @@ export interface ModuleCard {
   own_data: boolean;
   network: boolean;
   network_declared: boolean;
+  ui_form: string;
   fingerprint: string;
   source: string;
   installed_at: number;
@@ -163,3 +164,6 @@ export const networkAuditExport = (
   result: string | null = null,
 ) =>
   call<string>(COMMANDS.networkAuditExport, { module, result });
+
+export const moduleUiOpen = (module_id: string) =>
+  call<void>(COMMANDS.moduleUiOpen, { module_id });

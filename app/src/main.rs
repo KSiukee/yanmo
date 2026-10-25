@@ -17,7 +17,10 @@ use std::time::{Duration, Instant};
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Emitter, Manager};
 
+mod module_ui;
+
 use crate::exitwatch::RequestOutcome;
+use crate::module_ui::ModuleUiState;
 
 mod acceptance;
 mod acceptance_args;
@@ -156,6 +159,7 @@ fn main() {
                 }
             };
             app.manage(data);
+            app.manage(ModuleUiState::default());
             // 导入闸：选好的模块文件夹只暂存在壳里（界面拿不到路径）。
             app.manage(crate::commands::module::ImportStage::default());
             // 模块运行登记：后台启动器子进程；退出时 Drop 会全部停掉。
@@ -206,6 +210,9 @@ fn main() {
             let tauri::WindowEvent::CloseRequested { api, .. } = event else {
                 return;
             };
+            if let Some(child) = window.app_handle().get_webview_window("module-ui") {
+                let _ = child.close();
+            }
             let Some(data) = window.app_handle().try_state::<storage::AppData>() else {
                 return; // 数据层都没起来：随它关
             };
@@ -231,6 +238,10 @@ fn main() {
             }
         })
         // 命令清单在 commands::registry（每加一个功能就长一行，别把入口撑成上帝文件）
+        .register_uri_scheme_protocol("moduleui", |ctx, request| {
+            let state = ctx.app_handle().state::<ModuleUiState>();
+            module_ui::respond(&state, request.uri().path())
+        })
         .invoke_handler(commands::registry::app_handlers())
         .run(tauri::generate_context!())
         // i18n-allow-next-line: 进程级 panic 文本（开发者看），应用起不来时界面还不存在

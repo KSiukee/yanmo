@@ -10,10 +10,7 @@ import {
   moduleImportConfirm,
   moduleImportPick,
   moduleRun,
-  moduleSetEnabled,
-  moduleSetFavorite,
   moduleSetBackground,
-  moduleSetPinned,
   moduleStop,
   moduleUninstall,
   modulesList,
@@ -25,6 +22,7 @@ import {
 import ModuleCredentials from "./ModuleCredentials.vue";
 import ModuleImportPanel from "./ModuleImportPanel.vue";
 import { certificationLabel, readsLabel } from "./moduleLabels";
+import { useModuleActions } from "../composables/useModuleActions";
 import { useModuleNetwork } from "../composables/useModuleNetwork";
 import { useModuleRuns } from "../composables/useModuleRuns";
 import { t } from "../locales/index.ts";
@@ -87,18 +85,7 @@ const {
   toggle: toggleOffline,
   toggleModule,
 } = useModuleNetwork(note, act);
-
-function toggleActive(card: ModuleCard) {
-  void act(() => moduleSetEnabled(card.id, !card.enabled));
-}
-
-function toggleFavorite(card: ModuleCard) {
-  void act(() => moduleSetFavorite(card.id, !card.favorite));
-}
-
-function togglePinned(card: ModuleCard) {
-  void act(() => moduleSetPinned(card.id, !card.pinned));
-}
+const { toggleActive, toggleFavorite, togglePinned, openUi } = useModuleActions(note, act);
 
 function toggleBackground(card: ModuleCard) {
   void act(async () => {
@@ -298,6 +285,15 @@ onUnmounted(() => {
               @click="runModule(card)"
             >
               {{ t("modules.run_again") }}
+            </button>
+            <button
+              v-if="card.ui_form === 'embedded'"
+              type="button"
+              class="modules__button dialog__button"
+              :disabled="busy"
+              @click="openUi(card)"
+            >
+              {{ t("modules.open_ui") }}
             </button>
             <button
               v-if="isRunning(card)"
