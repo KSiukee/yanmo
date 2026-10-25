@@ -92,6 +92,7 @@ const {
   releaseData,
   mirrorData,
   rebuildData,
+  mirrorAll,
   exportData,
   clearData,
   uninstall,
@@ -122,9 +123,17 @@ function closeDialog() {
 
 function runModule(card: ModuleCard) {
   void act(async () => {
-    await moduleRun(card.id);
+    const started = await moduleRun(card.id);
     markStarted(card.id);
-    note.value = t("modules.run_started", { name: card.name });
+    note.value =
+      started.mirror_state === "failed"
+        ? t("modules.run_started_mirror_failed", {
+            name: card.name,
+            detail: started.mirror_error ?? "",
+          })
+        : started.mirror_state === "written"
+          ? t("modules.run_started_mirror", { name: card.name })
+          : t("modules.run_started", { name: card.name });
   });
 }
 
@@ -173,6 +182,14 @@ onUnmounted(() => {
           {{
             offline ? t("modules.global_offline_on") : t("modules.global_offline_off")
           }}
+        </button>
+        <button
+          type="button"
+          class="modules__button dialog__button"
+          :disabled="busy"
+          @click="mirrorAll"
+        >
+          {{ t("modules.mirror_all_button") }}
         </button>
         <button
           type="button"

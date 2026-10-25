@@ -54,6 +54,7 @@ mod module_data_export;
 mod module_data_health;
 mod module_data_limits;
 mod module_isolation;
+mod module_migration;
 mod module_mirror;
 mod module_mirror_cells;
 mod module_mirror_check;

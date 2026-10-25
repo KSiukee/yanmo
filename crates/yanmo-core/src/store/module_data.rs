@@ -11,7 +11,8 @@
 //! # 核心管什么、不管什么
 //!
 //! 管：文件位置、命名空间前缀、每个模块的 schema 版本账、**受控的结构升级**
-//! （建表 / 加列 / 建索引，见 [`ModuleMigration`]）、表数与行数统计。
+//! （建表 / 加列 / 建索引，见 `ModuleMigration`；执行在 [`super::module_migration`]）、
+//! 表数与行数统计。
 //! 不管：模块表的语义；也**不执行模块给的 SQL 字符串**——升级只接受结构动作，
 //! 表名 / 列名由核心拼前缀、加引号，模块给的名字永远只是一段后缀。
 //!
@@ -27,7 +28,6 @@ use rusqlite::{params, Connection};
 use serde::Serialize;
 
 use crate::error::{codes, Error, Result};
-use crate::model::{ModuleColumn, ModuleMigration, ModuleSchemaStep, ModuleTable};
 use crate::time::now_millis;
 
 use super::module_data_limits::{ModuleDataLimits, WriteGuard};
@@ -137,102 +137,30 @@ impl ModuleData {
         }
     }
 
-    /// 执行一次**受控**的模块结构升级。
-    ///
-    /// 三条纪律：
-    /// 1. **逐版**：当前是 v1 就只能交 v2；跳版 / 回退 / 重放都拒；
-    /// 2. **整体事务**：任何一步失败整体回滚，版本号不前进；
-    /// 3. **没有任意 SQL**：只执行建表 / 加列 / 建索引，名字由核心校验并加前缀。
-    pub fn apply_migration(
-        &mut self,
-        module_id: &str,
-        migration: &ModuleMigration,
-    ) -> Result<()> {
-        ensure_id(module_id)?;
-        self.ensure_not_isolated(module_id)?;
-        migration.validate()?;
-
-        let current = self.schema_version(module_id)?.unwrap_or(0);
-        let expected = current + 1;
-        if migration.version != expected {
-            return Err(Error::invalid_with(
-                codes::MODULE_SCHEMA_VERSION,
-                [
-                    ("current", current.to_string()),
-                    ("found", migration.version.to_string()),
-                ],
-            ));
-        }
-
-        let created = migration
-            .steps
-            .iter()
-            .filter(|step| matches!(step, ModuleSchemaStep::CreateTable { .. }))
-            .count();
-        if self.tables_of(module_id)?.len() + created > self.limits.max_tables {
-            return Err(Error::invalid_with(
-                codes::MODULE_DATA_TABLE_LIMIT,
-                [("module_id", module_id.to_string())],
-            ));
-        }
-
-        let mut statements = Vec::with_capacity(migration.steps.len());
-        for step in &migration.steps {
-            match step {
-                ModuleSchemaStep::CreateTable { table } => {
-                    statements.push(create_table_sql(module_id, table));
-                }
-                ModuleSchemaStep::AddColumn { table, column } => {
-                    statements.push(format!(
-                        "ALTER TABLE {} ADD COLUMN {} {}",
-                        quote(&table_ident(module_id, table)),
-                        quote(&column.name),
-                        column.kind.as_sql()
-                    ));
-                }
-                ModuleSchemaStep::CreateIndex { name, table, columns, unique } => {
-                    let columns = columns
-                        .iter()
-                        .map(|column| quote(column))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    statements.push(format!(
-                        "CREATE {}INDEX {} ON {} ({columns})",
-                        if *unique { "UNIQUE " } else { "" },
-                        quote(&index_ident(module_id, name)),
-                        quote(&table_ident(module_id, table))
-                    ));
-                }
-            }
-        }
-
-        let tx = self.conn.transaction()?;
-        for statement in &statements {
-            tx.execute(statement, []).map_err(|error| {
-                Error::invalid_with(codes::MODULE_SCHEMA_FAILED, [("detail", error.to_string())])
-            })?;
-        }
-        Self::record_schema_in(&tx, module_id, migration.version)?;
-        tx.commit()?;
-        Ok(())
-    }
-
     /// 这个模块命名空间里现有的表（按名字排序）。
     ///
     /// 用 Rust 侧过滤而不是 SQL `LIKE`：模块 id 里有 `.` / `-`，而 `_` 在 `LIKE`
     /// 里是通配符，拼模式迟早会误伤别的模块。
     pub fn tables_of(&self, module_id: &str) -> Result<Vec<String>> {
+        Self::tables_of_in(&self.conn, module_id)
+    }
+
+    /// 同 [`ModuleData::tables_of`]，但读的是调用方给的那条连接（事务里也能用）。
+    pub(super) fn tables_of_in(conn: &Connection, module_id: &str) -> Result<Vec<String>> {
         ensure_id(module_id)?;
-        let mut stmt = self
-            .conn
-            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")?;
-        let names = stmt
-            .query_map([], |row| row.get::<_, String>(0))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(names
+        Ok(Self::all_tables_in(conn)?
             .into_iter()
             .filter(|table| Self::is_module_table(module_id, table))
             .collect())
+    }
+
+    /// `modules.db` 里所有表的名字（按名字排序）。
+    pub(super) fn all_tables_in(conn: &Connection) -> Result<Vec<String>> {
+        let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")?;
+        let names = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(names)
     }
 
     /// 这个模块命名空间里现有几张表。
@@ -362,33 +290,7 @@ pub(super) fn table_ident(module_id: &str, suffix: &str) -> String {
     format!("mod_{module_id}_{suffix}")
 }
 
-/// 索引名：与表同一个命名空间前缀。
-fn index_ident(module_id: &str, suffix: &str) -> String {
-    format!("mod_{module_id}_{suffix}")
-}
-
 /// SQL 标识符加引号（名字已被校验成窄字符集；这里仍转义，防的是将来放宽校验）。
 pub(super) fn quote(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
-}
-
-fn create_table_sql(module_id: &str, table: &ModuleTable) -> String {
-    let columns = table
-        .columns
-        .iter()
-        .map(|column| column_sql(column))
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("CREATE TABLE {} ({columns})", quote(&table_ident(module_id, &table.name)))
-}
-
-fn column_sql(column: &ModuleColumn) -> String {
-    let mut sql = format!("{} {}", quote(&column.name), column.kind.as_sql());
-    if column.not_null || column.primary_key {
-        sql.push_str(" NOT NULL");
-    }
-    if column.primary_key {
-        sql.push_str(" PRIMARY KEY");
-    }
-    sql
 }

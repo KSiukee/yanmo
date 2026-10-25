@@ -97,6 +97,9 @@ export const moduleImportCancel = () => call<void>(COMMANDS.moduleImportCancel);
 /** 启动回执；真正结果用 `moduleStatus` 取。 */
 export interface ModuleRunStarted {
   module_id: string;
+  /** 启动前那份镜像：`fresh`（本来就一致）/ `written`（这次写了）/ `failed`。 */
+  mirror_state: string;
+  mirror_error: string | null;
 }
 
 /** 一次运行的状态快照。 */
@@ -268,6 +271,16 @@ export interface ModuleRebuild {
 
 export const moduleDataMirror = (module_id: string) =>
   call<ModuleMirrorRefresh>(COMMANDS.moduleDataMirror, { module_id });
+
+/** 「全部留镜像」的回执。 */
+export interface MirrorAllReceipt {
+  modules: number;
+  tables: number;
+  rows: number;
+}
+
+export const moduleDataMirrorAll = () =>
+  call<MirrorAllReceipt>(COMMANDS.moduleDataMirrorAll);
 
 export const moduleDataRebuild = (module_id: string) =>
   call<ModuleRebuild>(COMMANDS.moduleDataRebuild, { module_id });

@@ -229,6 +229,7 @@ export const COMMANDS = {
   moduleDataIsolate: "module_data_isolate",
   moduleDataRelease: "module_data_release",
   moduleDataMirror: "module_data_mirror",
+  moduleDataMirrorAll: "module_data_mirror_all",
   moduleDataRebuild: "module_data_rebuild",
   moduleDataClear: "module_data_clear",
   moduleImportPick: "module_import_pick",

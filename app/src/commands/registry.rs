@@ -242,6 +242,7 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::module_data::module_data_isolate,
         crate::commands::module_data::module_data_release,
         crate::commands::module_data::module_data_mirror,
+        crate::commands::module_data::module_data_mirror_all,
         crate::commands::module_data::module_data_rebuild,
         crate::commands::module_data::module_data_clear,
         crate::commands::module::module_import_pick,

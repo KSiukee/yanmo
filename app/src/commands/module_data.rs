@@ -39,6 +39,14 @@ pub struct ModuleMirrorRefresh {
     pub before_error: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct MirrorAllReceipt {
+    /// 写了几份（有账的模块数）。
+    pub modules: usize,
+    pub tables: usize,
+    pub rows: i64,
+}
+
 #[tauri::command(rename_all = "snake_case")]
 pub fn module_data_export(
     data: State<'_, AppData>,
@@ -138,6 +146,20 @@ pub fn module_data_mirror(
     };
     let written = module_data.mirror(&module_id)?;
     Ok(ModuleMirrorRefresh { written, before, before_error })
+}
+
+/// 给所有有账的模块各写一份镜像（「全部留一份」）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn module_data_mirror_all(
+    data: State<'_, AppData>,
+) -> Result<MirrorAllReceipt, ApiError> {
+    let module_data = ModuleData::open(data.data_dir().join("modules.db"))?;
+    let receipts = module_data.mirror_all()?;
+    Ok(MirrorAllReceipt {
+        modules: receipts.len(),
+        tables: receipts.iter().map(|receipt| receipt.tables).sum(),
+        rows: receipts.iter().map(|receipt| receipt.rows).sum(),
+    })
 }
 
 /// 用镜像重建这一格的数据（**必须先隔离**，否则会覆盖正在用的数据）。

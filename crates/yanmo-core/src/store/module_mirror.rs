@@ -41,6 +41,7 @@
 
 use std::path::{Path, PathBuf};
 
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
 use super::module_data::{ensure_id, quote, ModuleData};
@@ -111,9 +112,13 @@ impl ModuleData {
     /// 把一个模块的命名空间**整份**写成 JSON 镜像（原子写）。
     ///
     /// 只带这个模块自己的表；一张都不带也照写（空镜像是有意义的：它证明「当时就是空的」）。
+    ///
+    /// 整次读（表清单 / 每张表的行 / 结构版本）包在**一个只读事务**里：模块正在写的时候
+    /// 点「写镜像」，拿到的也是同一个时刻的样子，不会这张表新、那张表旧。
     pub fn mirror(&self, module_id: &str) -> Result<ModuleMirror> {
         ensure_id(module_id)?;
-        let tables = self.tables_of(module_id)?;
+        let tx = self.conn.unchecked_transaction()?;
+        let tables = Self::tables_of_in(&tx, module_id)?;
         let mut mirrored = Vec::with_capacity(tables.len());
         let mut rows_total: i64 = 0;
         for table in &tables {
@@ -123,15 +128,23 @@ impl ModuleData {
                     [("detail", format!("table does not belong to any module: {table}"))],
                 ));
             }
-            let table = self.read_table(table)?;
+            let table = read_table_in(&tx, table)?;
             rows_total = rows_total.saturating_add(table.rows.len() as i64);
             mirrored.push(table);
         }
+        let schema_version: Option<i64> = tx
+            .query_row(
+                "SELECT schema_version FROM module_schema WHERE module_id = ?1",
+                [module_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        tx.commit()?;
         let file = MirrorFile {
             format: MIRROR_FORMAT.to_string(),
             version: MIRROR_VERSION,
             module_id: module_id.to_string(),
-            schema_version: self.schema_version(module_id)?,
+            schema_version,
             written_at: now_millis(),
             tables: mirrored,
         };
@@ -147,6 +160,49 @@ impl ModuleData {
         })
     }
 
+    /// 镜像过期（或读不出来）才重写一份；一致就什么都不做。
+    ///
+    /// 返回 `Some` = 这次真写了；`None` = 本来就跟主库一致。**一致性由
+    /// [`ModuleData::check_mirror`](crate::store::ModuleData::check_mirror) 判断**——
+    /// 不按时间猜，所以「跑完一轮但什么都没改」不会白白重写一份。
+    pub fn refresh_mirror_if_stale(&self, module_id: &str) -> Result<Option<ModuleMirror>> {
+        ensure_id(module_id)?;
+        // 镜像坏了 / 读了半天读不出来：正是该重写的时候（这里不是错误，是判断的结果）
+        let fresh = matches!(self.check_mirror(module_id), Ok(check) if check.state == "ok");
+        if fresh {
+            return Ok(None);
+        }
+        self.mirror(module_id).map(Some)
+    }
+
+    /// 给**所有**有账的模块各写一份镜像（显式的「全部留一份」）。
+    ///
+    /// 「有账」＝库里有它的表，或 `module_schema` 里有它的行。中途任何一份写失败就整体返回
+    /// 错误（并把是哪一步写不出来带在 `detail` 里）——这一动作本来就是"留底"，半套没意义。
+    pub fn mirror_all(&self) -> Result<Vec<ModuleMirror>> {
+        let mut receipts = Vec::new();
+        for module_id in self.module_ids()? {
+            receipts.push(self.mirror(&module_id)?);
+        }
+        Ok(receipts)
+    }
+
+    /// 库里有账的模块 id（有表，或 `module_schema` 里记过版本），按名字排序。
+    fn module_ids(&self) -> Result<Vec<String>> {
+        let mut ids = std::collections::BTreeSet::new();
+        for table in Self::all_tables_in(&self.conn)? {
+            if let TableOwner::Module { module_id, .. } = classify_table(&table) {
+                ids.insert(module_id);
+            }
+        }
+        let mut stmt = self.conn.prepare("SELECT module_id FROM module_schema")?;
+        let recorded = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        ids.extend(recorded);
+        Ok(ids.into_iter().collect())
+    }
+
     /// 读一份镜像（**只校验形状与归属**，不碰主库）。没写过返回 `Ok(None)`。
     pub(super) fn read_mirror(&self, module_id: &str) -> Result<Option<MirrorFile>> {
         ensure_id(module_id)?;
@@ -155,26 +211,29 @@ impl ModuleData {
 
     /// 读取一张模块表的结构与全部行（按 `sqlite_master` 里的顺序取列）。
     pub(super) fn read_table(&self, table: &str) -> Result<MirrorTable> {
-        let columns = columns_of(&self.conn, table)?;
-        let mut stmt = self
-            .conn
-            .prepare(&format!(
-                "SELECT {} FROM {}",
-                columns.iter().map(|column| quote(&column.name)).collect::<Vec<_>>().join(", "),
-                quote(table)
-            ))?;
-        let width = columns.len();
-        let mut rows = Vec::new();
-        let mut cursor = stmt.query([])?;
-        while let Some(row) = cursor.next()? {
-            let mut cells = Vec::with_capacity(width);
-            for index in 0..width {
-                cells.push(encode_cell(row.get_ref(index)?)?);
-            }
-            rows.push(cells);
-        }
-        Ok(MirrorTable { name: table.to_string(), columns, rows })
+        read_table_in(&self.conn, table)
     }
+}
+
+/// 读一张表（连接由调用方给：镜像写入要在事务里读，核对则不必）。
+fn read_table_in(conn: &rusqlite::Connection, table: &str) -> Result<MirrorTable> {
+    let columns = columns_of(conn, table)?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM {}",
+        columns.iter().map(|column| quote(&column.name)).collect::<Vec<_>>().join(", "),
+        quote(table)
+    ))?;
+    let width = columns.len();
+    let mut rows = Vec::new();
+    let mut cursor = stmt.query([])?;
+    while let Some(row) = cursor.next()? {
+        let mut cells = Vec::with_capacity(width);
+        for index in 0..width {
+            cells.push(encode_cell(row.get_ref(index)?)?);
+        }
+        rows.push(cells);
+    }
+    Ok(MirrorTable { name: table.to_string(), columns, rows })
 }
 
 /// 镜像文件路径：`<modules.db 的目录>/module-mirrors/<模块 id>.json`。

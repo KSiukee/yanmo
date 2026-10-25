@@ -163,13 +163,7 @@ impl ModuleData {
     }
 
     fn all_tables(&self) -> Result<Vec<String>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")?;
-        let names = stmt
-            .query_map([], |row| row.get::<_, String>(0))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(names)
+        ModuleData::all_tables_in(&self.conn)
     }
 }
 

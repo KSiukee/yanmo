@@ -6,6 +6,10 @@ use serde::Serialize;
 #[derive(Debug, Clone, Serialize)]
 pub struct ModuleRunStarted {
     pub module_id: String,
+    /// 启动前那份镜像：`fresh`（本来就一致，没重写）/ `written`（这次写了）/ `failed`。
+    pub mirror_state: String,
+    /// `failed` 时的原因（其它时候是空）。
+    pub mirror_error: Option<String>,
 }
 
 /// 一次运行的状态快照。

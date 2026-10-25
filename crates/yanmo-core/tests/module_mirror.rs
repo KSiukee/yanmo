@@ -60,6 +60,54 @@ fn a_mirror_is_open_format_and_carries_one_module_only() {
 }
 
 #[test]
+fn refresh_only_writes_when_the_mirror_is_out_of_date() {
+    let (_dir, path) = fresh();
+    let mut data = ModuleData::open(&path).unwrap();
+    data.kv_put(MODULE, "k", b"v").unwrap();
+
+    assert!(data.refresh_mirror_if_stale(MODULE).unwrap().is_some(), "还没有镜像：应当写一份");
+    assert!(data.refresh_mirror_if_stale(MODULE).unwrap().is_none(), "一致：什么都不做");
+
+    data.kv_put(MODULE, "k", b"changed").unwrap();
+    assert!(data.refresh_mirror_if_stale(MODULE).unwrap().is_some(), "变了：重写");
+    assert_eq!(data.check_mirror(MODULE).unwrap().state, "ok");
+}
+
+#[test]
+fn a_broken_mirror_is_replaced_instead_of_blocking_the_refresh() {
+    let (_dir, path) = fresh();
+    let mut data = ModuleData::open(&path).unwrap();
+    data.kv_put(MODULE, "k", b"v").unwrap();
+    data.mirror(MODULE).unwrap();
+    std::fs::write(data.mirror_path(MODULE), b"{ this is not json").unwrap();
+
+    let written = data.refresh_mirror_if_stale(MODULE).unwrap();
+    assert!(written.is_some(), "镜像坏了正是该重写的时候");
+    assert_eq!(data.check_mirror(MODULE).unwrap().state, "ok");
+}
+
+#[test]
+fn mirror_all_covers_every_module_that_has_a_ledger() {
+    let (_dir, path) = fresh();
+    let mut data = ModuleData::open(&path).unwrap();
+    data.kv_put("app.example.a", "k", b"1").unwrap();
+    data.kv_put("app.example.b", "k", b"2").unwrap();
+    data.record_schema("app.example.empty", 1).unwrap();
+
+    let receipts = data.mirror_all().unwrap();
+    let ids: Vec<&str> = receipts.iter().map(|receipt| receipt.module_id.as_str()).collect();
+    assert_eq!(ids, vec!["app.example.a", "app.example.b", "app.example.empty"]);
+    for receipt in &receipts {
+        assert!(receipt.path.exists(), "{} 应当有镜像文件", receipt.module_id);
+    }
+    let empty = receipts.iter().find(|receipt| receipt.module_id == "app.example.empty").unwrap();
+    assert_eq!(empty.tables, 0, "只有账、没有表");
+    assert_eq!(mirror_json(&data, "app.example.empty")["schema_version"], 1);
+    // 别人的表依旧不会跟过来
+    assert_eq!(mirror_json(&data, "app.example.a")["tables"].as_array().unwrap().len(), 1);
+}
+
+#[test]
 fn text_and_binary_survive_the_round_trip() {
     let (_dir, path) = fresh();
     let mut data = ModuleData::open(&path).unwrap();

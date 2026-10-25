@@ -274,6 +274,14 @@ pub fn start_module(
     let managed = data.data_dir().join("modules").join(module_id);
     data.with_store(|store: &mut Store| store.verify_module_package(module_id, &managed))?;
 
+    // **跑之前先留一份**：镜像拿的是这次运行**之前**的样子——正是出事后想回去的那一格。
+    // 只在这格跟镜像不一致时才写（一致就什么都不做，不按时间瞎重写）。
+    let (mirror_state, mirror_error) = match module_data.refresh_mirror_if_stale(module_id) {
+        Ok(Some(_)) => ("written", None),
+        Ok(None) => ("fresh", None),
+        Err(error) => ("failed", Some(error.to_string())),
+    };
+
     runs.ensure_platform(data)?;
     runs.send(&format!("run {module_id}"))?;
     let mut platform = runs.lock()?;
@@ -287,7 +295,11 @@ pub fn start_module(
     status.error = None;
     status.emitted.clear();
     platform.last_activity = Instant::now();
-    Ok(ModuleRunStarted { module_id: module_id.to_string() })
+    Ok(ModuleRunStarted {
+        module_id: module_id.to_string(),
+        mirror_state: mirror_state.to_string(),
+        mirror_error,
+    })
 }
 
 pub fn status_module(runs: &ModuleRuns, module_id: &str) -> Result<ModuleStatus, ApiError> {

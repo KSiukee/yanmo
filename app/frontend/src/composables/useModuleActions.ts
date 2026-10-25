@@ -12,6 +12,7 @@ import {
   moduleDataExport,
   moduleDataIsolate,
   moduleDataMirror,
+  moduleDataMirrorAll,
   moduleDataRebuild,
   moduleDataRelease,
   moduleDataStats,
@@ -157,6 +158,21 @@ export function useModuleActions(
     });
   }
 
+  /** 全部留镜像：一次把所有有账的模块各写一份（收工前的「留底」）。 */
+  function mirrorAll() {
+    act(async () => {
+      const receipt = await moduleDataMirrorAll();
+      note.value =
+        receipt.modules === 0
+          ? t("modules.mirror_all_empty")
+          : t("modules.mirror_all_done", {
+              modules: receipt.modules,
+              tables: receipt.tables,
+              rows: receipt.rows,
+            });
+    });
+  }
+
   function exportData(card: ModuleCard) {
     act(async () => {
       const done = await moduleDataExport(card.id, t("modules.export_data"));
@@ -198,6 +214,7 @@ export function useModuleActions(
     releaseData,
     mirrorData,
     rebuildData,
+    mirrorAll,
     exportData,
     clearData,
     uninstall,
