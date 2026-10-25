@@ -11,8 +11,9 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::process::{Command, ExitCode, Stdio};
+use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use std::io::BufRead;
 
@@ -24,6 +25,7 @@ use yanmo_host::{
 use yanmo_ipc::Client;
 
 mod credential_args;
+mod supervisor;
 
 fn main() -> ExitCode {
     match run() {
@@ -146,16 +148,62 @@ fn run() -> Result<(), HostError> {
         let exe = std::env::current_exe()
             .map_err(|error| HostError::new(HostError::CORE, error.to_string()))?;
         let mut children: HashMap<String, std::process::Child> = HashMap::new();
+        let mut crashes: HashMap<String, Vec<Instant>> = HashMap::new();
+        let mut last_activity = Instant::now();
         loop {
-            reap(&mut children);
-            let line = match receiver.recv_timeout(std::time::Duration::from_secs(idle_secs)) {
-                Ok(Ok(line)) => line,
+            for (crashed_id, code) in supervisor::reap(&mut children) {
+                if code == 0 {
+                    crashes.remove(&crashed_id);
+                    continue;
+                }
+                let now = Instant::now();
+                let history = crashes.entry(crashed_id.clone()).or_default();
+                history.retain(|at| now.duration_since(*at) < Duration::from_secs(600));
+                history.push(now);
+                if history.len() <= 2 {
+                    match supervisor::spawn_child(
+                        &exe,
+                        &root,
+                        &crashed_id,
+                        core_addr,
+                        token.as_deref(),
+                        &network_modules,
+                        credentials_json.as_deref(),
+                        network_log.as_deref(),
+                        &network_allowlist,
+                    ) {
+                        Ok(child) => {
+                            children.insert(crashed_id.clone(), child);
+                        }
+                        Err(error) => {
+                            println!(
+                                "{}",
+                                json!({ "ok": false, "module_id": crashed_id, "code": "host.crash_restart_failed", "detail": error.to_string() })
+                            );
+                        }
+                    }
+                } else {
+                    println!(
+                        "{}",
+                        json!({ "ok": false, "module_id": crashed_id, "code": "host.crash_budget", "detail": format!("host exited with {code}; too many crashes") })
+                    );
+                    use std::io::Write;
+                    let _ = std::io::stdout().flush();
+                }
+            }
+            let line = match receiver.recv_timeout(Duration::from_millis(200)) {
+                Ok(Ok(line)) => {
+                    last_activity = Instant::now();
+                    line
+                }
                 Ok(Err(error)) => {
                     kill_all(&mut children);
                     return Err(HostError::new(HostError::CORE, error.to_string()));
                 }
                 Err(_) => {
-                    if children.is_empty() {
+                    if children.is_empty()
+                        && last_activity.elapsed() >= Duration::from_secs(idle_secs)
+                    {
                         return Ok(());
                     }
                     continue;
@@ -198,6 +246,7 @@ fn run() -> Result<(), HostError> {
                 );
                 continue;
             }
+            crashes.remove(module_id);
             if children.contains_key(module_id) {
                 eprintln!(
                     "{}",
@@ -205,62 +254,27 @@ fn run() -> Result<(), HostError> {
                 );
                 continue;
             }
-            let mut command = Command::new(&exe);
-            command
-                .arg("--module")
-                .arg(root.join(module_id))
-                .arg("--module-id")
-                .arg(module_id)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit());
-            let has_core = core_addr.is_some() && token.is_some();
-            if let (Some(addr), Some(_)) = (core_addr, token.as_ref()) {
-                command
-                    .arg("--core")
-                    .arg(addr.to_string())
-                    .arg("--token-stdin");
-            }
-            if network_modules.iter().any(|id| id == module_id) {
-                command.arg("--allow-network");
-            }
-            if let Some(credentials) = credentials_json.as_deref() {
-                command.arg("--credentials-json").arg(credentials);
-            }
-            if let Some(log) = network_log.as_ref() {
-                command.arg("--network-log").arg(log);
-            }
-            if !network_allowlist.is_empty() {
-                command
-                    .arg("--network-allowlist")
-                    .arg(network_allowlist.join(","));
-            }
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                command.creation_flags(0x0800_0000);
-            }
-            let mut child = match command.spawn() {
-                Ok(child) => child,
+            match supervisor::spawn_child(
+                &exe,
+                &root,
+                module_id,
+                core_addr,
+                token.as_deref(),
+                &network_modules,
+                credentials_json.as_deref(),
+                network_log.as_deref(),
+                &network_allowlist,
+            ) {
+                Ok(child) => {
+                    children.insert(module_id.to_string(), child);
+                }
                 Err(error) => {
                     eprintln!(
                         "{}",
                         json!({ "ok": false, "module_id": module_id, "code": "host.spawn_failed", "detail": error.to_string() })
                     );
-                    continue;
-                }
-            };
-            if let Some(mut stdin) = child.stdin.take() {
-                if has_core {
-                    if let Some(token) = token.as_deref() {
-                        let _ = std::io::Write::write_all(
-                            &mut stdin,
-                            format!("{token}\n").as_bytes(),
-                        );
-                    }
                 }
             }
-            children.insert(module_id.to_string(), child);
         }
     }
 
@@ -357,19 +371,6 @@ fn run() -> Result<(), HostError> {
 }
 
 
-
-fn reap(children: &mut HashMap<String, std::process::Child>) {
-    let done: Vec<String> = children
-        .iter_mut()
-        .filter_map(|(module_id, child)| match child.try_wait() {
-            Ok(Some(_)) => Some(module_id.clone()),
-            _ => None,
-        })
-        .collect();
-    for module_id in done {
-        children.remove(&module_id);
-    }
-}
 
 fn kill_all(children: &mut HashMap<String, std::process::Child>) {
     for (_, mut child) in children.drain() {
