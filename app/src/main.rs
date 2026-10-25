@@ -240,7 +240,7 @@ fn main() {
         // 命令清单在 commands::registry（每加一个功能就长一行，别把入口撑成上帝文件）
         .register_uri_scheme_protocol("moduleui", |ctx, request| {
             let state = ctx.app_handle().state::<ModuleUiState>();
-            module_ui::respond(&state, request.uri().path())
+            module_ui::respond(ctx.app_handle(), state.inner(), request)
         })
         .invoke_handler(commands::registry::app_handlers())
         .run(tauri::generate_context!())

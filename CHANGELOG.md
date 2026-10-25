@@ -1,3 +1,45 @@
+## 0.139.0 — 2026-10-25
+
+> **模块子 WebView 第二刀：受限 RPC 桥。** 0.138 已有只读 `moduleui://` 静态协议；
+> 这一刀加上**受限 RPC**：模块界面可以查当前模块信息/状态、启动/停止它。
+> 仍然没有 Tauri 能力、不能上外网、不能读稿件/核心数据。
+
+### 新
+
+- **只读自定义协议** `moduleui://`：
+  - 不占端口、不起 TCP 服务、不出网（壳仍零出网）；
+  - 路径逐段拒绝 `..`/空段/反斜杠/盘符，规范化后必须仍在 `ui/` 下；
+  - 响应带 CSP：`connect-src 'self'`（只许同源 RPC，仍禁外网）、
+    `img-src 'self' data:`、`form-action 'none'`、`frame-ancestors 'none'`；
+    `nosniff`、`no-store`。
+- **受限 RPC 桥**：
+  - `POST /_rpc`，每次 UI 会话生成 128 位 token（在页面 URL 查询串里）；
+  - 只允许**当前模块**的 `module.info` / `module.status` / `module.run` / `module.stop`；
+  - 不读稿件、不接受任意模块 id、无文件/网络能力；
+  - 内置 `/_yanmo.js`：`window.yanmo.info/status/run/stop`。
+- **子 WebView**：
+  - Tauri `WebviewWindowBuilder` 加载 `moduleui://localhost/index.html`；
+  - 固定 label `module-ui`，同时只开一个；换模块先销毁旧窗口/旧根目录；
+  - 子窗口不挂 Tauri 能力，拿不到壳命令；
+  - 主窗口关闭时一起关；窗口销毁时清掉当前会话。
+- **管理页**：Card 新增 `ui_form`；`embedded` 且包里有 `ui/index.html` 时显示
+  「打开界面」。
+- 验收：协议处理 +3（路径穿越拒绝、index/CSP、会话 token）；Rust 1151。
+
+### 其他（诚实边界）
+
+- **只做壳桥**：模块 UI 能查当前模块信息/状态、启动/停止它；**没有与 WASM 的直接通信，也不能读稿件/核心数据**，不能联网。
+- **RPC 的权限就是“当前模块”**：不传任意 id；信息来自注册表卡片（不含路径/秘密）。
+- 子 WebView 的 GUI 启动没有自动化验收：Tauri 窗口/WebView2 需要真机点开；协议/路径/CSP/token 有测试。
+- 模块 UI 仍可写普通 `<a href>` 导航到外站（无 Tauri 能力）；没有做导航白名单。
+- 非 `embedded`（standalone/headless）没有界面；`ui/index.html` 是约定，不是清单字段。
+- 认证启动复核、审计进 DB、每模块白名单/费用仍未做。
+
+### 验收证据
+
+- 壳 +3：路径穿越拒绝；自定义协议返回 index + CSP；会话 token；
+- 常规全量：Rust **1151 项**、界面 **553 项**，`check_all` 全绿。
+
 ## 0.138.0 — 2026-10-25
 
 > **模块子 WebView 第一刀。** `ui.form = embedded` 的模块，如果包里有
@@ -16,17 +58,15 @@
   - Tauri `WebviewWindowBuilder` 加载 `moduleui://localhost/index.html`；
   - 固定 label `module-ui`，同时只开一个；换模块先销毁旧窗口/旧根目录；
   - 子窗口不挂 Tauri 能力，拿不到壳命令；
-  - 主窗口关闭时一起关；窗口销毁时清掉当前 UI 根目录。
+  - 主窗口关闭时一起关；窗口销毁时清掉当前会话。
 - **管理页**：Card 新增 `ui_form`；`embedded` 且包里有 `ui/index.html` 时显示
   「打开界面」。
-- 验收：协议处理 +2（路径穿越拒绝、index/CSP）；Rust 1150。
+- 验收：协议处理 +3（路径穿越拒绝、index/CSP、会话 token）；Rust 1151。
 
 ### 其他（诚实边界）
 
 - **只做静态界面**：模块 UI 没有与 WASM/宿主通信的通道，也不能联网；
   需要交互/取数据时，下一刀另定 IPC 契约（现在不做假接口）。
-- **子 WebView 的 GUI 启动没有自动化验收**：Tauri 窗口/WebView2 需要真机点开；
-  协议处理与路径/CSP 有测试。
 - 模块 UI 仍可写普通 `<a href>` 导航到外站（无 Tauri 能力）；没有做导航白名单。
 - 非 `embedded`（standalone/headless）没有界面；`ui/index.html` 是约定，不是清单字段。
 - 认证启动复核、审计进 DB、每模块白名单/费用仍未做。

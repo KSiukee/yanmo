@@ -280,28 +280,28 @@ fn monitor(platform: Arc<Mutex<Platform>>) {
     });
 }
 
-#[tauri::command(rename_all = "snake_case")]
-pub fn module_run(
-    data: State<'_, AppData>,
-    runs: State<'_, ModuleRuns>,
-    module_id: String,
+/// 平台里启动一次模块（命令与模块界面桥共用）。
+pub fn start_module(
+    data: &AppData,
+    runs: &ModuleRuns,
+    module_id: &str,
 ) -> Result<ModuleRunStarted, ApiError> {
-    let record = data.with_store(|store: &mut Store| store.module_record(&module_id))?;
+    let record = data.with_store(|store: &mut Store| store.module_record(module_id))?;
     if !record.is_active() {
         return Err(ApiError::from(yanmo_core::Error::invalid_with(
             yanmo_core::error_codes::codes::MODULE_DISABLED,
-            [("module_id", module_id.clone())],
+            [("module_id", module_id.to_string())],
         )));
     }
-    let managed = data.data_dir().join("modules").join(&module_id);
-    data.with_store(|store: &mut Store| store.verify_module_package(&module_id, &managed))?;
+    let managed = data.data_dir().join("modules").join(module_id);
+    data.with_store(|store: &mut Store| store.verify_module_package(module_id, &managed))?;
 
-    runs.ensure_platform(&data)?;
+    runs.ensure_platform(data)?;
     runs.send(&format!("run {module_id}"))?;
     let mut platform = runs.lock()?;
     let status = platform
         .statuses
-        .entry(module_id.clone())
+        .entry(module_id.to_string())
         .or_insert_with(ModuleStatus::unknown);
     status.known = true;
     status.running = true;
@@ -309,18 +309,14 @@ pub fn module_run(
     status.error = None;
     status.emitted.clear();
     platform.last_activity = Instant::now();
-    Ok(ModuleRunStarted { module_id })
+    Ok(ModuleRunStarted { module_id: module_id.to_string() })
 }
 
-#[tauri::command(rename_all = "snake_case")]
-pub fn module_status(
-    runs: State<'_, ModuleRuns>,
-    module_id: String,
-) -> Result<ModuleStatus, ApiError> {
+pub fn status_module(runs: &ModuleRuns, module_id: &str) -> Result<ModuleStatus, ApiError> {
     let platform = runs.lock()?;
     let mut status = platform
         .statuses
-        .get(&module_id)
+        .get(module_id)
         .cloned()
         .unwrap_or_else(ModuleStatus::unknown);
     if status.known && status.running && platform.running {
@@ -334,18 +330,39 @@ pub fn module_status(
     Ok(status)
 }
 
+pub fn stop_module(runs: &ModuleRuns, module_id: &str) -> Result<(), ApiError> {
+    runs.send(&format!("stop {module_id}"))?;
+    let mut platform = runs.lock()?;
+    if let Some(status) = platform.statuses.get_mut(module_id) {
+        status.running = false;
+        status.stopped = true;
+    }
+    Ok(())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn module_run(
+    data: State<'_, AppData>,
+    runs: State<'_, ModuleRuns>,
+    module_id: String,
+) -> Result<ModuleRunStarted, ApiError> {
+    start_module(data.inner(), runs.inner(), &module_id)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn module_status(
+    runs: State<'_, ModuleRuns>,
+    module_id: String,
+) -> Result<ModuleStatus, ApiError> {
+    status_module(runs.inner(), &module_id)
+}
+
 #[tauri::command(rename_all = "snake_case")]
 pub fn module_stop(
     runs: State<'_, ModuleRuns>,
     module_id: String,
 ) -> Result<(), ApiError> {
-    runs.send(&format!("stop {module_id}"))?;
-    let mut platform = runs.lock()?;
-    if let Some(status) = platform.statuses.get_mut(&module_id) {
-        status.running = false;
-        status.stopped = true;
-    }
-    Ok(())
+    stop_module(runs.inner(), &module_id)
 }
 
 fn resolve_bin(name: &str, env_name: &str) -> Result<PathBuf, ApiError> {

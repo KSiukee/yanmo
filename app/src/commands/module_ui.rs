@@ -2,7 +2,6 @@
 
 use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
-use super::module_run::ModuleRuns;
 use crate::error::ApiError;
 use crate::module_ui::ModuleUiState;
 use crate::storage::AppData;
@@ -13,7 +12,6 @@ pub fn module_ui_open(
     app: AppHandle,
     data: State<'_, AppData>,
     ui: State<'_, ModuleUiState>,
-    _runs: State<'_, ModuleRuns>,
     module_id: String,
 ) -> Result<(), ApiError> {
     let record = data.with_store(|store: &mut Store| store.module_record(&module_id))?;
@@ -35,9 +33,12 @@ pub fn module_ui_open(
         let _ = window.destroy();
     }
     ui.clear();
-
-    ui.set(root);
-    let parsed = "moduleui://localhost/index.html"
+    let mut raw = [0u8; 16];
+    getrandom::fill(&mut raw)
+        .map_err(|error| ApiError::new("shell.module_ui_failed").caused_by(error))?;
+    let token: String = raw.iter().map(|byte| format!("{byte:02x}")).collect();
+    ui.set(root, module_id.clone(), token.clone());
+    let parsed = format!("moduleui://localhost/index.html?token={token}")
         .parse()
         .map_err(|error| ApiError::new("shell.module_ui_failed").caused_by(error))?;
     let window = WebviewWindowBuilder::new(&app, "module-ui", WebviewUrl::CustomProtocol(parsed))
@@ -46,12 +47,11 @@ pub fn module_ui_open(
         .min_inner_size(480.0, 360.0)
         .build()
         .map_err(|error| ApiError::new("shell.module_ui_failed").caused_by(error))?;
-    let shared = ui.root.clone();
+    let shared = ui.inner().clone();
+    let session_token = token.clone();
     window.on_window_event(move |event| {
         if matches!(event, tauri::WindowEvent::Destroyed) {
-            if let Ok(mut slot) = shared.lock() {
-                *slot = None;
-            }
+            shared.clear_if_token(&session_token);
         }
     });
     Ok(())
