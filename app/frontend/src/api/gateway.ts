@@ -232,6 +232,8 @@ export const COMMANDS = {
   moduleDataMirror: "module_data_mirror",
   moduleDataMirrorAll: "module_data_mirror_all",
   moduleFacts: "module_facts",
+  moduleReadAsks: "module_read_asks",
+  moduleReadAnswer: "module_read_answer",
   moduleDataRebuild: "module_data_rebuild",
   moduleDataClear: "module_data_clear",
   moduleImportPick: "module_import_pick",

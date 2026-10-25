@@ -98,10 +98,21 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
         if !bindings.is_empty() {
             credentials.insert(manifest.id.clone(), bindings);
         }
-        handlers.insert(
-            manifest.id.clone(),
-            ModuleIpcHandler::new(store, manifest.id).with_read_log(read_log.clone()),
-        );
+        // 读取闸门：未认证的第三方模块一次运行只许读一篇文章。认证模块与官方模块不走闸
+        //（认证的价值就是更少摩擦），但它们的读照样进读账。
+        let exempt = manifest.id.starts_with(yanmo_core::store::OFFICIAL_PREFIX)
+            || store.module_card(&manifest.id).map(|card| card.certified).unwrap_or(false);
+        let gate = yanmo_core::store::ModuleData::open(yanmo_core::store::ModuleData::path_beside(
+            &request.db_path,
+        ))
+        .ok()
+        .map(|data| yanmo_core::store::ReadGate::new(data, exempt));
+        let mut handler =
+            ModuleIpcHandler::new(store, manifest.id.clone()).with_read_log(read_log.clone());
+        if let Some(gate) = gate {
+            handler = handler.with_read_gate(gate);
+        }
+        handlers.insert(manifest.id, handler);
     }
     if handlers.is_empty() {
         return Err(LaunchError::new(

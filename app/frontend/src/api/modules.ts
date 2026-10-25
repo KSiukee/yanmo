@@ -345,5 +345,19 @@ export interface ModuleFactsView {
 export const moduleFacts = (module_id: string) =>
   call<ModuleFactsView>(COMMANDS.moduleFacts, { module_id });
 
+/** 一件等作者回答的读取放行请求。 */
+export interface ReadAskView {
+  module_id: string;
+  /** `first`（只告知）/ `second`（问要不要放宽）/ `ultimate`（第三次：不再干预）。 */
+  kind: string;
+  refusals: number;
+  last_work: string | null;
+}
+
+export const moduleReadAsks = () => call<ReadAskView[]>(COMMANDS.moduleReadAsks);
+
+export const moduleReadAnswer = (module_id: string, answer: string) =>
+  call<boolean>(COMMANDS.moduleReadAnswer, { module_id, answer });
+
 export const moduleDataRebuild = (module_id: string) =>
   call<ModuleRebuild>(COMMANDS.moduleDataRebuild, { module_id });

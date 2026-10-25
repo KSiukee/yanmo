@@ -367,6 +367,12 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "模块「{module_id}」还没有镜像，没有东西可以重建" : ["module_id"],
     MODULE_DATA_REBUILD_LOCKED => "module.data_rebuild_locked"
         : "「{module_id}」的数据没有隔离，重建会覆盖正在用的数据——先隔离再来" : ["module_id"],
+    MODULE_READ_LIMITED => "module.read_limited"
+        : "「{module_id}」这次运行能读的正文额度用完了（未认证的第三方模块先给一篇文章，等你决定要不要放宽）"
+        : ["module_id"],
+    MODULE_READ_ANSWER_INVALID => "module.read_answer_invalid"
+        : "认不出的读取放行答复：{value}（只认 acknowledge / allow_more / keep_limited）"
+        : ["value"],
     MODULE_CREDENTIAL_INVALID => "module.credential_invalid"
         : "凭据绑定不合规：{field}" : ["field"],
     MODULE_GRANT_INVALID => "module.grant_invalid"

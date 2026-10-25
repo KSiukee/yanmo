@@ -42,6 +42,8 @@ pub mod credential;
 pub mod module_data;
 /// 模块事实页：空间 / 行为 / 越界 / 身份四组只读事实（拼装核心与壳的观测，不判断）。
 pub mod module_facts;
+/// 读取放行（渐进放行）：列出等作者回答的事 / 作答。
+pub mod module_read;
 pub mod module_run;
 /// 模块子 WebView：只读静态服务 + 无 Tauri 能力的 remote origin。
 pub mod module_ui;

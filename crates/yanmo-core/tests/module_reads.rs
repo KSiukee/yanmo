@@ -226,3 +226,97 @@ fn the_panic_button_freezes_third_party_modules_only() {
     assert!(store.module_card("app.yanmo.official").unwrap().enabled, "官方模块不动");
     assert_eq!(store.panic_modules().unwrap(), 0, "再按一次没有可停的了");
 }
+
+/// 渐进放行：一篇文章 → 问一句 → 第三次不再干预（整条链走一遍）。
+#[test]
+fn the_gate_opens_one_step_at_a_time() {
+    use yanmo_core::store::{ModuleIpcHandler, ReadAnswer, ReadGate};
+    use yanmo_proto::ipc::ReadHandler;
+
+    let (dir, mut store) = fresh();
+    let (_, chapter) = seeded(&mut store);
+    store.install_module(&manifest(), &grant(&[CoreDataArea::Body])).unwrap();
+    let db = dir.path().join("yanmo.db");
+    let modules_db = yanmo_core::store::ModuleData::path_beside(&db);
+
+    let read_body = |runs: usize| {
+        // 每次"运行"都新建一个 handler（闸门的"本次运行读了几篇"因此归零）
+        let second = Store::open(&db).unwrap();
+        let gate = ReadGate::new(yanmo_core::store::ModuleData::open(&modules_db).unwrap(), false);
+        let mut handler =
+            ModuleIpcHandler::new(second, ID).with_read_log(yanmo_core::store::ReadLog::new(
+                dir.path().join(yanmo_core::store::READ_LOG_FILE),
+            )).with_read_gate(gate);
+        let mut ok = 0;
+        let mut limited = 0;
+        for _ in 0..runs {
+            match handler.read(CoreDataArea::Body, Some(&chapter.to_string())) {
+                Ok(_) => ok += 1,
+                Err(error) => {
+                    assert_eq!(error.code, codes::MODULE_READ_LIMITED, "{}", error.code);
+                    limited += 1;
+                }
+            }
+        }
+        (ok, limited)
+    };
+
+    // 第一档：一次运行只能读一篇
+    assert_eq!(read_body(3), (1, 2), "第一次超额度：只给一篇");
+    let data = yanmo_core::store::ModuleData::open(&modules_db).unwrap();
+    let asks = data.read_asks().unwrap();
+    assert_eq!(asks.len(), 1);
+    assert_eq!(asks[0].1.kind, "first", "第一次只是告知");
+    assert_eq!(data.read_consent(ID).unwrap().stage, 0);
+    let mut data = data;
+    data.answer_read_ask(ID, ReadAnswer::Acknowledge).unwrap();
+    assert!(data.read_asks().unwrap().is_empty(), "答过就不问了");
+
+    // 第二次超额度：问要不要放宽 → 允许 → 两篇
+    assert_eq!(read_body(3), (1, 2));
+    let mut data = yanmo_core::store::ModuleData::open(&modules_db).unwrap();
+    let ask = &data.read_asks().unwrap()[0].1;
+    assert_eq!(ask.kind, "second");
+    data.answer_read_ask(ID, ReadAnswer::AllowMore).unwrap();
+    assert_eq!(data.read_consent(ID).unwrap().stage, 1);
+
+    // 第二档：一次运行能读两篇，第三篇被拦 → 第三次问
+    assert_eq!(read_body(3), (2, 1));
+    let ask = &data.read_asks().unwrap()[0].1;
+    assert_eq!(ask.kind, "ultimate");
+    data.answer_read_ask(ID, ReadAnswer::AllowMore).unwrap();
+    assert_eq!(data.read_consent(ID).unwrap().stage, 2);
+
+    // 第三档：不再干预
+    assert_eq!(read_body(5), (5, 0));
+}
+
+/// 认证模块不走闸（但读照样进账）。
+#[test]
+fn a_certified_module_is_not_gated() {
+    use yanmo_core::store::{ModuleIpcHandler, ReadGate};
+    use yanmo_proto::ipc::ReadHandler;
+
+    let (dir, mut store) = fresh();
+    let (_, chapter) = seeded(&mut store);
+    store.install_module(&manifest(), &grant(&[CoreDataArea::Body])).unwrap();
+    store.set_module_certified(ID, true).unwrap();
+    let db = dir.path().join("yanmo.db");
+    let log = yanmo_core::store::ReadLog::new(dir.path().join(yanmo_core::store::READ_LOG_FILE));
+    {
+        let second = Store::open(&db).unwrap();
+        let gate = ReadGate::new(
+            yanmo_core::store::ModuleData::open(yanmo_core::store::ModuleData::path_beside(&db))
+                .unwrap(),
+            true,
+        );
+        let mut handler =
+            ModuleIpcHandler::new(second, ID).with_read_log(log.clone()).with_read_gate(gate);
+        for _ in 0..3 {
+            handler
+                .read(CoreDataArea::Body, Some(&chapter.to_string()))
+                .expect("认证模块不该被限量");
+        }
+    }
+    assert_eq!(yanmo_core::store::recent_entries(log.path(), 10).len(), 3);
+}

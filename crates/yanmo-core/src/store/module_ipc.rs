@@ -12,6 +12,8 @@ use serde_json::{json, Value};
 use yanmo_proto::capability::CoreDataArea;
 use yanmo_proto::ipc::{IpcError, ReadHandler};
 
+use super::module_data::ModuleData;
+use super::module_read_consent::body_budget;
 use super::module_read_log::{ReadLog, ReadLogEntry};
 use super::{ModuleOutlineRow, NodeSummary, ShelfEntry, Store};
 use crate::error::{codes, Error, Result};
@@ -25,22 +27,48 @@ struct Served {
     work: Option<i64>,
 }
 
+/// 读取闸门：**未认证的第三方模块一次运行只许读一篇文章**（渐进放行，见
+/// `module_read_consent`）。认证模块与官方模块不走这道闸。
+pub struct ReadGate {
+    module_data: ModuleData,
+    exempt: bool,
+    /// 本次运行已经成功读了几篇正文。
+    body_reads: u64,
+    /// 本次运行是否已经记过一笔"超额度"（一次运行只记一笔）。
+    refused_this_run: bool,
+}
+
+impl ReadGate {
+    /// `exempt` = 认证模块 / 官方模块（不走闸，但留痕照旧）。
+    pub fn new(module_data: ModuleData, exempt: bool) -> Self {
+        Self { module_data, exempt, body_reads: 0, refused_this_run: false }
+    }
+}
+
 /// 把一个真实 `Store` 的只读视图接在 IPC 上。
 pub struct ModuleIpcHandler {
     store: Store,
     module_id: String,
     /// 读账（可选：命令行/测试里不接也能跑，只是不留痕）。
     log: Option<ReadLog>,
+    /// 读取闸门（可选：不接就不限量——测试与命令行走这条）。
+    gate: Option<ReadGate>,
 }
 
 impl ModuleIpcHandler {
     pub fn new(store: Store, module_id: impl Into<String>) -> Self {
-        Self { store, module_id: module_id.into(), log: None }
+        Self { store, module_id: module_id.into(), log: None, gate: None }
     }
 
     /// 接上读账（启动器按"数据目录/read-audit.jsonl"建一个）。
     pub fn with_read_log(mut self, log: ReadLog) -> Self {
         self.log = Some(log);
+        self
+    }
+
+    /// 接上读取闸门（启动器按 `modules.db` 建一个；认证/官方模块传 `exempt`）。
+    pub fn with_read_gate(mut self, gate: ReadGate) -> Self {
+        self.gate = Some(gate);
         self
     }
 
@@ -53,6 +81,42 @@ impl ModuleIpcHandler {
             CoreDataArea::Works => None,
             CoreDataArea::Body => self.store.node_work(id).ok(),
             _ => Some(id),
+        }
+    }
+
+    /// 正文额度够不够；不够就记一笔"这次运行超了"，并把拒绝交给调用方。
+    ///
+    /// 读不出放行状态（`modules.db` 坏了）时**放行**：闸门是护栏，不该因为账读不出来
+    /// 就把所有模块的读全掐掉；这一次读照样会进读账。
+    fn over_budget(&mut self) -> Option<IpcError> {
+        let module_id = self.module_id.clone();
+        let gate = self.gate.as_mut()?;
+        if gate.exempt {
+            return None;
+        }
+        let Ok(consent) = gate.module_data.read_consent(&module_id) else {
+            return None;
+        };
+        let budget = body_budget(consent.stage)?;
+        if gate.body_reads < budget {
+            return None;
+        }
+        if !gate.refused_this_run {
+            gate.refused_this_run = true;
+            let _ = gate.module_data.note_read_refusal(&module_id);
+        }
+        Some(to_ipc(Error::invalid_with(
+            codes::MODULE_READ_LIMITED,
+            [("module_id", module_id)],
+        )))
+    }
+
+    fn count_body_read(&mut self, area: CoreDataArea) {
+        if !matches!(area, CoreDataArea::Body) {
+            return;
+        }
+        if let Some(gate) = self.gate.as_mut() {
+            gate.body_reads += 1;
         }
     }
 
@@ -121,24 +185,48 @@ impl ModuleIpcHandler {
 impl ReadHandler for ModuleIpcHandler {
     fn read(&mut self, area: CoreDataArea, arg: Option<&str>) -> std::result::Result<String, IpcError> {
         let hint = self.work_hint(area, arg);
-        let served = self.serve(area, arg);
-        if let Some(log) = &self.log {
-            let entry = match &served {
-                Ok(served) => ReadLogEntry::ok(
-                    &self.module_id,
-                    area.as_str(),
-                    served.work.or(hint),
-                    served.chars,
-                    served.json.len() as u64,
-                ),
-                Err(error) => {
-                    ReadLogEntry::denied(&self.module_id, area.as_str(), hint, &error.code)
-                }
-            };
-            // 记账是旁路：写不进去（磁盘满 / 没权限）只丢这一行，**绝不因此挡住读**。
-            let _ = log.record(&entry);
+        // 正文先过闸：未认证的第三方模块一次运行只许读一篇文章。
+        if matches!(area, CoreDataArea::Body) {
+            if let Some(error) = self.over_budget() {
+                self.note_denied(&area, hint, &error.code);
+                return Err(error);
+            }
         }
-        served.map(|served| served.json)
+        let served = self.serve(area, arg);
+        match served {
+            Ok(served) => {
+                self.count_body_read(area);
+                self.note_ok(&area, hint, &served);
+                Ok(served.json)
+            }
+            Err(error) => {
+                self.note_denied(&area, hint, &error.code);
+                Err(error)
+            }
+        }
+    }
+}
+
+impl ModuleIpcHandler {
+    /// 记一条"读到了"（没接读账就什么都不做）。
+    fn note_ok(&self, area: &CoreDataArea, hint: Option<i64>, served: &Served) {
+        let Some(log) = &self.log else { return };
+        let entry = ReadLogEntry::ok(
+            &self.module_id,
+            area.as_str(),
+            served.work.or(hint),
+            served.chars,
+            served.json.len() as u64,
+        );
+        // 记账是旁路：写不进去（磁盘满 / 没权限）只丢这一行，**绝不因此挡住读**。
+        let _ = log.record(&entry);
+    }
+
+    /// 记一条"被拦下"——被拒也是要摆到台面上的事实。
+    fn note_denied(&self, area: &CoreDataArea, hint: Option<i64>, code: &str) {
+        let Some(log) = &self.log else { return };
+        let entry = ReadLogEntry::denied(&self.module_id, area.as_str(), hint, code);
+        let _ = log.record(&entry);
     }
 }
 

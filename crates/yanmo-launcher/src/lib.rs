@@ -147,8 +147,18 @@ pub fn launch(request: &LaunchRequest) -> Result<LaunchReport, LaunchError> {
     let server = std::thread::spawn(move || {
         let store = Store::open(&db_path)
             .map_err(|error| IpcError::new(error.code(), error.to_string()))?;
-        let mut handler =
-            ModuleIpcHandler::new(store, server_module).with_read_log(read_log);
+        // 读取闸门：未认证的第三方模块一次运行只许读一篇文章（官方模块与认证模块不走闸）。
+        let exempt = server_module.starts_with(yanmo_core::store::OFFICIAL_PREFIX)
+            || store.module_card(&server_module).map(|card| card.certified).unwrap_or(false);
+        let gate = yanmo_core::store::ModuleData::open(yanmo_core::store::ModuleData::path_beside(
+            &db_path,
+        ))
+        .ok()
+        .map(|data| yanmo_core::store::ReadGate::new(data, exempt));
+        let mut handler = ModuleIpcHandler::new(store, server_module).with_read_log(read_log);
+        if let Some(gate) = gate {
+            handler = handler.with_read_gate(gate);
+        }
         if resident {
             serve_repeated(
                 listener,
