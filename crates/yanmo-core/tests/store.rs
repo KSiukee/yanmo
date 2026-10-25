@@ -596,3 +596,53 @@ fn a_tree_proposal_only_applies_on_the_same_tree() {
         ProposalOutcome::Missing
     ));
 }
+
+/// 成卷提案：所有节点都还是提案时那一版 → 建卷并把它们挪进去；动过任何一章 → 整份失效。
+#[test]
+fn a_collect_proposal_needs_every_chapter_unchanged() {
+    use yanmo_core::model::{NodeKind, WorkKind};
+    use yanmo_core::store::{CollectNode, ProposalOutcome};
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path().join("yanmo.db")).unwrap();
+    let work = store.create_work(WorkKind::Novel, "题本").unwrap();
+    let first = store.create_node(work.id, None, NodeKind::Chapter, "第一章").unwrap();
+    let second = store.create_node(work.id, None, NodeKind::Chapter, "第二章").unwrap();
+    let base: Vec<CollectNode> = [first, second]
+        .iter()
+        .map(|id| CollectNode {
+            node_id: *id,
+            fingerprint: store.tree_fingerprint(*id).unwrap().unwrap(),
+        })
+        .collect();
+
+    // 作者先改了第二章 → 整份成卷失效
+    store.rename_node(second, "第二章 钟楼").unwrap();
+    let stale = store.apply_collect_proposal("第一卷", &base).unwrap();
+    assert!(matches!(stale, ProposalOutcome::Stale { .. }));
+
+    // 重新提一份（基于现在的树）→ 成功：卷建出来，两章都在它下面
+    let base: Vec<CollectNode> = [first, second]
+        .iter()
+        .map(|id| CollectNode {
+            node_id: *id,
+            fingerprint: store.tree_fingerprint(*id).unwrap().unwrap(),
+        })
+        .collect();
+    let applied = store.apply_collect_proposal("第一卷", &base).unwrap();
+    assert!(applied.applied(), "成卷应当成功：{applied:?}");
+    let nodes = store.list_nodes(work.id).unwrap();
+    let volume = nodes
+        .iter()
+        .find(|node| node.kind == NodeKind::Volume && node.title == "第一卷")
+        .expect("卷应当建出来");
+    assert_eq!(volume.title, "第一卷");
+    // 两章现在都挂在这个卷下面
+    for id in [first, second] {
+        let fingerprint = store.tree_fingerprint(id).unwrap().unwrap();
+        assert!(
+            fingerprint.starts_with(&format!("{}|", volume.id)),
+            "第 {id} 章应当挂进卷里，实际指纹 {fingerprint}"
+        );
+    }
+}

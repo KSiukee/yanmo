@@ -197,6 +197,8 @@ export interface ProposalView {
   kind: string;
   parent: number | null;
   index: number;
+  /** 成卷：要挪进新卷的节点（id + 当时的树指纹） */
+  nodes: [number, string][];
 }
 
 export interface ProposalsView {

@@ -40,6 +40,13 @@ impl ProposalOutcome {
     }
 }
 
+/// 成卷提案里的一个节点：要挪进去的那一章，+ 它当时的样子（指纹）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CollectNode {
+    pub node_id: i64,
+    pub fingerprint: String,
+}
+
 /// 一次**树结构**改动（提案里的操作：改名 / 移动）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TreeChange {
@@ -106,6 +113,41 @@ impl Store {
             TreeChange::Move { parent, index } => {
                 self.move_node(node_id, *parent, *index)?;
             }
+        }
+        Ok(ProposalOutcome::Applied { chars: 0 })
+    }
+
+    /// 应用一份**成卷提案**：新建一个卷，把列出的节点按顺序挪进去。
+    ///
+    /// 任何一个节点"这期间被作者动过"，整份提案就失效——成卷是一组动作，
+    /// 只做一半比不做更糟。
+    pub fn apply_collect_proposal(
+        &mut self,
+        title: &str,
+        nodes: &[CollectNode],
+    ) -> Result<ProposalOutcome> {
+        let title = title.trim();
+        if nodes.is_empty() || title.is_empty() {
+            return Ok(ProposalOutcome::Missing);
+        }
+        let mut work_id: Option<i64> = None;
+        for node in nodes {
+            let Some(current) = self.tree_fingerprint(node.node_id)? else {
+                return Ok(ProposalOutcome::Missing);
+            };
+            if current != node.fingerprint.trim() {
+                return Ok(ProposalOutcome::Stale { current_hash: current });
+            }
+            if work_id.is_none() {
+                work_id = Some(self.node_work(node.node_id)?);
+            }
+        }
+        let Some(work_id) = work_id else {
+            return Ok(ProposalOutcome::Missing);
+        };
+        let volume = self.create_node(work_id, None, crate::model::NodeKind::Volume, title)?;
+        for (index, node) in nodes.iter().enumerate() {
+            self.move_node(node.node_id, Some(volume), index)?;
         }
         Ok(ProposalOutcome::Applied { chars: 0 })
     }

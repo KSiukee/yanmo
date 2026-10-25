@@ -196,7 +196,7 @@ pub use module_credentials::CredentialBinding;
 pub use module_management::ModuleCard;
 pub use module_registry::OFFICIAL_PREFIX;
 pub use module_read::{ModuleOutlineRow, ModuleReadApi};
-pub use proposal::{ProposalOutcome, TreeChange};
+pub use proposal::{CollectNode, ProposalOutcome, TreeChange};
 pub use module_read_consent::{body_budget, pending_ask, ReadAnswer, ReadAsk, ReadConsent};
 pub use module_read_log::{
     recent_entries, summarize, ReadLog, ReadLogEntry, ReadSummary, WorkReads, READ_LOG_FILE,

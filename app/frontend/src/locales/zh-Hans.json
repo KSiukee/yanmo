@@ -1823,5 +1823,9 @@
   "error.shell.module_proposal_missing": "这条建议找不到了（模块可能已经撤回或更新）。",
   "error.shell.module_proposal_invalid": "模块写的建议格式不对：{detail}",
   "modules.proposal_rename": "改名为「{title}」",
-  "modules.proposal_move": "移到第 {parent} 号节点下"
+  "modules.proposal_move": "移到第 {parent} 号节点下",
+  "modules.proposal_collect": "成卷「{title}」（{count} 章）",
+  "modules.proposal_batch_hint": "有 {count} 条可以一次应用",
+  "modules.proposal_apply_all": "全部应用",
+  "modules.proposal_applied_all": "应用了 {applied}/{total} 条建议。"
 }

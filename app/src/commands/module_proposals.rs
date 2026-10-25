@@ -31,6 +31,8 @@ pub struct ProposalView {
     /// 树提案的落点（移动）
     pub parent: Option<i64>,
     pub index: i64,
+    /// 成卷：要挪进新卷的那些节点（节点 id + 当时的树指纹）
+    pub nodes: Vec<(i64, String)>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -53,6 +55,16 @@ pub fn module_proposals(
             .map(|item| {
                 let hash = if item.kind == "text" {
                     store.body_hash(item.node_id).ok().flatten()
+                } else if item.kind == "collect" {
+                    let all_ok = item.nodes.iter().all(|(node_id, base)| {
+                        store
+                            .tree_fingerprint(*node_id)
+                            .ok()
+                            .flatten()
+                            .map(|current| &current == base)
+                            .unwrap_or(false)
+                    });
+                    all_ok.then(|| item.base_hash.clone())
                 } else {
                     store.tree_fingerprint(item.node_id).ok().flatten()
                 };
@@ -91,6 +103,19 @@ pub fn module_proposal_apply(
         return Err(ApiError::new("shell.module_proposal_missing"));
     };
     let outcome = match proposal.kind.as_str() {
+        "collect" => {
+            let nodes = proposal
+                .nodes
+                .iter()
+                .map(|(node_id, base)| yanmo_core::store::CollectNode {
+                    node_id: *node_id,
+                    fingerprint: base.clone(),
+                })
+                .collect::<Vec<_>>();
+            data.with_store(|store: &mut Store| {
+                store.apply_collect_proposal(&proposal.title, &nodes)
+            })?
+        }
         "rename" | "move" => {
             let change = if proposal.kind == "rename" {
                 TreeChange::Rename { title: proposal.title.clone() }
@@ -173,6 +198,20 @@ fn read_proposals(data: &AppData, module_id: &str) -> Result<Vec<ProposalView>, 
                         kind,
                         parent: item.get("parent").and_then(|value| value.as_i64()),
                         index: item.get("index").and_then(|value| value.as_i64()).unwrap_or(0),
+                        nodes: item
+                            .get("nodes")
+                            .and_then(|value| value.as_array())
+                            .map(|list| {
+                                list.iter()
+                                    .filter_map(|node| {
+                                        Some((
+                                            node.get("node_id")?.as_i64()?,
+                                            node.get("base_hash")?.as_str()?.to_string(),
+                                        ))
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
                     })
                 })
                 .collect()

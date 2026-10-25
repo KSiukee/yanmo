@@ -55,6 +55,22 @@ async function apply(moduleId: string, proposal: ProposalView) {
   await load();
 }
 
+async function applyAll(moduleId: string) {
+  const list = (items.value[moduleId] ?? []).filter((item) => !item.stale);
+  if (list.length === 0) return;
+  let applied = 0;
+  for (const item of list) {
+    try {
+      const outcome = await moduleProposalApply(moduleId, item.id);
+      if (outcome.status === "applied") applied += 1;
+    } catch {
+      // 单条失败不挡其余
+    }
+  }
+  emit("done", t("modules.proposal_applied_all", { applied, total: list.length }));
+  await load();
+}
+
 async function dismiss(moduleId: string, proposal: ProposalView) {
   try {
     await moduleProposalDismiss(moduleId, proposal.id);
@@ -82,6 +98,19 @@ onUnmounted(() => {
           {{ t("modules.proposals_bar", { name: nameOf(bar.moduleId), count: bar.list.length }) }}
         </span>
       </p>
+      <p v-if="bar.list.filter((item) => !item.stale).length > 1" class="modules__candidate">
+        <span class="modules__candidate-text">
+          {{ t("modules.proposal_batch_hint", { count: bar.list.filter((item) => !item.stale).length }) }}
+        </span>
+        <button
+          type="button"
+          class="modules__button dialog__button"
+          :disabled="busy"
+          @click="applyAll(bar.moduleId)"
+        >
+          {{ t("modules.proposal_apply_all") }}
+        </button>
+      </p>
       <p v-for="item in bar.list" :key="item.id" class="modules__candidate">
         <span class="modules__candidate-text">
           {{
@@ -89,7 +118,9 @@ onUnmounted(() => {
               ? t("modules.proposal_item", { title: item.title || `#${item.node_id}`, chars: item.chars })
               : item.kind === "rename"
                 ? t("modules.proposal_rename", { title: item.title })
-                : t("modules.proposal_move", { parent: item.parent ?? "—" })
+                : item.kind === "collect"
+                  ? t("modules.proposal_collect", { title: item.title, count: item.nodes.length })
+                  : t("modules.proposal_move", { parent: item.parent ?? "—" })
           }}
           <span v-if="item.stale" class="modules__proposal-stale">
             {{ t("modules.proposal_stale_badge") }}
