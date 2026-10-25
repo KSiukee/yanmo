@@ -1792,5 +1792,11 @@
   "cert.check.bench_all_scenarios": "过压测台全部场景（慢 / 黑洞 / 半包 / 畸形 / 超大响应 / 内存与 CPU 上限 / 链路成环 / 依赖不可用 / 磁盘满）",
   "cert.check.timeout_cancel_exit": "超时、取消与退出的行为合规（不留孤儿进程、不无限重试）",
   "cert.check.escape_audit": "过逃逸审计清单",
-  "cert.check.provenance": "来源可查：签名清单 + 载荷哈希锚定"
+  "cert.check.provenance": "来源可查：签名清单 + 载荷哈希锚定",
+  "modules.candidates_bar": "「{name}」在正文里找到 {count} 条候选：{list}",
+  "modules.candidates_apply": "落成设定卡",
+  "modules.candidates_dismiss": "暂不",
+  "modules.candidates_done": "已落成 {count} 张设定卡。",
+  "modules.candidates_item": "{name}（第 {chapters} 章 ×{count}）",
+  "modules.candidates_item_no_chapter": "{name}（×{count}）"
 }

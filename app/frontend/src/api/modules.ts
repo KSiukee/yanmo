@@ -163,6 +163,26 @@ export const moduleFacts = (module_id: string) =>
 export const moduleRollback = (module_id: string) =>
   call<RollbackReceipt>(COMMANDS.moduleRollback, { module_id });
 
+/** 半自动登记：模块从正文里找到的候选（还不是设定卡的名字）。 */
+export interface ModuleCandidate {
+  name: string;
+  kind: string;
+  chapters: number[];
+  count: number;
+}
+
+export interface ModuleCandidatesView {
+  work_id: number;
+  items: ModuleCandidate[];
+  existing: number;
+}
+
+export const moduleCandidates = (module_id: string) =>
+  call<ModuleCandidatesView>(COMMANDS.moduleCandidates, { module_id });
+
+export const moduleCandidatesApply = (module_id: string, names: string[]) =>
+  call<number>(COMMANDS.moduleCandidatesApply, { module_id, names });
+
 
 export const moduleReadAsks = () => call<ReadAskView[]>(COMMANDS.moduleReadAsks);
 

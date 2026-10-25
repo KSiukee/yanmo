@@ -222,6 +222,8 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::module::modules_list,
         crate::commands::module::modules_panic,
         crate::commands::module::module_rollback,
+        crate::commands::module_candidates::module_candidates,
+        crate::commands::module_candidates::module_candidates_apply,
         crate::commands::module_ui::module_ui_open,
         crate::commands::module::module_set_enabled,
         crate::commands::module::module_set_favorite,

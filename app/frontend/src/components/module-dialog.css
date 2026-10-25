@@ -110,6 +110,32 @@
   font-size: 12px;
 }
 
+/* 半自动登记：候选条（跟"等你回答"同一个观感，但左边是蓝绿色的"提案"） */
+.modules__candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--ym-line);
+  border-left: 3px solid var(--ym-ink-soft);
+  border-radius: 6px;
+  background: var(--ym-paper-dim);
+}
+
+.modules__candidate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.modules__candidate-text {
+  flex: 1 1 320px;
+}
+
 .modules__ask-text {
   flex: 1 1 320px;
 }

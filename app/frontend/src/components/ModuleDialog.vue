@@ -16,6 +16,7 @@ import {
 } from "../api/modules";
 import ModuleCredentials from "./ModuleCredentials.vue";
 import ModuleFactsPanel from "./ModuleFactsPanel.vue";
+import ModuleCandidates from "./ModuleCandidates.vue";
 import ModuleImportPanel from "./ModuleImportPanel.vue";
 import ModuleReadAsks from "./ModuleReadAsks.vue";
 import ModuleToolbar from "./ModuleToolbar.vue";
@@ -199,6 +200,7 @@ onUnmounted(() => {
       <p v-if="note" class="modules__note dialog__note">{{ note }}</p>
 
       <ModuleReadAsks :cards="cards" :busy="busy" @answered="note = $event" />
+      <ModuleCandidates :cards="cards" :busy="busy" @applied="note = $event" />
 
       <ModuleImportPanel
         v-if="preview"

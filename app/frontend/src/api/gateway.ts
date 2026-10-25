@@ -209,6 +209,8 @@ export const COMMANDS = {
   modulesList: "modules_list",
   modulesPanic: "modules_panic",
   moduleRollback: "module_rollback",
+  moduleCandidates: "module_candidates",
+  moduleCandidatesApply: "module_candidates_apply",
   moduleSetEnabled: "module_set_enabled",
   moduleSetFavorite: "module_set_favorite",
   moduleSetPinned: "module_set_pinned",

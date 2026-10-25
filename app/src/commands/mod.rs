@@ -44,6 +44,8 @@ pub mod module_data;
 pub mod module_facts;
 /// 读取放行（渐进放行）：列出等作者回答的事 / 作答。
 pub mod module_read;
+/// 半自动登记：模块提候选、作者确认后落成设定卡。
+pub mod module_candidates;
 pub mod module_run;
 /// 模块子 WebView：只读静态服务 + 无 Tauri 能力的 remote origin。
 pub mod module_ui;
