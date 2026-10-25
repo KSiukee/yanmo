@@ -244,3 +244,18 @@ fn reinstalling_replaces_the_managed_package() {
     store.verify_module_package(ID, &managed).unwrap();
     assert_eq!(store.module_cards().unwrap()[0].fingerprint, second.fingerprint);
 }
+
+/// 包里的脚本：`ui/` 下放行（壳只当网页发），包根上的仍按可执行拒。
+#[test]
+fn scripts_are_allowed_only_under_ui() {
+    let dir = TempDir::new().unwrap();
+    let module = package(dir.path(), 1);
+    fs::create_dir_all(module.join("ui")).unwrap();
+    fs::write(module.join("ui").join("app.js"), b"console.log(1)").unwrap();
+    let preview = inspect_module_package(&module).expect("ui 下的脚本是界面的正常组成");
+    assert_eq!(preview.module_id, ID);
+
+    fs::write(module.join("bad.js"), b"console.log(1)").unwrap();
+    let error = inspect_module_package(&module).unwrap_err();
+    assert_eq!(error.code(), codes::MODULE_PACKAGE_INVALID);
+}

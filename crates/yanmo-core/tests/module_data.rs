@@ -245,3 +245,17 @@ fn namespace_export_only_carries_one_module() {
     assert_eq!(exported.kv_get("app.example.a", "k").unwrap(), Some(b"a".to_vec()));
     assert_eq!(exported.kv_get("app.example.b", "k").unwrap(), None);
 }
+
+/// 模块界面读自己的数据：`kv_keys` / `kv_get` 只看到自己的键。
+#[test]
+fn a_module_can_list_its_own_keys() {
+    let (_dir, path) = fresh();
+    let mut data = ModuleData::open(&path).unwrap();
+    assert_eq!(data.kv_keys("app.example.data").unwrap(), Vec::<String>::new(), "没写过就是空");
+    data.kv_put("app.example.data", "map.json", b"{}").unwrap();
+    data.kv_put("app.example.data", "theme", b"dark").unwrap();
+    data.kv_put("app.example.other", "map.json", b"{}").unwrap();
+    let keys = data.kv_keys("app.example.data").unwrap();
+    assert_eq!(keys, vec!["map.json".to_string(), "theme".to_string()]);
+    assert_eq!(keys.len(), 2, "别的模块的键不许混进来");
+}

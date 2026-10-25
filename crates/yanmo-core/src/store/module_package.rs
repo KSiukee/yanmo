@@ -92,7 +92,7 @@ pub(super) fn open_package(dir: &Path) -> Result<OpenedPackage> {
 
     let mut total = 0u64;
     let mut count = 0usize;
-    scan(&root, 0, &mut total, &mut count)?;
+    scan(&root, &root, 0, &mut total, &mut count)?;
 
     let bytes = fs::read(&canonical_entry)
         .map_err(|error| package(format!("entry read: {error}")))?;
@@ -106,7 +106,7 @@ pub(super) fn open_package(dir: &Path) -> Result<OpenedPackage> {
     })
 }
 
-fn scan(dir: &Path, depth: usize, total: &mut u64, count: &mut usize) -> Result<()> {
+fn scan(root: &Path, dir: &Path, depth: usize, total: &mut u64, count: &mut usize) -> Result<()> {
     if depth > MAX_PACKAGE_DEPTH {
         return Err(package("directory nesting is too deep"));
     }
@@ -125,7 +125,7 @@ fn scan(dir: &Path, depth: usize, total: &mut u64, count: &mut usize) -> Result<
             return Err(package(format!("symlink: {}", path.display())));
         }
         if meta.is_dir() {
-            scan(&path, depth + 1, total, count)?;
+            scan(root, &path, depth + 1, total, count)?;
             continue;
         }
         if !meta.is_file() {
@@ -136,7 +136,11 @@ fn scan(dir: &Path, depth: usize, total: &mut u64, count: &mut usize) -> Result<
             return Err(package("package is too large"));
         }
         if let Some(extension) = path.extension().and_then(|ext| ext.to_str()) {
-            if EXECUTABLE_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str()) {
+            let lower = extension.to_ascii_lowercase();
+            // 脚本（`.js`）只在 `ui/` 下放行：那是壳只当网页发的目录，不会被当成可执行文件跑；
+            // 放在包根上仍然拒——和原生可执行同一个理由。
+            let allowed_script = lower == "js" && is_under_ui(root, &path);
+            if EXECUTABLE_EXTENSIONS.contains(&lower.as_str()) && !allowed_script {
                 return Err(package(format!(
                     "executable: {} is not allowed in a module package",
                     path.display()
@@ -145,6 +149,14 @@ fn scan(dir: &Path, depth: usize, total: &mut u64, count: &mut usize) -> Result<
         }
     }
     Ok(())
+}
+
+fn is_under_ui(root: &Path, path: &Path) -> bool {
+    path.strip_prefix(root)
+        .ok()
+        .and_then(|relative| relative.components().next())
+        .map(|first| first.as_os_str() == "ui")
+        .unwrap_or(false)
 }
 
 pub(super) fn package(detail: impl Into<String>) -> Error {

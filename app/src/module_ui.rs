@@ -3,7 +3,8 @@
 //! 传输仍走 Tauri 自定义协议 `moduleui://`（不占端口、不出网）。协议处理分两种：
 //! - GET：只从当前模块 `ui/` 发静态文件；另带一个内置 `/_yanmo.js` 客户端；
 //! - POST `/_rpc`：校验本次 UI 的随机 token，只允许**当前模块**的
-//!   `module.info` / `module.status` / `module.run` / `module.stop`。
+//!   `module.info` / `module.status` / `module.run` / `module.stop`，
+//!   以及**只读**的 `module.data_get` / `module.data_keys`（读它自己的数据区）。
 //!
 //! 桥不读稿件、不暴露任意模块 id，也没有文件/网络能力。
 
@@ -46,6 +47,9 @@ const CLIENT_JS: &str = r#"
     status: () => rpc("module.status"),
     run: () => rpc("module.run"),
     stop: () => rpc("module.stop"),
+    // read-only view of this module's own data area
+    data: (key) => rpc("module.data_get", { key }),
+    dataKeys: () => rpc("module.data_keys"),
   };
 })();
 "#;
@@ -131,13 +135,22 @@ fn rpc(app: &AppHandle, state: &ModuleUiState, body: &[u8]) -> Response<Vec<u8>>
         }
         session.module_id.clone()
     };
-    match dispatch(app, &module_id, method) {
+    let params = value.get("params").cloned().unwrap_or_else(|| json!({}));
+    match dispatch(app, &module_id, method, &params) {
         Ok(result) => json_response(200, true, json!({ "result": result })),
         Err(error) => json_response(200, false, json!({ "error": error })),
     }
 }
 
-fn dispatch(app: &AppHandle, module_id: &str, method: &str) -> Result<Value, Value> {
+/// 单次给界面的数据上限：够看，不至于把 64 位 JSON 通道当文件系统用。
+const MAX_UI_DATA_BYTES: usize = 2 * 1024 * 1024;
+
+fn dispatch(
+    app: &AppHandle,
+    module_id: &str,
+    method: &str,
+    params: &Value,
+) -> Result<Value, Value> {
     let data = app.state::<AppData>();
     let runs = app.state::<ModuleRuns>();
     match method {
@@ -159,8 +172,35 @@ fn dispatch(app: &AppHandle, module_id: &str, method: &str) -> Result<Value, Val
             stop_module(runs.inner(), module_id).map_err(api_error)?;
             Ok(json!({}))
         }
+        "module.data_get" => {
+            let key = params.get("key").and_then(Value::as_str).unwrap_or_default();
+            if key.is_empty() || key.len() > 256 {
+                return Err(json!({ "code": "module_ui.bad_key" }));
+            }
+            let module_data = open_module_data(data.inner()).map_err(api_error)?;
+            match module_data.kv_get(module_id, key).map_err(|e| api_error(e.into()))? {
+                None => Ok(json!({ "key": key, "value": Value::Null })),
+                Some(bytes) if bytes.len() > MAX_UI_DATA_BYTES => Err(json!({
+                    "code": "module_ui.data_too_large",
+                    "params": { "bytes": bytes.len() },
+                })),
+                Some(bytes) => match String::from_utf8(bytes) {
+                    Ok(text) => Ok(json!({ "key": key, "value": text })),
+                    Err(_) => Err(json!({ "code": "module_ui.data_binary" })),
+                },
+            }
+        }
+        "module.data_keys" => {
+            let module_data = open_module_data(data.inner()).map_err(api_error)?;
+            let keys = module_data.kv_keys(module_id).map_err(|e| api_error(e.into()))?;
+            Ok(json!({ "keys": keys }))
+        }
         _ => Err(json!({ "code": "module_ui.unknown_method", "detail": method })),
     }
+}
+
+fn open_module_data(data: &AppData) -> Result<yanmo_core::store::ModuleData, crate::error::ApiError> {
+    yanmo_core::store::ModuleData::open(data.data_dir().join("modules.db")).map_err(Into::into)
 }
 
 fn api_error(error: crate::error::ApiError) -> Value {

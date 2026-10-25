@@ -149,7 +149,12 @@ fn scan(dir: &Path, depth: usize, total: &mut u64, count: &mut usize) -> HostRes
             return Err(HostError::new(HostError::PACKAGE_TOO_LARGE, "package is too large"));
         }
         if let Some(extension) = path.extension().and_then(|ext| ext.to_str()) {
-            if EXECUTABLE_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str()) {
+            let lower = extension.to_ascii_lowercase();
+            // `.js` 只在 `ui/` 下放行（壳只把它当网页发；包根上的脚本仍按可执行拒）。
+            let in_ui = path
+                .components()
+                .any(|part| part.as_os_str() == "ui");
+            if EXECUTABLE_EXTENSIONS.contains(&lower.as_str()) && !(lower == "js" && in_ui) {
                 return Err(HostError::new(
                     HostError::EXECUTABLE,
                     format!("native executable is not allowed: {}", path.display()),

@@ -198,6 +198,25 @@ impl ModuleData {
             .map_err(Into::into)
     }
 
+    /// 列出模块自己 KV 里的键（排序稳定；还没写过就是空）。
+    ///
+    /// 只读：给"模块界面看自己的数据"用。隔离中的模块**读不了**（与 [`Self::kv_get`] 同口径）。
+    pub fn kv_keys(&self, module_id: &str) -> Result<Vec<String>> {
+        ensure_id(module_id)?;
+        self.ensure_not_isolated(module_id)?;
+        let table = table_ident(module_id, "kv");
+        if !self.table_exists(&table)? {
+            return Ok(Vec::new());
+        }
+        let mut stmt = self
+            .conn
+            .prepare(&format!("SELECT key FROM {} ORDER BY key", quote(&table)))?;
+        let keys = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(keys)
+    }
+
     pub fn kv_delete(&mut self, module_id: &str, key: &str) -> Result<bool> {
         ensure_id(module_id)?;
         self.ensure_not_isolated(module_id)?;
