@@ -1,3 +1,40 @@
+## 0.140.0 — 2026-10-25
+
+> **模块数据写入护栏第一刀。** `modules.db` 现在有 SQLite 硬容量上限（默认 256 MiB）、
+> 表数/行数/单次写入/每分钟写入四道闸门，并新增 `kv_put/get/delete` 作为
+> 最小的模块数据写入面。**这一刀还没接到 guest ABI**，下一刀才让模块真正写。
+
+### 新
+
+- **硬容量**：`PRAGMA max_page_count` 按 `total_bytes / page_size` 设置；
+  写爆时 SQLite 直接 `SQLITE_FULL`，不会把磁盘吃光；`modules.db` 仍与核心库分离。
+- **写锁隔离**：`busy_timeout` 默认 2 秒；连接仍是单写者（`&mut self`）。
+- **四道闸门** `ModuleDataLimits`：
+  - 表数（默认 32；迁移建表也检查）；
+  - 单表行数（默认 100,000）；
+  - 单次 value（默认 1 MiB）；
+  - 每分钟写入次数（默认 120，滑动 60 秒）。
+- **最小写面**：
+  - `kv_put(module_id, key, value)`：key ≤128 字节、UTF-8；value 受单次上限；
+  - `kv_get` / `kv_delete`；
+  - 表名仍是核心拼的 `mod_<id>_kv`，模块给不了任意 SQL。
+- 错误码：`module.data_table_limit` / `data_row_limit` / `data_write_limit` /
+  `data_rate_limit`。
+
+### 其他（诚实边界）
+
+- **还没接到 guest**：没有 `env.data_*` import，模块当前读不到/写不到 `modules.db`；
+  这一刀先把核心侧护栏和最小写面做硬，下一刀接宿主 ABI。
+- 单模块**字节**配额还没做（SQLite 是共享库，当前只有整库 256 MiB 硬上限）；
+- “核心永远优先”靠**分库 + 硬上限**，不是数据库调度优先级；核心库不受模块写影响。
+- 写暴涨**告警/降级/停用**未做；只有拒绝。
+- schema 版本绑定沿用现有逐版迁移，没有新增跨库版本账。
+
+### 验收证据
+
+- **+4 例**：KV 往返/删除；行/单次/频率拒绝；迁移建表表数拒绝；整库硬上限拒绝。
+- 常规全量：Rust **1155 项**、界面 **553 项**，`check_all` 全绿。
+
 ## 0.139.0 — 2026-10-25
 
 > **模块子 WebView 第二刀：受限 RPC 桥。** 0.138 已有只读 `moduleui://` 静态协议；

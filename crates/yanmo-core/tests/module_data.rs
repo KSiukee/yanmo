@@ -7,7 +7,8 @@ use std::path::PathBuf;
 
 use tempfile::TempDir;
 use yanmo_core::error_codes::codes;
-use yanmo_core::store::ModuleData;
+use yanmo_core::model::{ModuleColumn, ModuleColumnType, ModuleMigration, ModuleSchemaStep, ModuleTable};
+use yanmo_core::store::{ModuleData, ModuleDataLimits};
 
 fn fresh() -> (TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
@@ -133,4 +134,88 @@ fn a_snapshot_is_a_consistent_copy() {
 fn the_module_database_sits_beside_the_core_database() {
     let core = PathBuf::from("data").join("yanmo.db");
     assert_eq!(ModuleData::path_beside(&core), PathBuf::from("data").join("modules.db"));
+}
+
+#[test]
+fn kv_round_trip_and_delete() {
+    let (_dir, path) = fresh();
+    let mut data = ModuleData::open(&path).unwrap();
+    data.kv_put("app.example.data", "theme", b"dark").unwrap();
+    assert_eq!(
+        data.kv_get("app.example.data", "theme").unwrap(),
+        Some(b"dark".to_vec())
+    );
+    assert!(data.kv_delete("app.example.data", "theme").unwrap());
+    assert_eq!(data.kv_get("app.example.data", "theme").unwrap(), None);
+    assert!(!data.kv_delete("app.example.data", "theme").unwrap());
+}
+
+#[test]
+fn row_write_and_rate_limits_are_enforced() {
+    let (_dir, path) = fresh();
+    let limits = ModuleDataLimits {
+        max_rows_per_table: 1,
+        max_write_bytes: 4,
+        max_writes_per_minute: 1,
+        ..ModuleDataLimits::default()
+    };
+    let mut data = ModuleData::open_with_limits(&path, limits).unwrap();
+    data.kv_put("app.example.data", "a", b"abcd").unwrap();
+    let too_large = data.kv_put("app.example.data", "b", b"abcde");
+    assert_eq!(too_large.unwrap_err().code(), codes::MODULE_DATA_WRITE_LIMIT);
+    let too_many_rows = data.kv_put("app.example.data", "b", b"x");
+    assert_eq!(too_many_rows.unwrap_err().code(), codes::MODULE_DATA_ROW_LIMIT);
+
+    let (_dir2, path2) = fresh();
+    let limits = ModuleDataLimits {
+        max_writes_per_minute: 1,
+        ..ModuleDataLimits::default()
+    };
+    let mut data = ModuleData::open_with_limits(&path2, limits).unwrap();
+    data.kv_put("app.example.data", "a", b"x").unwrap();
+    let rate = data.kv_put("app.example.data", "b", b"x");
+    assert_eq!(rate.unwrap_err().code(), codes::MODULE_DATA_RATE_LIMIT);
+}
+
+#[test]
+fn table_limit_is_enforced_on_migrations() {
+    let (_dir, path) = fresh();
+    let limits = ModuleDataLimits { max_tables: 1, ..ModuleDataLimits::default() };
+    let mut data = ModuleData::open_with_limits(&path, limits).unwrap();
+    data.kv_put("app.example.data", "a", b"x").unwrap();
+    let migration = ModuleMigration {
+        version: 1,
+        steps: vec![ModuleSchemaStep::CreateTable {
+            table: ModuleTable {
+                name: "extra".to_string(),
+                columns: vec![ModuleColumn {
+                    name: "id".to_string(),
+                    kind: ModuleColumnType::Integer,
+                    not_null: true,
+                    primary_key: true,
+                }],
+            },
+        }],
+    };
+    let error = data.apply_migration("app.example.data", &migration).unwrap_err();
+    assert_eq!(error.code(), codes::MODULE_DATA_TABLE_LIMIT);
+}
+
+#[test]
+fn database_hard_cap_rejects_growth() {
+    let (_dir, path) = fresh();
+    let limits = ModuleDataLimits {
+        total_bytes: 16 * 1024,
+        max_write_bytes: 64 * 1024,
+        ..ModuleDataLimits::default()
+    };
+    let mut data = ModuleData::open_with_limits(&path, limits).unwrap();
+    let error = data
+        .kv_put("app.example.data", "big", &vec![0u8; 64 * 1024])
+        .unwrap_err();
+    assert!(
+        format!("{error}").to_lowercase().contains("full")
+            || error.code() == codes::MODULE_DATA_WRITE_LIMIT,
+        "{error}"
+    );
 }

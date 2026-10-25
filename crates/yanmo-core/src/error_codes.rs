@@ -347,6 +347,14 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "模块 id 不合规：{module_id}" : ["module_id"],
     MODULE_GRANT_NOT_DECLARED => "module.grant_not_declared"
         : "不能授予模块没声明过的能力：{capability}" : ["capability"],
+    MODULE_DATA_TABLE_LIMIT => "module.data_table_limit"
+        : "模块数据表数超限：{module_id}" : ["module_id"],
+    MODULE_DATA_ROW_LIMIT => "module.data_row_limit"
+        : "模块数据行数超限：{module_id}" : ["module_id"],
+    MODULE_DATA_WRITE_LIMIT => "module.data_write_limit"
+        : "模块数据写入不合规" : [],
+    MODULE_DATA_RATE_LIMIT => "module.data_rate_limit"
+        : "模块数据写入太频繁，已拒绝" : [],
     MODULE_CREDENTIAL_INVALID => "module.credential_invalid"
         : "凭据绑定不合规：{field}" : ["field"],
     MODULE_GRANT_INVALID => "module.grant_invalid"

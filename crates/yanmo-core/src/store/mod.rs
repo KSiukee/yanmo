@@ -49,6 +49,7 @@ mod manuscript_submit;
 mod mirror;
 mod mirror_plan;
 mod module_data;
+mod module_data_limits;
 mod module_lifecycle;
 mod module_ipc;
 mod certification;
@@ -157,6 +158,7 @@ pub use restore_packages::{list_packages, scan_packages, PackageBrief};
 pub use restore_swap::{swap_in, RestoreOutcome, KEEP_FOLDER};
 pub use certification::{Certification, CertificationSet};
 pub use module_data::{ModuleData, ModuleStats};
+pub use module_data_limits::ModuleDataLimits;
 pub use module_ipc::{new_ipc_token, ModuleIpcHandler};
 pub use module_import::{
     inspect_module_package, inspect_module_package_with_certs, ImportPreview,

@@ -30,10 +30,14 @@ use crate::error::{codes, Error, Result};
 use crate::model::{ModuleColumn, ModuleMigration, ModuleSchemaStep, ModuleTable};
 use crate::time::now_millis;
 
+use super::module_data_limits::{ModuleDataLimits, WriteGuard};
+
 /// 模块数据区的句柄（**独立于核心库**）。
 pub struct ModuleData {
-    conn: Connection,
-    path: PathBuf,
+    pub(super) conn: Connection,
+    pub(super) path: PathBuf,
+    pub(super) limits: ModuleDataLimits,
+    pub(super) guard: WriteGuard,
 }
 
 /// 一个模块的数据规模（**按需算，不落库**，避免计数器过期）。
@@ -65,7 +69,15 @@ impl ModuleData {
             )",
             [],
         )?;
-        Ok(Self { conn, path })
+        let limits = ModuleDataLimits::default();
+        let data = Self {
+            conn,
+            path,
+            limits,
+            guard: WriteGuard::new(),
+        };
+        data.apply_limits()?;
+        Ok(data)
     }
 
     /// 这个数据区的文件路径。
@@ -135,6 +147,18 @@ impl ModuleData {
                     ("current", current.to_string()),
                     ("found", migration.version.to_string()),
                 ],
+            ));
+        }
+
+        let created = migration
+            .steps
+            .iter()
+            .filter(|step| matches!(step, ModuleSchemaStep::CreateTable { .. }))
+            .count();
+        if self.tables_of(module_id)?.len() + created > self.limits.max_tables {
+            return Err(Error::invalid_with(
+                codes::MODULE_DATA_TABLE_LIMIT,
+                [("module_id", module_id.to_string())],
             ));
         }
 
@@ -293,7 +317,7 @@ impl ModuleData {
     }
 }
 
-fn ensure_id(module_id: &str) -> Result<()> {
+pub(super) fn ensure_id(module_id: &str) -> Result<()> {
     if yanmo_proto::is_valid_module_id(module_id) {
         Ok(())
     } else {
@@ -305,7 +329,7 @@ fn ensure_id(module_id: &str) -> Result<()> {
 }
 
 /// 表名：`mod_<模块id>_<后缀>`。
-fn table_ident(module_id: &str, suffix: &str) -> String {
+pub(super) fn table_ident(module_id: &str, suffix: &str) -> String {
     format!("mod_{module_id}_{suffix}")
 }
 
@@ -315,7 +339,7 @@ fn index_ident(module_id: &str, suffix: &str) -> String {
 }
 
 /// SQL 标识符加引号（名字已被校验成窄字符集；这里仍转义，防的是将来放宽校验）。
-fn quote(identifier: &str) -> String {
+pub(super) fn quote(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
 }
 
