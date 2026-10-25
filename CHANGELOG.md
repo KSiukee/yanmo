@@ -1,3 +1,41 @@
+## 0.141.0 — 2026-10-25
+
+> **模块数据 ABI 接上了。** `own_data` 授予后，模块可用 `env.data_get/put/delete`
+> 读写自己的 `mod_<id>_kv`；宿主按 `modules.db` 打开数据区，单模块 KV 总量
+> 默认 8 MiB。**仍然只能 KV，不能建表/写 SQL。**
+
+### 新
+
+- **guest ABI**：
+  - `env.data_get(key_ptr, key_len, out_ptr, out_cap) -> len | -1 | -2`；
+  - `env.data_put(key_ptr, key_len, value_ptr, value_len) -> 0 | -1`；
+  - `env.data_delete(key_ptr, key_len) -> 0 | -1`；
+  - 指针/长度按 guest 线性内存校验；key ≤128 字节 UTF-8；单次 value ≤1 MiB。
+- **授予链**：
+  - 清单 `capabilities.own_data` 声明；
+  - 管理页授予（`ModuleCard.own_data`）；
+  - 启动器只把有授予的模块放进 `--own-data-modules`；
+  - 监督者只给这些模块的宿主子进程加 `--allow-own-data` 和 `--modules-db`；
+  - 三者缺一，链接器里就没有 `env.data_*`。
+- **宿主侧护栏**：整库 256 MiB 硬上限、单模块 KV 8 MiB、单表 10 万行、
+  单次 1 MiB、每分钟 120 次；`busy_timeout` 2 秒。
+- 新宿主错误码：`host.data_failed` / `host.data_limit`。
+
+### 其他（诚实边界）
+
+- **只有 KV**：没有建表/迁移 ABI，模块还不能用自定义表；schema 迁移仍只在核心侧。
+- **宿主侧与核心侧各有一份 KV 护栏**（宿主不能链接核心，结构约束）；口径目前一致，
+  将来抽公共件。核心侧另有表数/迁移检查，宿主只做 KV。
+- 单模块 8 MiB 只算 KV 的 `length(value)`，不是整库独占字节；整库是 256 MiB 硬上限。
+- 写暴涨**告警/降级/停用**未做；超限只是拒绝（返回 -1）。
+- 模块数据导出/清理入口还没有（核心 `drop_namespace` 已有，未接管理页）。
+- 单模块 resident 模式未接 data（平台子进程是一跑一退，已接）。
+
+### 验收证据
+
+- **+3 例**：KV 往返 + 无授予时 import 拒绝（宿主 2 例）；单模块 KV 配额（核心 1 例）。
+- 常规全量：Rust **1158 项**、界面 **553 项**，`check_all` 全绿。
+
 ## 0.140.0 — 2026-10-25
 
 > **模块数据写入护栏第一刀。** `modules.db` 现在有 SQLite 硬容量上限（默认 256 MiB）、

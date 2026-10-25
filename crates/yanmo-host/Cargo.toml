@@ -8,6 +8,7 @@ description = "研墨模块沙箱宿主（独立进程，不链接核心）"
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+rusqlite.workspace = true
 yanmo-proto.workspace = true
 yanmo-ipc = { path = "../yanmo-ipc" }
 yanmo-vault = { path = "../yanmo-vault" }

@@ -347,6 +347,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "模块 id 不合规：{module_id}" : ["module_id"],
     MODULE_GRANT_NOT_DECLARED => "module.grant_not_declared"
         : "不能授予模块没声明过的能力：{capability}" : ["capability"],
+    MODULE_DATA_MODULE_QUOTA => "module.data_module_quota"
+        : "模块数据总量超限：{module_id}" : ["module_id"],
     MODULE_DATA_TABLE_LIMIT => "module.data_table_limit"
         : "模块数据表数超限：{module_id}" : ["module_id"],
     MODULE_DATA_ROW_LIMIT => "module.data_row_limit"

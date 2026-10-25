@@ -20,6 +20,8 @@ const MAX_KEY_BYTES: usize = 128;
 pub struct ModuleDataLimits {
     /// 整个 `modules.db` 的硬上限（字节）
     pub total_bytes: u64,
+    /// 单模块 KV 数据总字节上限
+    pub max_module_bytes: u64,
     /// 单个模块最多允许的表数
     pub max_tables: usize,
     /// 单表最多行数
@@ -36,6 +38,7 @@ impl Default for ModuleDataLimits {
     fn default() -> Self {
         Self {
             total_bytes: 256 * 1024 * 1024,
+            max_module_bytes: 8 * 1024 * 1024,
             max_tables: 32,
             max_rows_per_table: 100_000,
             max_write_bytes: 1024 * 1024,
@@ -48,6 +51,7 @@ impl Default for ModuleDataLimits {
 impl ModuleDataLimits {
     pub fn validate(&self) -> Result<()> {
         if self.total_bytes == 0
+            || self.max_module_bytes == 0
             || self.max_tables == 0
             || self.max_rows_per_table == 0
             || self.max_write_bytes == 0
@@ -130,6 +134,35 @@ impl ModuleData {
                 |row| row.get(0),
             )
             .optional()?;
+        let old_size: u64 = if exists.is_some() {
+            self.conn
+                .query_row(
+                    &format!("SELECT length(value) FROM {} WHERE key = ?1", quote(&table)),
+                    [key],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map(|value| value.max(0) as u64)
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        let total: u64 = self
+            .conn
+            .query_row(
+                &format!("SELECT COALESCE(SUM(length(value)), 0) FROM {}", quote(&table)),
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|value| value.max(0) as u64)
+            .unwrap_or(0);
+        if total.saturating_sub(old_size).saturating_add(value.len() as u64)
+            > self.limits.max_module_bytes
+        {
+            return Err(Error::invalid_with(
+                codes::MODULE_DATA_MODULE_QUOTA,
+                [("module_id", module_id.to_string())],
+            ));
+        }
         let rows_after = rows + u64::from(exists.is_none());
         self.check_write(module_id, &table, rows_after, value.len())?;
         self.conn.execute(

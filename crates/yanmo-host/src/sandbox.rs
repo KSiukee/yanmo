@@ -27,6 +27,7 @@ use serde::Serialize;
 use wasmi::{
     Caller, Config, Engine, Extern, Linker, Module, Store, StoreLimits, StoreLimitsBuilder,
 };
+use crate::module_data::ModuleData;
 use yanmo_proto::capability::CoreDataArea;
 use yanmo_vault::CredentialSpec;
 use yanmo_ipc::Client;
@@ -79,6 +80,7 @@ pub(super) struct HostState {
     pub(super) max_reads: usize,
     pub(super) reads: usize,
     pub(super) violation: Option<HostError>,
+    pub(super) data: Option<Arc<Mutex<ModuleData>>>,
 }
 
 /// 跑一次模块（**不接核心**）：只调 `run()`，只给 `env.emit`。
@@ -96,7 +98,16 @@ pub fn run_package_with_core(
     core: Option<Client>,
 ) -> HostResult<RunReport> {
     let core = core.map(|client| Arc::new(Mutex::new(CoreLink::from_client(client))));
-    run_package_inner(package, config, core, None, &[], None, &[])
+    run_package_inner(package, config, core, None, &[], None, &[], None)
+}
+
+/// 跑一次模块，带自己的数据 KV（`env.data_*`）。
+pub fn run_package_with_data(
+    package: &ModulePackage,
+    config: SandboxConfig,
+    data: Arc<Mutex<ModuleData>>,
+) -> HostResult<RunReport> {
+    run_package_inner(package, config, None, None, &[], None, &[], Some(data))
 }
 
 /// 跑一次模块，带**凭据绑定清单**（宿主代理用；秘密不在这里，只有名字+域名）。
@@ -107,6 +118,7 @@ pub fn run_package_with_credentials(
     credentials: Vec<CredentialSpec>,
     network_log: Option<PathBuf>,
     allowed_hosts: Vec<String>,
+    data: Option<Arc<Mutex<ModuleData>>>,
 ) -> HostResult<RunReport> {
     let core = core.map(|client| Arc::new(Mutex::new(CoreLink::from_client(client))));
     run_package_inner(
@@ -117,6 +129,7 @@ pub fn run_package_with_credentials(
         &credentials,
         network_log.as_deref(),
         &allowed_hosts,
+        data,
     )
 }
 
@@ -126,7 +139,7 @@ pub fn run_package_with_core_shared(
     config: SandboxConfig,
     core: Option<Arc<Mutex<CoreLink>>>,
 ) -> HostResult<RunReport> {
-    run_package_inner(package, config, core, None, &[], None, &[])
+    run_package_inner(package, config, core, None, &[], None, &[], None)
 }
 
 /// 同 [`run_package_with_core_shared`]，但带一个协作取消标志：
@@ -137,7 +150,7 @@ pub fn run_package_with_core_shared_cancellable(
     core: Option<Arc<Mutex<CoreLink>>>,
     cancel: Option<Arc<AtomicBool>>,
 ) -> HostResult<RunReport> {
-    run_package_inner(package, config, core, cancel, &[], None, &[])
+    run_package_inner(package, config, core, cancel, &[], None, &[], None)
 }
 
 fn run_package_inner(
@@ -148,6 +161,7 @@ fn run_package_inner(
     credentials: &[CredentialSpec],
     network_log: Option<&Path>,
     allowed_hosts: &[String],
+    data: Option<Arc<Mutex<ModuleData>>>,
 ) -> HostResult<RunReport> {
     config.validate()?;
     let declared: BTreeSet<CoreDataArea> =
@@ -155,6 +169,9 @@ fn run_package_inner(
     let allow_read = core.is_some() && !declared.is_empty();
     let allow_network = config.allow_network && package.manifest().capabilities.network;
     let allow_auth = allow_network && !credentials.is_empty();
+    let allow_data = config.allow_own_data
+        && package.manifest().capabilities.own_data
+        && data.is_some();
     let wasm = fs::read(package.entry_path())?;
 
     let mut wasmi_config = Config::default();
@@ -168,7 +185,9 @@ fn run_package_inner(
             && (import.name() == "emit"
                 || (import.name() == "read" && allow_read)
                 || (import.name() == "http_get" && allow_network)
-                || (import.name() == "http_get_auth" && allow_auth));
+                || (import.name() == "http_get_auth" && allow_auth)
+                || (matches!(import.name(), "data_get" | "data_put" | "data_delete")
+                    && allow_data));
         if !allowed {
             return Err(HostError::new(
                 HostError::IMPORT_NOT_ALLOWED,
@@ -204,6 +223,7 @@ fn run_package_inner(
         max_reads: config.max_reads,
         reads: 0,
         violation: None,
+        data,
     };
     let mut store = Store::new(&engine, state);
     store.limiter(|state| &mut state.limits);
@@ -237,6 +257,9 @@ fn run_package_inner(
 
     if allow_network {
         crate::sandbox_network::link_http(&mut linker, allow_auth)?;
+    }
+    if allow_data {
+        crate::sandbox_data::link_data(&mut linker)?;
     }
 
     let pre = linker

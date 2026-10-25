@@ -20,12 +20,15 @@ use std::io::BufRead;
 use serde_json::json;
 use yanmo_host::{
     run_package_with_credentials, run_package_with_core, run_package_with_core_shared, CoreLink, HostError,
-    ModulePackage, SandboxConfig,
+    ModuleData, ModulePackage, SandboxConfig,
 };
 use yanmo_ipc::Client;
 
+mod args;
 mod credential_args;
 mod supervisor;
+
+use crate::args::{number_of, value_of};
 
 fn main() -> ExitCode {
     match run() {
@@ -48,6 +51,10 @@ fn run() -> Result<(), HostError> {
     let idle_secs = number_of(&args, "--idle-secs").unwrap_or(300).clamp(1, 3600);
     let credentials_json = value_of(&args, "--credentials-json").map(str::to_string);
     let network_log = value_of(&args, "--network-log").map(PathBuf::from);
+    let modules_db = value_of(&args, "--modules-db").map(PathBuf::from);
+    let own_data_modules: Vec<String> = value_of(&args, "--own-data-modules")
+        .map(|value| value.split(',').filter(|id| !id.is_empty()).map(str::to_string).collect())
+        .unwrap_or_default();
     let network_allowlist: Vec<String> = value_of(&args, "--network-allowlist")
         .map(|value| value.split(',').filter(|host| !host.is_empty()).map(str::to_string).collect())
         .unwrap_or_default();
@@ -94,6 +101,7 @@ fn run() -> Result<(), HostError> {
             .unwrap_or(defaults.max_read_result_bytes as u64) as usize,
         max_reads: number_of(&args, "--max-reads").unwrap_or(defaults.max_reads as u64) as usize,
         allow_network: args.iter().any(|arg| arg == "--allow-network"),
+        allow_own_data: args.iter().any(|arg| arg == "--allow-own-data"),
         max_network_requests: number_of(&args, "--max-network-requests")
             .unwrap_or(defaults.max_network_requests as u64) as usize,
         max_network_bytes: number_of(&args, "--max-network-bytes")
@@ -171,6 +179,8 @@ fn run() -> Result<(), HostError> {
                         credentials_json.as_deref(),
                         network_log.as_deref(),
                         &network_allowlist,
+                        modules_db.as_deref(),
+                        own_data_modules.iter().any(|id| id == &crashed_id),
                     ) {
                         Ok(child) => {
                             children.insert(crashed_id.clone(), child);
@@ -264,6 +274,8 @@ fn run() -> Result<(), HostError> {
                 credentials_json.as_deref(),
                 network_log.as_deref(),
                 &network_allowlist,
+                modules_db.as_deref(),
+                own_data_modules.iter().any(|id| id == module_id),
             ) {
                 Ok(child) => {
                     children.insert(module_id.to_string(), child);
@@ -344,7 +356,11 @@ fn run() -> Result<(), HostError> {
     }
 
     let credentials = credential_args::credentials_for(module_id_arg.as_deref(), credentials_json.as_deref());
-    let report = if credentials.is_empty() && network_log.is_none() {
+    let data = match value_of(&args, "--modules-db") {
+        Some(path) if config.allow_own_data => Some(Arc::new(Mutex::new(ModuleData::open(path)?))),
+        _ => None,
+    };
+    let report = if data.is_none() && credentials.is_empty() && network_log.is_none() {
         run_package_with_core(&package, config, client)?
     } else {
         run_package_with_credentials(
@@ -354,6 +370,7 @@ fn run() -> Result<(), HostError> {
             credentials,
             network_log.clone(),
             network_allowlist.clone(),
+            data,
         )?
     };
     println!(
@@ -377,13 +394,4 @@ fn kill_all(children: &mut HashMap<String, std::process::Child>) {
         let _ = child.kill();
         let _ = child.wait();
     }
-}
-
-fn value_of<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
-    let index = args.iter().position(|arg| arg == flag)?;
-    args.get(index + 1).map(String::as_str)
-}
-
-fn number_of(args: &[String], flag: &str) -> Option<u64> {
-    value_of(args, flag).and_then(|value| value.parse().ok())
 }

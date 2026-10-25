@@ -31,6 +31,8 @@ pub fn spawn_child(
     credentials_json: Option<&str>,
     network_log: Option<&Path>,
     network_allowlist: &[String],
+    modules_db: Option<&Path>,
+    allow_own_data: bool,
 ) -> std::io::Result<Child> {
     let mut command = Command::new(exe);
     command
@@ -61,6 +63,12 @@ pub fn spawn_child(
         command
             .arg("--network-allowlist")
             .arg(network_allowlist.join(","));
+    }
+    if let Some(db) = modules_db {
+        command.arg("--modules-db").arg(db);
+    }
+    if allow_own_data {
+        command.arg("--allow-own-data");
     }
     #[cfg(windows)]
     {

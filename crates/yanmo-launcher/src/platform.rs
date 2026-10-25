@@ -45,6 +45,7 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
 
     let mut handlers: HashMap<String, ModuleIpcHandler> = HashMap::new();
     let mut network_modules: Vec<String> = Vec::new();
+    let mut own_data_modules: Vec<String> = Vec::new();
     let mut credentials: HashMap<String, Vec<yanmo_core::store::CredentialBinding>> =
         HashMap::new();
     let mut allowlist: Option<Vec<String>> = None;
@@ -77,6 +78,13 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
                 .unwrap_or(false)
         {
             network_modules.push(manifest.id.clone());
+        }
+        if store
+            .module_card(&manifest.id)
+            .map(|card| card.own_data)
+            .unwrap_or(false)
+        {
+            own_data_modules.push(manifest.id.clone());
         }
         let bindings = store.module_credentials(&manifest.id).unwrap_or_default();
         if !bindings.is_empty() {
@@ -128,6 +136,14 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
     if !network_modules.is_empty() {
         command.arg("--network-modules").arg(network_modules.join(","));
     }
+    if !own_data_modules.is_empty() {
+        command
+            .arg("--own-data-modules")
+            .arg(own_data_modules.join(","));
+    }
+    command
+        .arg("--modules-db")
+        .arg(request.db_path.with_file_name("modules.db"));
     if !credentials.is_empty() {
         command
             .arg("--credentials-json")

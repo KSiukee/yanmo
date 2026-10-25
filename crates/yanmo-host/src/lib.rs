@@ -21,13 +21,16 @@ mod package;
 pub mod core_link;
 mod sandbox;
 mod sandbox_network;
+mod sandbox_data;
 mod sandbox_read;
 mod sandbox_config;
+mod module_data;
 
 pub use error::{HostError, HostResult};
 pub use package::{
     ModulePackage, MAX_ENTRY_BYTES, MAX_MANIFEST_BYTES, MAX_PACKAGE_BYTES, MAX_PACKAGE_ENTRIES,
 };
-pub use sandbox::{run_package, run_package_with_core, run_package_with_core_shared, run_package_with_credentials, run_package_with_core_shared_cancellable, RunReport, RunStatus};
+pub use sandbox::{run_package, run_package_with_core, run_package_with_core_shared, run_package_with_credentials, run_package_with_core_shared_cancellable, run_package_with_data, RunReport, RunStatus};
 pub use core_link::CoreLink;
+pub use module_data::ModuleData;
 pub use sandbox_config::SandboxConfig;

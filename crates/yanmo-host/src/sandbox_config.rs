@@ -25,6 +25,8 @@ pub struct SandboxConfig {
     pub max_reads: usize,
     /// 本次运行是否允许 `env.http_get`（模块声明 + 用户授予 + 全局开关之后）
     pub allow_network: bool,
+    /// 本次运行是否允许自己的模块数据 KV（own_data 授予之后）
+    pub allow_own_data: bool,
     /// 本次运行最多几次网络请求
     pub max_network_requests: usize,
     /// 单次网络响应正文上限（字节）
@@ -45,6 +47,7 @@ impl Default for SandboxConfig {
             max_read_result_bytes: 256 * 1024,
             max_reads: 64,
             allow_network: false,
+            allow_own_data: false,
             max_network_requests: 8,
             max_network_bytes: 512 * 1024,
             max_total_network_bytes: 2 * 1024 * 1024,

@@ -219,3 +219,16 @@ fn database_hard_cap_rejects_growth() {
         "{error}"
     );
 }
+
+#[test]
+fn per_module_kv_quota_is_enforced() {
+    let (_dir, path) = fresh();
+    let limits = ModuleDataLimits {
+        max_module_bytes: 4,
+        ..ModuleDataLimits::default()
+    };
+    let mut data = ModuleData::open_with_limits(&path, limits).unwrap();
+    data.kv_put("app.example.data", "a", b"abcd").unwrap();
+    let error = data.kv_put("app.example.data", "b", b"x").unwrap_err();
+    assert_eq!(error.code(), codes::MODULE_DATA_MODULE_QUOTA);
+}
