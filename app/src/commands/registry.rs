@@ -228,6 +228,8 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::module_proposals::module_proposals,
         crate::commands::module_proposals::module_proposal_apply,
         crate::commands::module_proposals::module_proposal_dismiss,
+        crate::commands::module_words::module_words,
+        crate::commands::module_words::module_words_write,
         crate::commands::module::certifications_recheck,
         crate::commands::module_ui::module_ui_open,
         crate::commands::module::module_set_enabled,

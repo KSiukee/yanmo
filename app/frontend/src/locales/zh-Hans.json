@@ -1827,5 +1827,17 @@
   "modules.proposal_collect": "成卷「{title}」（{count} 章）",
   "modules.proposal_batch_hint": "有 {count} 条可以一次应用",
   "modules.proposal_apply_all": "全部应用",
-  "modules.proposal_applied_all": "应用了 {applied}/{total} 条建议。"
+  "modules.proposal_applied_all": "应用了 {applied}/{total} 条建议。",
+  "error.shell.module_words_invalid": "词表里有认不出的分类（只支持「人物」与「设定」）。",
+  "error.shell.module_words_too_many": "词表最多 500 条。",
+  "modules.words_title": "词表：{count} 条（模块照着它在正文里找候选）",
+  "modules.words_edit": "编辑词表",
+  "modules.words_close": "收起",
+  "modules.words_add": "加一条",
+  "modules.words_drop": "删",
+  "modules.words_save": "保存词表",
+  "modules.words_name": "名字",
+  "modules.words_kind_setting": "设定",
+  "modules.words_kind_person": "人物",
+  "modules.words_saved": "词表已保存（{count} 条）。"
 }

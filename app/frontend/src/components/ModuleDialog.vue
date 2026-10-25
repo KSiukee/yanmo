@@ -18,6 +18,7 @@ import ModuleCredentials from "./ModuleCredentials.vue";
 import ModuleFactsPanel from "./ModuleFactsPanel.vue";
 import ModuleCandidates from "./ModuleCandidates.vue";
 import ModuleProposals from "./ModuleProposals.vue";
+import ModuleWords from "./ModuleWords.vue";
 import ModuleImportPanel from "./ModuleImportPanel.vue";
 import ModuleReadAsks from "./ModuleReadAsks.vue";
 import ModuleToolbar from "./ModuleToolbar.vue";
@@ -203,6 +204,12 @@ onUnmounted(() => {
       <ModuleReadAsks :cards="cards" :busy="busy" @answered="note = $event" />
       <ModuleCandidates :cards="cards" :busy="busy" @applied="note = $event" />
       <ModuleProposals :cards="cards" :busy="busy" @done="note = $event" />
+      <ModuleWords
+        v-if="cards.length === 1"
+        :module-id="cards[0].id"
+        :busy="busy"
+        @done="note = $event"
+      />
 
       <ModuleImportPanel
         v-if="preview"

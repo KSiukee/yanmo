@@ -216,6 +216,8 @@ export const COMMANDS = {
   moduleProposals: "module_proposals",
   moduleProposalApply: "module_proposal_apply",
   moduleProposalDismiss: "module_proposal_dismiss",
+  moduleWords: "module_words",
+  moduleWordsWrite: "module_words_write",
   moduleSetEnabled: "module_set_enabled",
   moduleSetFavorite: "module_set_favorite",
   moduleSetPinned: "module_set_pinned",

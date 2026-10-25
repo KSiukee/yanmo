@@ -46,6 +46,8 @@ pub mod module_facts;
 pub mod module_read;
 /// 模块的正文提案（只提建议，作者点一下才落盘）。
 pub mod module_proposals;
+/// 模块词表的读写（作者在软件里编辑）。
+pub mod module_words;
 /// 半自动登记：模块提候选、作者确认后落成设定卡。
 pub mod module_candidates;
 pub mod module_run;

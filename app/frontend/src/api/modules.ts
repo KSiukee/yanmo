@@ -220,6 +220,18 @@ export const moduleProposalApply = (module_id: string, proposal_id: string) =>
 export const moduleProposalDismiss = (module_id: string, proposal_id: string) =>
   call<void>(COMMANDS.moduleProposalDismiss, { module_id, proposal_id });
 
+/** 词表里的一条（名字 + 分类）。 */
+export interface WordRow {
+  name: string;
+  kind: string;
+}
+
+export const moduleWords = (module_id: string) =>
+  call<{ items: WordRow[] }>(COMMANDS.moduleWords, { module_id });
+
+export const moduleWordsWrite = (module_id: string, items: WordRow[]) =>
+  call<number>(COMMANDS.moduleWordsWrite, { module_id, items });
+
 export interface QuestionSubmitView {
   accepted: number;
   dropped: number;
