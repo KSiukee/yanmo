@@ -99,6 +99,10 @@ impl Store {
         if changed == 0 {
             return Err(not_found(module_id));
         }
+        tx.execute(
+            "DELETE FROM module_credentials WHERE module_id = ?1",
+            [module_id],
+        )?;
         Self::record_in(
             &self.device_id,
             &tx,

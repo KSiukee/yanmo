@@ -1,6 +1,7 @@
-//! `env.http_get` 的宿主实现：从 guest 内存读 URL、走受控代理、把正文写回。
+//! `env.http_get` / `env.http_get_auth` 的宿主实现。
 //!
-//! 单独成件：这是网络 ABI/配额/日志，不跟 wasm 链接细节混在一个文件里。
+//! 秘密只在这一层从系统钥匙串取出、放进请求头；不写日志、不返回 guest。
+//! 单独成件：网络 ABI/配额/日志不跟 wasm 链接细节混在一个文件里。
 
 use wasmi::{Caller, Extern, Linker};
 
@@ -8,8 +9,8 @@ use crate::error::{HostError, HostResult};
 use crate::network;
 use crate::sandbox::HostState;
 
-/// 把 `env.http_get` 挂到链接器上（只有 allow_network 时调用）。
-pub(super) fn link_http(linker: &mut Linker<HostState>) -> HostResult<()> {
+/// 把两个网络 import 挂到链接器上（只有 allow_network 时调用）。
+pub(super) fn link_http(linker: &mut Linker<HostState>, allow_auth: bool) -> HostResult<()> {
     linker
         .func_wrap(
             "env",
@@ -22,6 +23,26 @@ pub(super) fn link_http(linker: &mut Linker<HostState>) -> HostResult<()> {
              -> i32 { http_get(&mut caller, url_ptr, url_len, out_ptr, out_cap) },
         )
         .map_err(|error| HostError::new(HostError::LINK, error.to_string()))?;
+    if allow_auth {
+        linker
+            .func_wrap(
+                "env",
+                "http_get_auth",
+                |mut caller: Caller<'_, HostState>,
+                 url_ptr: i32,
+                 url_len: i32,
+                 name_ptr: i32,
+                 name_len: i32,
+                 out_ptr: i32,
+                 out_cap: i32|
+                 -> i32 {
+                    http_get_auth(
+                        &mut caller, url_ptr, url_len, name_ptr, name_len, out_ptr, out_cap,
+                    )
+                },
+            )
+            .map_err(|error| HostError::new(HostError::LINK, error.to_string()))?;
+    }
     Ok(())
 }
 
@@ -32,67 +53,157 @@ pub(super) fn http_get(
     out_ptr: i32,
     out_cap: i32,
 ) -> i32 {
-    if url_ptr < 0 || url_len < 0 || out_ptr < 0 || out_cap < 0 {
-        return -1;
-    }
-    let url_len = url_len as usize;
-    if url_len == 0 || url_len > network::MAX_URL_BYTES {
-        return -1;
-    }
-    let Some(Extern::Memory(memory)) = caller.get_export("memory") else {
+    let Some(url) = read_string(caller, url_ptr, url_len, network::MAX_URL_BYTES) else {
         return -1;
     };
-    let mut url_bytes = vec![0u8; url_len];
-    if memory
-        .read(&*caller, url_ptr as usize, &mut url_bytes)
-        .is_err()
-    {
+    if quota_left(caller) == false {
         return -1;
     }
-    let Ok(url) = String::from_utf8(url_bytes) else {
-        return -1;
-    };
-    let (module_id, requests, max_requests) = {
-        let state = caller.data();
-        (state.module_id.clone(), state.network_requests, state.max_network_requests)
-    };
-    if requests >= max_requests {
-        return -1;
-    }
-    let host = network::check_url(&url)
-        .ok()
-        .and_then(|parsed| parsed.host_str().map(str::to_string))
-        .unwrap_or_else(|| "?".to_string());
-    let max_bytes = caller.data().max_network_bytes;
-    let body = match network::fetch(&url, max_bytes) {
-        Ok(body) => body,
+    let host = match network::check_url(&url) {
+        Ok(parsed) => parsed.host_str().unwrap_or("?").to_string(),
         Err(error) => {
-            eprintln!(
-                "network module={module_id} host={host} result={} detail={}",
-                error.code, error.detail
-            );
-            caller.data_mut().network_requests += 1;
-            return -1;
+            log_denied(caller, "?", &error.code, &error.detail);
+            return count_failure(caller);
         }
     };
-    if body.len() > out_cap as usize {
-        caller.data_mut().network_requests += 1;
-        return -2;
+    let max = caller.data().max_network_bytes;
+    match network::fetch(&url, max) {
+        Ok(body) => write_body(caller, out_ptr, out_cap, &body, &host, None),
+        Err(error) => {
+            log_denied(caller, &host, error.code, &error.detail);
+            count_failure(caller)
+        }
     }
-    if memory
-        .write(&mut *caller, out_ptr as usize, &body)
-        .is_err()
-    {
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn http_get_auth(
+    caller: &mut Caller<'_, HostState>,
+    url_ptr: i32,
+    url_len: i32,
+    name_ptr: i32,
+    name_len: i32,
+    out_ptr: i32,
+    out_cap: i32,
+) -> i32 {
+    let Some(url) = read_string(caller, url_ptr, url_len, network::MAX_URL_BYTES) else {
         return -1;
+    };
+    let Some(name) = read_string(caller, name_ptr, name_len, 64) else {
+        return -1;
+    };
+    if !quota_left(caller) {
+        return -1;
+    }
+    let Some(spec) = caller
+        .data()
+        .credentials
+        .iter()
+        .find(|spec| spec.name == name)
+        .cloned()
+    else {
+        log_denied(caller, "?", "vault.not_bound", "credential is not bound to this module");
+        return count_failure(caller);
+    };
+    let parsed = match network::check_url(&url) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            log_denied(caller, &spec.host, &error.code, &error.detail);
+            return count_failure(caller);
+        }
+    };
+    let Some(host) = parsed.host_str() else {
+        return count_failure(caller);
+    };
+    if !spec.allows(host) {
+        log_denied(
+            caller,
+            host,
+            "vault.host_mismatch",
+            &format!("credential {} is bound to {}", spec.name, spec.host),
+        );
+        return count_failure(caller);
+    }
+    let module_id = caller.data().module_id.clone();
+    let secret = match yanmo_vault::load(&module_id, &name) {
+        Ok(secret) => secret,
+        Err(error) => {
+            log_denied(caller, host, error.code, &error.detail);
+            return count_failure(caller);
+        }
+    };
+    let max = caller.data().max_network_bytes;
+    let result = network::fetch_with_auth(&url, max, &secret);
+    drop(secret);
+    match result {
+        Ok(body) => write_body(caller, out_ptr, out_cap, &body, host, Some(&name)),
+        Err(error) => {
+            log_denied(caller, host, error.code, &error.detail);
+            count_failure(caller)
+        }
+    }
+}
+
+fn read_string(
+    caller: &mut Caller<'_, HostState>,
+    ptr: i32,
+    len: i32,
+    max: usize,
+) -> Option<String> {
+    if ptr < 0 || len <= 0 || len as usize > max {
+        return None;
+    }
+    let Some(Extern::Memory(memory)) = caller.get_export("memory") else {
+        return None;
+    };
+    let mut bytes = vec![0u8; len as usize];
+    memory.read(&*caller, ptr as usize, &mut bytes).ok()?;
+    String::from_utf8(bytes).ok()
+}
+
+fn quota_left(caller: &Caller<'_, HostState>) -> bool {
+    caller.data().network_requests < caller.data().max_network_requests
+}
+
+fn count_failure(caller: &mut Caller<'_, HostState>) -> i32 {
+    caller.data_mut().network_requests += 1;
+    -1
+}
+
+fn write_body(
+    caller: &mut Caller<'_, HostState>,
+    out_ptr: i32,
+    out_cap: i32,
+    body: &[u8],
+    host: &str,
+    credential: Option<&str>,
+) -> i32 {
+    if out_ptr < 0 || out_cap < 0 {
+        return count_failure(caller);
+    }
+    if body.len() > out_cap as usize {
+        return count_failure(caller);
+    }
+    let Some(Extern::Memory(memory)) = caller.get_export("memory") else {
+        return count_failure(caller);
+    };
+    if memory.write(&mut *caller, out_ptr as usize, body).is_err() {
+        return count_failure(caller);
     }
     let state = caller.data_mut();
     state.network_requests += 1;
     state.network_bytes = state.network_bytes.saturating_add(body.len());
+    let credential = credential.unwrap_or("-");
     eprintln!(
-        "network module={} host={} bytes={}",
+        "network module={} host={} bytes={} credential={credential}",
         state.module_id,
         host,
         body.len()
     );
     body.len() as i32
+}
+
+fn log_denied(caller: &mut Caller<'_, HostState>, host: &str, code: &str, detail: &str) {
+    let module_id = caller.data().module_id.clone();
+    eprintln!("network module={module_id} host={host} result={code} detail={detail}");
 }

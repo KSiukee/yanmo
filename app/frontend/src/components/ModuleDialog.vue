@@ -22,7 +22,9 @@ import {
   type ModuleCard,
   type ModuleStatus,
 } from "../api/modules";
+import ModuleCredentials from "./ModuleCredentials.vue";
 import ModuleImportPanel from "./ModuleImportPanel.vue";
+import { certificationLabel, readsLabel } from "./moduleLabels";
 import { useModuleNetwork } from "../composables/useModuleNetwork";
 import { useModuleRuns } from "../composables/useModuleRuns";
 import { t } from "../locales/index.ts";
@@ -33,6 +35,7 @@ const cards = ref<ModuleCard[]>([]);
 const busy = ref(false);
 const note = ref("");
 const preview = ref<ImportPreview | null>(null);
+const credentialFor = ref<string | null>(null);
 const { runs, isRunning: isRunningId, markStarted, markStopped, loadStatuses, dispose } =
   useModuleRuns((status: ModuleStatus) => {
     const emitted = status.emitted.join(" / ");
@@ -49,19 +52,6 @@ const { runs, isRunning: isRunningId, markStarted, markStopped, loadStatuses, di
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function readsLabel(card: ModuleCard): string {
-  if (card.reads.length === 0) return t("modules.no_reads");
-  return card.reads
-    .map((code) => t(`modules.read.${code}`))
-    .join(t("common.list_separator"));
-}
-
-function certificationLabel(card: ModuleCard): string {
-  if (!card.certified) return t("modules.uncertified");
-  const date = new Date(card.certified_at).toISOString().slice(0, 10);
-  return t("modules.certified_badge", { edition: card.cert_edition, date });
 }
 
 async function load() {
@@ -363,6 +353,15 @@ onUnmounted(() => {
               }}
             </button>
             <button
+              v-if="card.network_declared"
+              type="button"
+              class="modules__button dialog__button"
+              :disabled="busy"
+              @click="credentialFor = credentialFor === card.id ? null : card.id"
+            >
+              {{ t("credentials.button") }}
+            </button>
+            <button
               type="button"
               class="modules__button dialog__button"
               :disabled="busy"
@@ -383,6 +382,11 @@ onUnmounted(() => {
               {{ t("modules.uninstall") }}
             </button>
           </div>
+          <ModuleCredentials
+            v-if="credentialFor === card.id"
+            :module-id="card.id"
+            @close="credentialFor = null"
+          />
         </li>
       </ul>
     </section>

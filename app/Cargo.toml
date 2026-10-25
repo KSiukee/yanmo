@@ -18,6 +18,7 @@ serde.workspace = true
 serde_json.workspace = true
 yanmo-core.workspace = true
 yanmo-proto.workspace = true
+yanmo-vault = { path = "../crates/yanmo-vault" }
 
 [dev-dependencies]
 tempfile = "3"

@@ -36,13 +36,34 @@ impl NetworkError {
 
 /// 拉一个公开 URL 的正文（GET，不跟随重定向）。
 pub fn fetch(url: &str, max_bytes: usize) -> Result<Vec<u8>, NetworkError> {
+    fetch_inner(url, max_bytes, None)
+}
+
+/// 同 [`fetch`]，但带 `Authorization: Bearer`（秘密只在本函数内存在，不写日志）。
+pub fn fetch_with_auth(
+    url: &str,
+    max_bytes: usize,
+    bearer: &str,
+) -> Result<Vec<u8>, NetworkError> {
+    fetch_inner(url, max_bytes, Some(bearer))
+}
+
+fn fetch_inner(
+    url: &str,
+    max_bytes: usize,
+    bearer: Option<&str>,
+) -> Result<Vec<u8>, NetworkError> {
     let parsed = check_url(url)?;
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(10))
         .redirects(0)
         .user_agent("YanmoModule/0.129")
         .build();
-    let response = agent.get(parsed.as_str()).call().map_err(|error| match error {
+    let mut request = agent.get(parsed.as_str());
+    if let Some(bearer) = bearer {
+        request = request.set("Authorization", &format!("Bearer {bearer}"));
+    }
+    let response = request.call().map_err(|error| match error {
         ureq::Error::Status(code, _) => {
             NetworkError::new(NetworkError::FAILED, format!("HTTP {code}"))
         }

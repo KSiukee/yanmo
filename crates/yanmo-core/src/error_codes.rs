@@ -347,6 +347,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "模块 id 不合规：{module_id}" : ["module_id"],
     MODULE_GRANT_NOT_DECLARED => "module.grant_not_declared"
         : "不能授予模块没声明过的能力：{capability}" : ["capability"],
+    MODULE_CREDENTIAL_INVALID => "module.credential_invalid"
+        : "凭据绑定不合规：{field}" : ["field"],
     MODULE_GRANT_INVALID => "module.grant_invalid"
         : "这份能力授予不合规：{detail}" : ["detail"],
     MODULE_RECORD_CORRUPT => "module.record_corrupt"

@@ -143,6 +143,12 @@ pub fn module_uninstall(
     module_id: String,
 ) -> Result<(), ApiError> {
     runs.stop_platform()?;
+    let credentials = data
+        .with_store(|store: &mut Store| store.module_credentials(&module_id))
+        .unwrap_or_default();
+    for binding in credentials {
+        let _ = yanmo_vault::remove(&module_id, &binding.name);
+    }
     data.with_store(|store: &mut Store| store.uninstall_module(&module_id))
 }
 

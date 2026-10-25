@@ -179,3 +179,40 @@ fn global_offline_is_a_setting() {
     store.set_network_offline(false).unwrap();
     assert!(!store.network_offline().unwrap());
 }
+
+#[test]
+fn credentials_are_metadata_only() {
+    let (_dir, mut store) = fresh();
+    install(&mut store, A, "甲");
+    store
+        .add_module_credential(A, "deepseek", "api.deepseek.com")
+        .unwrap();
+    store
+        .add_module_credential(A, "deepseek", "api.deepseek.com")
+        .unwrap();
+    let bindings = store.module_credentials(A).unwrap();
+    assert_eq!(bindings.len(), 1);
+    assert_eq!(bindings[0].name, "deepseek");
+    assert_eq!(bindings[0].host, "api.deepseek.com");
+    assert!(store.has_module_credential(A, "deepseek").unwrap());
+    store
+        .add_module_credential(A, "deepseek", "*.deepseek.com")
+        .unwrap();
+    assert_eq!(store.module_credentials(A).unwrap()[0].host, "*.deepseek.com");
+    store.remove_module_credential(A, "deepseek").unwrap();
+    assert!(store.module_credentials(A).unwrap().is_empty());
+    assert!(!store.has_module_credential(A, "deepseek").unwrap());
+}
+
+#[test]
+fn credential_hosts_are_narrow() {
+    let (_dir, mut store) = fresh();
+    install(&mut store, A, "甲");
+    assert!(store
+        .add_module_credential(A, "x", "https://api.example.com")
+        .is_err());
+    assert!(store.add_module_credential(A, "x", "api.example.com/path").is_err());
+    assert!(store.add_module_credential(A, "x", "localhost").is_err());
+    assert!(store.add_module_credential(A, "bad/name", "api.example.com").is_err());
+    assert!(store.add_module_credential("app.missing", "x", "api.example.com").is_err());
+}

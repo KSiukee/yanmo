@@ -1,0 +1,15 @@
+[package]
+name = "yanmo-vault"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "研墨模块凭据保险箱：密钥只进系统钥匙串，模块拿不到明文"
+
+[dependencies]
+serde.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[lints.rust]
+unsafe_code = "forbid"

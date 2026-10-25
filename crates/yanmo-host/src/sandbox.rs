@@ -27,7 +27,7 @@ use wasmi::{
     Caller, Config, Engine, Extern, Linker, Module, Store, StoreLimits, StoreLimitsBuilder,
 };
 use yanmo_proto::capability::CoreDataArea;
-use yanmo_proto::ipc::IpcError;
+use yanmo_vault::CredentialSpec;
 use yanmo_ipc::Client;
 
 use crate::error::{HostError, HostResult};
@@ -61,19 +61,20 @@ pub(super) struct HostState {
     max_emit_bytes: usize,
     max_total_emit_bytes: usize,
     max_emits: usize,
-    core: Option<Arc<Mutex<CoreLink>>>,
-    cancel: Option<Arc<AtomicBool>>,
+    pub(super) core: Option<Arc<Mutex<CoreLink>>>,
+    pub(super) cancel: Option<Arc<AtomicBool>>,
     pub(super) module_id: String,
     pub(super) network_requests: usize,
     pub(super) network_bytes: usize,
     pub(super) max_network_requests: usize,
     pub(super) max_network_bytes: usize,
-    declared: BTreeSet<CoreDataArea>,
-    max_read_arg_bytes: usize,
-    max_read_result_bytes: usize,
-    max_reads: usize,
-    reads: usize,
-    violation: Option<HostError>,
+    pub(super) credentials: Vec<CredentialSpec>,
+    pub(super) declared: BTreeSet<CoreDataArea>,
+    pub(super) max_read_arg_bytes: usize,
+    pub(super) max_read_result_bytes: usize,
+    pub(super) max_reads: usize,
+    pub(super) reads: usize,
+    pub(super) violation: Option<HostError>,
 }
 
 /// 跑一次模块（**不接核心**）：只调 `run()`，只给 `env.emit`。
@@ -91,7 +92,18 @@ pub fn run_package_with_core(
     core: Option<Client>,
 ) -> HostResult<RunReport> {
     let core = core.map(|client| Arc::new(Mutex::new(CoreLink::from_client(client))));
-    run_package_with_core_shared(package, config, core)
+    run_package_inner(package, config, core, None, &[])
+}
+
+/// 跑一次模块，带**凭据绑定清单**（宿主代理用；秘密不在这里，只有名字+域名）。
+pub fn run_package_with_credentials(
+    package: &ModulePackage,
+    config: SandboxConfig,
+    core: Option<Client>,
+    credentials: Vec<CredentialSpec>,
+) -> HostResult<RunReport> {
+    let core = core.map(|client| Arc::new(Mutex::new(CoreLink::from_client(client))));
+    run_package_inner(package, config, core, None, &credentials)
 }
 
 /// 同 [`run_package_with_core`]，但核心连接可以**跨多次运行复用**（常驻宿主用）。
@@ -100,7 +112,7 @@ pub fn run_package_with_core_shared(
     config: SandboxConfig,
     core: Option<Arc<Mutex<CoreLink>>>,
 ) -> HostResult<RunReport> {
-    run_package_with_core_shared_cancellable(package, config, core, None)
+    run_package_inner(package, config, core, None, &[])
 }
 
 /// 同 [`run_package_with_core_shared`]，但带一个协作取消标志：
@@ -111,11 +123,22 @@ pub fn run_package_with_core_shared_cancellable(
     core: Option<Arc<Mutex<CoreLink>>>,
     cancel: Option<Arc<AtomicBool>>,
 ) -> HostResult<RunReport> {
+    run_package_inner(package, config, core, cancel, &[])
+}
+
+fn run_package_inner(
+    package: &ModulePackage,
+    config: SandboxConfig,
+    core: Option<Arc<Mutex<CoreLink>>>,
+    cancel: Option<Arc<AtomicBool>>,
+    credentials: &[CredentialSpec],
+) -> HostResult<RunReport> {
     config.validate()?;
     let declared: BTreeSet<CoreDataArea> =
         package.manifest().capabilities.read.iter().copied().collect();
     let allow_read = core.is_some() && !declared.is_empty();
     let allow_network = config.allow_network && package.manifest().capabilities.network;
+    let allow_auth = allow_network && !credentials.is_empty();
     let wasm = fs::read(package.entry_path())?;
 
     let mut wasmi_config = Config::default();
@@ -128,7 +151,8 @@ pub fn run_package_with_core_shared_cancellable(
         let allowed = import.module() == "env"
             && (import.name() == "emit"
                 || (import.name() == "read" && allow_read)
-                || (import.name() == "http_get" && allow_network));
+                || (import.name() == "http_get" && allow_network)
+                || (import.name() == "http_get_auth" && allow_auth));
         if !allowed {
             return Err(HostError::new(
                 HostError::IMPORT_NOT_ALLOWED,
@@ -154,6 +178,7 @@ pub fn run_package_with_core_shared_cancellable(
         network_bytes: 0,
         max_network_requests: config.max_network_requests,
         max_network_bytes: config.max_network_bytes,
+        credentials: credentials.to_vec(),
         declared,
         max_read_arg_bytes: config.max_read_arg_bytes,
         max_read_result_bytes: config.max_read_result_bytes,
@@ -186,13 +211,13 @@ pub fn run_package_with_core_shared_cancellable(
                  arg_len: i32,
                  out_ptr: i32,
                  out_cap: i32|
-                 -> i32 { read(&mut caller, cap, arg_ptr, arg_len, out_ptr, out_cap) },
+                 -> i32 { crate::sandbox_read::read(&mut caller, cap, arg_ptr, arg_len, out_ptr, out_cap) },
             )
             .map_err(|error| HostError::new(HostError::LINK, error.to_string()))?;
     }
 
     if allow_network {
-        crate::sandbox_network::link_http(&mut linker)?;
+        crate::sandbox_network::link_http(&mut linker, allow_auth)?;
     }
 
     let pre = linker
@@ -272,117 +297,6 @@ fn emit(caller: &mut Caller<'_, HostState>, ptr: i32, len: i32) -> i32 {
 
 fn fail(caller: &mut Caller<'_, HostState>, code: &'static str, detail: &str) -> i32 {
     fail_from_state(caller.data_mut(), code, detail)
-}
-
-/// 稳定的能力 id（**已发布，别改**）：1 作品 / 2 目录 / 3 正文 / 4 大纲 /
-/// 5 碎片 / 6 设定卡 / 7 场景卡 / 8 伏笔。
-fn area_from_id(id: i32) -> Option<CoreDataArea> {
-    match id {
-        1 => Some(CoreDataArea::Works),
-        2 => Some(CoreDataArea::Tree),
-        3 => Some(CoreDataArea::Body),
-        4 => Some(CoreDataArea::Outline),
-        5 => Some(CoreDataArea::Fragments),
-        6 => Some(CoreDataArea::Entities),
-        7 => Some(CoreDataArea::Scenes),
-        8 => Some(CoreDataArea::Foreshadows),
-        _ => None,
-    }
-}
-
-/// guest ABI：`read(cap_id, arg_ptr, arg_len, out_ptr, out_cap) -> len | -1 | -2`。
-///
-/// - `-1`：宿主记下违规（整次运行失败）；
-/// - `-2`：结果比 `out_cap` 大 —— **这是缓冲区协商，不是违规**，guest 可以加大缓冲重试；
-/// - 其它负数不会出现。
-#[allow(clippy::too_many_arguments)]
-fn read(
-    caller: &mut Caller<'_, HostState>,
-    cap: i32,
-    arg_ptr: i32,
-    arg_len: i32,
-    out_ptr: i32,
-    out_cap: i32,
-) -> i32 {
-    if caller
-        .data()
-        .cancel
-        .as_ref()
-        .is_some_and(|cancel| cancel.load(Ordering::Relaxed))
-    {
-        return fail(caller, HostError::STOPPED, "module was stopped");
-    }
-    let Some(area) = area_from_id(cap) else {
-        return fail(caller, HostError::READ_INVALID, "unknown capability id");
-    };
-    {
-        let state = caller.data();
-        if !state.declared.contains(&area) {
-            return fail(caller, HostError::CAPABILITY_DENIED, area.as_str());
-        }
-        if state.reads >= state.max_reads {
-            return fail(caller, HostError::READ_LIMIT, "too many reads");
-        }
-    }
-    if arg_ptr < 0 || arg_len < 0 || out_ptr < 0 || out_cap < 0 {
-        return fail(caller, HostError::READ_INVALID, "negative pointer or length");
-    }
-    let Some(Extern::Memory(memory)) = caller.get_export("memory") else {
-        return fail(caller, HostError::READ_INVALID, "module has no exported memory");
-    };
-
-    let arg = if arg_len == 0 {
-        None
-    } else {
-        let length = arg_len as usize;
-        if length > caller.data().max_read_arg_bytes {
-            return fail(caller, HostError::READ_LIMIT, "read argument is too large");
-        }
-        let mut buffer = vec![0u8; length];
-        if memory.read(&*caller, arg_ptr as usize, &mut buffer).is_err() {
-            return fail(caller, HostError::READ_INVALID, "read argument is out of bounds");
-        }
-        match String::from_utf8(buffer) {
-            Ok(text) => Some(text),
-            Err(_) => return fail(caller, HostError::READ_INVALID, "read argument is not UTF-8"),
-        }
-    };
-
-    let core = {
-        let state = caller.data_mut();
-        state.reads += 1;
-        state.core.clone()
-    };
-    let Some(core) = core else {
-        return fail(caller, HostError::CORE, "no core link");
-    };
-    let result = match core.lock() {
-        Ok(mut client) => client.read(area, arg.as_deref()),
-        Err(_) => Err(IpcError::new(
-            IpcError::HANDSHAKE,
-            "core link lock poisoned",
-        )),
-    };
-    let data = match result {
-        Ok(data) => data,
-        Err(error) => {
-            return fail(
-                caller,
-                HostError::CORE,
-                &format!("{}: {}", error.code, error.detail),
-            );
-        }
-    };
-    if data.len() > caller.data().max_read_result_bytes {
-        return fail(caller, HostError::READ_LIMIT, "core result is too large");
-    }
-    if data.len() > out_cap as usize {
-        return -2;
-    }
-    if memory.write(&mut *caller, out_ptr as usize, data.as_bytes()).is_err() {
-        return fail(caller, HostError::READ_INVALID, "result write is out of bounds");
-    }
-    data.len() as i32
 }
 
 fn fail_from_state(state: &mut HostState, code: &'static str, detail: &str) -> i32 {

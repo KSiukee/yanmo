@@ -59,3 +59,62 @@ fn loopback_is_denied_by_the_host_proxy() {
     assert_eq!(report["status"]["kind"], "guest_error");
     assert_eq!(report["status"]["code"], -1);
 }
+
+#[test]
+fn unbound_credential_name_is_rejected_before_keyring() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join("manifest.json"),
+        json!({
+            "id": "app.example.credential",
+            "default_language": "zh-Hans",
+            "name": { "zh-Hans": "凭据测试" },
+            "description": { "zh-Hans": "没绑定就不给。" },
+            "author": { "name": "Example Studio" },
+            "version": "1.0.0",
+            "protocol": 1,
+            "runtime": "wasm",
+            "entry": "module.wasm",
+            "ui": { "form": "headless" },
+            "capabilities": { "read": [], "network": true }
+        })
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("module.wasm"),
+        wat::parse_str(
+            r#"
+            (module
+              (import "env" "http_get_auth" (func $get (param i32 i32 i32 i32 i32 i32) (result i32)))
+              (memory (export "memory") 1)
+              (data (i32.const 0) "https://example.com/")
+              (data (i32.const 40) "other")
+              (func (export "run") (result i32)
+                (call $get (i32.const 0) (i32.const 20) (i32.const 40) (i32.const 5) (i32.const 100) (i32.const 4096))))
+            "#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let credentials = json!({
+        "app.example.credential": [{ "name": "bound", "host": "example.com" }]
+    })
+    .to_string();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_yanmo-host"))
+        .args([
+            "--module",
+            dir.path().to_str().unwrap(),
+            "--module-id",
+            "app.example.credential",
+            "--allow-network",
+            "--credentials-json",
+            &credentials,
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["status"]["kind"], "guest_error");
+    assert_eq!(report["status"]["code"], -1);
+}

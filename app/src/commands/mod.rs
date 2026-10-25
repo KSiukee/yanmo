@@ -37,6 +37,8 @@ pub mod inspire;
 pub mod lines;
 /// 模块管理页：列表、激活/冻结、收藏/置顶、卸载（保留数据）。
 pub mod module;
+/// 模块凭据：秘密进系统钥匙串，核心只存名字与允许域名。
+pub mod credential;
 pub mod module_run;
 pub mod module_run_types;
 /// 命令登记处：壳上所有命令的唯一一张清单（入口只接上它）。

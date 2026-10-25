@@ -54,6 +54,7 @@ mod module_ipc;
 mod certification;
 mod module_import;
 mod module_package;
+mod module_credentials;
 mod module_management;
 mod module_read;
 mod module_registry;
@@ -160,6 +161,7 @@ pub use module_ipc::{new_ipc_token, ModuleIpcHandler};
 pub use module_import::{
     inspect_module_package, inspect_module_package_with_certs, ImportPreview,
 };
+pub use module_credentials::CredentialBinding;
 pub use module_management::ModuleCard;
 pub use module_read::{ModuleOutlineRow, ModuleReadApi};
 pub use question_answer::Answer;

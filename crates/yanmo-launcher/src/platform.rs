@@ -45,6 +45,8 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
 
     let mut handlers: HashMap<String, ModuleIpcHandler> = HashMap::new();
     let mut network_modules: Vec<String> = Vec::new();
+    let mut credentials: HashMap<String, Vec<yanmo_core::store::CredentialBinding>> =
+        HashMap::new();
     for entry in fs::read_dir(&request.modules_root).map_err(|error| {
         LaunchError::new(LaunchError::MANIFEST, format!("{}: {error}", request.modules_root.display()))
     })? {
@@ -71,6 +73,10 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
                 .unwrap_or(false)
         {
             network_modules.push(manifest.id.clone());
+        }
+        let bindings = store.module_credentials(&manifest.id).unwrap_or_default();
+        if !bindings.is_empty() {
+            credentials.insert(manifest.id.clone(), bindings);
         }
         handlers.insert(
             manifest.id.clone(),
@@ -117,6 +123,11 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
         .arg(request.idle_secs.max(1).min(3600).to_string());
     if !network_modules.is_empty() {
         command.arg("--network-modules").arg(network_modules.join(","));
+    }
+    if !credentials.is_empty() {
+        command
+            .arg("--credentials-json")
+            .arg(serde_json::to_string(&credentials).unwrap_or_else(|_| "{}".to_string()));
     }
     command
         .stdin(Stdio::piped())

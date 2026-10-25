@@ -18,10 +18,11 @@ use std::io::BufRead;
 
 use serde_json::json;
 use yanmo_host::{
-    run_package_with_core, run_package_with_core_shared, CoreLink, HostError,
+    run_package_with_credentials, run_package_with_core, run_package_with_core_shared, CoreLink, HostError,
     ModulePackage, SandboxConfig,
 };
 use yanmo_ipc::Client;
+use yanmo_vault::CredentialSpec;
 
 fn main() -> ExitCode {
     match run() {
@@ -42,6 +43,7 @@ fn run() -> Result<(), HostError> {
     let resident = args.iter().any(|arg| arg == "--resident");
     let modules_root = value_of(&args, "--modules-root").map(PathBuf::from);
     let idle_secs = number_of(&args, "--idle-secs").unwrap_or(300).clamp(1, 3600);
+    let credentials_json = value_of(&args, "--credentials-json").map(str::to_string);
     let network_modules: Vec<String> = value_of(&args, "--network-modules")
         .map(|value| value.split(',').filter(|id| !id.is_empty()).map(str::to_string).collect())
         .unwrap_or_default();
@@ -215,6 +217,9 @@ fn run() -> Result<(), HostError> {
             if network_modules.iter().any(|id| id == module_id) {
                 command.arg("--allow-network");
             }
+            if let Some(credentials) = credentials_json.as_deref() {
+                command.arg("--credentials-json").arg(credentials);
+            }
             #[cfg(windows)]
             {
                 use std::os::windows::process::CommandExt;
@@ -309,7 +314,12 @@ fn run() -> Result<(), HostError> {
         }
     }
 
-    let report = run_package_with_core(&package, config, client)?;
+    let credentials = credentials_for(module_id_arg.as_deref(), credentials_json.as_deref());
+    let report = if credentials.is_empty() {
+        run_package_with_core(&package, config, client)?
+    } else {
+        run_package_with_credentials(&package, config, client, credentials)?
+    };
     println!(
         "{}",
         json!({
@@ -324,6 +334,21 @@ fn run() -> Result<(), HostError> {
     Ok(())
 }
 
+
+
+fn credentials_for(
+    module_id: Option<&str>,
+    raw: Option<&str>,
+) -> Vec<CredentialSpec> {
+    let (Some(module_id), Some(raw)) = (module_id, raw) else {
+        return Vec::new();
+    };
+    let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, Vec<CredentialSpec>>>(raw)
+    else {
+        return Vec::new();
+    };
+    map.get(module_id).cloned().unwrap_or_default()
+}
 
 fn reap(children: &mut HashMap<String, std::process::Child>) {
     let done: Vec<String> = children

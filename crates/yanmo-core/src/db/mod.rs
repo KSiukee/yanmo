@@ -39,6 +39,7 @@ mod migrations_v23;
 mod migrations_v24;
 mod migrations_v25;
 mod migrations_v26;
+mod migrations_v27;
 
 /// schema 版本要求的最低 SQLite（trigram tokenizer 自 3.34 起，中文子串匹配要用）。
 /// 口径同 `rusqlite::version_number()`：3.34.0 → 3_034_000（i32）。

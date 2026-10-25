@@ -115,3 +115,21 @@ export const moduleStatus = (module_id: string) =>
 
 export const moduleStop = (module_id: string) =>
   call<void>(COMMANDS.moduleStop, { module_id });
+
+export interface CredentialBinding {
+  name: string;
+  host: string;
+}
+
+export const credentialsList = (module_id: string) =>
+  call<CredentialBinding[]>(COMMANDS.credentialsList, { module_id });
+
+export const credentialAdd = (
+  module_id: string,
+  name: string,
+  host: string,
+  secret: string,
+) => call<CredentialBinding>(COMMANDS.credentialAdd, { module_id, name, host, secret });
+
+export const credentialRemove = (module_id: string, name: string) =>
+  call<void>(COMMANDS.credentialRemove, { module_id, name });
