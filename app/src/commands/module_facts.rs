@@ -34,6 +34,14 @@ pub struct ReadBookView {
     pub chars: u64,
 }
 
+/// 认证：**验过什么**（版本号决定清单；认不出的版本 checks 为空）。
+#[derive(Debug, Clone, Serialize)]
+pub struct CertView {
+    pub edition: u32,
+    pub date: String,
+    pub checks: Vec<&'static str>,
+}
+
 /// 留档：回滚的目标版本。
 #[derive(Debug, Clone, Serialize)]
 pub struct ArchiveView {
@@ -64,6 +72,8 @@ pub struct ModuleFactsView {
     pub reads: ReadSummaryView,
     /// 上一版的留档（有才能回滚；没有就是 `None`）。
     pub archive: Option<ArchiveView>,
+    /// 认证（核心验签后按（id, 版本, 载荷哈希）查到的；没有就是 `None`）。
+    pub cert: Option<CertView>,
     /// 现在跑没在跑 + 空闲多少秒（壳观测）。
     pub running: bool,
     pub idle_seconds: u64,
@@ -90,6 +100,14 @@ pub fn module_facts(
     let program_bytes = dir_bytes(&data.data_dir().join("modules").join(&module_id));
     let network = summary_for(&data, &module_id);
     let reads = read_summary(&data, &module_id)?;
+    // 认证是**核心验签的结果**：按（id, 版本, 载荷哈希）在已验签清单里查，查不到就是没认证。
+    let cert = yanmo_core::store::CertificationSet::built_in()
+        .lookup(&card.id, &card.version, &card.fingerprint)
+        .map(|entry| CertView {
+            edition: entry.edition(),
+            date: entry.date_text(),
+            checks: entry.checks().to_vec(),
+        });
     let archive = yanmo_core::store::read_archive(
         &data.data_dir().join(yanmo_core::store::ARCHIVE_DIR),
         &module_id,
@@ -103,6 +121,7 @@ pub fn module_facts(
         network,
         reads,
         archive,
+        cert,
         running: status.running,
         idle_seconds: status.idle_seconds,
     })

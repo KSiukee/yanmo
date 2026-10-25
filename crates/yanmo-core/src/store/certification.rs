@@ -43,6 +43,29 @@ const OFFICIAL_PUBLIC_KEY_HEX: &str = "088efbd89a5ae653ccb28f1b1773602ff43006acf
 /// 官方签名清单（JSON）。与公钥一起替换；空 = 不认证。
 const OFFICIAL_CERTIFICATIONS_JSON: &str = r#"{"format":1,"entries":[],"signature":"1b2de4b930d4589790cd81968cf807418fb66ff76c66895ef555fda2ce7b0ce54ad491cfad729f316eeb192b210c7ff2fc2647f85c42f3ec80218f60fe020209"}"#;
 
+/// **审核清单的最新版**：版本号进签名，清单内容公开在文档里——换清单 = 换版本号。
+pub const CERT_EDITION_LATEST: u32 = 1;
+
+/// 某一版审核**验过什么**（稳定码，界面自己翻译；核心不写文案）。
+///
+/// 认证不是安全认证：这一串说的是"我们核过这几件事"，不是"它没有恶意"。
+/// 版本号认不出来就返回空——**不认识的清单不能假装认识**。
+pub fn checks(edition: u32) -> &'static [&'static str] {
+    match edition {
+        1 => &[
+            "no_driver_or_service",
+            "no_elevation",
+            "capability_respected",
+            "network_via_proxy",
+            "bench_all_scenarios",
+            "timeout_cancel_exit",
+            "escape_audit",
+            "provenance",
+        ],
+        _ => &[],
+    }
+}
+
 /// 清单里的一行：认证绑定到**载荷哈希**，不是只绑名字/版本。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Certification {
@@ -56,6 +79,11 @@ pub struct Certification {
 impl Certification {
     pub fn edition(&self) -> u32 {
         self.edition
+    }
+
+    /// 这一版认证**验过什么**（认不出的版本号返回空）。
+    pub fn checks(&self) -> &'static [&'static str] {
+        checks(self.edition)
     }
 
     /// 给人看的日期（unix 毫秒 → `YYYY-MM-DD`；只用于界面展示）。
@@ -247,5 +275,37 @@ mod official_tests {
         )
         .expect("official empty list must verify");
         assert!(set.entries().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod checks_tests {
+    use super::*;
+
+    #[test]
+    fn edition_one_lists_the_eight_checks_in_a_stable_order() {
+        let codes = checks(1);
+        assert_eq!(codes.len(), 8);
+        assert_eq!(codes[0], "no_driver_or_service");
+        assert_eq!(codes[7], "provenance");
+        assert_eq!(checks(CERT_EDITION_LATEST), codes);
+    }
+
+    #[test]
+    fn an_unknown_edition_lists_nothing() {
+        assert!(checks(0).is_empty());
+        assert!(checks(99).is_empty(), "an unknown edition lists nothing");
+    }
+
+    #[test]
+    fn a_certification_carries_its_own_checklist() {
+        let cert = Certification {
+            module_id: "app.example.checked".to_string(),
+            version: "1.0.0".to_string(),
+            payload_sha256: "00".repeat(32),
+            edition: 1,
+            certified_at: 1_700_000_000_000,
+        };
+        assert_eq!(cert.checks(), checks(1));
     }
 }

@@ -14,6 +14,19 @@ const props = defineProps<{ moduleId: string; moduleName: string }>();
 const emit = defineEmits<{ close: [] }>();
 
 const view = ref<ModuleFactsView | null>(null);
+
+/** 认证清单的稳定码 → 人话（清单版本由核心给，文案在本机）。 */
+const certChecks = computed(() => {
+  const checks = view.value?.cert?.checks ?? [];
+  return checks
+    .map((code) => {
+      const key = `cert.check.${code}`;
+      const label = t(key);
+      // 本机不认识这一项：原样显示稳定码，别假装翻译过
+      return label === key ? code : label;
+    })
+    .join(t("common.list_separator"));
+});
 const error = ref("");
 const note = ref("");
 
@@ -172,6 +185,13 @@ const declared = computed(() => {
             ? t("facts.certified", { edition: view.card.cert_edition, when: whenText(view.card.certified_at) })
             : t("facts.uncertified") }}
         </li>
+        <li v-if="view.cert && view.cert.checks.length > 0">
+          {{ t("facts.cert_checks", { count: view.cert.checks.length, list: certChecks }) }}
+        </li>
+        <li v-else-if="view.cert" class="facts__note">
+          {{ t("facts.cert_unknown_edition", { edition: view.cert.edition }) }}
+        </li>
+        <li class="facts__note">{{ t("facts.cert_not_security") }}</li>
         <li>{{ t("facts.fingerprint", { fingerprint: view.card.fingerprint.slice(0, 16) }) }}</li>
         <li>
           {{ view.running

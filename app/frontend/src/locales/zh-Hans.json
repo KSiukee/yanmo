@@ -1781,5 +1781,16 @@
   "facts.rollback_confirm": "回滚到 v{version}？包与权限一起退回那一版，模块数据不动；这一步不能再用「回滚」撤销。",
   "facts.rollback_done": "已回滚：v{from} → v{to}。",
   "modules.import_description_changed": "说明有更新：{text}",
-  "error.module.rollback_unavailable": "「{module_id}」没有可回滚的上一版（升级成功时才会留档）"
+  "error.module.rollback_unavailable": "「{module_id}」没有可回滚的上一版（升级成功时才会留档）",
+  "facts.cert_checks": "认证（第 {count} 版清单）：验过 {list}",
+  "facts.cert_unknown_edition": "认证版本 {edition} 本机不认识，不列出验过什么（只说明它被签过）。",
+  "facts.cert_not_security": "认证不是安全认证：它说的是「我们核过这几件事」，不是「它没有恶意」，也不是「它读不到你的文件」。",
+  "cert.check.no_driver_or_service": "无驱动、无系统服务",
+  "cert.check.no_elevation": "不要求管理员权限",
+  "cert.check.capability_respected": "不越过能力清单（写不了别人的数据、读不到未授予的内容）",
+  "cert.check.network_via_proxy": "联网走宿主代理，凭据不接触明文",
+  "cert.check.bench_all_scenarios": "过压测台全部场景（慢 / 黑洞 / 半包 / 畸形 / 超大响应 / 内存与 CPU 上限 / 链路成环 / 依赖不可用 / 磁盘满）",
+  "cert.check.timeout_cancel_exit": "超时、取消与退出的行为合规（不留孤儿进程、不无限重试）",
+  "cert.check.escape_audit": "过逃逸审计清单",
+  "cert.check.provenance": "来源可查：签名清单 + 载荷哈希锚定"
 }

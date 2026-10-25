@@ -172,3 +172,30 @@ fn a_wrong_key_or_wrong_format_is_rejected() {
         CertificationSet::from_signed_json(&value.to_string(), &public_hex(&key())).unwrap_err();
     assert_eq!(error.code(), codes::MODULE_CERT_INVALID);
 }
+
+/// 认证条目带着"验过什么"：版本号决定清单，认不出的版本不假装认识。
+#[test]
+fn a_certification_says_what_was_checked() {
+    let dir = TempDir::new().unwrap();
+    let module = package(dir.path());
+    let preview = inspect_module_package_with_certs(&module, &CertificationSet::empty()).unwrap();
+    let mut entry = certification(&preview.fingerprint);
+    entry.edition = 1;
+    let set =
+        CertificationSet::from_signed_json(&signed_json(&[entry], &key()), &public_hex(&key()))
+            .unwrap();
+    let checks = set.lookup(ID, "2.0.0", &preview.fingerprint).unwrap().checks();
+    assert_eq!(checks.len(), 8);
+    assert!(checks.contains(&"bench_all_scenarios"));
+    assert!(checks.contains(&"network_via_proxy"));
+
+    let mut future = certification(&preview.fingerprint);
+    future.edition = 99;
+    let set =
+        CertificationSet::from_signed_json(&signed_json(&[future], &key()), &public_hex(&key()))
+            .unwrap();
+    assert!(
+        set.lookup(ID, "2.0.0", &preview.fingerprint).unwrap().checks().is_empty(),
+        "an unknown edition must not invent checks"
+    );
+}
