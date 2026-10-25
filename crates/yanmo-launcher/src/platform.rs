@@ -219,10 +219,18 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
     let shell_gone = Arc::new(AtomicBool::new(false));
     let shell_gone_watch = shell_gone.clone();
     let host_stdin = Arc::new(Mutex::new(stdin));
+    // 壳发来的 `run <id>` 也要记下来：强杀时没跑完的那些模块得有两个字的终局。
+    let requested: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let requested_in = requested.clone();
     std::thread::spawn(move || {
         let stdin = std::io::stdin();
         for line in stdin.lock().lines() {
             let Ok(line) = line else { break };
+            if let Some(module_id) = line.strip_prefix("run ") {
+                if let Ok(mut list) = requested_in.lock() {
+                    list.push(module_id.trim().to_string());
+                }
+            }
             let Ok(mut guard) = host_stdin.lock() else { break };
             if guard.write_all(format!("{line}\n").as_bytes()).is_err() {
                 break;
@@ -279,6 +287,8 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
     };
 
     let (modules, peak_memory_bytes) = super::platform_outcomes::summarize(&outcomes);
+    let requested_ids = requested.lock().map(|list| list.clone()).unwrap_or_default();
+    let modules = super::platform_outcomes::finalize(modules, &requested_ids, timed_out);
 
     Ok(LaunchReport {
         module_id: "platform".to_string(),

@@ -151,3 +151,62 @@ mod tests {
         assert_eq!(run.code.as_deref(), Some("host.trap"));
     }
 }
+
+/// 收工前的最后一道账：**每个被请求过的模块都要有一个终局**。
+///
+/// 平台被强杀（壳关 stdin）或整体超时时，还没跑完的模块没有任何报告行；
+/// 不补这一手，报告里就只剩"沉默"——比"失败"更糟，因为它不可归因。
+pub(crate) fn finalize(
+    mut modules: Vec<ModuleRun>,
+    requested: &[String],
+    timed_out: bool,
+) -> Vec<ModuleRun> {
+    let code = if timed_out { "launch.timed_out" } else { "launch.unfinished" };
+    for module_id in requested {
+        let id = module_id.trim();
+        if id.is_empty() || modules.iter().any(|run| run.module_id == id) {
+            continue;
+        }
+        modules.push(ModuleRun {
+            module_id: id.to_string(),
+            ok: false,
+            code: Some(code.to_string()),
+            memory_bytes: 0,
+            fuel_used: 0,
+        });
+    }
+    modules.sort_by(|left, right| left.module_id.cmp(&right.module_id));
+    modules.dedup_by(|left, right| left.module_id == right.module_id);
+    modules
+}
+
+#[cfg(test)]
+mod finalize_tests {
+    use super::*;
+
+    fn run(id: &str, ok: bool) -> ModuleRun {
+        ModuleRun { module_id: id.to_string(), ok, code: None, memory_bytes: 0, fuel_used: 0 }
+    }
+
+    #[test]
+    fn modules_that_never_reported_still_get_a_terminal_state() {
+        let modules = finalize(vec![run("app.a", true)], &["app.a".into(), "app.b".into()], false);
+        assert_eq!(modules.len(), 2);
+        let b = modules.iter().find(|run| run.module_id == "app.b").unwrap();
+        assert!(!b.ok);
+        assert_eq!(b.code.as_deref(), Some("launch.unfinished"));
+    }
+
+    #[test]
+    fn a_timeout_says_timed_out_not_unfinished() {
+        let modules = finalize(Vec::new(), &["app.c".into()], true);
+        assert_eq!(modules[0].code.as_deref(), Some("launch.timed_out"));
+    }
+
+    #[test]
+    fn nothing_new_is_added_when_everything_reported() {
+        let modules = finalize(vec![run("app.a", true)], &["app.a".into()], false);
+        assert_eq!(modules.len(), 1);
+        assert!(modules[0].ok, "已经成功的不许被改写");
+    }
+}
