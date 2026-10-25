@@ -6,7 +6,9 @@ import {
   credentialAdd,
   credentialRemove,
   credentialsList,
+  networkAuditRecent,
   type CredentialBinding,
+  type NetworkAuditRow,
 } from "../api/modules";
 import { t } from "../locales/index.ts";
 
@@ -19,10 +21,12 @@ const host = ref("");
 const secret = ref("");
 const busy = ref(false);
 const note = ref("");
+const audit = ref<NetworkAuditRow[]>([]);
 
 async function load() {
   try {
     bindings.value = await credentialsList(props.moduleId);
+    audit.value = await networkAuditRecent(20);
   } catch (error) {
     note.value = t("credentials.load_failed", { detail: String(error) });
   }
@@ -109,6 +113,14 @@ onMounted(load);
       </button>
     </div>
     <p v-if="note" class="credentials__note">{{ note }}</p>
+    <p class="credentials__hint">{{ t("credentials.audit_hint") }}</p>
+    <ul v-if="audit.length" class="credentials__audit">
+      <li v-for="(row, index) in audit" :key="index">
+        {{ new Date(row.ts).toLocaleString() }} · {{ row.module }} → {{ row.host }} ·
+        {{ row.bytes }} 字节 · {{ row.credential ?? "-" }} · {{ row.result }}
+      </li>
+    </ul>
+    <p v-else class="credentials__hint">{{ t("credentials.audit_empty") }}</p>
   </section>
 </template>
 
@@ -131,10 +143,17 @@ onMounted(load);
   font-size: 12px;
   color: var(--muted);
 }
-.credentials__list {
+.credentials__list,
+.credentials__audit {
   margin: 6px 0;
   padding: 0;
   list-style: none;
+}
+.credentials__audit li {
+  padding: 2px 0;
+  font-size: 11px;
+  color: var(--muted);
+  word-break: break-all;
 }
 .credentials__row {
   display: flex;

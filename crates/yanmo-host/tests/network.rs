@@ -46,11 +46,14 @@ fn package(dir: &Path) {
 fn loopback_is_denied_by_the_host_proxy() {
     let dir = TempDir::new().unwrap();
     package(dir.path());
+    let log = dir.path().join("network-audit.jsonl");
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_yanmo-host"))
         .args([
             "--module",
             dir.path().to_str().unwrap(),
             "--allow-network",
+            "--network-log",
+            log.to_str().unwrap(),
         ])
         .output()
         .unwrap();
@@ -58,6 +61,10 @@ fn loopback_is_denied_by_the_host_proxy() {
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["status"]["kind"], "guest_error");
     assert_eq!(report["status"]["code"], -1);
+    let audit = fs::read_to_string(&log).unwrap();
+    assert!(audit.contains("\"module\":\"app.example.network\""), "{audit}");
+    assert!(audit.contains("\"result\":\"host.network_denied\""), "{audit}");
+    assert!(!audit.contains("127.0.0.1/"), "审计不记完整 URL");
 }
 
 #[test]

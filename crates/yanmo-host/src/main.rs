@@ -44,6 +44,7 @@ fn run() -> Result<(), HostError> {
     let modules_root = value_of(&args, "--modules-root").map(PathBuf::from);
     let idle_secs = number_of(&args, "--idle-secs").unwrap_or(300).clamp(1, 3600);
     let credentials_json = value_of(&args, "--credentials-json").map(str::to_string);
+    let network_log = value_of(&args, "--network-log").map(PathBuf::from);
     let network_modules: Vec<String> = value_of(&args, "--network-modules")
         .map(|value| value.split(',').filter(|id| !id.is_empty()).map(str::to_string).collect())
         .unwrap_or_default();
@@ -220,6 +221,9 @@ fn run() -> Result<(), HostError> {
             if let Some(credentials) = credentials_json.as_deref() {
                 command.arg("--credentials-json").arg(credentials);
             }
+            if let Some(log) = network_log.as_ref() {
+                command.arg("--network-log").arg(log);
+            }
             #[cfg(windows)]
             {
                 use std::os::windows::process::CommandExt;
@@ -315,10 +319,10 @@ fn run() -> Result<(), HostError> {
     }
 
     let credentials = credentials_for(module_id_arg.as_deref(), credentials_json.as_deref());
-    let report = if credentials.is_empty() {
+    let report = if credentials.is_empty() && network_log.is_none() {
         run_package_with_core(&package, config, client)?
     } else {
-        run_package_with_credentials(&package, config, client, credentials)?
+        run_package_with_credentials(&package, config, client, credentials, network_log.clone())?
     };
     println!(
         "{}",

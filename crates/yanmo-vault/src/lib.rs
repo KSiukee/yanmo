@@ -218,3 +218,22 @@ mod tests {
         assert!(validate_host("localhost").is_err());
     }
 }
+
+#[cfg(all(test, windows))]
+mod keyring_tests {
+    use super::*;
+
+    #[test]
+    fn keyring_round_trip() {
+        let module = "app.yanmo.vault.self_test";
+        let name = "roundtrip";
+        let _ = remove(module, name);
+        store(module, name, "sk-test-1234567890").unwrap();
+        assert_eq!(load(module, name).unwrap(), "sk-test-1234567890");
+        remove(module, name).unwrap();
+        assert_eq!(
+            load(module, name).unwrap_err().code,
+            VaultError::NOT_FOUND
+        );
+    }
+}

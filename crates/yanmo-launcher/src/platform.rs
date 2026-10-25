@@ -129,6 +129,11 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
             .arg("--credentials-json")
             .arg(serde_json::to_string(&credentials).unwrap_or_else(|_| "{}".to_string()));
     }
+    if let Some(parent) = request.db_path.parent() {
+        command
+            .arg("--network-log")
+            .arg(parent.join("network-audit.jsonl"));
+    }
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::inherit())

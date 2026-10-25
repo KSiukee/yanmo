@@ -133,3 +133,15 @@ export const credentialAdd = (
 
 export const credentialRemove = (module_id: string, name: string) =>
   call<void>(COMMANDS.credentialRemove, { module_id, name });
+
+export interface NetworkAuditRow {
+  ts: number;
+  module: string;
+  host: string;
+  bytes: number;
+  credential: string | null;
+  result: string;
+}
+
+export const networkAuditRecent = (limit = 20) =>
+  call<NetworkAuditRow[]>(COMMANDS.networkAuditRecent, { limit });
