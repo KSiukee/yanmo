@@ -32,7 +32,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use yanmo_core::store::{new_ipc_token, ModuleIpcHandler, Store};
-use yanmo_ipc::{bind_loopback, serve_one, serve_repeated};
+use yanmo_ipc::{bind_loopback, serve_repeated};
 use yanmo_proto::ipc::IpcError;
 use yanmo_proto::manifest::ModuleManifest;
 
@@ -141,7 +141,6 @@ pub fn launch(request: &LaunchRequest) -> Result<LaunchReport, LaunchError> {
             .map(|dir| dir.join(yanmo_core::store::READ_LOG_FILE))
             .unwrap_or_else(|| std::path::PathBuf::from(yanmo_core::store::READ_LOG_FILE)),
     );
-    let resident = request.resident;
     let stop_server = Arc::new(AtomicBool::new(false));
     let server_stop = stop_server.clone();
     let server = std::thread::spawn(move || {
@@ -159,17 +158,16 @@ pub fn launch(request: &LaunchRequest) -> Result<LaunchReport, LaunchError> {
         if let Some(gate) = gate {
             handler = handler.with_read_gate(gate);
         }
-        if resident {
-            serve_repeated(
-                listener,
-                server_token,
-                &mut handler,
-                server_stop,
-                Duration::from_millis(250),
-            )
-        } else {
-            serve_one(listener, server_token, &mut handler)
-        }
+        // 非常驻也走「可叫醒」的那条：以前这里用 `serve_one`（等宿主最多 10 秒），
+        // 宿主在**读包阶段就被拒**（包里有原生 exe / 入口文件不在）时根本不会来连，
+        // 错误要迟到十秒才报出来。现在宿主一退出就把 stop 置真，最多多等一小片。
+        serve_repeated(
+            listener,
+            server_token,
+            &mut handler,
+            server_stop,
+            Duration::from_millis(250),
+        )
     });
 
     let mut command = Command::new(&request.host_bin);
