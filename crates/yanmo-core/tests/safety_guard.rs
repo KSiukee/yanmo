@@ -129,6 +129,14 @@ const ALLOWED: &[Allowance] = &[
               以及落库失败时刚复制的那一份；目标目录由壳给出（`<data>/modules/<id>`），\
               源包只读、从不删源目录，也不碰稿件与用户数据",
     },
+    Allowance {
+        file: "crates/yanmo-core/src/store/module_upgrade.rs",
+        rule: "remove-dir-all",
+        count: 2,
+        why: "升级换包的两处收尾：注册表换代**成功后**删掉留档的旧包；换代**失败时**删掉\
+              刚换进去的新目录、再把旧档换回来（不留\"包新账旧\"的半套）。\
+              删的都是本模块刚在 `<data>/modules/<id>` 下造的目录，源包只读、稿件不碰",
+    },
 ];
 
 fn workspace_root() -> PathBuf {

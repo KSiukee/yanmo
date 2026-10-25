@@ -409,6 +409,9 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : ["actual", "expected"],
     MODULE_IMPORT_CHANGED => "module.import_changed"
         : "模块包在预览之后变了，请重新选择" : [],
+    MODULE_UPGRADE_NOT_NEWER => "module.upgrade_not_newer"
+        : "「{module_id}」现在是 v{current}，这个包是 v{found}——只允许升级到更高的版本（要回滚请先卸载再装旧版）"
+        : ["module_id", "current", "found"],
     MODULE_CERT_INVALID => "module.cert_invalid"
         : "认证清单验签失败：{detail}" : ["detail"],
     MODULE_PACKAGE_TAMPERED => "module.package_tampered"

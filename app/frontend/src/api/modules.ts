@@ -56,6 +56,17 @@ export interface ImportPreview {
   certified: boolean;
   cert_edition: number;
   certified_at: number;
+  /** 库里已经装着同一个 id（升级 / 同版 / 降级三种情形都从这里看）。 */
+  installed: boolean;
+  installed_version: string;
+  /** 新版本严格更高 → 可以升级。 */
+  upgrade: boolean;
+  /** 新版本不比装着的版本新 → 按纪律拒。 */
+  downgrade: boolean;
+  /** 现在授予的能力（升级时用它预勾选）。 */
+  granted: ModuleCapabilities;
+  /** 这次会新增的能力码（空 = 能力没扩大）。 */
+  added: string[];
 }
 
 export const modulesList = () => call<ModuleCard[]>(COMMANDS.modulesList);

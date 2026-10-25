@@ -195,6 +195,7 @@ pub fn module_uninstall(
 /// 路径留在壳里（[`ImportStage`]）；界面只拿到事实：清单、声明的权限、指纹、协议。
 #[tauri::command(rename_all = "snake_case")]
 pub fn module_import_pick(
+    data: State<'_, AppData>,
     stage: State<'_, ImportStage>,
     title: String,
 ) -> Result<Option<ImportPreview>, ApiError> {
@@ -202,7 +203,8 @@ pub fn module_import_pick(
     let Some(dir) = crate::pick_dir::pick(&title) else {
         return Ok(None);
     };
-    let preview = yanmo_core::store::inspect_module_package(&dir).map_err(ApiError::from)?;
+    // 用带注册表的那一版预览：已装同 id 时要告诉界面「这是升级 / 降级 / 新增了什么能力」。
+    let preview = data.with_store(|store: &mut Store| store.inspect_import(&dir))?;
     stage.set(dir, preview.module_id.clone(), preview.fingerprint.clone())?;
     Ok(Some(preview))
 }
@@ -224,14 +226,31 @@ pub fn module_import_confirm(
     }
     let card = data.with_store(|store: &mut Store| {
         let managed = data.data_dir().join("modules").join(&staged.module_id);
-        store.import_module_managed(
-            &staged.dir,
-            &managed,
-            &granted,
-            &expected_fingerprint,
-            "folder",
-            &CertificationSet::built_in(),
-        )?;
+        // 已装同 id 就走升级：包原子换入、注册表换代、数据与偏好都不动。
+        // 版本不比现在新时核心会拒（`module.upgrade_not_newer`），不用界面先判断。
+        match store.module_record(&staged.module_id) {
+            Ok(_) => {
+                store.upgrade_module_managed(
+                    &staged.dir,
+                    &managed,
+                    &granted,
+                    &expected_fingerprint,
+                    "folder",
+                    &CertificationSet::built_in(),
+                )?;
+            }
+            Err(error) if error.code() == yanmo_core::error_codes::codes::MODULE_NOT_FOUND => {
+                store.import_module_managed(
+                    &staged.dir,
+                    &managed,
+                    &granted,
+                    &expected_fingerprint,
+                    "folder",
+                    &CertificationSet::built_in(),
+                )?;
+            }
+            Err(error) => return Err(error),
+        }
         store.module_card(&staged.module_id)
     })?;
     // 平台启动时扫描模块根建 handler；新导入的模块要让下一次启动重新扫。

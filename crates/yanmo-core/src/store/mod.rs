@@ -61,6 +61,7 @@ mod module_mirror_check;
 mod module_mirror_rebuild;
 mod module_namespace;
 mod module_transparency;
+mod module_upgrade;
 mod module_usage;
 mod module_lifecycle;
 mod module_ipc;
@@ -180,6 +181,7 @@ pub use module_mirror::ModuleMirror;
 pub use module_mirror_check::{MirrorDifference, ModuleMirrorCheck};
 pub use module_mirror_rebuild::ModuleRebuild;
 pub use module_transparency::ModuleFacts;
+pub use module_upgrade::UpgradeReceipt;
 pub use module_usage::ModuleUsage;
 pub use module_ipc::{new_ipc_token, ModuleIpcHandler, ReadGate};
 pub use module_import::{

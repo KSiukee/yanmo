@@ -8,23 +8,33 @@ import { ref } from "vue";
 import type { ImportPreview, ModuleCapabilities } from "../api/modules";
 import { t } from "../locales/index.ts";
 
-defineProps<{
-  preview: ImportPreview;
-  busy: boolean;
-}>();
-
 const emit = defineEmits<{
   confirm: [grant: ModuleCapabilities];
   cancel: [];
 }>();
 
+// 升级时**预勾选已有的授予**：用户不必重勾一遍，而新声明出来的能力默认还是不给。
+const props = defineProps<{
+  preview: ImportPreview;
+  busy: boolean;
+}>();
 const grant = ref<ModuleCapabilities>({
-  read: [],
-  own_data: false,
-  cross_read: [],
-  ask_questions: false,
-  network: false,
+  read: [...props.preview.granted.read],
+  own_data: props.preview.granted.own_data,
+  cross_read: [...props.preview.granted.cross_read],
+  ask_questions: props.preview.granted.ask_questions,
+  network: props.preview.granted.network,
 });
+
+/** 新增能力码 → 人话（`read.body` 借已有的权限标签）。 */
+function addedLabel(code: string): string {
+  if (code.startsWith("read.")) return t(`modules.grant.read.${code.slice(5)}`);
+  if (code === "own_data") return t("modules.grant.own_data");
+  if (code === "network") return t("modules.grant.network");
+  if (code === "ask_questions") return t("modules.grant.ask_questions");
+  if (code.startsWith("cross_read.")) return `${t("modules.grant.cross_read")} ${code.slice(11)}`;
+  return code;
+}
 </script>
 
 <template>
@@ -59,6 +69,26 @@ const grant = ref<ModuleCapabilities>({
         })
       }}
     </p>
+    <p v-if="preview.upgrade" class="module-import__upgrade">
+      {{ t("modules.import_upgrade", { from: preview.installed_version, to: preview.version }) }}
+    </p>
+    <p v-if="preview.installed && !preview.upgrade" class="module-import__protocol">
+      {{
+        t("modules.import_same_or_older", {
+          current: preview.installed_version,
+          found: preview.version,
+        })
+      }}
+    </p>
+    <p v-if="preview.upgrade" class="module-import__hint">
+      {{
+        preview.added.length > 0
+          ? t("modules.import_added", {
+              list: preview.added.map((code) => addedLabel(code)).join(t("common.list_separator")),
+            })
+          : t("modules.import_added_none")
+      }}
+    </p>
     <p class="module-import__declared">{{ t("modules.declared") }}</p>
     <div class="module-import__grants">
       <label v-for="area in preview.declared.read" :key="area" class="module-import__grant">
@@ -87,10 +117,10 @@ const grant = ref<ModuleCapabilities>({
       <button
         type="button"
         class="dialog__button"
-        :disabled="busy || !preview.compatible"
+        :disabled="busy || !preview.compatible || preview.downgrade"
         @click="emit('confirm', grant)"
       >
-        {{ t("modules.import_confirm") }}
+        {{ preview.upgrade ? t("modules.import_upgrade_confirm") : t("modules.import_confirm") }}
       </button>
       <button type="button" class="dialog__button" :disabled="busy" @click="emit('cancel')">
         {{ t("modules.import_cancel") }}
@@ -127,6 +157,12 @@ const grant = ref<ModuleCapabilities>({
 
 .module-import__declared {
   margin-top: 8px;
+  font-weight: 600;
+}
+
+.module-import__upgrade {
+  margin: 6px 0 0;
+  font-size: 12px;
   font-weight: 600;
 }
 

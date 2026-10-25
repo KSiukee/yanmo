@@ -43,6 +43,19 @@ pub struct ImportPreview {
     pub certified: bool,
     pub cert_edition: u32,
     pub certified_at: i64,
+    /// 库里已经装着同一个 id（升级 / 同版 / 降级三种情形都从这里看）。
+    pub installed: bool,
+    /// 现在装着的版本（没装就是空串）。
+    pub installed_version: String,
+    /// 新版本**严格高于**装着的版本 → 可以升级。
+    pub upgrade: bool,
+    /// 新版本不比装着的版本新（≤）——按纪律拒，不许降级/重装覆盖。
+    pub downgrade: bool,
+    /// 现在授予的能力（没装就是全不给）——界面拿它预勾选。
+    pub granted: ModuleCapabilities,
+    /// 这次会**新增**的能力码（`read.body` / `own_data` / `network` / `ask_questions` /
+    /// `cross_read.<id>`）——空表示能力没扩大。
+    pub added: Vec<String>,
 }
 
 /// 检查一个模块目录，返回预览；**不安装**。
@@ -83,6 +96,12 @@ pub fn inspect_module_package_with_certs(
         certified: certification.is_some(),
         cert_edition: certification.map(|cert| cert.edition).unwrap_or(0),
         certified_at: certification.map(|cert| cert.certified_at).unwrap_or(0),
+        installed: false,
+        installed_version: String::new(),
+        upgrade: false,
+        downgrade: false,
+        granted: ModuleCapabilities::none(),
+        added: Vec::new(),
     })
 }
 
@@ -197,6 +216,14 @@ impl Store {
 }
 
 fn copy_package(opened: &OpenedPackage, dest: &Path) -> Result<()> {
+    if let Some(backup) = copy_package_swapping(opened, dest)? {
+        let _ = fs::remove_dir_all(backup);
+    }
+    Ok(())
+}
+
+/// 换包但**把旧包留在旁边**（`.旧名.old-<pid>-<时间>-<序号>`）；调用方负责删或换回来。
+pub(super) fn copy_package_swapping(opened: &OpenedPackage, dest: &Path) -> Result<Option<PathBuf>> {
     let source = &opened.root;
     if dest == source || dest.starts_with(source) || source.starts_with(dest) {
         return Err(package("managed destination overlaps the source package"));
@@ -231,9 +258,10 @@ fn copy_package(opened: &OpenedPackage, dest: &Path) -> Result<()> {
         return Err(io_package(error));
     }
     if had_old {
-        let _ = fs::remove_dir_all(&backup);
+        Ok(Some(backup))
+    } else {
+        Ok(None)
     }
-    Ok(())
 }
 
 fn copy_tree(source: &Path, dest: &Path) -> Result<()> {
@@ -282,7 +310,7 @@ fn io_package(error: std::io::Error) -> Error {
     package(error.to_string())
 }
 
-fn ensure_protocol(manifest: &ModuleManifest) -> Result<()> {
+pub(super) fn ensure_protocol(manifest: &ModuleManifest) -> Result<()> {
     if manifest.protocol == PROTOCOL_VERSION {
         Ok(())
     } else {

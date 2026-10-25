@@ -33,21 +33,21 @@ const COLS: &str = "manifest, granted, enabled, certified, installed_at, updated
 /// 官方模块的保留前缀（随本体发布的那一批；恐慌按钮不动它们）。
 pub const OFFICIAL_PREFIX: &str = "app.yanmo.";
 
-fn map_manifest_error(error: ManifestError) -> Error {
+pub(super) fn map_manifest_error(error: ManifestError) -> Error {
     Error::invalid_with(
         codes::MODULE_MANIFEST_INVALID,
         [("code", error.code.to_string()), ("field", error.field.to_string())],
     )
 }
 
-fn map_grant_error(error: ManifestError) -> Error {
+pub(super) fn map_grant_error(error: ManifestError) -> Error {
     Error::invalid_with(
         codes::MODULE_GRANT_INVALID,
         [("detail", format!("{} at {}", error.code, error.field))],
     )
 }
 
-fn not_found(module_id: &str) -> Error {
+pub(super) fn not_found(module_id: &str) -> Error {
     Error::invalid_with(codes::MODULE_NOT_FOUND, [("module_id", module_id.to_string())])
 }
 
@@ -71,7 +71,7 @@ fn decode(
     Ok(ModuleRecord { manifest, granted, enabled, certified, installed_at, updated_at })
 }
 
-fn encode_grant(granted: &ModuleCapabilities) -> String {
+pub(super) fn encode_grant(granted: &ModuleCapabilities) -> String {
     serde_json::to_string(granted).unwrap_or_else(|_| "{}".to_string())
 }
 
