@@ -24,6 +24,11 @@ mod imp {
     impl JobGuard {
         /// 建作业对象并设上限；失败返回 `None`（启动照常，只是没有配额）。
         pub fn create(memory_limit: usize) -> Option<Self> {
+            Self::create_with_limit(memory_limit, 1)
+        }
+
+        /// 平台模式：允许多个模块子进程共享同一个作业。
+        pub fn create_with_limit(memory_limit: usize, process_limit: usize) -> Option<Self> {
             unsafe {
                 let handle = CreateJobObjectW(std::ptr::null(), std::ptr::null());
                 if handle.is_null() {
@@ -33,7 +38,7 @@ mod imp {
                 info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
                     | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
                     | JOB_OBJECT_LIMIT_PROCESS_MEMORY;
-                info.BasicLimitInformation.ActiveProcessLimit = 1;
+                info.BasicLimitInformation.ActiveProcessLimit = process_limit.max(1) as u32;
                 info.ProcessMemoryLimit = memory_limit;
                 let ok = SetInformationJobObject(
                     handle,
@@ -85,6 +90,10 @@ mod imp {
 
     impl JobGuard {
         pub fn create(_memory_limit: usize) -> Option<Self> {
+            None
+        }
+
+        pub fn create_with_limit(_memory_limit: usize, _process_limit: usize) -> Option<Self> {
             None
         }
 

@@ -11,15 +11,14 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::process::ExitCode;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::process::{Command, ExitCode, Stdio};
 use std::sync::{Arc, Mutex};
 
 use std::io::BufRead;
 
 use serde_json::json;
 use yanmo_host::{
-    run_package_with_core, run_package_with_core_shared, run_package_with_core_shared_cancellable, CoreLink, HostError,
+    run_package_with_core, run_package_with_core_shared, CoreLink, HostError,
     ModulePackage, SandboxConfig,
 };
 use yanmo_ipc::Client;
@@ -38,6 +37,7 @@ fn main() -> ExitCode {
 fn run() -> Result<(), HostError> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let module = value_of(&args, "--module");
+    let module_id_arg = value_of(&args, "--module-id").map(str::to_string);
     let check_only = args.iter().any(|arg| arg == "--check");
     let resident = args.iter().any(|arg| arg == "--resident");
     let modules_root = value_of(&args, "--modules-root").map(PathBuf::from);
@@ -109,7 +109,7 @@ fn run() -> Result<(), HostError> {
         None
     } else {
         match (core_addr, token.as_deref()) {
-            (Some(addr), Some(token)) => Some(Client::connect(addr, token).map_err(|error| {
+            (Some(addr), Some(token)) => Some(Client::connect_module(addr, token, module_id_arg.as_deref()).map_err(|error| {
                 HostError::new(HostError::CORE, format!("{}: {}", error.code, error.detail))
             })?),
             _ => None,
@@ -126,22 +126,19 @@ fn run() -> Result<(), HostError> {
                 }
             }
         });
-        let packages: Arc<Mutex<HashMap<String, Arc<ModulePackage>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
-        let links: Arc<Mutex<HashMap<String, Arc<Mutex<CoreLink>>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
-        let running: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
-        let active = Arc::new(AtomicUsize::new(0));
-        let output = Arc::new(Mutex::new(()));
+        let exe = std::env::current_exe()
+            .map_err(|error| HostError::new(HostError::CORE, error.to_string()))?;
+        let mut children: HashMap<String, std::process::Child> = HashMap::new();
         loop {
+            reap(&mut children);
             let line = match receiver.recv_timeout(std::time::Duration::from_secs(idle_secs)) {
                 Ok(Ok(line)) => line,
                 Ok(Err(error)) => {
+                    kill_all(&mut children);
                     return Err(HostError::new(HostError::CORE, error.to_string()));
                 }
                 Err(_) => {
-                    if active.load(Ordering::Relaxed) == 0 {
+                    if children.is_empty() {
                         return Ok(());
                     }
                     continue;
@@ -149,18 +146,24 @@ fn run() -> Result<(), HostError> {
             };
             let command = line.trim();
             if command == "stop" {
-                if let Ok(map) = running.lock() {
-                    for cancel in map.values() {
-                        cancel.store(true, Ordering::Relaxed);
-                    }
-                }
+                kill_all(&mut children);
                 return Ok(());
             }
             if let Some(module_id) = command.strip_prefix("stop ").map(str::trim) {
-                if let Ok(map) = running.lock() {
-                    if let Some(cancel) = map.get(module_id) {
-                        cancel.store(true, Ordering::Relaxed);
-                    }
+                if let Some(mut child) = children.remove(module_id) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    println!(
+                        "{}",
+                        json!({
+                            "ok": false,
+                            "module_id": module_id,
+                            "code": HostError::STOPPED,
+                            "detail": "stopped by user",
+                        })
+                    );
+                    use std::io::Write;
+                    let _ = std::io::stdout().flush();
                 }
                 continue;
             }
@@ -178,119 +181,55 @@ fn run() -> Result<(), HostError> {
                 );
                 continue;
             }
+            if children.contains_key(module_id) {
+                eprintln!(
+                    "{}",
+                    json!({ "ok": false, "module_id": module_id, "code": "host.already_running" })
+                );
+                continue;
+            }
+            let mut command = Command::new(&exe);
+            command
+                .arg("--module")
+                .arg(root.join(module_id))
+                .arg("--module-id")
+                .arg(module_id)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit());
+            let has_core = core_addr.is_some() && token.is_some();
+            if let (Some(addr), Some(_)) = (core_addr, token.as_ref()) {
+                command
+                    .arg("--core")
+                    .arg(addr.to_string())
+                    .arg("--token-stdin");
+            }
+            #[cfg(windows)]
             {
-                let map = running.lock().map_err(|_| {
-                    HostError::new(HostError::CORE, "running map poisoned")
-                })?;
-                if map.contains_key(module_id) {
+                use std::os::windows::process::CommandExt;
+                command.creation_flags(0x0800_0000);
+            }
+            let mut child = match command.spawn() {
+                Ok(child) => child,
+                Err(error) => {
                     eprintln!(
                         "{}",
-                        json!({ "ok": false, "module_id": module_id, "code": "host.already_running" })
+                        json!({ "ok": false, "module_id": module_id, "code": "host.spawn_failed", "detail": error.to_string() })
                     );
                     continue;
                 }
-            }
-            let package = {
-                let mut map = packages.lock().map_err(|_| {
-                    HostError::new(HostError::CORE, "package map poisoned")
-                })?;
-                if !map.contains_key(module_id) {
-                    match ModulePackage::open(root.join(module_id)) {
-                        Ok(package) if package.manifest().id == module_id => {
-                            map.insert(module_id.to_string(), Arc::new(package));
-                        }
-                        Ok(package) => {
-                            eprintln!(
-                                "{}",
-                                json!({
-                                    "ok": false,
-                                    "code": "host.module_mismatch",
-                                    "detail": format!("{} != {}", package.manifest().id, module_id)
-                                })
-                            );
-                            continue;
-                        }
-                        Err(error) => {
-                            eprintln!(
-                                "{}",
-                                json!({ "ok": false, "code": error.code, "detail": error.detail })
-                            );
-                            continue;
-                        }
+            };
+            if let Some(mut stdin) = child.stdin.take() {
+                if has_core {
+                    if let Some(token) = token.as_deref() {
+                        let _ = std::io::Write::write_all(
+                            &mut stdin,
+                            format!("{token}\n").as_bytes(),
+                        );
                     }
                 }
-                map.get(module_id).expect("inserted above").clone()
-            };
-            let link = match (core_addr, token.as_ref()) {
-                (Some(addr), Some(token)) => {
-                    let mut map = links.lock().map_err(|_| {
-                        HostError::new(HostError::CORE, "link map poisoned")
-                    })?;
-                    Some(
-                        map.entry(module_id.to_string())
-                            .or_insert_with(|| {
-                                Arc::new(Mutex::new(CoreLink::new_module(
-                                    addr,
-                                    token.clone(),
-                                    module_id.to_string(),
-                                )))
-                            })
-                            .clone(),
-                    )
-                }
-                _ => None,
-            };
-            let cancel = Arc::new(AtomicBool::new(false));
-            if let Ok(mut map) = running.lock() {
-                map.insert(module_id.to_string(), cancel.clone());
             }
-            active.fetch_add(1, Ordering::Relaxed);
-            let running_workers = running.clone();
-            let active_workers = active.clone();
-            let output_workers = output.clone();
-            let module = module_id.to_string();
-            std::thread::spawn(move || {
-                let result = run_package_with_core_shared_cancellable(
-                    &package,
-                    config,
-                    link,
-                    Some(cancel.clone()),
-                );
-                let stopped = cancel.load(Ordering::Relaxed);
-                let payload = if stopped {
-                    json!({
-                        "ok": false,
-                        "module_id": module,
-                        "code": HostError::STOPPED,
-                        "detail": "module was stopped",
-                    })
-                } else {
-                    match result {
-                        Ok(report) => json!({
-                            "ok": true,
-                            "module_id": report.module_id,
-                            "status": report.status,
-                            "emitted": report.emitted,
-                            "fuel_used": report.fuel_used,
-                            "memory_bytes": report.memory_bytes,
-                        }),
-                        Err(error) => json!({
-                            "ok": false,
-                            "module_id": module,
-                            "code": error.code,
-                            "detail": error.detail,
-                        }),
-                    }
-                };
-                let _guard = output_workers.lock();
-                println!("{payload}");
-                use std::io::Write;
-                let _ = std::io::stdout().flush();
-                active_workers.fetch_sub(1, Ordering::Relaxed);
-                if let Ok(mut map) = running_workers.lock() {
-                    map.remove(&module);
-                }
-            });
+            children.insert(module_id.to_string(), child);
         }
     }
 
@@ -372,6 +311,27 @@ fn run() -> Result<(), HostError> {
         })
     );
     Ok(())
+}
+
+
+fn reap(children: &mut HashMap<String, std::process::Child>) {
+    let done: Vec<String> = children
+        .iter_mut()
+        .filter_map(|(module_id, child)| match child.try_wait() {
+            Ok(Some(_)) => Some(module_id.clone()),
+            _ => None,
+        })
+        .collect();
+    for module_id in done {
+        children.remove(&module_id);
+    }
+}
+
+fn kill_all(children: &mut HashMap<String, std::process::Child>) {
+    for (_, mut child) in children.drain() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
 }
 
 fn value_of<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {

@@ -121,7 +121,7 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
             return Err(LaunchError::new(LaunchError::SPAWN, error.to_string()));
         }
     };
-    let mut job = JobGuard::create(JOB_MEMORY_LIMIT);
+    let mut job = JobGuard::create_with_limit(JOB_MEMORY_LIMIT, 64);
     let job_assigned = job.as_mut().map(|guard| guard.assign(&child)).unwrap_or(false);
 
     let Some(mut stdin) = child.stdin.take() else {
