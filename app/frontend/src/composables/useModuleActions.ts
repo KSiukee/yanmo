@@ -9,6 +9,7 @@ import {
   moduleUninstall,
   moduleDataClear,
   moduleDataExport,
+  moduleDataStats,
   type ModuleCard,
 } from "../api/modules";
 import { t } from "../locales/index.ts";
@@ -27,6 +28,25 @@ export function useModuleActions(
 
   function togglePinned(card: ModuleCard) {
     act(() => moduleSetPinned(card.id, !card.pinned));
+  }
+
+  function dataSummary(card: ModuleCard) {
+    act(async () => {
+      const stats = await moduleDataStats(card.id);
+      const size =
+        stats.db_bytes >= 1024 * 1024
+          ? `${(stats.db_bytes / (1024 * 1024)).toFixed(1)} MB`
+          : `${Math.ceil(stats.db_bytes / 1024)} KB`;
+      const state = stats.degraded
+        ? t("modules.data_degraded_state", { count: stats.rejected })
+        : t("modules.data_ok_state");
+      note.value = t("modules.data_summary", {
+        tables: stats.tables,
+        rows: stats.rows,
+        size,
+        state,
+      });
+    });
   }
 
   function exportData(card: ModuleCard) {
@@ -59,5 +79,5 @@ export function useModuleActions(
     });
   }
 
-  return { toggleActive, toggleFavorite, togglePinned, openUi, exportData, clearData, uninstall };
+  return { toggleActive, toggleFavorite, togglePinned, openUi, dataSummary, exportData, clearData, uninstall };
 }

@@ -292,12 +292,13 @@ fn run_package_inner(
         .and_then(Extern::into_memory)
         .map(|memory| memory.data_size(&store) as u64)
         .unwrap_or(0);
-    let (data_rejected, data_degraded) = store
+    let (data_degraded, data_rejected) = store
         .data()
         .data
         .as_ref()
-        .and_then(|data| data.lock().ok().map(|data| (data.rejected(), data.degraded())))
-        .unwrap_or((0, false));
+        .and_then(|data| data.lock().ok().and_then(|data| data.health(&package.manifest().id).ok()))
+        .map(|(degraded, rejected)| (degraded, rejected as usize))
+        .unwrap_or((false, 0));
     let emitted = store.into_data().emitted;
     Ok(RunReport {
         module_id: package.manifest().id.clone(),

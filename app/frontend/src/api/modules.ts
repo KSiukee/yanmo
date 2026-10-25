@@ -175,3 +175,14 @@ export const moduleDataExport = (module_id: string, title: string) =>
 
 export const moduleDataClear = (module_id: string) =>
   call<number>(COMMANDS.moduleDataClear, { module_id });
+
+export interface ModuleDataStats {
+  tables: number;
+  rows: number;
+  db_bytes: number;
+  degraded: boolean;
+  rejected: number;
+}
+
+export const moduleDataStats = (module_id: string) =>
+  call<ModuleDataStats>(COMMANDS.moduleDataStats, { module_id });

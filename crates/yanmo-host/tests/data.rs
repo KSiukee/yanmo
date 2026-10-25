@@ -92,3 +92,20 @@ fn five_rejections_degrade_writes_to_read_only() {
     assert!(data.rejected() >= 5);
     assert!(data.kv_put(MODULE_ID, "ok", b"x").is_err());
 }
+
+#[test]
+fn degradation_survives_reopen() {
+    let dir = fresh();
+    let db = dir.path().join("modules.db");
+    {
+        let mut data = ModuleData::open(&db).unwrap();
+        let oversized = vec![0u8; 1024 * 1024 + 1];
+        for index in 0..5 {
+            assert!(data.kv_put(MODULE_ID, &format!("k{index}"), &oversized).is_err());
+        }
+        assert!(data.degraded());
+    }
+    let mut data = ModuleData::open(&db).unwrap();
+    assert_eq!(data.health(MODULE_ID).unwrap().0, true);
+    assert!(data.kv_put(MODULE_ID, "ok", b"x").is_err());
+}

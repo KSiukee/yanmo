@@ -69,6 +69,15 @@ impl ModuleData {
             )",
             [],
         )?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS module_data_health (
+                module_id TEXT PRIMARY KEY,
+                degraded  INTEGER NOT NULL,
+                rejected  INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )?;
         let limits = ModuleDataLimits::default();
         let data = Self {
             conn,
@@ -287,6 +296,13 @@ impl ModuleData {
                 )
             })?;
         }
+        tx.execute("DELETE FROM module_data_health WHERE module_id = ?1", [module_id])
+            .map_err(|error| {
+                Error::invalid_with(
+                    codes::MODULE_DROP_DATA_FAILED,
+                    [("detail", error.to_string())],
+                )
+            })?;
         tx.execute("DELETE FROM module_schema WHERE module_id = ?1", [module_id])
             .map_err(|error| {
                 Error::invalid_with(

@@ -86,7 +86,7 @@ const {
   toggle: toggleOffline,
   toggleModule,
 } = useModuleNetwork(note, act);
-const { toggleActive, toggleFavorite, togglePinned, openUi, exportData, clearData, uninstall } =
+const { toggleActive, toggleFavorite, togglePinned, openUi, dataSummary, exportData, clearData, uninstall } =
   useModuleActions(note, act);
 
 function toggleBackground(card: ModuleCard) {
@@ -271,6 +271,7 @@ onUnmounted(() => {
             <span v-if="card.network" class="modules__badge">{{ t("modules.network") }}</span>
           </p>
           <div class="modules__actions">
+            <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="dataSummary(card)">{{ t("modules.data_summary_button") }}</button>
             <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="exportData(card)">{{ t("modules.export_data") }}</button>
             <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="clearData(card)">{{ t("modules.clear_data") }}</button>
             <button
@@ -291,6 +292,7 @@ onUnmounted(() => {
             >
               {{ t("modules.open_ui") }}
             </button>
+            <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="dataSummary(card)">{{ t("modules.data_summary_button") }}</button>
             <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="exportData(card)">{{ t("modules.export_data") }}</button>
             <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="clearData(card)">{{ t("modules.clear_data") }}</button>
             <button

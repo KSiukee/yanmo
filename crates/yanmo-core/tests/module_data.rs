@@ -232,3 +232,16 @@ fn per_module_kv_quota_is_enforced() {
     let error = data.kv_put("app.example.data", "b", b"x").unwrap_err();
     assert_eq!(error.code(), codes::MODULE_DATA_MODULE_QUOTA);
 }
+
+#[test]
+fn namespace_export_only_carries_one_module() {
+    let (dir, path) = fresh();
+    let mut data = ModuleData::open(&path).unwrap();
+    data.kv_put("app.example.a", "k", b"a").unwrap();
+    data.kv_put("app.example.b", "k", b"b").unwrap();
+    let target = dir.path().join("only-a.db");
+    data.export_namespace("app.example.a", &target).unwrap();
+    let exported = ModuleData::open(&target).unwrap();
+    assert_eq!(exported.kv_get("app.example.a", "k").unwrap(), Some(b"a".to_vec()));
+    assert_eq!(exported.kv_get("app.example.b", "k").unwrap(), None);
+}

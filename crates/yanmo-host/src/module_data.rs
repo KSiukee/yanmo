@@ -37,18 +37,29 @@ impl ModuleData {
         let max_pages = (TOTAL_BYTES / page_size.max(1)).max(1);
         conn.pragma_update(None, "max_page_count", max_pages as i64)
             .map_err(|error| HostError::new(HostError::DATA_FAILED, error.to_string()))?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS module_data_health (
+                module_id TEXT PRIMARY KEY,
+                degraded  INTEGER NOT NULL,
+                rejected  INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .map_err(|error| HostError::new(HostError::DATA_FAILED, error.to_string()))?;
         Ok(Self { conn, writes: VecDeque::new(), rejected: 0, degraded: false })
     }
 
     /// 连续 5 次写被拒就降级：只读，后续 put/delete 直接 -1（用户仍可导出/清除）。
     pub fn kv_put(&mut self, module_id: &str, key: &str, value: &[u8]) -> HostResult<()> {
+        self.load_health(module_id)?;
         if self.degraded {
             self.rejected += 1;
             return Err(HostError::new(HostError::DATA_LIMIT, "module data degraded"));
         }
         let result = self.kv_put_inner(module_id, key, value);
         if result.is_err() {
-            self.note_failure();
+            self.note_failure(module_id);
         }
         result
     }
@@ -125,13 +136,14 @@ impl ModuleData {
     }
 
     pub fn kv_delete(&mut self, module_id: &str, key: &str) -> HostResult<bool> {
+        self.load_health(module_id)?;
         if self.degraded {
             self.rejected += 1;
             return Err(HostError::new(HostError::DATA_LIMIT, "module data degraded"));
         }
         let result = self.kv_delete_inner(module_id, key);
         if result.is_err() {
-            self.note_failure();
+            self.note_failure(module_id);
         }
         result
     }
@@ -191,11 +203,48 @@ impl ModuleData {
         self.degraded
     }
 
-    fn note_failure(&mut self) {
+    /// 跨轮健康：宿主写入，核心/界面只读；清除数据时一起清。
+    pub fn health(&self, module_id: &str) -> HostResult<(bool, u64)> {
+        let found: Option<(i64, i64)> = self
+            .conn
+            .query_row(
+                "SELECT degraded, rejected FROM module_data_health WHERE module_id = ?1",
+                [module_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|error| HostError::new(HostError::DATA_FAILED, error.to_string()))?;
+        Ok(found
+            .map(|(degraded, rejected)| (degraded != 0, rejected.max(0) as u64))
+            .unwrap_or((false, 0)))
+    }
+
+    fn load_health(&mut self, module_id: &str) -> HostResult<()> {
+        let (degraded, rejected) = self.health(module_id)?;
+        self.degraded |= degraded;
+        self.rejected = self.rejected.max(rejected as usize);
+        Ok(())
+    }
+
+    fn note_failure(&mut self, module_id: &str) {
         self.rejected += 1;
         if self.rejected >= 5 {
             self.degraded = true;
         }
+        let _ = self.conn.execute(
+            "INSERT INTO module_data_health(module_id, degraded, rejected, updated_at)
+             VALUES(?1, ?2, ?3, ?4)
+             ON CONFLICT(module_id) DO UPDATE SET
+               degraded = excluded.degraded,
+               rejected = excluded.rejected,
+               updated_at = excluded.updated_at",
+            params![
+                module_id,
+                if self.degraded { 1 } else { 0 },
+                self.rejected as i64,
+                now_millis()
+            ],
+        );
     }
 
     fn rate(&mut self) -> HostResult<()> {
