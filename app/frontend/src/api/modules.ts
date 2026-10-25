@@ -193,6 +193,10 @@ export interface ProposalView {
   /** 稿子已经变过 = 这条建议失效（不许静默套用）。 */
   stale: boolean;
   chars: number;
+  /** `text` / `rename` / `move` */
+  kind: string;
+  parent: number | null;
+  index: number;
 }
 
 export interface ProposalsView {

@@ -548,3 +548,51 @@ fn a_text_proposal_only_applies_on_the_same_version() {
         ProposalOutcome::Missing
     ));
 }
+
+/// 树提案：改名 / 移动都要"基于当前那一版树"；作者动过就失效。
+#[test]
+fn a_tree_proposal_only_applies_on_the_same_tree() {
+    use yanmo_core::model::{NodeKind, WorkKind};
+    use yanmo_core::store::{ProposalOutcome, TreeChange};
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path().join("yanmo.db")).unwrap();
+    let work = store.create_work(WorkKind::Novel, "题本").unwrap();
+    let first = store
+        .create_node(work.id, None, NodeKind::Chapter, "第一章")
+        .unwrap();
+    let second = store
+        .create_node(work.id, None, NodeKind::Chapter, "第二章")
+        .unwrap();
+    let base = store.tree_fingerprint(first).unwrap().unwrap();
+
+    let renamed = store
+        .apply_tree_proposal(first, &base, &TreeChange::Rename { title: "第一章 渡口".into() })
+        .unwrap();
+    assert!(renamed.applied());
+    assert_eq!(store.node_title(first).unwrap(), "第一章 渡口");
+
+    // 基于旧指纹再提改名：作者已经改过 → 失效，标题不动
+    let stale = store
+        .apply_tree_proposal(first, &base, &TreeChange::Rename { title: "旧名".into() })
+        .unwrap();
+    assert!(matches!(stale, ProposalOutcome::Stale { .. }));
+    assert_eq!(store.node_title(first).unwrap(), "第一章 渡口");
+
+    // 移动：基于当前指纹 → 成功；基于旧指纹 → 失效
+    let base = store.tree_fingerprint(first).unwrap().unwrap();
+    let moved = store
+        .apply_tree_proposal(first, &base, &TreeChange::Move { parent: Some(second), index: 0 })
+        .unwrap();
+    assert!(moved.applied());
+    let stale = store
+        .apply_tree_proposal(first, &base, &TreeChange::Move { parent: None, index: 0 })
+        .unwrap();
+    assert!(matches!(stale, ProposalOutcome::Stale { .. }));
+    // 目标没了
+    store.soft_delete_node(first).unwrap();
+    assert!(matches!(
+        store.apply_tree_proposal(first, &base, &TreeChange::Rename { title: "没了".into() }).unwrap(),
+        ProposalOutcome::Missing
+    ));
+}

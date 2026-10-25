@@ -40,6 +40,15 @@ impl ProposalOutcome {
     }
 }
 
+/// 一次**树结构**改动（提案里的操作：改名 / 移动）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TreeChange {
+    /// 改名
+    Rename { title: String },
+    /// 移到某个父节点下（`None` = 根层）；`index` = 落点下标
+    Move { parent: Option<i64>, index: usize },
+}
+
 impl Store {
     /// 一段正文当前的哈希（给提案带上"基于哪一版"；段不存在 = `None`）。
     pub fn body_hash(&self, node_id: i64) -> Result<Option<String>> {
@@ -56,6 +65,49 @@ impl Store {
             )
             .ok();
         Ok(hash)
+    }
+
+    /// 一个节点的"树指纹"（父节点 + 标题）：树提案靠它判断"作者这期间动过没有"。
+    pub fn tree_fingerprint(&self, node_id: i64) -> Result<Option<String>> {
+        let row: Option<(Option<i64>, String)> = self
+            .conn
+            .query_row(
+                "SELECT parent_id, title FROM nodes WHERE id = ?1 AND deleted_at IS NULL",
+                [node_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .ok();
+        Ok(row.map(|(parent, title)| {
+            format!("{}|{}", parent.map(|id| id.to_string()).unwrap_or_default(), title)
+        }))
+    }
+
+    /// 应用一份**树结构提案**（改名 / 移动）：指纹对不上就拒，绝不覆盖作者的动作。
+    pub fn apply_tree_proposal(
+        &mut self,
+        node_id: i64,
+        base_fingerprint: &str,
+        change: &TreeChange,
+    ) -> Result<ProposalOutcome> {
+        let Some(current) = self.tree_fingerprint(node_id)? else {
+            return Ok(ProposalOutcome::Missing);
+        };
+        if base_fingerprint.trim().is_empty() || base_fingerprint.trim() != current {
+            return Ok(ProposalOutcome::Stale { current_hash: current });
+        }
+        match change {
+            TreeChange::Rename { title } => {
+                let title = title.trim();
+                if title.is_empty() {
+                    return Ok(ProposalOutcome::Missing);
+                }
+                self.rename_node(node_id, title)?;
+            }
+            TreeChange::Move { parent, index } => {
+                self.move_node(node_id, *parent, *index)?;
+            }
+        }
+        Ok(ProposalOutcome::Applied { chars: 0 })
     }
 
     /// 应用一份**正文提案**：哈希对不上就拒，绝不覆盖作者的新内容。

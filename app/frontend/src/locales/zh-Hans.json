@@ -1821,5 +1821,7 @@
   "modules.proposal_applied": "已应用，正文现在是 {chars} 字。",
   "modules.proposal_stale": "这条建议基于旧版本，已失效——正文没有被改动。",
   "error.shell.module_proposal_missing": "这条建议找不到了（模块可能已经撤回或更新）。",
-  "error.shell.module_proposal_invalid": "模块写的建议格式不对：{detail}"
+  "error.shell.module_proposal_invalid": "模块写的建议格式不对：{detail}",
+  "modules.proposal_rename": "改名为「{title}」",
+  "modules.proposal_move": "移到第 {parent} 号节点下"
 }

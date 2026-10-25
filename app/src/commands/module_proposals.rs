@@ -8,7 +8,7 @@
 
 use serde::Serialize;
 use tauri::State;
-use yanmo_core::store::{ModuleData, ProposalOutcome, Store};
+use yanmo_core::store::{ModuleData, ProposalOutcome, Store, TreeChange};
 
 use crate::error::ApiError;
 use crate::storage::AppData;
@@ -24,8 +24,13 @@ pub struct ProposalView {
     pub base_hash: String,
     /// 稿子已经变过 = 这条建议失效（界面要标出来，不许静默套用）
     pub stale: bool,
-    /// 建议的正文长度（字数）
+    /// 建议的正文长度（字数）；树提案是标题字数
     pub chars: u64,
+    /// `text`（正文补丁）/ `rename`（改名）/ `move`（移动）
+    pub kind: String,
+    /// 树提案的落点（移动）
+    pub parent: Option<i64>,
+    pub index: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -45,7 +50,14 @@ pub fn module_proposals(
     let current: Vec<(i64, Option<String>)> = data.with_store(|store: &mut Store| {
         Ok(items
             .iter()
-            .map(|item| (item.node_id, store.body_hash(item.node_id).ok().flatten()))
+            .map(|item| {
+                let hash = if item.kind == "text" {
+                    store.body_hash(item.node_id).ok().flatten()
+                } else {
+                    store.tree_fingerprint(item.node_id).ok().flatten()
+                };
+                (item.node_id, hash)
+            })
             .collect::<Vec<_>>())
     })?;
     let items = items
@@ -78,10 +90,27 @@ pub fn module_proposal_apply(
     else {
         return Err(ApiError::new("shell.module_proposal_missing"));
     };
-    let body = read_proposal_body(&data, &module_id, &proposal_id)?;
-    let outcome = data.with_store(|store: &mut Store| {
-        store.apply_text_proposal(proposal.node_id, &proposal.base_hash, &body)
-    })?;
+    let outcome = match proposal.kind.as_str() {
+        "rename" | "move" => {
+            let change = if proposal.kind == "rename" {
+                TreeChange::Rename { title: proposal.title.clone() }
+            } else {
+                TreeChange::Move {
+                    parent: proposal.parent,
+                    index: proposal.index.max(0) as usize,
+                }
+            };
+            data.with_store(|store: &mut Store| {
+                store.apply_tree_proposal(proposal.node_id, &proposal.base_hash, &change)
+            })?
+        }
+        _ => {
+            let body = read_proposal_body(&data, &module_id, &proposal_id)?;
+            data.with_store(|store: &mut Store| {
+                store.apply_text_proposal(proposal.node_id, &proposal.base_hash, &body)
+            })?
+        }
+    };
     record_result(&data, &module_id, &proposal_id, &outcome)?;
     Ok(outcome)
 }
@@ -116,21 +145,34 @@ fn read_proposals(data: &AppData, module_id: &str) -> Result<Vec<ProposalView>, 
                     let id = item.get("id").and_then(|value| value.as_str())?.to_string();
                     let node_id = item.get("node_id").and_then(|value| value.as_i64())?;
                     let body = item.get("body").and_then(|value| value.as_str()).unwrap_or("");
+                    let kind = item
+                        .get("kind")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("text")
+                        .to_string();
+                    let title = item
+                        .get("title")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("");
+                    let chars = if kind == "text" {
+                        body.chars().count() as u64
+                    } else {
+                        title.chars().count() as u64
+                    };
                     Some(ProposalView {
                         id,
                         node_id,
-                        title: item
-                            .get("title")
-                            .and_then(|value| value.as_str())
-                            .unwrap_or("")
-                            .to_string(),
+                        title: title.to_string(),
                         base_hash: item
                             .get("base_hash")
                             .and_then(|value| value.as_str())
                             .unwrap_or("")
                             .to_string(),
                         stale: false,
-                        chars: body.chars().count() as u64,
+                        chars,
+                        kind,
+                        parent: item.get("parent").and_then(|value| value.as_i64()),
+                        index: item.get("index").and_then(|value| value.as_i64()).unwrap_or(0),
                     })
                 })
                 .collect()

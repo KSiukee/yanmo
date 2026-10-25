@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/yanmo-core", "crates/yanmo-proto", "crates/yanmo-cli", "crates/yanmo-host", "crates/yanmo-ipc", "crates/yanmo-launcher", "crates/yanmo-vault", "app"]
 
 [workspace.package]
-version = "0.161.0"
+version = "0.162.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 repository = ""

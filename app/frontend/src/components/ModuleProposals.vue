@@ -84,7 +84,13 @@ onUnmounted(() => {
       </p>
       <p v-for="item in bar.list" :key="item.id" class="modules__candidate">
         <span class="modules__candidate-text">
-          {{ t("modules.proposal_item", { title: item.title || `#${item.node_id}`, chars: item.chars }) }}
+          {{
+            item.kind === "text"
+              ? t("modules.proposal_item", { title: item.title || `#${item.node_id}`, chars: item.chars })
+              : item.kind === "rename"
+                ? t("modules.proposal_rename", { title: item.title })
+                : t("modules.proposal_move", { parent: item.parent ?? "—" })
+          }}
           <span v-if="item.stale" class="modules__proposal-stale">
             {{ t("modules.proposal_stale_badge") }}
           </span>
