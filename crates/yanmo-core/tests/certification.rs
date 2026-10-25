@@ -209,7 +209,6 @@ fn a_startup_recheck_revokes_and_restores() {
     let preview = inspect_module_package_with_certs(&module, &CertificationSet::empty()).unwrap();
 
     let mut store = Store::open(dir.path().join("yanmo.db")).unwrap();
-    let manifest = ModuleManifest::from_json(&manifest()).unwrap();
     let grant = ModuleCapabilities {
         read: vec![CoreDataArea::Works],
         ..ModuleCapabilities::none()

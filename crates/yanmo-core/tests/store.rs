@@ -506,3 +506,45 @@ fn displayed_titles_never_show_the_macro() {
         "导航/编辑器拿到的标题也必须是渲染过的"
     );
 }
+
+/// 提案权：哈希对得上才应用；作者改过之后旧提案失效；段没了就是 Missing。
+#[test]
+fn a_text_proposal_only_applies_on_the_same_version() {
+    use yanmo_core::model::{NodeKind, WorkKind};
+    use yanmo_core::store::ProposalOutcome;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path().join("yanmo.db")).unwrap();
+    let work = store.create_work(WorkKind::Novel, "题本").unwrap();
+    let chapter = store
+        .create_node(work.id, None, NodeKind::Chapter, "第一章")
+        .unwrap();
+    store.write_body(chapter, "旧正文。").unwrap();
+    let base = store.body_hash(chapter).unwrap().unwrap();
+
+    let applied = store
+        .apply_text_proposal(chapter, &base, "新正文，长一点。")
+        .unwrap();
+    assert!(applied.applied());
+    assert_eq!(store.read_body(chapter).unwrap(), "新正文，长一点。");
+
+    // 基于旧哈希再提：稿子已经变了 → 失效，绝不覆盖
+    let stale = store.apply_text_proposal(chapter, &base, "旧提案盖回来").unwrap();
+    match stale {
+        ProposalOutcome::Stale { current_hash } => assert_ne!(current_hash, base),
+        other => panic!("应当失效，得到 {other:?}"),
+    }
+    assert_eq!(store.read_body(chapter).unwrap(), "新正文，长一点。");
+
+    // 没有依据的提案也拒
+    assert!(matches!(
+        store.apply_text_proposal(chapter, "", "空依据").unwrap(),
+        ProposalOutcome::Stale { .. }
+    ));
+    // 目标没了（软删：读正文就查不到它了）
+    store.soft_delete_node(chapter).unwrap();
+    assert!(matches!(
+        store.apply_text_proposal(chapter, &base, "没了").unwrap(),
+        ProposalOutcome::Missing
+    ));
+}

@@ -71,6 +71,7 @@ mod module_import;
 mod module_package;
 mod module_credentials;
 mod module_management;
+mod proposal;
 mod module_read;
 mod module_read_consent;
 mod module_read_log;
@@ -195,6 +196,7 @@ pub use module_credentials::CredentialBinding;
 pub use module_management::ModuleCard;
 pub use module_registry::OFFICIAL_PREFIX;
 pub use module_read::{ModuleOutlineRow, ModuleReadApi};
+pub use proposal::ProposalOutcome;
 pub use module_read_consent::{body_budget, pending_ask, ReadAnswer, ReadAsk, ReadConsent};
 pub use module_read_log::{
     recent_entries, summarize, ReadLog, ReadLogEntry, ReadSummary, WorkReads, READ_LOG_FILE,

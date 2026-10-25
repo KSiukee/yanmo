@@ -1,0 +1,114 @@
+<script setup lang="ts">
+// 模块提的正文建议：作者审，点一下才落盘。失效的（基于旧版本）要标出来，不许静默套用。
+import { computed, onMounted, onUnmounted, ref } from "vue";
+
+import {
+  moduleProposalApply,
+  moduleProposalDismiss,
+  moduleProposals,
+  type ModuleCard,
+  type ProposalView,
+} from "../api/modules";
+import { t } from "../locales/index.ts";
+
+const props = defineProps<{ cards: ModuleCard[]; busy: boolean }>();
+const emit = defineEmits<{ done: [message: string] }>();
+
+const items = ref<Record<string, ProposalView[]>>({});
+let timer: number | undefined;
+
+function nameOf(moduleId: string): string {
+  return props.cards.find((card) => card.id === moduleId)?.name ?? moduleId;
+}
+
+const bars = computed(() =>
+  Object.entries(items.value)
+    .filter(([, list]) => list.length > 0)
+    .map(([moduleId, list]) => ({ moduleId, list })),
+);
+
+async function load() {
+  const next: Record<string, ProposalView[]> = {};
+  for (const card of props.cards) {
+    try {
+      const view = await moduleProposals(card.id);
+      if (view.items.length > 0) next[card.id] = view.items;
+    } catch {
+      // 读不到就不显示
+    }
+  }
+  items.value = next;
+}
+
+async function apply(moduleId: string, proposal: ProposalView) {
+  try {
+    const outcome = await moduleProposalApply(moduleId, proposal.id);
+    emit(
+      "done",
+      outcome.status === "applied"
+        ? t("modules.proposal_applied", { chars: outcome.chars ?? 0 })
+        : t("modules.proposal_stale"),
+    );
+  } catch (error) {
+    emit("done", t("modules.action_failed", { detail: String(error) }));
+  }
+  await load();
+}
+
+async function dismiss(moduleId: string, proposal: ProposalView) {
+  try {
+    await moduleProposalDismiss(moduleId, proposal.id);
+  } catch {
+    // 忽略失败不挡人
+  }
+  await load();
+}
+
+onMounted(() => {
+  void load();
+  timer = window.setInterval(() => void load(), 5000);
+});
+
+onUnmounted(() => {
+  if (timer !== undefined) window.clearInterval(timer);
+});
+</script>
+
+<template>
+  <section v-if="bars.length > 0" class="modules__candidates">
+    <div v-for="bar in bars" :key="bar.moduleId">
+      <p class="modules__candidate">
+        <span class="modules__candidate-text">
+          {{ t("modules.proposals_bar", { name: nameOf(bar.moduleId), count: bar.list.length }) }}
+        </span>
+      </p>
+      <p v-for="item in bar.list" :key="item.id" class="modules__candidate">
+        <span class="modules__candidate-text">
+          {{ t("modules.proposal_item", { title: item.title || `#${item.node_id}`, chars: item.chars }) }}
+          <span v-if="item.stale" class="modules__proposal-stale">
+            {{ t("modules.proposal_stale_badge") }}
+          </span>
+        </span>
+        <button
+          type="button"
+          class="modules__button dialog__button"
+          :disabled="busy || item.stale"
+          @click="apply(bar.moduleId, item)"
+        >
+          {{ t("modules.proposal_apply") }}
+        </button>
+        <button
+          type="button"
+          class="modules__button dialog__button"
+          :disabled="busy"
+          @click="dismiss(bar.moduleId, item)"
+        >
+          {{ t("modules.proposal_dismiss") }}
+        </button>
+      </p>
+    </div>
+  </section>
+</template>
+
+<style scoped src="./dialog.css"></style>
+<style scoped src="./module-dialog.css"></style>

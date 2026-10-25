@@ -1812,5 +1812,14 @@
   "facts.run_failed": "失败（{code}）",
   "facts.run_timeout": "超时",
   "facts.run_unfinished": "没跑完",
-  "facts.run_item": "{who} · {took} · {outcome}"
+  "facts.run_item": "{who} · {took} · {outcome}",
+  "modules.proposals_bar": "「{name}」提了 {count} 条正文建议（你点了才落盘）",
+  "modules.proposal_item": "{title} · {chars} 字",
+  "modules.proposal_stale_badge": "已失效（基于旧版本）",
+  "modules.proposal_apply": "应用",
+  "modules.proposal_dismiss": "忽略",
+  "modules.proposal_applied": "已应用，正文现在是 {chars} 字。",
+  "modules.proposal_stale": "这条建议基于旧版本，已失效——正文没有被改动。",
+  "error.shell.module_proposal_missing": "这条建议找不到了（模块可能已经撤回或更新）。",
+  "error.shell.module_proposal_invalid": "模块写的建议格式不对：{detail}"
 }

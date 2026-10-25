@@ -54,6 +54,8 @@ pub const SHELL_CODES: &[(&str, &[&str])] = &[
     ("shell.module_not_running", &[]),
     ("shell.credential_failed", &["detail"]),
     ("shell.module_ui_missing", &[]),
+    ("shell.module_proposal_missing", &[]),
+    ("shell.module_proposal_invalid", &[]),
     ("shell.module_ui_failed", &["detail"]),
     ("shell.mirror_issue_gone", &[]),
     ("shell.mirror_read_failed", &["path"]),

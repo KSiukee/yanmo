@@ -184,6 +184,36 @@ export const moduleCandidatesApply = (module_id: string, names: string[]) =>
   call<number>(COMMANDS.moduleCandidatesApply, { module_id, names });
 
 /** 把候选送进叩问通道（限频与去重由核心把关）。 */
+/** 一条正文提案（模块提的，作者审的）。 */
+export interface ProposalView {
+  id: string;
+  node_id: number;
+  title: string;
+  base_hash: string;
+  /** 稿子已经变过 = 这条建议失效（不许静默套用）。 */
+  stale: boolean;
+  chars: number;
+}
+
+export interface ProposalsView {
+  items: ProposalView[];
+}
+
+export interface ProposalOutcome {
+  status: "applied" | "stale" | "missing";
+  chars?: number;
+  current_hash?: string;
+}
+
+export const moduleProposals = (module_id: string) =>
+  call<ProposalsView>(COMMANDS.moduleProposals, { module_id });
+
+export const moduleProposalApply = (module_id: string, proposal_id: string) =>
+  call<ProposalOutcome>(COMMANDS.moduleProposalApply, { module_id, proposal_id });
+
+export const moduleProposalDismiss = (module_id: string, proposal_id: string) =>
+  call<void>(COMMANDS.moduleProposalDismiss, { module_id, proposal_id });
+
 export interface QuestionSubmitView {
   accepted: number;
   dropped: number;
