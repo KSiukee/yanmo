@@ -59,9 +59,19 @@ pub(super) const DRAFT_DIR: &str = "成稿";
 /// 包名口径与滚动清理（**从本文件搬出去的**：只留"哪个名字该轮掉"这一件事，见 `prune.rs`）。
 mod prune;
 /// 模块数据快照 / 体检（单独成件：它与核心库快照的失败口径不同，见文件头）。
+mod module_packages;
 mod modules;
+pub use module_packages::ModulePackagesStamp;
 pub use modules::ModuleBackupStamp;
 use modules::{snapshot_modules, verify_modules};
+
+pub(super) fn restore_package_dir(
+    source: &std::path::Path,
+    data_dir: &std::path::Path,
+    stamp: &str,
+) -> Result<bool> {
+    module_packages::restore(source, data_dir, stamp)
+}
 // 转出去让老路径继续可用（`backup::package_name` 这种写法在壳与恢复列表那边已经在用）；
 // 纯逻辑那两条（按名字判日期 / 该轮掉哪些）是 `pub` 的——它要能在没有磁盘、没有时钟的情况下被测。
 pub use prune::{package_day, plan_prune};
@@ -161,6 +171,9 @@ pub struct BackupManifest {
     /// 模块数据快照（没带模块数据就是 `None`；老包的清单里没有这一格）
     #[serde(default)]
     pub modules: Option<ModuleBackupStamp>,
+    /// 模块程序包（受管 `modules/` 目录；老包没有这一格）
+    #[serde(default)]
+    pub module_packages: Option<ModulePackagesStamp>,
     /// 库最后一次写入的时间（恢复时算"会丢多少天"要用）
     pub db_last_write_at: i64,
     pub works: Vec<WorkStamp>,
@@ -503,6 +516,11 @@ impl Store {
         } else {
             None
         };
+        let module_packages = if req.include_modules {
+            module_packages::snapshot(&req.data_dir, staging)?
+        } else {
+            None
+        };
 
         // 成稿导出（不装研墨也能读的第二层保险）+ 逐书指纹
         //
@@ -561,6 +579,12 @@ impl Store {
                 canonical.push_str(&format!("{module_id}:{schema}|"));
             }
         }
+        if let Some(packages) = &module_packages {
+            canonical.push_str(&format!(
+                "module-packages:{}:{}:{}|",
+                packages.files, packages.bytes, packages.sha256
+            ));
+        }
         for work in &works {
             canonical.push_str(&format!("{}:{}:{}:{}|", work.id, work.chapters, work.word_count, work.fingerprint));
         }
@@ -583,6 +607,7 @@ impl Store {
             snapshot_file: SNAPSHOT_FILE.to_string(),
             snapshot_bytes,
             modules,
+            module_packages,
             db_last_write_at: last_write_at(&self.conn)?,
             works,
             previous_fingerprint,
@@ -736,6 +761,9 @@ impl Store {
         // 模块数据：清单说带了，就必须在、结构完好、版本账对得上
         if let Some(stamp) = &manifest.modules {
             problems.extend(verify_modules(package, stamp));
+        }
+        if let Some(stamp) = &manifest.module_packages {
+            problems.extend(module_packages::verify(package, stamp));
         }
 
         // 成稿文件：在、指纹对得上（文件被改坏/少了一个，这里就会说话）

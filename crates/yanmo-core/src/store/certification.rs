@@ -38,10 +38,10 @@ pub const CERT_FORMAT: u32 = 1;
 /// 官方公钥（32 字节十六进制）。**发布时替换**；空 = 本构建不认证任何模块。
 ///
 /// 私钥永远不进仓库；签发在离线环境完成，签好的清单随版本内置。
-const OFFICIAL_PUBLIC_KEY_HEX: &str = "";
+const OFFICIAL_PUBLIC_KEY_HEX: &str = "088efbd89a5ae653ccb28f1b1773602ff43006acf4d161bf4fb8171bd9df6300";
 
 /// 官方签名清单（JSON）。与公钥一起替换；空 = 不认证。
-const OFFICIAL_CERTIFICATIONS_JSON: &str = "";
+const OFFICIAL_CERTIFICATIONS_JSON: &str = r#"{"format":1,"entries":[],"signature":"1b2de4b930d4589790cd81968cf807418fb66ff76c66895ef555fda2ce7b0ce54ad491cfad729f316eeb192b210c7ff2fc2647f85c42f3ec80218f60fe020209"}"#;
 
 /// 清单里的一行：认证绑定到**载荷哈希**，不是只绑名字/版本。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -232,4 +232,20 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
     (y, m as u32, d as u32)
+}
+
+#[cfg(test)]
+mod official_tests {
+    use super::*;
+
+    #[test]
+    fn official_key_and_empty_signed_list_are_wired() {
+        assert!(!OFFICIAL_PUBLIC_KEY_HEX.is_empty());
+        let set = CertificationSet::from_signed_json(
+            OFFICIAL_CERTIFICATIONS_JSON,
+            OFFICIAL_PUBLIC_KEY_HEX,
+        )
+        .expect("official empty list must verify");
+        assert!(set.entries().is_empty());
+    }
 }

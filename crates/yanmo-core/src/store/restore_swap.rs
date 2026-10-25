@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
-use super::backup::{read_manifest, MODULES_FILE};
+use super::backup::{read_manifest, restore_package_dir, MODULES_FILE};
 use super::restore::source_invalid;
 use crate::error::{codes, Error, Result};
 use crate::paths::DB_FILE;
@@ -38,6 +38,8 @@ pub struct RestoreOutcome {
     pub stamp: String,
     /// 这份备份带没带模块数据（带了才换 `modules.db`；没带就保持现状）
     pub modules_restored: bool,
+    /// 这份备份带没带模块程序包（带了才换 `modules/`）
+    pub module_packages_restored: bool,
 }
 
 /// 换库：**先把新库放稳，再把原库留底，最后当场体检一次**。
@@ -123,13 +125,18 @@ pub fn swap_in(source: &Path, data_dir: &Path, stamp: &str) -> Result<RestoreOut
         problem = quick_check_file(&data_dir.join(MODULES_FILE)).err();
     }
     match problem {
-        None => Ok(RestoreOutcome {
-            restored_from: source_db.to_string_lossy().to_string(),
-            quarantine,
-            bytes,
-            stamp: stamp.to_string(),
-            modules_restored: source_modules.is_some(),
-        }),
+        None => {
+            // 程序包在库体检通过后放回；失败会报错，但两个库已经是新的（如实边界）。
+            let module_packages_restored = restore_package_dir(source, data_dir, stamp)?;
+            Ok(RestoreOutcome {
+                restored_from: source_db.to_string_lossy().to_string(),
+                quarantine,
+                bytes,
+                stamp: stamp.to_string(),
+                modules_restored: source_modules.is_some(),
+                module_packages_restored,
+            })
+        }
         Some(problem) => {
             remove_db_files(&target);
             if source_modules.is_some() {

@@ -30,6 +30,18 @@ struct Allowance {
 
 const ALLOWED: &[Allowance] = &[
     Allowance {
+        file: "app/src/commands/module.rs",
+        rule: "remove-dir-all",
+        count: 1,
+        why: "卸载模块的清程序目录：只删受管 `<data>/modules/<id>`，id 来自已校验的注册表，\n              删之前先删注册表/凭据；书稿数据不在这里，也不碰其他目录",
+    },
+    Allowance {
+        file: "crates/yanmo-core/src/store/backup/module_packages.rs",
+        rule: "remove-dir-all",
+        count: 3,
+        why: "程序包备份/恢复的暂存目录与留底旧目录：三处删的都是本模块刚创建的\n              `modules.restoring` 或 `旧库留底/<stamp>/modules`；源程序包只读，不删",
+    },
+    Allowance {
         file: "crates/yanmo-core/src/store/trash.rs",
         rule: "delete-precious",
         count: 2,

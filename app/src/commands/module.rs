@@ -169,7 +169,13 @@ pub fn module_uninstall(
     for binding in credentials {
         let _ = yanmo_vault::remove(&module_id, &binding.name);
     }
-    data.with_store(|store: &mut Store| store.uninstall_module(&module_id))
+    data.with_store(|store: &mut Store| store.uninstall_module(&module_id))?;
+    // 包目录是受管目录下的 `<id>`；注册表删掉后程序文件也没必要留。
+    let package = data.data_dir().join("modules").join(&module_id);
+    if package.is_dir() {
+        let _ = std::fs::remove_dir_all(package);
+    }
+    Ok(())
 }
 
 /// 选一个模块文件夹并预览（**不安装**）。取消返回 `None`。

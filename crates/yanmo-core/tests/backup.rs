@@ -514,3 +514,22 @@ fn manual_sealed_backups_are_never_rotated_away_either() {
     assert_eq!(manual_kept, 1, "手动那份密文包不许被轮掉：{:?}", ours);
     assert_eq!(ours.len(), 2, "自动那些密文包该轮到只剩 1 份：{:?}", ours);
 }
+
+#[test]
+fn backup_includes_module_package_files() {
+    let mut f = fixture();
+    seed_book(&mut f.store);
+    let package_dir = f.data_dir.join("modules").join("app.example.demo");
+    std::fs::create_dir_all(&package_dir).unwrap();
+    std::fs::write(package_dir.join("module.wasm"), b"wasm-bytes").unwrap();
+    std::fs::write(package_dir.join("manifest.json"), b"{}").unwrap();
+
+    let report = f.store.backup_now(&request(&f, 7)).unwrap();
+    assert_eq!(report.succeeded(), 1, "{:?}", report.outcomes);
+    let package = PathBuf::from(&report.outcomes[0].package);
+    let manifest = read_manifest(&package).unwrap();
+    let stamp = manifest.module_packages.expect("程序包戳要在清单里");
+    assert_eq!(stamp.files, 2);
+    assert!(package.join("module-packages/app.example.demo/module.wasm").is_file());
+    assert!(f.store.verify_backup(&package).ok, "{:?}", f.store.verify_backup(&package).problems);
+}

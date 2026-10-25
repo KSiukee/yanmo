@@ -423,3 +423,19 @@ fn walk(root: &Path) -> Vec<PathBuf> {
     }
     out
 }
+
+#[test]
+fn restore_brings_module_packages_back() {
+    let mut f = fixture();
+    let package_dir = f.data_dir.join("modules").join("app.example.demo");
+    std::fs::create_dir_all(&package_dir).unwrap();
+    std::fs::write(package_dir.join("module.wasm"), b"wasm-bytes").unwrap();
+    let package = make_backup(&mut f);
+    std::fs::remove_dir_all(f.data_dir.join("modules")).unwrap();
+    drop(f.store);
+
+    let outcome = swap_in(&package, &f.data_dir, "20260913-1400").unwrap();
+    assert!(outcome.module_packages_restored);
+    let restored = f.data_dir.join("modules/app.example.demo/module.wasm");
+    assert_eq!(std::fs::read(restored).unwrap(), b"wasm-bytes");
+}
