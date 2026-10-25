@@ -20,6 +20,10 @@ pub struct ModuleCandidate {
     pub kind: String,
     pub chapters: Vec<u64>,
     pub count: u64,
+    /// 模块自己写的问句（原样进叩问面板的卡；核心不替它造句）
+    pub question: String,
+    /// 依据锚点（`chapter:3` 这种）：叩问通道要求至少一条
+    pub anchors: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -113,6 +117,85 @@ fn split_known(
     (items, existing)
 }
 
+/// 把候选**送进叩问通道**：问题卡标来源模块，限频与去重由核心把关。
+///
+/// - 静音了来源就一条都不提（核心那边静音后也不进候选池，这里再挡一次更早）；
+/// - 已经有同锚点的问题卡（同模块、同候选）就不再问第二遍；
+/// - 限频（每小时 4 条、间隔 1 分钟）由核心判定，被丢的如实回报。
+#[tauri::command(rename_all = "snake_case")]
+pub fn module_questions_submit(
+    data: State<'_, AppData>,
+    module_id: String,
+) -> Result<QuestionSubmitView, ApiError> {
+    let record = data.with_store(|store: &mut Store| store.module_record(&module_id))?;
+    let muted = data.with_store(|store: &mut Store| store.muted_sources())?;
+    if muted.iter().any(|source| source == &module_id) {
+        return Ok(QuestionSubmitView { accepted: 0, dropped: 0, skipped: 0, muted: true });
+    }
+    let (work_id, candidates) = read_candidates(&data, &module_id)?;
+    if work_id <= 0 || candidates.is_empty() {
+        return Ok(QuestionSubmitView::default());
+    }
+    let asked = data.with_store(|store: &mut Store| asked_anchors(store, work_id, &module_id))?;
+    let grant = yanmo_core::model::ModuleQuestionGrant {
+        module_id: module_id.clone(),
+        may_ask: record.granted.ask_questions,
+        active: record.is_active(),
+    };
+    let mut accepted = 0;
+    let mut dropped = 0;
+    let mut skipped = 0;
+    for candidate in candidates {
+        if candidate.question.trim().is_empty() || candidate.anchors.is_empty() {
+            continue;
+        }
+        if candidate.anchors.iter().any(|anchor| asked.contains(anchor)) {
+            skipped += 1;
+            continue;
+        }
+        let outcome = data.with_store(|store: &mut Store| {
+            store.submit_module_question(
+                &grant,
+                yanmo_core::model::ModuleQuestion {
+                    work_id,
+                    body: candidate.question.clone(),
+                    importance: 0.5,
+                    linked: candidate.anchors.clone(),
+                },
+            )
+        })?;
+        match outcome {
+            yanmo_core::store::QuestionIntakeOutcome::Accepted { .. } => accepted += 1,
+            yanmo_core::store::QuestionIntakeOutcome::Dropped { .. } => dropped += 1,
+        }
+    }
+    Ok(QuestionSubmitView { accepted, dropped, skipped, muted: false })
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct QuestionSubmitView {
+    pub accepted: usize,
+    pub dropped: usize,
+    pub skipped: usize,
+    pub muted: bool,
+}
+
+/// 这个模块已经问过的锚点（同书、同来源）：避免同一个候选问第二遍。
+fn asked_anchors(store: &Store, work_id: i64, module_id: &str) -> yanmo_core::Result<Vec<String>> {
+    let mut anchors = Vec::new();
+    for card in store.question_cards(work_id, None)? {
+        if card.source != module_id {
+            continue;
+        }
+        if let Ok(list) = serde_json::from_str::<Vec<String>>(&card.linked) {
+            anchors.extend(list);
+        }
+    }
+    anchors.sort();
+    anchors.dedup();
+    Ok(anchors)
+}
+
 fn read_candidates(
     data: &AppData,
     module_id: &str,
@@ -155,6 +238,21 @@ fn read_candidates_from(
                             .map(|list| list.iter().filter_map(|value| value.as_u64()).collect())
                             .unwrap_or_default(),
                         count: item.get("count").and_then(|value| value.as_u64()).unwrap_or(0),
+                        question: item
+                            .get("question")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        anchors: item
+                            .get("anchors")
+                            .and_then(|value| value.as_array())
+                            .map(|list| {
+                                list.iter()
+                                    .filter_map(|value| value.as_str())
+                                    .map(str::to_string)
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
                     })
                 })
                 .collect()
@@ -181,8 +279,22 @@ mod tests {
 
     fn candidates() -> Vec<ModuleCandidate> {
         vec![
-            ModuleCandidate { name: "雾隐城".into(), kind: "setting".into(), chapters: vec![2], count: 1 },
-            ModuleCandidate { name: "青石巷".into(), kind: "setting".into(), chapters: vec![0], count: 3 },
+            ModuleCandidate {
+                name: "雾隐城".into(),
+                kind: "setting".into(),
+                chapters: vec![2],
+                count: 1,
+                question: String::new(),
+                anchors: vec!["chapter:3".into()],
+            },
+            ModuleCandidate {
+                name: "青石巷".into(),
+                kind: "setting".into(),
+                chapters: vec![0],
+                count: 3,
+                question: String::new(),
+                anchors: vec!["chapter:1".into()],
+            },
         ]
     }
 
@@ -227,5 +339,40 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].name, "雾隐城");
         assert_eq!(items[0].chapters, vec![2]);
+    }
+}
+
+#[cfg(test)]
+mod question_tests {
+    use super::*;
+    use yanmo_core::model::NewQuestionCard;
+
+    fn card(store: &mut Store, work_id: i64, source: &str, linked: &[&str]) {
+        store
+            .create_question_card(&NewQuestionCard {
+                work_id,
+                body: "一句话".to_string(),
+                source: source.to_string(),
+                template_key: String::new(),
+                importance: 0.5,
+                linked: linked.iter().map(|anchor| anchor.to_string()).collect(),
+                derived_from: None,
+                auto_derived: false,
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn only_this_modules_anchors_count_as_asked() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("yanmo.db")).unwrap();
+        let work = store
+            .create_work(yanmo_core::model::WorkKind::Novel, "题本")
+            .unwrap();
+        card(&mut store, work.id, "app.a", &["chapter:3"]);
+        card(&mut store, work.id, "app.b", &["chapter:9"]);
+        let anchors = asked_anchors(&store, work.id, "app.a").unwrap();
+        assert_eq!(anchors, vec!["chapter:3".to_string()], "别的模块问过的不算");
+        assert!(asked_anchors(&store, work.id, "app.c").unwrap().is_empty());
     }
 }

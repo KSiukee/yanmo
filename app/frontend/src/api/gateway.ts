@@ -211,6 +211,7 @@ export const COMMANDS = {
   moduleRollback: "module_rollback",
   moduleCandidates: "module_candidates",
   moduleCandidatesApply: "module_candidates_apply",
+  moduleQuestionsSubmit: "module_questions_submit",
   moduleSetEnabled: "module_set_enabled",
   moduleSetFavorite: "module_set_favorite",
   moduleSetPinned: "module_set_pinned",

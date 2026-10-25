@@ -183,6 +183,17 @@ export const moduleCandidates = (module_id: string) =>
 export const moduleCandidatesApply = (module_id: string, names: string[]) =>
   call<number>(COMMANDS.moduleCandidatesApply, { module_id, names });
 
+/** 把候选送进叩问通道（限频与去重由核心把关）。 */
+export interface QuestionSubmitView {
+  accepted: number;
+  dropped: number;
+  skipped: number;
+  muted: boolean;
+}
+
+export const moduleQuestionsSubmit = (module_id: string) =>
+  call<QuestionSubmitView>(COMMANDS.moduleQuestionsSubmit, { module_id });
+
 
 export const moduleReadAsks = () => call<ReadAskView[]>(COMMANDS.moduleReadAsks);
 

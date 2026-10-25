@@ -6,6 +6,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import {
   moduleCandidates,
   moduleCandidatesApply,
+  moduleQuestionsSubmit,
   type ModuleCandidate,
   type ModuleCandidatesView,
   type ModuleCard,
@@ -47,6 +48,28 @@ async function load() {
     }
   }
   views.value = next;
+}
+
+async function ask(moduleId: string) {
+  try {
+    const result = await moduleQuestionsSubmit(moduleId);
+    emit(
+      "applied",
+      result.muted
+        ? t("modules.questions_muted")
+        : t("modules.questions_submitted", {
+            accepted: result.accepted,
+            dropped: result.dropped + result.skipped,
+          }),
+    );
+  } catch (error) {
+    emit(
+      "applied",
+      t("modules.action_failed", {
+        detail: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  }
 }
 
 async function apply(moduleId: string) {
@@ -92,6 +115,14 @@ onUnmounted(() => {
           })
         }}
       </span>
+      <button
+        type="button"
+        class="modules__button dialog__button"
+        :disabled="busy"
+        @click="ask(bar.moduleId)"
+      >
+        {{ t("modules.candidates_ask") }}
+      </button>
       <button
         type="button"
         class="modules__button dialog__button"

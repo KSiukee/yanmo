@@ -1798,5 +1798,8 @@
   "modules.candidates_dismiss": "暂不",
   "modules.candidates_done": "已落成 {count} 张设定卡。",
   "modules.candidates_item": "{name}（第 {chapters} 章 ×{count}）",
-  "modules.candidates_item_no_chapter": "{name}（×{count}）"
+  "modules.candidates_item_no_chapter": "{name}（×{count}）",
+  "modules.candidates_ask": "问一嘴",
+  "modules.questions_submitted": "已提交 {accepted} 条叩问（{dropped} 条按限频或重复跳过）。",
+  "modules.questions_muted": "这个模块的叩问已被你静音，一条都不会提。"
 }
