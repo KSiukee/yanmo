@@ -212,6 +212,7 @@ export const COMMANDS = {
   moduleCandidates: "module_candidates",
   moduleCandidatesApply: "module_candidates_apply",
   moduleQuestionsSubmit: "module_questions_submit",
+  certificationsRecheck: "certifications_recheck",
   moduleSetEnabled: "module_set_enabled",
   moduleSetFavorite: "module_set_favorite",
   moduleSetPinned: "module_set_pinned",

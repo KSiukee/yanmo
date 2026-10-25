@@ -94,6 +94,21 @@ impl Certification {
     }
 }
 
+/// 一次启动复核的结果：**变了什么**（只列变化的模块 id）。
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct CertificationRecheck {
+    /// 原来认证、现在不在了（撤销）
+    pub revoked: Vec<String>,
+    /// 原来没认证、现在在清单里（恢复 / 新签发）
+    pub restored: Vec<String>,
+}
+
+impl CertificationRecheck {
+    pub fn is_empty(&self) -> bool {
+        self.revoked.is_empty() && self.restored.is_empty()
+    }
+}
+
 /// 一份**已验签**的认证清单。
 #[derive(Debug, Clone, Default)]
 pub struct CertificationSet {

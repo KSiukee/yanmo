@@ -1801,5 +1801,8 @@
   "modules.candidates_item_no_chapter": "{name}（×{count}）",
   "modules.candidates_ask": "问一嘴",
   "modules.questions_submitted": "已提交 {accepted} 条叩问（{dropped} 条按限频或重复跳过）。",
-  "modules.questions_muted": "这个模块的叩问已被你静音，一条都不会提。"
+  "modules.questions_muted": "这个模块的叩问已被你静音，一条都不会提。",
+  "cert.notice_revoked": "有 {count} 个模块的认证被撤销（{list}）：徽标已换成「未认证」，能力限制照旧。",
+  "cert.notice_restored": "有 {count} 个模块恢复了认证（{list}）。",
+  "cert.notice_dismiss": "知道了"
 }

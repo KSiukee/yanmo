@@ -6,7 +6,7 @@
 //   两块共用同一张碎片表，但界面各管各的——布局层只负责"现在露哪一块"。
 //
 // 壳层纪律：这里只搭布局与接线，不写业务逻辑（业务在 yanmo-core）。
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 import { t } from "./locales/index.ts";
 import { useEditorSession } from "./editor/session";
@@ -20,6 +20,7 @@ import { watchForStalls } from "./editor/stall-watch.ts";
 import type { SelectedQuestion } from "./api/question.ts";
 // 章长提醒那条链的真件（读分布 / 记「就这样写」）：**只有 api/ 下能 import Tauri**，通道从这交给接线层
 import { chapterLengthTransport } from "./api/chapter-length.ts";
+import { certificationsRecheck, type CertificationRecheckView } from "./api/modules";
 import DirectoryPane from "./components/DirectoryPane.vue";
 import EditorPane from "./components/EditorPane.vue";
 import AsidePane from "./components/AsidePane.vue";
@@ -130,6 +131,19 @@ const { visible: restoreVisible } = session.restore;
 const { visible: locationVisible, info: locationInfo } = session.location;
 
 // 顶栏那行小字：集就说集名；有章名就显示章名；开着书但还没起名就显示占位；没有书才说立场那句话
+// 认证启动复核：按官方清单重核一遍；撤销/恢复都要**如实告诉作者**，不许静默失效。
+const certNotice = ref<CertificationRecheckView | null>(null);
+onMounted(async () => {
+  try {
+    const recheck = await certificationsRecheck();
+    if (recheck.revoked.length > 0 || recheck.restored.length > 0) {
+      certNotice.value = recheck;
+    }
+  } catch {
+    // 复核失败不打扰写作：下一次启动再试
+  }
+});
+
 const hint = computed(() => {
   if (isCollection.value) return collectionTitle.value || t("common.untitled");
   if (chapterTitle.value) return chapterTitle.value;
@@ -165,6 +179,24 @@ const hint = computed(() => {
       </button>
       <button type="button" class="shell__nudge-no" @click="push.dismiss()">
         {{ t("flow.push.later") }}
+      </button>
+    </p>
+    <p v-else-if="certNotice" class="shell__nudge">
+      <span>
+        {{
+          certNotice.revoked.length > 0
+            ? t("cert.notice_revoked", {
+                count: certNotice.revoked.length,
+                list: certNotice.revoked.join(t("common.list_separator")),
+              })
+            : t("cert.notice_restored", {
+                count: certNotice.restored.length,
+                list: certNotice.restored.join(t("common.list_separator")),
+              })
+        }}
+      </span>
+      <button type="button" class="shell__nudge-no" @click="certNotice = null">
+        {{ t("cert.notice_dismiss") }}
       </button>
     </p>
     <p v-else-if="backupStatus?.should_nudge" class="shell__nudge">

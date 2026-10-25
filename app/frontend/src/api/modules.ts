@@ -194,6 +194,15 @@ export interface QuestionSubmitView {
 export const moduleQuestionsSubmit = (module_id: string) =>
   call<QuestionSubmitView>(COMMANDS.moduleQuestionsSubmit, { module_id });
 
+/** 认证启动复核的结果：启动时按官方清单重核，变了什么就报什么。 */
+export interface CertificationRecheckView {
+  revoked: string[];
+  restored: string[];
+}
+
+export const certificationsRecheck = () =>
+  call<CertificationRecheckView>(COMMANDS.certificationsRecheck);
+
 
 export const moduleReadAsks = () => call<ReadAskView[]>(COMMANDS.moduleReadAsks);
 

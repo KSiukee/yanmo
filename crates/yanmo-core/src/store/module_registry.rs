@@ -196,6 +196,40 @@ impl Store {
         Ok(())
     }
 
+    /// 启动复核：注册表里的认证状态**重新按官方清单核一遍**（撤销就撤、恢复就恢复）。
+    ///
+    /// 为什么要复核：`certified` 是安装/升级那一刻算的；官方清单之后可能
+    /// 撤掉某一条（发现越权、偷偷联网、回归），装在用户机器上的那份记录不会自己变。
+    ///
+    /// 返回**变了什么**（新撤销 / 新恢复的模块 id），给界面如实告诉作者——
+    /// "静默失效"是不允许的。
+    pub fn recheck_certifications(&mut self) -> Result<super::CertificationRecheck> {
+        let set = super::CertificationSet::built_in();
+        self.recheck_certifications_with(&set)
+    }
+
+    /// 同 [`Store::recheck_certifications`]，但用指定的已验签清单（测试 / 签发预演）。
+    pub fn recheck_certifications_with(
+        &mut self,
+        certs: &super::CertificationSet,
+    ) -> Result<super::CertificationRecheck> {
+        let cards = self.module_cards()?;
+        let mut recheck = super::CertificationRecheck::default();
+        for card in cards {
+            let should = certs.lookup(&card.id, &card.version, &card.fingerprint).is_some();
+            if should == card.certified {
+                continue;
+            }
+            self.set_module_certified(&card.id, should)?;
+            if should {
+                recheck.restored.push(card.id);
+            } else {
+                recheck.revoked.push(card.id);
+            }
+        }
+        Ok(recheck)
+    }
+
     /// 一条模块记录；没装过 → `module.not_found`。
     pub fn module_record(&self, module_id: &str) -> Result<ModuleRecord> {
         let row = self

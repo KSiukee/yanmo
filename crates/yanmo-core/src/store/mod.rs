@@ -172,7 +172,9 @@ pub use relocate::{copy_dir, verify_same_scale, Relocation};
 pub use restore::RestorePreview;
 pub use restore_packages::{list_packages, scan_packages, PackageBrief};
 pub use restore_swap::{swap_in, RestoreOutcome, KEEP_FOLDER};
-pub use certification::{checks as cert_checks, Certification, CertificationSet, CERT_EDITION_LATEST};
+pub use certification::{
+    checks as cert_checks, Certification, CertificationRecheck, CertificationSet, CERT_EDITION_LATEST,
+};
 pub use module_data::{ModuleData, ModuleStats};
 pub use module_audit::{ModuleAudit, ModuleIssue};
 pub use module_data_health::ModuleDataHealth;

@@ -199,3 +199,51 @@ fn a_certification_says_what_was_checked() {
         "an unknown edition must not invent checks"
     );
 }
+
+/// 启动复核：清单里没了就撤销、回来了就恢复；没变就什么都不报。
+#[test]
+fn a_startup_recheck_revokes_and_restores() {
+    use yanmo_proto::manifest::ModuleManifest;
+    let dir = TempDir::new().unwrap();
+    let module = package(dir.path());
+    let preview = inspect_module_package_with_certs(&module, &CertificationSet::empty()).unwrap();
+
+    let mut store = Store::open(dir.path().join("yanmo.db")).unwrap();
+    let manifest = ModuleManifest::from_json(&manifest()).unwrap();
+    let grant = ModuleCapabilities {
+        read: vec![CoreDataArea::Works],
+        ..ModuleCapabilities::none()
+    };
+    let managed = dir.path().join("modules").join(ID);
+    store
+        .import_module_managed(&module, &managed, &grant, "", "folder", &CertificationSet::empty())
+        .unwrap();
+    // 模拟"装的时候是认证过的"（安装那一刻清单里有它）
+    store.set_module_certified(ID, true).unwrap();
+
+    assert!(store.module_card(ID).unwrap().certified, "前置：装好后是认证态");
+    assert!(
+        store.module_cards().unwrap().iter().any(|card| card.id == ID && card.certified),
+        "列表也要看得到认证态"
+    );
+    // 现在的官方清单是空的：复核应当撤销
+    let recheck = store.recheck_certifications_with(&CertificationSet::empty()).unwrap();
+    assert_eq!(recheck.revoked, vec![ID.to_string()]);
+    assert!(recheck.restored.is_empty());
+    assert!(!store.module_card(ID).unwrap().certified, "撤销要落到记录上");
+
+    // 再跑一次：已经一致，不该再报
+    let again = store.recheck_certifications_with(&CertificationSet::empty()).unwrap();
+    assert!(again.is_empty());
+
+    // 清单里又有它了：应当恢复
+    let entry = certification(&preview.fingerprint);
+    let set = CertificationSet::from_signed_json(
+        &signed_json(&[entry], &key()),
+        &public_hex(&key()),
+    )
+    .unwrap();
+    let restored = store.recheck_certifications_with(&set).unwrap();
+    assert_eq!(restored.restored, vec![ID.to_string()]);
+    assert!(store.module_card(ID).unwrap().certified);
+}

@@ -259,6 +259,16 @@ pub fn module_import_confirm(
     Ok(card)
 }
 
+/// 认证启动复核：按官方清单重核一遍（撤销就撤、恢复就恢复），把变化交回界面。
+///
+/// **不静默失效**：注册表变了，界面要如实告诉作者哪几个模块的认证没了。
+#[tauri::command(rename_all = "snake_case")]
+pub fn certifications_recheck(
+    data: State<'_, AppData>,
+) -> Result<yanmo_core::store::CertificationRecheck, ApiError> {
+    data.with_store(|store: &mut Store| store.recheck_certifications())
+}
+
 /// 回滚到上一版（升级时留的档）：停平台 → 包与账一起退回去。
 #[tauri::command(rename_all = "snake_case")]
 pub fn module_rollback(
