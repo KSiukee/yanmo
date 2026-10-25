@@ -359,6 +359,14 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "模块数据写入太频繁，已拒绝" : [],
     MODULE_DATA_ISOLATED => "module.data_isolated"
         : "模块数据已被隔离（读、写、迁移全停，数据原样留着）：{module_id}" : ["module_id"],
+    MODULE_MIRROR_FAILED => "module.mirror_failed"
+        : "模块数据镜像写不出来或读不出来：{detail}" : ["detail"],
+    MODULE_MIRROR_INVALID => "module.mirror_invalid"
+        : "模块数据镜像不合规（格式 / 归属 / 单元格）：{detail}" : ["detail"],
+    MODULE_MIRROR_MISSING => "module.mirror_missing"
+        : "模块「{module_id}」还没有镜像，没有东西可以重建" : ["module_id"],
+    MODULE_DATA_REBUILD_LOCKED => "module.data_rebuild_locked"
+        : "「{module_id}」的数据没有隔离，重建会覆盖正在用的数据——先隔离再来" : ["module_id"],
     MODULE_CREDENTIAL_INVALID => "module.credential_invalid"
         : "凭据绑定不合规：{field}" : ["field"],
     MODULE_GRANT_INVALID => "module.grant_invalid"

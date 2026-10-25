@@ -228,6 +228,8 @@ export const COMMANDS = {
   moduleDataAudit: "module_data_audit",
   moduleDataIsolate: "module_data_isolate",
   moduleDataRelease: "module_data_release",
+  moduleDataMirror: "module_data_mirror",
+  moduleDataRebuild: "module_data_rebuild",
   moduleDataClear: "module_data_clear",
   moduleImportPick: "module_import_pick",
   moduleImportConfirm: "module_import_confirm",

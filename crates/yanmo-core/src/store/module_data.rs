@@ -327,7 +327,7 @@ impl ModuleData {
         Ok(tables.len())
     }
 
-    fn record_schema_in(conn: &Connection, module_id: &str, version: i64) -> Result<()> {
+    pub(super) fn record_schema_in(conn: &Connection, module_id: &str, version: i64) -> Result<()> {
         if version < 0 {
             return Err(Error::invalid_with(
                 codes::MODULE_SCHEMA_INVALID,

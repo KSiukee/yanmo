@@ -114,6 +114,14 @@ const ALLOWED: &[Allowance] = &[
               卸载默认不调它，界面二次确认之后才走这条",
     },
     Allowance {
+        file: "crates/yanmo-core/src/store/module_mirror_rebuild.rs",
+        rule: "drop-table",
+        count: 1,
+        why: "从镜像**重建**这一格：先删本模块命名空间里的表（表名由核心校验并加模块前缀；\
+              镜像里越界的表名在动库之前就被拒），再照镜像建回来；整段在一个事务里、失败整份回滚，\
+              而且只在**该模块已隔离**或命名空间为空时放行——绝不删正在用的数据",
+    },
+    Allowance {
         file: "crates/yanmo-core/src/store/module_import.rs",
         rule: "remove-dir-all",
         count: 5,

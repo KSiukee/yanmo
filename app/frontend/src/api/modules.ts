@@ -214,7 +214,60 @@ export const moduleDataAudit = (module_id: string) =>
   call<ModuleDataAudit>(COMMANDS.moduleDataAudit, { module_id });
 
 export const moduleDataIsolate = (module_id: string, reason: string) =>
-  call<boolean>(COMMANDS.moduleDataIsolate, { module_id, reason });
+  call<ModuleIsolateReceipt>(COMMANDS.moduleDataIsolate, { module_id, reason });
 
 export const moduleDataRelease = (module_id: string) =>
   call<boolean>(COMMANDS.moduleDataRelease, { module_id });
+
+/** 一份开放格式镜像的回执（落在 <数据目录>/module-mirrors/<模块 id>.json）。 */
+export interface ModuleMirror {
+  module_id: string;
+  path: string;
+  bytes: number;
+  tables: number;
+  rows: number;
+  written_at: number;
+}
+
+/** 镜像与主库的一处不一致：code 是稳定码，detail 是表名。 */
+export interface MirrorDifference {
+  code: string;
+  detail: string;
+}
+
+export interface ModuleMirrorCheck {
+  module_id: string;
+  /** `ok` / `different` / `missing` */
+  state: string;
+  written_at: number;
+  tables: number;
+  rows: number;
+  differences: MirrorDifference[];
+}
+
+export interface ModuleMirrorRefresh {
+  written: ModuleMirror;
+  /** 写之前的旧镜像核对结果（以前没写过 = null）。 */
+  before: ModuleMirrorCheck | null;
+  /** 旧镜像读不出来时的原因。 */
+  before_error: string | null;
+}
+
+export interface ModuleIsolateReceipt {
+  isolated: boolean;
+  mirrored: boolean;
+  mirror_error: string | null;
+}
+
+export interface ModuleRebuild {
+  module_id: string;
+  tables: number;
+  rows: number;
+  schema_version: number | null;
+}
+
+export const moduleDataMirror = (module_id: string) =>
+  call<ModuleMirrorRefresh>(COMMANDS.moduleDataMirror, { module_id });
+
+export const moduleDataRebuild = (module_id: string) =>
+  call<ModuleRebuild>(COMMANDS.moduleDataRebuild, { module_id });

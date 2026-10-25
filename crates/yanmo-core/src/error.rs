@@ -118,11 +118,24 @@ fn collect(
             provided, expected,
             "码 {code} 的参数名与码表声明对不上：调用点给了 {provided:?}，码表写的是 {expected:?}"
         );
-        // i18n-allow-next-line: 开发者断言（崩在测试/调试构建里），不进界面
-        debug_assert!(
-            crate::error_codes::render_log(code, &params).find('{').is_none(),
-            "码 {code} 的日志模板里有没被填上的占位符——参数名单对不上"
-        );
+        // 模板里的每个 `{名字}` 都必须在参数名单里：漏一个，日志里就会留下没填上的花括号。
+        //
+        // ⚠️ 判据只看**模板**，不看渲染结果——参数值是技术消息（镜像里的 JSON、表的原名……），
+        // 里面完全可能带 `{`；拿"渲染结果里有没有花括号"当判据，会把一条正常的技术消息
+        // 变成 debug 构建的 panic（0.145.0 真踩过：镜像里坏单元格的 JSON 当场炸了单测）。
+        if let Some(template) = crate::error_codes::log_template(code) {
+            let mut rest = template;
+            while let Some(start) = rest.find('{') {
+                let Some(end) = rest[start..].find('}') else { break };
+                let name = &rest[start + 1..start + end];
+                // i18n-allow-next-line: 开发者断言（崩在测试/调试构建里），不进界面
+                debug_assert!(
+                    declared.iter().any(|declared| *declared == name),
+                    "码 {code} 的日志模板里用了 {name}，但参数名单没声明它"
+                );
+                rest = &rest[start + end + 1..];
+            }
+        }
     }
     params
 }

@@ -90,6 +90,8 @@ const {
   auditData,
   isolateData,
   releaseData,
+  mirrorData,
+  rebuildData,
   exportData,
   clearData,
   uninstall,
@@ -254,6 +256,8 @@ onUnmounted(() => {
             <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="auditData(card)">{{ t("modules.data_audit_button") }}</button>
             <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="isolateData(card)">{{ t("modules.isolate_button") }}</button>
             <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="releaseData(card)">{{ t("modules.release_button") }}</button>
+            <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="mirrorData(card)">{{ t("modules.mirror_button") }}</button>
+            <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="rebuildData(card)">{{ t("modules.rebuild_button") }}</button>
             <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="exportData(card)">{{ t("modules.export_data") }}</button>
             <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="clearData(card)">{{ t("modules.clear_data") }}</button>
             <button

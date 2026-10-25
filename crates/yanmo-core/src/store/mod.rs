@@ -54,6 +54,10 @@ mod module_data_export;
 mod module_data_health;
 mod module_data_limits;
 mod module_isolation;
+mod module_mirror;
+mod module_mirror_cells;
+mod module_mirror_check;
+mod module_mirror_rebuild;
 mod module_namespace;
 mod module_lifecycle;
 mod module_ipc;
@@ -167,6 +171,9 @@ pub use module_audit::{ModuleAudit, ModuleIssue};
 pub use module_data_health::ModuleDataHealth;
 pub use module_data_limits::ModuleDataLimits;
 pub use module_isolation::ModuleIsolation;
+pub use module_mirror::ModuleMirror;
+pub use module_mirror_check::{MirrorDifference, ModuleMirrorCheck};
+pub use module_mirror_rebuild::ModuleRebuild;
 pub use module_ipc::{new_ipc_token, ModuleIpcHandler};
 pub use module_import::{
     inspect_module_package, inspect_module_package_with_certs, ImportPreview,
