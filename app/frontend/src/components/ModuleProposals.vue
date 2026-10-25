@@ -15,6 +15,13 @@ const props = defineProps<{ cards: ModuleCard[]; busy: boolean }>();
 const emit = defineEmits<{ done: [message: string] }>();
 
 const items = ref<Record<string, ProposalView[]>>({});
+const suppressed = ref<Record<string, number>>({});
+// 额度提示也要能显示（哪怕一条都没摆出来）
+const capped = computed(() =>
+  Object.entries(suppressed.value)
+    .filter(([, count]) => count > 0)
+    .map(([moduleId, count]) => ({ moduleId, count })),
+);
 let timer: number | undefined;
 
 function nameOf(moduleId: string): string {
@@ -32,7 +39,12 @@ async function load() {
   for (const card of props.cards) {
     try {
       const view = await moduleProposals(card.id);
-      if (view.items.length > 0) next[card.id] = view.items;
+      if (view.items.length > 0 || view.suppressed > 0) {
+        next[card.id] = view.items;
+        if (view.suppressed > 0) {
+          suppressed.value[card.id] = view.suppressed;
+        }
+      }
     } catch {
       // 读不到就不显示
     }
@@ -91,7 +103,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section v-if="bars.length > 0" class="modules__candidates">
+  <section v-if="bars.length > 0 || capped.length > 0" class="modules__candidates">
+    <p v-for="bar in capped" :key="`cap-${bar.moduleId}`" class="modules__candidate">
+      <span class="modules__candidate-text">
+        {{ t("modules.proposal_capped", { name: nameOf(bar.moduleId), count: bar.count }) }}
+      </span>
+    </p>
     <div v-for="bar in bars" :key="bar.moduleId">
       <p class="modules__candidate">
         <span class="modules__candidate-text">

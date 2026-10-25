@@ -38,7 +38,13 @@ pub struct ProposalView {
 #[derive(Debug, Clone, Serialize)]
 pub struct ProposalsView {
     pub items: Vec<ProposalView>,
+    /// 今天额度用完之后**没有摆出来**的条数（要如实说，不许装作没有）
+    pub suppressed: usize,
 }
+
+/// 每个模块每天最多把多少条建议摆到作者面前（防刷屏：模块能自由往自己数据区写，
+/// 但"摆到人眼前"这件事由壳把关）。
+const DAILY_REVIEW_CAP: usize = 20;
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn module_proposals(
@@ -47,8 +53,11 @@ pub fn module_proposals(
 ) -> Result<ProposalsView, ApiError> {
     let items = read_proposals(&data, &module_id)?;
     if items.is_empty() {
-        return Ok(ProposalsView { items: Vec::new() });
+        return Ok(ProposalsView { items: Vec::new(), suppressed: 0 });
     }
+    // 今天已经"摆出来过"的条数（应用/失效/忽略都算一次审阅）
+    let reviewed_today = reviewed_today(&data, &module_id)?;
+    let (items, suppressed) = limit_daily(items, reviewed_today, DAILY_REVIEW_CAP);
     let current: Vec<(i64, Option<String>)> = data.with_store(|store: &mut Store| {
         Ok(items
             .iter()
@@ -86,7 +95,7 @@ pub fn module_proposals(
             item
         })
         .collect();
-    Ok(ProposalsView { items })
+    Ok(ProposalsView { items, suppressed })
 }
 
 /// 应用一条提案：核心验哈希 → 落盘 → 记一笔结果。
@@ -282,4 +291,83 @@ fn record_result(
         .map_err(|error| ApiError::new("shell.module_proposal_invalid").caused_by(error))?;
     module_data.kv_put(module_id, "proposal_results.json", &text)?;
     Ok(())
+}
+
+/// 今日审阅额度：只数"今天记过结果"的条数（每条建议无论应用还是被忽略，都算占过一次名额）。
+fn reviewed_today(data: &AppData, module_id: &str) -> Result<usize, ApiError> {
+    let module_data = ModuleData::open(ModuleData::path_beside(
+        &data.data_dir().join("yanmo.db"),
+    ))?;
+    let Some(bytes) = module_data.kv_get(module_id, "proposal_results.json")? else {
+        return Ok(0);
+    };
+    let Ok(records) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return Ok(0);
+    };
+    let now = yanmo_core::time::now_millis();
+    let day_start = now - now.rem_euclid(24 * 60 * 60 * 1000);
+    Ok(records
+        .as_array()
+        .map(|list| {
+            list.iter()
+                .filter(|record| {
+                    record
+                        .get("at")
+                        .and_then(|value| value.as_i64())
+                        .map(|at| at >= day_start)
+                        .unwrap_or(false)
+                })
+                .count()
+        })
+        .unwrap_or(0))
+}
+
+/// 额度用完了就只摆出剩下的名额（其余**如实计数**，不静默吞掉）。
+fn limit_daily(
+    items: Vec<ProposalView>,
+    reviewed_today: usize,
+    cap: usize,
+) -> (Vec<ProposalView>, usize) {
+    let left = cap.saturating_sub(reviewed_today);
+    if items.len() <= left {
+        return (items, 0);
+    }
+    let mut items = items;
+    let suppressed = items.len() - left;
+    items.truncate(left);
+    (items, suppressed)
+}
+
+#[cfg(test)]
+mod rate_tests {
+    use super::*;
+
+    fn item(id: &str) -> ProposalView {
+        ProposalView {
+            id: id.to_string(),
+            node_id: 1,
+            title: String::new(),
+            base_hash: String::new(),
+            stale: false,
+            chars: 0,
+            kind: "text".to_string(),
+            parent: None,
+            index: 0,
+            nodes: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_daily_cap_only_shows_what_is_left_and_counts_the_rest() {
+        let items: Vec<ProposalView> = (0..5).map(|i| item(&format!("p{i}"))).collect();
+        let (shown, suppressed) = limit_daily(items, 3, 5);
+        assert_eq!(shown.len(), 2, "three already reviewed today leaves two slots");
+        assert_eq!(suppressed, 3);
+        let (shown, suppressed) = limit_daily(vec![item("a")], 5, 5);
+        assert!(shown.is_empty());
+        assert_eq!(suppressed, 1);
+        let (shown, suppressed) = limit_daily(vec![item("a")], 0, 5);
+        assert_eq!(shown.len(), 1);
+        assert_eq!(suppressed, 0);
+    }
 }

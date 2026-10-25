@@ -1839,5 +1839,6 @@
   "modules.words_name": "名字",
   "modules.words_kind_setting": "设定",
   "modules.words_kind_person": "人物",
-  "modules.words_saved": "词表已保存（{count} 条）。"
+  "modules.words_saved": "词表已保存（{count} 条）。",
+  "modules.proposal_capped": "「{name}」还有 {count} 条建议今天不摆了（每日审阅额度已满）。"
 }

@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use yanmo_core::store::{ModuleData, Store};
+use yanmo_core::store::ModuleData;
 
 use crate::error::ApiError;
 use crate::storage::AppData;

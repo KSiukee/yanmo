@@ -203,6 +203,8 @@ export interface ProposalView {
 
 export interface ProposalsView {
   items: ProposalView[];
+  /** 今日额度用完之后没有摆出来的条数（如实说，不许装作没有） */
+  suppressed: number;
 }
 
 export interface ProposalOutcome {
