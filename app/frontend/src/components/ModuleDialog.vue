@@ -32,14 +32,18 @@ const cards = ref<ModuleCard[]>([]);
 const busy = ref(false);
 const note = ref("");
 const preview = ref<ImportPreview | null>(null);
-const { runs, isRunning: isRunningId, markStarted, markAllStopped, loadStatuses, dispose } =
+const { runs, isRunning: isRunningId, markStarted, markStopped, loadStatuses, dispose } =
   useModuleRuns((status: ModuleStatus) => {
     const emitted = status.emitted.join(" / ");
-    note.value = status.timed_out
-      ? t("modules.run_timeout")
-      : emitted
-        ? t("modules.run_ok", { emitted })
-        : t("modules.run_ok_empty");
+    if (status.error) {
+      note.value = t("modules.run_failed", { detail: status.error });
+    } else {
+      note.value = status.timed_out
+        ? t("modules.run_timeout")
+        : emitted
+          ? t("modules.run_ok", { emitted })
+          : t("modules.run_ok_empty");
+    }
   });
 
 function messageOf(error: unknown): string {
@@ -137,11 +141,10 @@ function runModule(card: ModuleCard) {
 }
 
 function stopModule(card: ModuleCard) {
-  if (!window.confirm(t("modules.stop_all_confirm"))) return;
   void act(async () => {
     await moduleStop(card.id);
-    note.value = t("modules.stop_all_done");
-    markAllStopped();
+    note.value = t("modules.run_stopped");
+    markStopped(card.id);
   });
 }
 
@@ -294,7 +297,7 @@ onUnmounted(() => {
               :disabled="busy"
               @click="stopModule(card)"
             >
-              {{ t("modules.stop_all") }}
+              {{ t("modules.stop") }}
             </button>
             <button
               v-else

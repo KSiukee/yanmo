@@ -1,3 +1,34 @@
+## 0.127.0 — 2026-10-24
+
+> **多模块并发 + 按模块停止。** 宿主里每个 `run` 起一个 worker 线程，模块之间不再
+> 排队；`stop <id>` 设置协作取消，`emit`/`read` 入口检查。**纯计算只能等 fuel 烧完**
+> ——wasmi 0.40 没有 epoch 中断，这不是硬杀。
+
+### 新
+
+- **宿主**：`run <id>` 每模块一个 worker 线程；`running` 表防同一模块重复跑；
+  stdout 加锁保证一次一行；`active` 计数，只有全部跑完才允许空闲退出；
+- `stop <id>` 设该模块取消标志；`stop` 设全部并退出；
+- **沙箱**：`run_package_with_core_shared_cancellable` + `HostState.cancel`；
+  `emit`/`read` 入口检查，取消后报 `host.stopped`；
+- **壳**：`module_stop` 发 `stop <id>`，只把该模块状态归零；管理页恢复每卡「停止」；
+  失败/取消显示 `modules.run_failed`；导入/卸载仍停整个平台。
+- 平台宿主仍一个进程/一个 Job Object；多模块并发但共享宿主内存上限。
+
+### 其他（诚实边界）
+
+- **取消是协作式**：guest 不检查 `emit`/`read` 返回值时，只能等 fuel 耗尽
+  （默认 10M 指令）；不是即时硬杀。
+- 平台仍不能按模块硬停；`stop <id>` 是“请求停”，最终报告可能是 `host.stopped`
+  或 `host.fuel_exhausted`（如果 worker 先烧完）。
+- 自动重启、联网、强杀壳、Job CPU/磁盘、子 WebView、认证复核仍未做。
+
+### 验收证据
+
+- **+1 例**：一个宿主同时跑两个模块（报告按 id 收齐）；无限 emit 模块被
+  `stop <id>` 取消并报 `host.stopped`。
+- 全量：Rust **1130 项**、界面 **553 项**，`check_all` 全绿。
+
 ## 0.126.0 — 2026-10-24
 
 > **壳切到平台了。** 一个 `yanmo-launch` + 一个多模块宿主；管理页可以连续启动多个

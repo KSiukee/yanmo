@@ -335,9 +335,17 @@ pub fn module_status(
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn module_stop(runs: State<'_, ModuleRuns>, _module_id: String) -> Result<(), ApiError> {
-    // 平台里只有一个宿主；停一个就是停整个平台。
-    runs.stop_platform()
+pub fn module_stop(
+    runs: State<'_, ModuleRuns>,
+    module_id: String,
+) -> Result<(), ApiError> {
+    runs.send(&format!("stop {module_id}"))?;
+    let mut platform = runs.lock()?;
+    if let Some(status) = platform.statuses.get_mut(&module_id) {
+        status.running = false;
+        status.stopped = true;
+    }
+    Ok(())
 }
 
 fn resolve_bin(name: &str, env_name: &str) -> Result<PathBuf, ApiError> {

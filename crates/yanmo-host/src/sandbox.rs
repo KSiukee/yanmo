@@ -19,6 +19,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
@@ -61,6 +62,7 @@ struct HostState {
     max_total_emit_bytes: usize,
     max_emits: usize,
     core: Option<Arc<Mutex<CoreLink>>>,
+    cancel: Option<Arc<AtomicBool>>,
     declared: BTreeSet<CoreDataArea>,
     max_read_arg_bytes: usize,
     max_read_result_bytes: usize,
@@ -92,6 +94,17 @@ pub fn run_package_with_core_shared(
     package: &ModulePackage,
     config: SandboxConfig,
     core: Option<Arc<Mutex<CoreLink>>>,
+) -> HostResult<RunReport> {
+    run_package_with_core_shared_cancellable(package, config, core, None)
+}
+
+/// 同 [`run_package_with_core_shared`]，但带一个协作取消标志：
+/// `emit` / `read` 入口会检查它；纯计算只能等 fuel 烧完（wasmi 0.40 没有 epoch）。
+pub fn run_package_with_core_shared_cancellable(
+    package: &ModulePackage,
+    config: SandboxConfig,
+    core: Option<Arc<Mutex<CoreLink>>>,
+    cancel: Option<Arc<AtomicBool>>,
 ) -> HostResult<RunReport> {
     config.validate()?;
     let declared: BTreeSet<CoreDataArea> =
@@ -127,6 +140,7 @@ pub fn run_package_with_core_shared(
         max_total_emit_bytes: config.max_total_emit_bytes,
         max_emits: config.max_emits,
         core,
+        cancel,
         declared,
         max_read_arg_bytes: config.max_read_arg_bytes,
         max_read_result_bytes: config.max_read_result_bytes,
@@ -203,6 +217,14 @@ pub fn run_package_with_core_shared(
 }
 
 fn emit(caller: &mut Caller<'_, HostState>, ptr: i32, len: i32) -> i32 {
+    if caller
+        .data()
+        .cancel
+        .as_ref()
+        .is_some_and(|cancel| cancel.load(Ordering::Relaxed))
+    {
+        return fail(caller, HostError::STOPPED, "module was stopped");
+    }
     if ptr < 0 || len < 0 {
         return fail(caller, HostError::EMIT_INVALID, "negative pointer or length");
     }
@@ -266,6 +288,14 @@ fn read(
     out_ptr: i32,
     out_cap: i32,
 ) -> i32 {
+    if caller
+        .data()
+        .cancel
+        .as_ref()
+        .is_some_and(|cancel| cancel.load(Ordering::Relaxed))
+    {
+        return fail(caller, HostError::STOPPED, "module was stopped");
+    }
     let Some(area) = area_from_id(cap) else {
         return fail(caller, HostError::READ_INVALID, "unknown capability id");
     };

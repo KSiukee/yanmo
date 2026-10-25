@@ -56,6 +56,7 @@
   "modules.run_again": "再跑一次",
   "modules.run_ok": "跑完了：{emitted}",
   "modules.run_ok_empty": "跑完了（没有输出）。",
+  "modules.run_failed": "没跑完：{detail}",
   "modules.run_timeout": "启动超时，已强制结束。",
   "modules.background_off": "后台运行：关",
   "modules.background_on": "后台运行：开",

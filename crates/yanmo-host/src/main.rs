@@ -12,14 +12,15 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use std::io::BufRead;
 
 use serde_json::json;
 use yanmo_host::{
-    run_package_with_core, run_package_with_core_shared, CoreLink, HostError, ModulePackage,
-    SandboxConfig,
+    run_package_with_core, run_package_with_core_shared, run_package_with_core_shared_cancellable, CoreLink, HostError,
+    ModulePackage, SandboxConfig,
 };
 use yanmo_ipc::Client;
 
@@ -125,19 +126,43 @@ fn run() -> Result<(), HostError> {
                 }
             }
         });
-        let mut packages: HashMap<String, ModulePackage> = HashMap::new();
-        let mut links: HashMap<String, Arc<Mutex<CoreLink>>> = HashMap::new();
+        let packages: Arc<Mutex<HashMap<String, Arc<ModulePackage>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let links: Arc<Mutex<HashMap<String, Arc<Mutex<CoreLink>>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let running: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let active = Arc::new(AtomicUsize::new(0));
+        let output = Arc::new(Mutex::new(()));
         loop {
             let line = match receiver.recv_timeout(std::time::Duration::from_secs(idle_secs)) {
                 Ok(Ok(line)) => line,
                 Ok(Err(error)) => {
                     return Err(HostError::new(HostError::CORE, error.to_string()));
                 }
-                Err(_) => return Ok(()),
+                Err(_) => {
+                    if active.load(Ordering::Relaxed) == 0 {
+                        return Ok(());
+                    }
+                    continue;
+                }
             };
             let command = line.trim();
             if command == "stop" {
+                if let Ok(map) = running.lock() {
+                    for cancel in map.values() {
+                        cancel.store(true, Ordering::Relaxed);
+                    }
+                }
                 return Ok(());
+            }
+            if let Some(module_id) = command.strip_prefix("stop ").map(str::trim) {
+                if let Ok(map) = running.lock() {
+                    if let Some(cancel) = map.get(module_id) {
+                        cancel.store(true, Ordering::Relaxed);
+                    }
+                }
+                continue;
             }
             let Some(module_id) = command.strip_prefix("run ").map(str::trim) else {
                 eprintln!(
@@ -153,72 +178,119 @@ fn run() -> Result<(), HostError> {
                 );
                 continue;
             }
-            if !packages.contains_key(module_id) {
-                match ModulePackage::open(root.join(module_id)) {
-                    Ok(package) if package.manifest().id == module_id => {
-                        packages.insert(module_id.to_string(), package);
-                    }
-                    Ok(package) => {
-                        eprintln!(
-                            "{}",
-                            json!({
-                                "ok": false,
-                                "code": "host.module_mismatch",
-                                "detail": format!("{} != {}", package.manifest().id, module_id)
-                            })
-                        );
-                        continue;
-                    }
-                    Err(error) => {
-                        eprintln!(
-                            "{}",
-                            json!({ "ok": false, "code": error.code, "detail": error.detail })
-                        );
-                        continue;
-                    }
+            {
+                let map = running.lock().map_err(|_| {
+                    HostError::new(HostError::CORE, "running map poisoned")
+                })?;
+                if map.contains_key(module_id) {
+                    eprintln!(
+                        "{}",
+                        json!({ "ok": false, "module_id": module_id, "code": "host.already_running" })
+                    );
+                    continue;
                 }
             }
+            let package = {
+                let mut map = packages.lock().map_err(|_| {
+                    HostError::new(HostError::CORE, "package map poisoned")
+                })?;
+                if !map.contains_key(module_id) {
+                    match ModulePackage::open(root.join(module_id)) {
+                        Ok(package) if package.manifest().id == module_id => {
+                            map.insert(module_id.to_string(), Arc::new(package));
+                        }
+                        Ok(package) => {
+                            eprintln!(
+                                "{}",
+                                json!({
+                                    "ok": false,
+                                    "code": "host.module_mismatch",
+                                    "detail": format!("{} != {}", package.manifest().id, module_id)
+                                })
+                            );
+                            continue;
+                        }
+                        Err(error) => {
+                            eprintln!(
+                                "{}",
+                                json!({ "ok": false, "code": error.code, "detail": error.detail })
+                            );
+                            continue;
+                        }
+                    }
+                }
+                map.get(module_id).expect("inserted above").clone()
+            };
             let link = match (core_addr, token.as_ref()) {
-                (Some(addr), Some(token)) => Some(
-                    links
-                        .entry(module_id.to_string())
-                        .or_insert_with(|| {
-                            Arc::new(Mutex::new(CoreLink::new_module(
-                                addr,
-                                token.clone(),
-                                module_id.to_string(),
-                            )))
-                        })
-                        .clone(),
-                ),
+                (Some(addr), Some(token)) => {
+                    let mut map = links.lock().map_err(|_| {
+                        HostError::new(HostError::CORE, "link map poisoned")
+                    })?;
+                    Some(
+                        map.entry(module_id.to_string())
+                            .or_insert_with(|| {
+                                Arc::new(Mutex::new(CoreLink::new_module(
+                                    addr,
+                                    token.clone(),
+                                    module_id.to_string(),
+                                )))
+                            })
+                            .clone(),
+                    )
+                }
                 _ => None,
             };
-            let package = packages.get(module_id).expect("inserted above");
-            match run_package_with_core_shared(package, config, link) {
-                Ok(report) => {
-                    println!(
-                        "{}",
-                        json!({
+            let cancel = Arc::new(AtomicBool::new(false));
+            if let Ok(mut map) = running.lock() {
+                map.insert(module_id.to_string(), cancel.clone());
+            }
+            active.fetch_add(1, Ordering::Relaxed);
+            let running_workers = running.clone();
+            let active_workers = active.clone();
+            let output_workers = output.clone();
+            let module = module_id.to_string();
+            std::thread::spawn(move || {
+                let result = run_package_with_core_shared_cancellable(
+                    &package,
+                    config,
+                    link,
+                    Some(cancel.clone()),
+                );
+                let stopped = cancel.load(Ordering::Relaxed);
+                let payload = if stopped {
+                    json!({
+                        "ok": false,
+                        "module_id": module,
+                        "code": HostError::STOPPED,
+                        "detail": "module was stopped",
+                    })
+                } else {
+                    match result {
+                        Ok(report) => json!({
                             "ok": true,
                             "module_id": report.module_id,
                             "status": report.status,
                             "emitted": report.emitted,
                             "fuel_used": report.fuel_used,
                             "memory_bytes": report.memory_bytes,
-                        })
-                    );
-                    use std::io::Write;
-                    let _ = std::io::stdout().flush();
+                        }),
+                        Err(error) => json!({
+                            "ok": false,
+                            "module_id": module,
+                            "code": error.code,
+                            "detail": error.detail,
+                        }),
+                    }
+                };
+                let _guard = output_workers.lock();
+                println!("{payload}");
+                use std::io::Write;
+                let _ = std::io::stdout().flush();
+                active_workers.fetch_sub(1, Ordering::Relaxed);
+                if let Ok(mut map) = running_workers.lock() {
+                    map.remove(&module);
                 }
-                Err(error) => {
-                    println!(
-                        "{}",
-                        json!({ "ok": false, "module_id": module_id, "code": error.code, "detail": error.detail })
-                    );
-                    use std::io::Write;
-                    let _ = std::io::stdout().flush();
-                }
-            }
+            });
         }
     }
 

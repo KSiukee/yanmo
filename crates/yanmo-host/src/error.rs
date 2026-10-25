@@ -35,6 +35,7 @@ impl HostError {
     pub const READ_INVALID: &'static str = "host.read_invalid";
     pub const CORE: &'static str = "host.core_error";
     pub const LINK: &'static str = "host.link_failed";
+    pub const STOPPED: &'static str = "host.stopped";
 
     pub fn new(code: &'static str, detail: impl Into<String>) -> Self {
         Self { code, detail: detail.into() }
