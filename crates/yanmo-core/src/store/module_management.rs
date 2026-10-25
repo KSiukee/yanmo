@@ -130,6 +130,39 @@ impl Store {
         self.set_module_preference(module_id, None, Some(pinned))
     }
 
+    /// 全局离线开关（**优先级最高**）：真时任何模块都不该拿到出网 import。
+    pub fn network_offline(&self) -> Result<bool> {
+        let raw: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'network.offline'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(raw.as_deref() == Some("1"))
+    }
+
+    /// 写全局离线开关；`op_log` 只记开关，不记网络内容。
+    pub fn set_network_offline(&mut self, offline: bool) -> Result<()> {
+        let now = now_millis();
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES('network.offline', ?1, ?2)",
+            params![if offline { "1" } else { "0" }, now],
+        )?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "settings",
+            0,
+            "network_offline",
+            serde_json::json!({ "offline": offline }),
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// 模块级联网开关：改的是**授予**；清单没声明 network 的一律拒。
     pub fn set_module_network(&mut self, module_id: &str, network: bool) -> Result<()> {
         let record = self.module_record(module_id)?;

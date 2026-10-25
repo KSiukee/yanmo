@@ -74,6 +74,10 @@ export const moduleSetBackground = (module_id: string, background: boolean) =>
 export const moduleSetNetwork = (module_id: string, network: boolean) =>
   call<ModuleCard>(COMMANDS.moduleSetNetwork, { module_id, network });
 
+export const networkOffline = () => call<boolean>(COMMANDS.networkOffline, {});
+export const networkSetOffline = (offline: boolean) =>
+  call<boolean>(COMMANDS.networkSetOffline, { offline });
+
 export const moduleUninstall = (module_id: string) =>
   call<void>(COMMANDS.moduleUninstall, { module_id });
 

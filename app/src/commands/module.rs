@@ -99,6 +99,26 @@ pub fn module_set_background(
     })
 }
 
+/// 全局离线开关：真时任何模块都不该拿到出网 import；切完停平台，下次启动生效。
+#[tauri::command(rename_all = "snake_case")]
+pub fn network_offline(data: State<'_, AppData>) -> Result<bool, ApiError> {
+    data.with_store(|store: &mut Store| store.network_offline())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn network_set_offline(
+    data: State<'_, AppData>,
+    runs: State<'_, ModuleRuns>,
+    offline: bool,
+) -> Result<bool, ApiError> {
+    data.with_store(|store: &mut Store| {
+        store.set_network_offline(offline)?;
+        Ok(offline)
+    })?;
+    runs.stop_platform()?;
+    Ok(offline)
+}
+
 /// 模块级联网开关：改授予，清单没声明的一律拒；切完停平台，下次启动生效。
 #[tauri::command(rename_all = "snake_case")]
 pub fn module_set_network(

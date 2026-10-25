@@ -212,6 +212,8 @@ export const COMMANDS = {
   moduleSetPinned: "module_set_pinned",
   moduleSetBackground: "module_set_background",
   moduleSetNetwork: "module_set_network",
+  networkOffline: "network_offline",
+  networkSetOffline: "network_set_offline",
   moduleUninstall: "module_uninstall",
   moduleImportPick: "module_import_pick",
   moduleImportConfirm: "module_import_confirm",

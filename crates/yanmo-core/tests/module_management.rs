@@ -169,3 +169,13 @@ fn network_is_a_grant_and_requires_a_declaration() {
     store.set_module_network(B, false).unwrap();
     assert!(!store.module_card(B).unwrap().network);
 }
+
+#[test]
+fn global_offline_is_a_setting() {
+    let (_dir, mut store) = fresh();
+    assert!(!store.network_offline().unwrap(), "默认不离线");
+    store.set_network_offline(true).unwrap();
+    assert!(store.network_offline().unwrap());
+    store.set_network_offline(false).unwrap();
+    assert!(!store.network_offline().unwrap());
+}

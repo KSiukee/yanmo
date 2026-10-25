@@ -63,10 +63,12 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
             .map_err(|error| LaunchError::new(LaunchError::MANIFEST, error.to_string()))?;
         let store = Store::open(&request.db_path)
             .map_err(|error| LaunchError::new(LaunchError::DB, error.to_string()))?;
-        if store
-            .module_card(&manifest.id)
-            .map(|card| card.network)
-            .unwrap_or(false)
+        let offline = store.network_offline().unwrap_or(false);
+        if !offline
+            && store
+                .module_card(&manifest.id)
+                .map(|card| card.network)
+                .unwrap_or(false)
         {
             network_modules.push(manifest.id.clone());
         }

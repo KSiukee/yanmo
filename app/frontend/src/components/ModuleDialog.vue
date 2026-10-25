@@ -13,7 +13,6 @@ import {
   moduleSetEnabled,
   moduleSetFavorite,
   moduleSetBackground,
-  moduleSetNetwork,
   moduleSetPinned,
   moduleStop,
   moduleUninstall,
@@ -24,6 +23,7 @@ import {
   type ModuleStatus,
 } from "../api/modules";
 import ModuleImportPanel from "./ModuleImportPanel.vue";
+import { useModuleNetwork } from "../composables/useModuleNetwork";
 import { useModuleRuns } from "../composables/useModuleRuns";
 import { t } from "../locales/index.ts";
 
@@ -68,6 +68,7 @@ async function load() {
   busy.value = true;
   try {
     cards.value = await modulesList();
+    await loadOffline();
     await loadStatuses(cards.value);
   } catch (error) {
     note.value = t("modules.load_failed", { detail: messageOf(error) });
@@ -90,6 +91,13 @@ async function act(action: () => Promise<void>) {
   }
 }
 
+const {
+  offline,
+  load: loadOffline,
+  toggle: toggleOffline,
+  toggleModule,
+} = useModuleNetwork(note, act);
+
 function toggleActive(card: ModuleCard) {
   void act(() => moduleSetEnabled(card.id, !card.enabled));
 }
@@ -100,17 +108,6 @@ function toggleFavorite(card: ModuleCard) {
 
 function togglePinned(card: ModuleCard) {
   void act(() => moduleSetPinned(card.id, !card.pinned));
-}
-
-function toggleNetwork(card: ModuleCard) {
-  if (!card.network && !window.confirm(t("modules.network_confirm"))) return;
-  void act(async () => {
-    await moduleSetNetwork(card.id, !card.network);
-    note.value = t(
-      card.network ? "modules.network_off_done" : "modules.network_on_done",
-      { name: card.name },
-    );
-  });
 }
 
 function toggleBackground(card: ModuleCard) {
@@ -215,6 +212,16 @@ onUnmounted(() => {
     <section class="modules__box dialog__box" role="dialog" aria-modal="true">
       <header class="modules__head dialog__head">
         <h2 class="modules__title dialog__title">{{ t("modules.title") }}</h2>
+        <button
+          type="button"
+          class="modules__button dialog__button"
+          :disabled="busy"
+          @click="toggleOffline"
+        >
+          {{
+            offline ? t("modules.global_offline_on") : t("modules.global_offline_off")
+          }}
+        </button>
         <button
           type="button"
           class="modules__button dialog__button"
@@ -349,7 +356,7 @@ onUnmounted(() => {
               type="button"
               class="modules__button dialog__button"
               :disabled="busy"
-              @click="toggleNetwork(card)"
+              @click="toggleModule(card)"
             >
               {{
                 card.network ? t("modules.network_on") : t("modules.network_off")
