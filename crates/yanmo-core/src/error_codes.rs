@@ -357,6 +357,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "模块数据写入不合规" : [],
     MODULE_DATA_RATE_LIMIT => "module.data_rate_limit"
         : "模块数据写入太频繁，已拒绝" : [],
+    MODULE_DATA_ISOLATED => "module.data_isolated"
+        : "模块数据已被隔离（读、写、迁移全停，数据原样留着）：{module_id}" : ["module_id"],
     MODULE_CREDENTIAL_INVALID => "module.credential_invalid"
         : "凭据绑定不合规：{field}" : ["field"],
     MODULE_GRANT_INVALID => "module.grant_invalid"

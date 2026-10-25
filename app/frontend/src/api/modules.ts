@@ -182,7 +182,39 @@ export interface ModuleDataStats {
   db_bytes: number;
   degraded: boolean;
   rejected: number;
+  isolated: boolean;
+  isolation_reason: string;
 }
 
 export const moduleDataStats = (module_id: string) =>
   call<ModuleDataStats>(COMMANDS.moduleDataStats, { module_id });
+
+/** 体检里的一条事实：code 是稳定码，detail 是技术细节（不当界面句子用）。 */
+export interface ModuleDataIssue {
+  code: string;
+  detail: string;
+}
+
+/** 体检报告：只给事实 + 一句结论（ok / attention / damaged），没有评分。 */
+export interface ModuleDataAudit {
+  module_id: string;
+  integrity: string;
+  integrity_raw: string;
+  tables: number;
+  rows: number;
+  stray_tables: number;
+  isolated: boolean;
+  isolation_reason: string;
+  degraded: boolean;
+  issues: ModuleDataIssue[];
+  verdict: string;
+}
+
+export const moduleDataAudit = (module_id: string) =>
+  call<ModuleDataAudit>(COMMANDS.moduleDataAudit, { module_id });
+
+export const moduleDataIsolate = (module_id: string, reason: string) =>
+  call<boolean>(COMMANDS.moduleDataIsolate, { module_id, reason });
+
+export const moduleDataRelease = (module_id: string) =>
+  call<boolean>(COMMANDS.moduleDataRelease, { module_id });

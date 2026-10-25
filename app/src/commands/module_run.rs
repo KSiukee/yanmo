@@ -204,46 +204,7 @@ fn pump_stdout(reader: impl Read + Send + 'static, platform: Arc<Mutex<Platform>
             .statuses
             .entry(module_id.to_string())
             .or_insert_with(ModuleStatus::unknown);
-        status.known = true;
-        status.running = false;
-        status.timed_out = value
-            .get("timed_out")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false);
-        status.emitted = value
-            .get("emitted")
-            .and_then(|value| value.as_array())
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|item| item.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default();
-        status.stderr = value
-            .get("stderr")
-            .and_then(|value| value.as_str())
-            .unwrap_or_default()
-            .to_string();
-        status.data_degraded = value
-            .get("data_degraded")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false);
-        status.data_rejected = value
-            .get("data_rejected")
-            .and_then(|value| value.as_u64())
-            .unwrap_or(0) as usize;
-        if value.get("ok").and_then(|value| value.as_bool()) == Some(false) {
-            let code = value
-                .get("code")
-                .and_then(|value| value.as_str())
-                .unwrap_or("module.run_failed");
-            let detail = value
-                .get("detail")
-                .and_then(|value| value.as_str())
-                .unwrap_or_default();
-            status.error = Some(format!("{code}: {detail}"));
-        }
+        status.apply_report(&value);
         platform.last_activity = Instant::now();
     }
 }
@@ -298,6 +259,15 @@ pub fn start_module(
     if !record.is_active() {
         return Err(ApiError::from(yanmo_core::Error::invalid_with(
             yanmo_core::error_codes::codes::MODULE_DISABLED,
+            [("module_id", module_id.to_string())],
+        )));
+    }
+    // 数据被隔离的模块不许跑：它读不到也写不进自己的数据，跑起来只会一路失败。
+    // 这里只是**第一道**门——宿主每次 `data_*` 调用都会再读一次隔离账。
+    let module_data = yanmo_core::store::ModuleData::open(data.data_dir().join("modules.db"))?;
+    if module_data.isolation(module_id)?.is_some() {
+        return Err(ApiError::from(yanmo_core::Error::invalid_with(
+            yanmo_core::error_codes::codes::MODULE_DATA_ISOLATED,
             [("module_id", module_id.to_string())],
         )));
     }

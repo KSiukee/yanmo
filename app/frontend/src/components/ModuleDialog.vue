@@ -6,15 +6,10 @@
 import { onMounted, onUnmounted, ref } from "vue";
 
 import {
-  moduleImportCancel,
-  moduleImportConfirm,
-  moduleImportPick,
   moduleRun,
   moduleSetBackground,
   moduleStop,
   modulesList,
-  type ImportPreview,
-  type ModuleCapabilities,
   type ModuleCard,
   type ModuleStatus,
 } from "../api/modules";
@@ -22,6 +17,7 @@ import ModuleCredentials from "./ModuleCredentials.vue";
 import ModuleImportPanel from "./ModuleImportPanel.vue";
 import { certificationLabel, readsLabel } from "./moduleLabels";
 import { useModuleActions } from "../composables/useModuleActions";
+import { useModuleImport } from "../composables/useModuleImport";
 import { useModuleNetwork } from "../composables/useModuleNetwork";
 import { useModuleRuns } from "../composables/useModuleRuns";
 import { t } from "../locales/index.ts";
@@ -31,7 +27,6 @@ const emit = defineEmits<{ close: [] }>();
 const cards = ref<ModuleCard[]>([]);
 const busy = ref(false);
 const note = ref("");
-const preview = ref<ImportPreview | null>(null);
 const credentialFor = ref<string | null>(null);
 const { runs, isRunning: isRunningId, markStarted, markStopped, loadStatuses, dispose } =
   useModuleRuns((status: ModuleStatus) => {
@@ -86,8 +81,19 @@ const {
   toggle: toggleOffline,
   toggleModule,
 } = useModuleNetwork(note, act);
-const { toggleActive, toggleFavorite, togglePinned, openUi, dataSummary, exportData, clearData, uninstall } =
-  useModuleActions(note, act);
+const {
+  toggleActive,
+  toggleFavorite,
+  togglePinned,
+  openUi,
+  dataSummary,
+  auditData,
+  isolateData,
+  releaseData,
+  exportData,
+  clearData,
+  uninstall,
+} = useModuleActions(note, act);
 
 function toggleBackground(card: ModuleCard) {
   void act(async () => {
@@ -132,42 +138,15 @@ function isRunning(card: ModuleCard): boolean {
   return isRunningId(card.id);
 }
 
-async function pickImport() {
-  if (busy.value) return;
-  busy.value = true;
-  note.value = "";
-  try {
-    const picked = await moduleImportPick(t("modules.import_pick_title"));
-    if (!picked) return;
-    preview.value = picked;
-  } catch (error) {
-    note.value = t("modules.import_failed", { detail: messageOf(error) });
-  } finally {
-    busy.value = false;
-  }
-}
-
-async function confirmImport(grant: ModuleCapabilities) {
-  const current = preview.value;
-  if (!current || busy.value) return;
-  busy.value = true;
-  note.value = "";
-  try {
-    const card = await moduleImportConfirm(grant, current.fingerprint);
-    preview.value = null;
-    note.value = t("modules.import_ok", { name: card.name });
-    cards.value = await modulesList();
-  } catch (error) {
-    note.value = t("modules.import_failed", { detail: messageOf(error) });
-  } finally {
-    busy.value = false;
-  }
-}
-
-async function cancelImport() {
-  await moduleImportCancel().catch(() => undefined);
-  preview.value = null;
-}
+// 导入流程（挑包 / 预览 / 确认 / 取消）在 useModuleImport 里；这里只把结果贴回列表。
+const {
+  preview,
+  pickImport,
+  confirmImport,
+  cancelImport,
+} = useModuleImport(busy, note, (next) => {
+  cards.value = next;
+});
 
 onMounted(() => {
   void load();
@@ -272,6 +251,9 @@ onUnmounted(() => {
           </p>
           <div class="modules__actions">
             <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="dataSummary(card)">{{ t("modules.data_summary_button") }}</button>
+            <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="auditData(card)">{{ t("modules.data_audit_button") }}</button>
+            <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="isolateData(card)">{{ t("modules.isolate_button") }}</button>
+            <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="releaseData(card)">{{ t("modules.release_button") }}</button>
             <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="exportData(card)">{{ t("modules.export_data") }}</button>
             <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="clearData(card)">{{ t("modules.clear_data") }}</button>
             <button
@@ -292,9 +274,6 @@ onUnmounted(() => {
             >
               {{ t("modules.open_ui") }}
             </button>
-            <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="dataSummary(card)">{{ t("modules.data_summary_button") }}</button>
-            <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="exportData(card)">{{ t("modules.export_data") }}</button>
-            <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="clearData(card)">{{ t("modules.clear_data") }}</button>
             <button
               v-if="isRunning(card)"
               type="button"

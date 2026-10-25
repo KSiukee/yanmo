@@ -47,11 +47,37 @@ impl ModuleData {
             [],
         )
         .map_err(|error| HostError::new(HostError::DATA_FAILED, error.to_string()))?;
+        // 隔离账与核心侧**同一张表、同一份 DDL**：核心写（界面点按钮），宿主只读。
+        // 两边谁先打开都行——`IF NOT EXISTS` 幂等；老库打开时自动补上，不需要迁移。
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS module_data_isolation (
+                module_id   TEXT PRIMARY KEY,
+                reason      TEXT NOT NULL,
+                isolated_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .map_err(|error| HostError::new(HostError::DATA_FAILED, error.to_string()))?;
         Ok(Self { conn, writes: VecDeque::new(), rejected: 0, degraded: false })
+    }
+
+    /// 这个模块的数据被隔离了吗（返回原因；隔离由核心/界面写，宿主只读）。
+    pub fn isolation(&self, module_id: &str) -> HostResult<Option<String>> {
+        self.conn
+            .query_row(
+                "SELECT reason FROM module_data_isolation WHERE module_id = ?1",
+                [module_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| HostError::new(HostError::DATA_FAILED, error.to_string()))
     }
 
     /// 连续 5 次写被拒就降级：只读，后续 put/delete 直接 -1（用户仍可导出/清除）。
     pub fn kv_put(&mut self, module_id: &str, key: &str, value: &[u8]) -> HostResult<()> {
+        if let Some(reason) = self.isolation(module_id)? {
+            return Err(HostError::new(HostError::DATA_ISOLATED, reason));
+        }
         self.load_health(module_id)?;
         if self.degraded {
             self.rejected += 1;
@@ -118,6 +144,9 @@ impl ModuleData {
     }
 
     pub fn kv_get(&self, module_id: &str, key: &str) -> HostResult<Option<Vec<u8>>> {
+        if let Some(reason) = self.isolation(module_id)? {
+            return Err(HostError::new(HostError::DATA_ISOLATED, reason));
+        }
         if key.is_empty() || key.len() > MAX_KEY_BYTES {
             return Err(HostError::new(HostError::DATA_LIMIT, "key too large"));
         }
@@ -136,6 +165,9 @@ impl ModuleData {
     }
 
     pub fn kv_delete(&mut self, module_id: &str, key: &str) -> HostResult<bool> {
+        if let Some(reason) = self.isolation(module_id)? {
+            return Err(HostError::new(HostError::DATA_ISOLATED, reason));
+        }
         self.load_health(module_id)?;
         if self.degraded {
             self.rejected += 1;

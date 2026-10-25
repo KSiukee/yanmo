@@ -1,12 +1,12 @@
-//! 模块数据出口：导出（一致性快照）与清除（显式二次确认之后）。
+//! 模块数据出口：体检 / 隔离 / 解除隔离 / 导出（一致性快照）与清除（显式二次确认之后）。
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::State;
 use serde::Serialize;
-use yanmo_core::store::ModuleData;
+use yanmo_core::store::{ModuleAudit, ModuleData};
 
-use super::module_run::ModuleRuns;
+use super::module_run::{status_module, stop_module, ModuleRuns};
 use crate::error::ApiError;
 use crate::storage::AppData;
 
@@ -17,6 +17,8 @@ pub struct ModuleDataStatsView {
     pub db_bytes: u64,
     pub degraded: bool,
     pub rejected: u64,
+    pub isolated: bool,
+    pub isolation_reason: String,
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -49,13 +51,55 @@ pub fn module_data_stats(
     let module_data = ModuleData::open(data.data_dir().join("modules.db"))?;
     let stats = module_data.stats(&module_id)?;
     let health = module_data.health(&module_id)?;
+    let isolation = module_data.isolation(&module_id)?;
     Ok(ModuleDataStatsView {
         tables: stats.tables,
         rows: stats.rows,
         db_bytes: stats.db_bytes,
         degraded: health.degraded,
         rejected: health.rejected,
+        isolated: isolation.is_some(),
+        isolation_reason: isolation.map(|state| state.reason).unwrap_or_default(),
     })
+}
+
+/// 体检一个模块的数据：**只读**，给事实与一句结论（不做健康评分）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn module_data_audit(
+    data: State<'_, AppData>,
+    module_id: String,
+) -> Result<ModuleAudit, ApiError> {
+    let module_data = ModuleData::open(data.data_dir().join("modules.db"))?;
+    Ok(module_data.audit(&module_id)?)
+}
+
+/// 隔离一个模块的数据：先尽力停掉它，再把「隔离」写进 `modules.db`。
+///
+/// 停下只是礼貌——**真正拦住读写的是宿主每次调用都读的那一行**，所以就算停不下来，
+/// 隔离一旦写进去，模块也拿不到数据。
+#[tauri::command(rename_all = "snake_case")]
+pub fn module_data_isolate(
+    data: State<'_, AppData>,
+    runs: State<'_, ModuleRuns>,
+    module_id: String,
+    reason: String,
+) -> Result<bool, ApiError> {
+    if status_module(runs.inner(), &module_id)?.running {
+        stop_module(runs.inner(), &module_id)?;
+    }
+    let mut module_data = ModuleData::open(data.data_dir().join("modules.db"))?;
+    module_data.isolate(&module_id, &reason)?;
+    Ok(true)
+}
+
+/// 解除隔离（**只认作者点这一下**；不自动恢复）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn module_data_release(
+    data: State<'_, AppData>,
+    module_id: String,
+) -> Result<bool, ApiError> {
+    let mut module_data = ModuleData::open(data.data_dir().join("modules.db"))?;
+    Ok(module_data.release_isolation(&module_id)?)
 }
 
 /// 清除一个模块的全部数据。**先停整个平台**，避免子进程还在写时拆表。

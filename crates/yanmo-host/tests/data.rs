@@ -109,3 +109,29 @@ fn degradation_survives_reopen() {
     assert_eq!(data.health(MODULE_ID).unwrap().0, true);
     assert!(data.kv_put(MODULE_ID, "ok", b"x").is_err());
 }
+
+/// 隔离是**跨进程的**：核心（界面按钮）往同一张表写一行，宿主这边立刻读得到并全停。
+#[test]
+fn an_isolated_module_cannot_read_write_or_delete() {
+    let dir = fresh();
+    let db = dir.path().join("modules.db");
+    let mut data = ModuleData::open(&db).unwrap();
+    data.kv_put(MODULE_ID, "k", b"v").unwrap();
+    {
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute(
+            "INSERT INTO module_data_isolation(module_id, reason, isolated_at) VALUES(?1, 'manual', 1)",
+            [MODULE_ID],
+        )
+        .unwrap();
+    }
+
+    assert_eq!(data.isolation(MODULE_ID).unwrap(), Some("manual".to_string()));
+    assert_eq!(data.kv_get(MODULE_ID, "k").unwrap_err().code, HostError::DATA_ISOLATED);
+    assert_eq!(data.kv_put(MODULE_ID, "k", b"v2").unwrap_err().code, HostError::DATA_ISOLATED);
+    assert_eq!(data.kv_delete(MODULE_ID, "k").unwrap_err().code, HostError::DATA_ISOLATED);
+
+    // 别的模块完全不受影响
+    data.kv_put("app.example.other", "k", b"v").unwrap();
+    assert_eq!(data.kv_get("app.example.other", "k").unwrap(), Some(b"v".to_vec()));
+}

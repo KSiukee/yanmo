@@ -39,6 +39,7 @@ impl HostError {
     pub const NETWORK_LIMIT: &'static str = "host.network_limit";
     pub const DATA_FAILED: &'static str = "host.data_failed";
     pub const DATA_LIMIT: &'static str = "host.data_limit";
+    pub const DATA_ISOLATED: &'static str = "host.data_isolated";
 
     pub fn new(code: &'static str, detail: impl Into<String>) -> Self {
         Self { code, detail: detail.into() }

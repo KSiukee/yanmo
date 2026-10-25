@@ -116,6 +116,7 @@ impl ModuleData {
     /// 只给宿主 ABI 用：写 key/value（key 是 UTF-8 文本，value 是字节串）。
     pub fn kv_put(&mut self, module_id: &str, key: &str, value: &[u8]) -> Result<()> {
         ensure_id(module_id)?;
+        self.ensure_not_isolated(module_id)?;
         if key.is_empty() || key.len() > MAX_KEY_BYTES || value.len() > self.limits.max_write_bytes {
             return Err(Error::invalid(codes::MODULE_DATA_WRITE_LIMIT));
         }
@@ -179,6 +180,7 @@ impl ModuleData {
 
     pub fn kv_get(&self, module_id: &str, key: &str) -> Result<Option<Vec<u8>>> {
         ensure_id(module_id)?;
+        self.ensure_not_isolated(module_id)?;
         if key.is_empty() || key.len() > MAX_KEY_BYTES {
             return Err(Error::invalid(codes::MODULE_DATA_WRITE_LIMIT));
         }
@@ -198,6 +200,7 @@ impl ModuleData {
 
     pub fn kv_delete(&mut self, module_id: &str, key: &str) -> Result<bool> {
         ensure_id(module_id)?;
+        self.ensure_not_isolated(module_id)?;
         if key.is_empty() || key.len() > MAX_KEY_BYTES {
             return Err(Error::invalid(codes::MODULE_DATA_WRITE_LIMIT));
         }
@@ -236,7 +239,7 @@ impl ModuleData {
         Ok(())
     }
 
-    fn table_exists(&self, table: &str) -> Result<bool> {
+    pub(super) fn table_exists(&self, table: &str) -> Result<bool> {
         let found: Option<i64> = self
             .conn
             .query_row(

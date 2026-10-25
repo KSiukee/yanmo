@@ -31,6 +31,8 @@ use crate::model::{ModuleColumn, ModuleMigration, ModuleSchemaStep, ModuleTable}
 use crate::time::now_millis;
 
 use super::module_data_limits::{ModuleDataLimits, WriteGuard};
+use super::module_isolation::ISOLATION_TABLE_SQL;
+use super::module_namespace::{classify_table, TableOwner};
 
 /// 模块数据区的句柄（**独立于核心库**）。
 pub struct ModuleData {
@@ -78,6 +80,8 @@ impl ModuleData {
             )",
             [],
         )?;
+        // 隔离账独立一张表（而不是给健康表加列）：老库打开时自动补上，不需要迁移。
+        conn.execute(ISOLATION_TABLE_SQL, [])?;
         let limits = ModuleDataLimits::default();
         let data = Self {
             conn,
@@ -101,14 +105,14 @@ impl ModuleData {
 
     /// 这张表是不是这个模块命名空间里的表。
     ///
-    /// 后缀只认小写字母、数字与 `_`（见模块文档）；空后缀不算。
+    /// 判定只有一处（`module_namespace::classify_table`）：`mod_` 之后的第一个下划线
+    /// 切出 id 与后缀，后缀只认小写字母、数字与 `_`，空后缀不算。**不另写一套前缀比较**——
+    /// 两套口径迟早会分叉，那时"核心认不出、模块却以为写了"就会变成一类难查的故障。
     pub fn is_module_table(module_id: &str, table: &str) -> bool {
-        let prefix = Self::table_prefix(module_id);
-        table.starts_with(&prefix)
-            && table.len() > prefix.len()
-            && table[prefix.len()..]
-                .chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        matches!(
+            classify_table(table),
+            TableOwner::Module { module_id: found, .. } if found == module_id
+        )
     }
 
     /// 记下（或更新）一个模块的 schema 版本（**只给测试 / 恢复工具用**）。
@@ -145,6 +149,7 @@ impl ModuleData {
         migration: &ModuleMigration,
     ) -> Result<()> {
         ensure_id(module_id)?;
+        self.ensure_not_isolated(module_id)?;
         migration.validate()?;
 
         let current = self.schema_version(module_id)?.unwrap_or(0);
@@ -283,7 +288,8 @@ impl ModuleData {
     ///
     /// 这是"连数据一起删"的唯一入口：先由界面二次确认，再调它。整个删除在一个事务里，
     /// 任何一张表删不掉（比如被别的表引用）就整体回滚，不留半套。
-    /// 返回删掉了几张表；`module_schema` 里那一行也一起清掉。
+    /// 返回删掉了几张表；`module_schema` 里那一行、健康账与**隔离状态**也一起清掉
+    /// （数据都没了，隔离自然失效；重装后是干净的一格）。
     pub fn drop_namespace(&mut self, module_id: &str) -> Result<usize> {
         ensure_id(module_id)?;
         let tables = self.tables_of(module_id)?;
@@ -297,6 +303,13 @@ impl ModuleData {
             })?;
         }
         tx.execute("DELETE FROM module_data_health WHERE module_id = ?1", [module_id])
+            .map_err(|error| {
+                Error::invalid_with(
+                    codes::MODULE_DROP_DATA_FAILED,
+                    [("detail", error.to_string())],
+                )
+            })?;
+        tx.execute("DELETE FROM module_data_isolation WHERE module_id = ?1", [module_id])
             .map_err(|error| {
                 Error::invalid_with(
                     codes::MODULE_DROP_DATA_FAILED,
