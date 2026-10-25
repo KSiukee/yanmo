@@ -42,6 +42,17 @@ const ALLOWED: &[Allowance] = &[
         why: "程序包备份/恢复的暂存目录与留底旧目录：三处删的都是本模块刚创建的\n              `modules.restoring` 或 `旧库留底/<stamp>/modules`；源程序包只读，不删",
     },
     Allowance {
+        file: "crates/yanmo-core/src/store/module_archive.rs",
+        rule: "remove-dir-all",
+        count: 6,
+        why: "升级留档与回滚的六处清理：① 同一版本重新留档前清掉旧的那份；\
+              ② 留档复制失败时清掉刚建的半份；③ 只留最新一份时清掉更早的版本；\
+              ④ 回滚成功后删掉留档的旧包备份；⑤ 回滚成功后把用掉的留档整个收掉；\
+              ⑥ 回滚换代失败时删掉刚换进去的新目录（随后换回旧档）。\
+              删的全是 `<数据目录>/module-archive/<模块 id>/` 与 `<数据目录>/modules/<id>`\
+              下本模块自己造的目录——**不在**扫描根之外乱走，也不碰源包、稿子与用户数据",
+    },
+    Allowance {
         file: "crates/yanmo-core/src/store/trash.rs",
         rule: "delete-precious",
         count: 2,

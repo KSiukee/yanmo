@@ -233,6 +233,7 @@ pub fn module_import_confirm(
                 store.upgrade_module_managed(
                     &staged.dir,
                     &managed,
+                    &data.data_dir().join(yanmo_core::store::ARCHIVE_DIR),
                     &granted,
                     &expected_fingerprint,
                     "folder",
@@ -256,6 +257,26 @@ pub fn module_import_confirm(
     // 平台启动时扫描模块根建 handler；新导入的模块要让下一次启动重新扫。
     runs.stop_platform()?;
     Ok(card)
+}
+
+/// 回滚到上一版（升级时留的档）：停平台 → 包与账一起退回去。
+#[tauri::command(rename_all = "snake_case")]
+pub fn module_rollback(
+    data: State<'_, AppData>,
+    runs: State<'_, ModuleRuns>,
+    module_id: String,
+) -> Result<yanmo_core::store::RollbackReceipt, ApiError> {
+    runs.stop_platform()?;
+    let archive_root = data.data_dir().join(yanmo_core::store::ARCHIVE_DIR);
+    let managed = data.data_dir().join("modules").join(&module_id);
+    data.with_store(|store: &mut Store| {
+        store.rollback_module_managed(
+            &archive_root,
+            &managed,
+            &module_id,
+            &CertificationSet::built_in(),
+        )
+    })
 }
 
 /// 放弃这次导入（清掉壳里暂存的路径）。

@@ -221,6 +221,7 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         // 模块管理页：列表 / 激活冻结 / 收藏置顶 / 卸载（保留数据）
         crate::commands::module::modules_list,
         crate::commands::module::modules_panic,
+        crate::commands::module::module_rollback,
         crate::commands::module_ui::module_ui_open,
         crate::commands::module::module_set_enabled,
         crate::commands::module::module_set_favorite,

@@ -34,6 +34,13 @@ pub struct ReadBookView {
     pub chars: u64,
 }
 
+/// 留档：回滚的目标版本。
+#[derive(Debug, Clone, Serialize)]
+pub struct ArchiveView {
+    pub version: String,
+    pub archived_at: i64,
+}
+
 /// 一个模块最近 24 小时的读账小结（核心观测）。
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ReadSummaryView {
@@ -55,6 +62,8 @@ pub struct ModuleFactsView {
     pub network: NetworkSummary,
     /// 读账汇总（核心观测；最近 24 小时）。
     pub reads: ReadSummaryView,
+    /// 上一版的留档（有才能回滚；没有就是 `None`）。
+    pub archive: Option<ArchiveView>,
     /// 现在跑没在跑 + 空闲多少秒（壳观测）。
     pub running: bool,
     pub idle_seconds: u64,
@@ -81,6 +90,11 @@ pub fn module_facts(
     let program_bytes = dir_bytes(&data.data_dir().join("modules").join(&module_id));
     let network = summary_for(&data, &module_id);
     let reads = read_summary(&data, &module_id)?;
+    let archive = yanmo_core::store::read_archive(
+        &data.data_dir().join(yanmo_core::store::ARCHIVE_DIR),
+        &module_id,
+    )
+    .map(|record| ArchiveView { version: record.version, archived_at: record.archived_at });
     let status = status_module(runs.inner(), &module_id)?;
     Ok(ModuleFactsView {
         card,
@@ -88,6 +102,7 @@ pub fn module_facts(
         program_bytes,
         network,
         reads,
+        archive,
         running: status.running,
         idle_seconds: status.idle_seconds,
     })

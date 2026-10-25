@@ -47,6 +47,8 @@ pub struct ImportPreview {
     pub installed: bool,
     /// 现在装着的版本（没装就是空串）。
     pub installed_version: String,
+    /// 现在装着的那个版本的说明（界面拿它跟新说明对比，有变化就说"变更说明"）。
+    pub installed_description: String,
     /// 新版本**严格高于**装着的版本 → 可以升级。
     pub upgrade: bool,
     /// 新版本不比装着的版本新（≤）——按纪律拒，不许降级/重装覆盖。
@@ -98,6 +100,7 @@ pub fn inspect_module_package_with_certs(
         certified_at: certification.map(|cert| cert.certified_at).unwrap_or(0),
         installed: false,
         installed_version: String::new(),
+        installed_description: String::new(),
         upgrade: false,
         downgrade: false,
         granted: ModuleCapabilities::none(),
@@ -264,7 +267,7 @@ pub(super) fn copy_package_swapping(opened: &OpenedPackage, dest: &Path) -> Resu
     }
 }
 
-fn copy_tree(source: &Path, dest: &Path) -> Result<()> {
+pub(super) fn copy_tree(source: &Path, dest: &Path) -> Result<()> {
     fs::create_dir_all(dest).map_err(io_package)?;
     for entry in fs::read_dir(source).map_err(io_package)? {
         let entry = entry.map_err(io_package)?;

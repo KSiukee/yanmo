@@ -11,6 +11,7 @@ use rusqlite::params;
 use serde::Serialize;
 use serde_json::json;
 use yanmo_proto::capability::ModuleCapabilities;
+use yanmo_proto::localized::localized_text;
 use yanmo_proto::manifest::ModuleManifest;
 use yanmo_proto::ManifestError;
 use yanmo_proto::version::parse_semver;
@@ -34,6 +35,8 @@ pub struct UpgradeReceipt {
     pub to_version: String,
     /// 这次升级**新增**的能力码（空 = 能力没扩大，界面不用再确认）。
     pub added: Vec<String>,
+    /// 上一版留成档了没有（留成才能回滚；失败不拦升级，界面如实说）。
+    pub archived: bool,
 }
 
 impl Store {
@@ -47,6 +50,12 @@ impl Store {
         };
         preview.installed = true;
         preview.installed_version = record.manifest.version.clone();
+        preview.installed_description = localized_text(
+            &record.manifest.description,
+            &record.manifest.default_language,
+            "zh-Hans",
+        )
+        .to_string();
         let order = compare_versions(&record.manifest.version, &preview.version);
         preview.upgrade = order > 0;
         preview.downgrade = order <= 0;
@@ -61,10 +70,12 @@ impl Store {
     /// 1. 只许升到**更高**的版本（同版 / 降级都拒——要回滚先卸载再装旧版）；
     /// 2. 授予照旧由调用方给（界面拿新声明重新征得同意，**新增的能力默认不给**）；
     /// 3. 注册表换代失败就把旧包换回来（不会留下"包新了、账还是旧"的半套）。
+    #[allow(clippy::too_many_arguments)]
     pub fn upgrade_module_managed(
         &mut self,
         source_dir: impl AsRef<Path>,
         dest_dir: impl AsRef<Path>,
+        archive_root: impl AsRef<Path>,
         granted: &ModuleCapabilities,
         expected_fingerprint: &str,
         source_label: &str,
@@ -88,6 +99,25 @@ impl Store {
         }
         let added = capability_additions(&opened.manifest.capabilities, &current.granted);
         let dest = dest_dir.as_ref();
+        // 留档：把**当前这一版**（包 + 账）留一份，出事能退回去。
+        // 留不成不拦升级——回执里如实说"这一版没能留档"。
+        let archived = self
+            .module_card(&opened.manifest.id)
+            .map(|card| card.fingerprint)
+            .ok()
+            .map(|fingerprint| {
+                super::module_archive::archive_version(
+                    archive_root.as_ref(),
+                    &current.manifest.id,
+                    &current.manifest.version,
+                    &fingerprint,
+                    &current.manifest,
+                    &current.granted,
+                    dest,
+                )
+                .is_ok()
+            })
+            .unwrap_or(false);
         let backup = copy_package_swapping(&opened, dest)?;
         let certification =
             certs.lookup(&opened.manifest.id, &opened.manifest.version, &opened.fingerprint);
@@ -108,6 +138,7 @@ impl Store {
                     from_version: current.manifest.version,
                     to_version: opened.manifest.version,
                     added,
+                    archived,
                 })
             }
             Err(error) => {

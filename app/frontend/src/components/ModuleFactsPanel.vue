@@ -6,7 +6,7 @@
 // 观测来源（核心 / 壳 / 模块自报）。
 import { computed, onMounted, ref } from "vue";
 
-import { moduleFacts, type ModuleFactsView } from "../api/modules";
+import { moduleFacts, moduleRollback, type ModuleFactsView } from "../api/modules";
 import { readsLabel } from "./moduleLabels";
 import { t } from "../locales/index.ts";
 
@@ -15,6 +15,26 @@ const emit = defineEmits<{ close: [] }>();
 
 const view = ref<ModuleFactsView | null>(null);
 const error = ref("");
+const note = ref("");
+
+/** 回滚到留档那一版（包与权限一起退，数据不动）。 */
+async function rollback() {
+  const current = view.value?.archive;
+  if (!current) return;
+  if (!window.confirm(t("facts.rollback_confirm", { version: current.version }))) return;
+  try {
+    const receipt = await moduleRollback(view.value!.card.id);
+    note.value = t("facts.rollback_done", {
+      from: receipt.from_version,
+      to: receipt.to_version,
+    });
+    view.value = await moduleFacts(props.moduleId);
+  } catch (failure) {
+    note.value = t("modules.action_failed", {
+      detail: failure instanceof Error ? failure.message : String(failure),
+    });
+  }
+}
 
 function sizeText(bytes: number): string {
   return bytes >= 1024 * 1024
@@ -90,6 +110,7 @@ const declared = computed(() => {
     </header>
 
     <p v-if="error" class="facts__error">{{ t("facts.load_failed", { detail: error }) }}</p>
+    <p v-if="note" class="facts__summary">{{ note }}</p>
 
     <template v-if="view">
       <p class="facts__summary">{{ summary }}</p>
@@ -157,6 +178,13 @@ const declared = computed(() => {
             ? t("facts.running", { idle: view.idle_seconds })
             : t("facts.not_running") }}
         </li>
+        <li v-if="view.archive">
+          {{ t("facts.archive", { version: view.archive.version, when: whenText(view.archive.archived_at) }) }}
+          <button type="button" class="facts__button dialog__button" @click="rollback">
+            {{ t("facts.rollback_button", { version: view.archive.version }) }}
+          </button>
+        </li>
+        <li v-else class="facts__note">{{ t("facts.archive_none") }}</li>
         <li v-if="view.facts.isolated" class="facts__note">
           {{ t("facts.isolated_note", { reason: view.facts.isolation_reason || t("modules.isolation_no_reason") }) }}
         </li>

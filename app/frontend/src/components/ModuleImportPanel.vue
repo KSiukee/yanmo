@@ -89,6 +89,12 @@ function addedLabel(code: string): string {
           : t("modules.import_added_none")
       }}
     </p>
+    <p
+      v-if="preview.upgrade && preview.installed_description !== preview.description"
+      class="module-import__hint"
+    >
+      {{ t("modules.import_description_changed", { text: preview.description }) }}
+    </p>
     <p class="module-import__declared">{{ t("modules.declared") }}</p>
     <div class="module-import__grants">
       <label v-for="area in preview.declared.read" :key="area" class="module-import__grant">

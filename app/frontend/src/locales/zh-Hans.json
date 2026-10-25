@@ -1774,5 +1774,12 @@
   "actual.state_written": "已写",
   "actual.state_deviated": "偏离",
   "ipc.ref_arg": "界面把该给值的东西当成引用传了（{arg} 忘了 .value）——命令 {command}",
-  "ipc.ref_arg_root": "界面把该给值的东西当成引用传了（参数本身忘了 .value）——命令 {command}"
+  "ipc.ref_arg_root": "界面把该给值的东西当成引用传了（参数本身忘了 .value）——命令 {command}",
+  "facts.archive": "上一版留档：v{version}（{when}）",
+  "facts.archive_none": "没有可回滚的上一版（升级成功时才会留档）",
+  "facts.rollback_button": "回滚到 v{version}",
+  "facts.rollback_confirm": "回滚到 v{version}？包与权限一起退回那一版，模块数据不动；这一步不能再用「回滚」撤销。",
+  "facts.rollback_done": "已回滚：v{from} → v{to}。",
+  "modules.import_description_changed": "说明有更新：{text}",
+  "error.module.rollback_unavailable": "「{module_id}」没有可回滚的上一版（升级成功时才会留档）"
 }

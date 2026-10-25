@@ -78,6 +78,7 @@ fn the_preview_says_it_is_an_upgrade_and_what_is_new() {
     let preview = store.inspect_import(&second).unwrap();
     assert!(preview.installed);
     assert_eq!(preview.installed_version, "1.0.0");
+    assert_eq!(preview.installed_description, "先装上，再升级。", "旧说明要带给界面做对比");
     assert!(preview.upgrade, "1.1.0 比 1.0.0 新");
     assert!(!preview.downgrade);
     assert_eq!(preview.added, vec!["read.body".to_string(), "network".to_string()]);
@@ -111,6 +112,7 @@ fn upgrading_keeps_preferences_and_swaps_the_package() {
         .upgrade_module_managed(
             &second,
             &managed,
+            &dir.path().join("module-archive"),
             &grant(&[CoreDataArea::Works, CoreDataArea::Body], false),
             "",
             "folder",
@@ -156,6 +158,7 @@ fn a_same_or_older_version_is_refused_and_the_disk_is_untouched() {
             .upgrade_module_managed(
                 &same_or_older,
                 &managed,
+                &dir.path().join("module-archive"),
                 &grant(&[CoreDataArea::Works], false),
                 "",
                 "folder",
@@ -192,6 +195,7 @@ fn an_upgrade_cannot_grant_capabilities_the_new_manifest_did_not_declare() {
         .upgrade_module_managed(
             &second,
             &managed,
+            &dir.path().join("module-archive"),
             // 新清单没声明"目录"，却想给"目录"——按"授予不得越过声明"拒
             &grant(&[CoreDataArea::Works, CoreDataArea::Tree], false),
             "",
@@ -201,4 +205,90 @@ fn an_upgrade_cannot_grant_capabilities_the_new_manifest_did_not_declare() {
         .unwrap_err();
     assert_eq!(error.code(), codes::MODULE_GRANT_NOT_DECLARED);
     assert_eq!(store.module_card(ID).unwrap().version, "1.0.0", "被拒时账不动");
+}
+
+/// 回滚：升级时留的档能把包、版本与**权限**一起退回去；回滚是一次性的。
+#[test]
+fn an_upgrade_can_be_rolled_back_once() {
+    let (dir, mut store) = fresh();
+    let managed = dir.path().join("modules").join(ID);
+    let archive = dir.path().join("module-archive");
+    let first = package(dir.path(), "v1", "1.0.0", &["works"], false);
+    store
+        .import_module_managed(
+            &first,
+            &managed,
+            &grant(&[CoreDataArea::Works], false),
+            "",
+            "folder",
+            &CertificationSet::built_in(),
+        )
+        .unwrap();
+    let first_fingerprint = store.module_card(ID).unwrap().fingerprint;
+
+    let second = package(dir.path(), "v2", "2.0.0", &["works", "body"], false);
+    fs::write(second.join("module.wasm"), wat::parse_str("(module (memory 1))").unwrap()).unwrap();
+    let receipt = store
+        .upgrade_module_managed(
+            &second,
+            &managed,
+            &archive,
+            &grant(&[CoreDataArea::Works, CoreDataArea::Body], false),
+            "",
+            "folder",
+            &CertificationSet::built_in(),
+        )
+        .unwrap();
+    assert!(receipt.archived, "升级应当把上一版留成档");
+    assert_eq!(store.module_record(ID).unwrap().granted.read.len(), 2);
+
+    let back = store
+        .rollback_module_managed(&archive, &managed, ID, &CertificationSet::built_in())
+        .unwrap();
+    assert_eq!(back.from_version, "2.0.0");
+    assert_eq!(back.to_version, "1.0.0");
+    let card = store.module_card(ID).unwrap();
+    assert_eq!(card.version, "1.0.0");
+    assert_eq!(card.fingerprint, first_fingerprint, "包也退回去了");
+    assert_eq!(
+        store.module_record(ID).unwrap().granted.read,
+        vec![CoreDataArea::Works],
+        "权限跟着退回那一版"
+    );
+    store.verify_module_package(ID, &managed).unwrap();
+
+    // 一次性：留档已经收掉，再回滚就没了
+    let error = store
+        .rollback_module_managed(&archive, &managed, ID, &CertificationSet::built_in())
+        .unwrap_err();
+    assert_eq!(error.code(), codes::MODULE_ROLLBACK_UNAVAILABLE);
+}
+
+/// 留档被动过（载荷换了）→ 拒，账与包都不动。
+#[test]
+fn a_tampered_archive_is_refused() {
+    let (dir, mut store) = fresh();
+    let managed = dir.path().join("modules").join(ID);
+    let archive = dir.path().join("module-archive");
+    let first = package(dir.path(), "v1", "1.0.0", &["works"], false);
+    store
+        .import_module_managed(&first, &managed, &grant(&[CoreDataArea::Works], false), "", "folder",
+            &CertificationSet::built_in())
+        .unwrap();
+    let second = package(dir.path(), "v2", "2.0.0", &["works"], false);
+    fs::write(second.join("module.wasm"), wat::parse_str("(module (memory 2))").unwrap()).unwrap();
+    store
+        .upgrade_module_managed(&second, &managed, &archive, &grant(&[CoreDataArea::Works], false),
+            "", "folder", &CertificationSet::built_in())
+        .unwrap();
+
+    // 把留档里的载荷换掉
+    let archived_wasm = archive.join(ID).join("1.0.0").join("package").join("module.wasm");
+    fs::write(&archived_wasm, wat::parse_str("(module (memory 3))").unwrap()).unwrap();
+
+    let error = store
+        .rollback_module_managed(&archive, &managed, ID, &CertificationSet::built_in())
+        .unwrap_err();
+    assert_eq!(error.code(), codes::MODULE_PACKAGE_TAMPERED);
+    assert_eq!(store.module_card(ID).unwrap().version, "2.0.0", "被拒时账不动");
 }

@@ -208,6 +208,7 @@ export const COMMANDS = {
   compileCollectionOpenFolder: "compile_collection_open_folder",
   modulesList: "modules_list",
   modulesPanic: "modules_panic",
+  moduleRollback: "module_rollback",
   moduleSetEnabled: "module_set_enabled",
   moduleSetFavorite: "module_set_favorite",
   moduleSetPinned: "module_set_pinned",
