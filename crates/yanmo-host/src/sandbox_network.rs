@@ -3,6 +3,7 @@
 //! 秘密只在这一层从系统钥匙串取出、放进请求头；不写日志、不返回 guest。
 //! 单独成件：网络 ABI/配额/日志不跟 wasm 链接细节混在一个文件里。
 
+use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -240,6 +241,14 @@ fn audit(
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(0);
+    const MAX_AUDIT_BYTES: u64 = 1024 * 1024;
+    if fs::metadata(&path)
+        .map(|meta| meta.len() >= MAX_AUDIT_BYTES)
+        .unwrap_or(false)
+    {
+        let rotated = path.with_extension("1.jsonl");
+        let _ = fs::rename(&path, rotated);
+    }
     let line = serde_json::json!({
         "ts": ts,
         "module": module,

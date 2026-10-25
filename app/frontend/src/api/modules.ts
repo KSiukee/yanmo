@@ -143,5 +143,19 @@ export interface NetworkAuditRow {
   result: string;
 }
 
-export const networkAuditRecent = (limit = 20) =>
-  call<NetworkAuditRow[]>(COMMANDS.networkAuditRecent, { limit });
+export const networkAuditRecent = (
+  limit = 20,
+  module: string | null = null,
+  result: string | null = null,
+) =>
+  call<NetworkAuditRow[]>(COMMANDS.networkAuditRecent, {
+    limit,
+    module,
+    result,
+  });
+
+export const networkAuditExport = (
+  module: string | null = null,
+  result: string | null = null,
+) =>
+  call<string>(COMMANDS.networkAuditExport, { module, result });

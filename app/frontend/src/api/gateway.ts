@@ -217,6 +217,7 @@ export const COMMANDS = {
   credentialAdd: "credential_add",
   credentialRemove: "credential_remove",
   networkAuditRecent: "network_audit_recent",
+  networkAuditExport: "network_audit_export",
   networkSetOffline: "network_set_offline",
   moduleUninstall: "module_uninstall",
   moduleImportPick: "module_import_pick",

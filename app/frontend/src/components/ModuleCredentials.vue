@@ -6,6 +6,7 @@ import {
   credentialAdd,
   credentialRemove,
   credentialsList,
+  networkAuditExport,
   networkAuditRecent,
   type CredentialBinding,
   type NetworkAuditRow,
@@ -22,11 +23,17 @@ const secret = ref("");
 const busy = ref(false);
 const note = ref("");
 const audit = ref<NetworkAuditRow[]>([]);
+const auditModule = ref("");
+const auditResult = ref("");
 
 async function load() {
   try {
     bindings.value = await credentialsList(props.moduleId);
-    audit.value = await networkAuditRecent(20);
+    audit.value = await networkAuditRecent(
+      50,
+      auditModule.value.trim() || null,
+      auditResult.value.trim() || null,
+    );
   } catch (error) {
     note.value = t("credentials.load_failed", { detail: String(error) });
   }
@@ -55,6 +62,25 @@ async function add() {
     note.value = t("credentials.save_failed", { detail: String(error) });
   } finally {
     busy.value = false;
+  }
+}
+
+async function exportAudit() {
+  try {
+    const text = await networkAuditExport(
+      auditModule.value.trim() || null,
+      auditResult.value.trim() || null,
+    );
+    const blob = new Blob([text], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "network-audit.json";
+    anchor.click();
+    URL.revokeObjectURL(url);
+    note.value = t("credentials.audit_exported");
+  } catch (error) {
+    note.value = t("credentials.save_failed", { detail: String(error) });
   }
 }
 
@@ -114,6 +140,26 @@ onMounted(load);
     </div>
     <p v-if="note" class="credentials__note">{{ note }}</p>
     <p class="credentials__hint">{{ t("credentials.audit_hint") }}</p>
+    <div class="credentials__filters">
+      <input
+        v-model="auditModule"
+        :placeholder="t('credentials.audit_module')"
+        :disabled="busy"
+        @keyup.enter="load"
+      />
+      <input
+        v-model="auditResult"
+        :placeholder="t('credentials.audit_result')"
+        :disabled="busy"
+        @keyup.enter="load"
+      />
+      <button type="button" class="credentials__button" :disabled="busy" @click="load">
+        {{ t("credentials.audit_refresh") }}
+      </button>
+      <button type="button" class="credentials__button" :disabled="busy" @click="exportAudit">
+        {{ t("credentials.audit_export") }}
+      </button>
+    </div>
     <ul v-if="audit.length" class="credentials__audit">
       <li v-for="(row, index) in audit" :key="index">
         {{ new Date(row.ts).toLocaleString() }} · {{ row.module }} → {{ row.host }} ·
@@ -162,6 +208,7 @@ onMounted(load);
   padding: 3px 0;
   font-size: 12px;
 }
+.credentials__filters,
 .credentials__form {
   display: flex;
   flex-wrap: wrap;

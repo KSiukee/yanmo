@@ -1,3 +1,42 @@
+## 0.133.0 — 2026-10-25
+
+> **真机联网跑通 + 审计查询/导出；同时修了一个严重问题：0.129–0.132 的 HTTPS
+> 其实不可用。** ureq 的 native-tls 特性不会自动启用，必须显式配置
+> `tls_connector`；之前只编译通过，真发请求会报“no TLS backend is configured”。
+> 现在用 httpbin 的真 token 跑通了“钥匙串 → Authorization → HTTPS → 响应”整条链。
+
+### 修复（重要）
+
+- `network::fetch_inner` 现在构造 `native_tls::TlsConnector` 并挂到
+  `AgentBuilder::tls_connector`；HTTPS 真正可用。
+- 之前的回环拒绝测试只验证“不发请求”，没有覆盖成功路径，所以没发现这个坏法；
+  现在补了真机测试。
+
+### 新
+
+- **真机联网测试**（`#[ignore]`，网络依赖）：模块从 Windows 钥匙串取 `test-token`，
+  请求 `https://httpbin.org/bearer`，断言返回 `authenticated`，审计行 `result=ok`。
+- **审计轮转**：`network-audit.jsonl` 超过 1 MiB 时改名 `.1.jsonl`，不再无限长。
+- **审计查询**：按模块/结果过滤（大小写不敏感、子串），最多 100 条；
+- **导出**：`network_audit_export` 返回当前过滤结果 JSON（最多 1000 条），
+  管理页“导出 JSON”用下载方式落盘。
+- 管理页凭据面板加过滤框、查询、导出按钮。
+
+### 其他（诚实边界）
+
+- 真机测试用的是 **httpbin 测试 token**，不是用户的真实 API key；但整条
+  “钥匙串 → 宿主代理 → Authorization → TLS → 响应 → 审计”已经实跑。
+- 真机测试是 `#[ignore]`，常规门不跑；它依赖公网。
+- 审计仍是本地 JSONL 文件，不是 SQLite；只有单份轮转，没有按日期归档/压缩。
+- 密钥仍以明文在宿主内存里存在一小段时间；没有 zeroize。
+- 非 Windows 保险箱、凭据轮换/过期、DNS 重绑定、域名白名单、费用/总字节配额未做。
+- 自动重启、强杀壳、Job CPU/磁盘、子 WebView、认证复核仍未做。
+
+### 验收证据
+
+- **+1 例**（ignored 真机）：Windows 钥匙串 + HTTPS + Authorization + 审计全链路。
+- 常规全量：Rust **1140 项**、界面 **553 项**，`check_all` 全绿。
+
 ## 0.132.0 — 2026-10-25
 
 > **真机钥匙串往返 + 持久化网络/凭据使用审计。** 钥匙串不再是“只编译过”：

@@ -23,11 +23,32 @@ pub struct NetworkAuditRow {
 pub fn network_audit_recent(
     data: State<'_, AppData>,
     limit: usize,
+    module: Option<String>,
+    result: Option<String>,
 ) -> Result<Vec<NetworkAuditRow>, ApiError> {
     let limit = limit.clamp(1, 100);
+    Ok(read_rows(&data, limit, module.as_deref(), result.as_deref()))
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn network_audit_export(
+    data: State<'_, AppData>,
+    module: Option<String>,
+    result: Option<String>,
+) -> Result<String, ApiError> {
+    let rows = read_rows(&data, 1000, module.as_deref(), result.as_deref());
+    Ok(serde_json::to_string_pretty(&rows).unwrap_or_else(|_| "[]".to_string()))
+}
+
+fn read_rows(
+    data: &AppData,
+    limit: usize,
+    module: Option<&str>,
+    result: Option<&str>,
+) -> Vec<NetworkAuditRow> {
     let path = data.data_dir().join("network-audit.jsonl");
     let Ok(metadata) = fs::metadata(&path) else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     let mut text = String::new();
     if metadata.len() <= 512 * 1024 {
@@ -49,12 +70,22 @@ pub fn network_audit_recent(
             }
         }
     }
+    let module = module.map(str::to_ascii_lowercase);
+    let result = result.map(str::to_ascii_lowercase);
     let mut rows: Vec<NetworkAuditRow> = text
         .lines()
         .filter_map(|line| serde_json::from_str::<NetworkAuditRow>(line).ok())
+        .filter(|row| {
+            module
+                .as_deref()
+                .is_none_or(|needle| row.module.to_ascii_lowercase().contains(needle))
+                && result
+                    .as_deref()
+                    .is_none_or(|needle| row.result.to_ascii_lowercase().contains(needle))
+        })
         .collect();
     if rows.len() > limit {
         rows = rows.split_off(rows.len() - limit);
     }
-    Ok(rows)
+    rows
 }

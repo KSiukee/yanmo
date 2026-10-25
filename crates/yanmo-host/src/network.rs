@@ -11,6 +11,7 @@
 //! 还没做：域名白名单、DNS 重绑定防护、凭据保险箱、持久化访问日志、全局离线开关。
 
 use std::io::Read;
+use std::sync::Arc;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
 
@@ -54,7 +55,10 @@ fn fetch_inner(
     bearer: Option<&str>,
 ) -> Result<Vec<u8>, NetworkError> {
     let parsed = check_url(url)?;
+    let connector = ureq::native_tls::TlsConnector::new()
+        .map_err(|error| NetworkError::new(NetworkError::FAILED, error.to_string()))?;
     let agent = ureq::AgentBuilder::new()
+        .tls_connector(Arc::new(connector))
         .timeout(Duration::from_secs(10))
         .redirects(0)
         .user_agent("YanmoModule/0.129")
