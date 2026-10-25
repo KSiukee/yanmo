@@ -54,6 +54,8 @@ pub struct RunReport {
     pub fuel_used: u64,
     /// 跑完之后线性内存的实际大小（受 `max_memory_bytes` 限制）
     pub memory_bytes: u64,
+    pub data_rejected: usize,
+    pub data_degraded: bool,
 }
 
 pub(super) struct HostState {
@@ -290,6 +292,12 @@ fn run_package_inner(
         .and_then(Extern::into_memory)
         .map(|memory| memory.data_size(&store) as u64)
         .unwrap_or(0);
+    let (data_rejected, data_degraded) = store
+        .data()
+        .data
+        .as_ref()
+        .and_then(|data| data.lock().ok().map(|data| (data.rejected(), data.degraded())))
+        .unwrap_or((0, false));
     let emitted = store.into_data().emitted;
     Ok(RunReport {
         module_id: package.manifest().id.clone(),
@@ -297,6 +305,8 @@ fn run_package_inner(
         emitted,
         fuel_used,
         memory_bytes,
+        data_rejected,
+        data_degraded,
     })
 }
 fn emit(caller: &mut Caller<'_, HostState>, ptr: i32, len: i32) -> i32 {

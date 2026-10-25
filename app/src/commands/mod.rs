@@ -39,6 +39,7 @@ pub mod lines;
 pub mod module;
 /// 模块凭据：秘密进系统钥匙串，核心只存名字与允许域名。
 pub mod credential;
+pub mod module_data;
 pub mod module_run;
 /// 模块子 WebView：只读静态服务 + 无 Tauri 能力的 remote origin。
 pub mod module_ui;

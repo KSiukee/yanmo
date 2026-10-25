@@ -382,6 +382,8 @@ fn run() -> Result<(), HostError> {
             "emitted": report.emitted,
             "fuel_used": report.fuel_used,
             "memory_bytes": report.memory_bytes,
+            "data_rejected": report.data_rejected,
+            "data_degraded": report.data_degraded,
         })
     );
     Ok(())

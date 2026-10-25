@@ -12,7 +12,6 @@ import {
   moduleRun,
   moduleSetBackground,
   moduleStop,
-  moduleUninstall,
   modulesList,
   type ImportPreview,
   type ModuleCapabilities,
@@ -39,6 +38,8 @@ const { runs, isRunning: isRunningId, markStarted, markStopped, loadStatuses, di
     const emitted = status.emitted.join(" / ");
     if (status.error) {
       note.value = t("modules.run_failed", { detail: status.error });
+    } else if (status.data_degraded) {
+      note.value = t("modules.data_degraded", { count: status.data_rejected });
     } else {
       note.value = status.timed_out
         ? t("modules.run_timeout")
@@ -85,7 +86,8 @@ const {
   toggle: toggleOffline,
   toggleModule,
 } = useModuleNetwork(note, act);
-const { toggleActive, toggleFavorite, togglePinned, openUi } = useModuleActions(note, act);
+const { toggleActive, toggleFavorite, togglePinned, openUi, exportData, clearData, uninstall } =
+  useModuleActions(note, act);
 
 function toggleBackground(card: ModuleCard) {
   void act(async () => {
@@ -108,14 +110,6 @@ function closeDialog() {
   }
   dispose();
   emit("close");
-}
-
-function uninstall(card: ModuleCard) {
-  if (!window.confirm(t("modules.uninstall_confirm", { name: card.name }))) return;
-  void act(async () => {
-    await moduleUninstall(card.id);
-    note.value = t("modules.uninstalled", { name: card.name });
-  });
 }
 
 function runModule(card: ModuleCard) {
@@ -277,6 +271,8 @@ onUnmounted(() => {
             <span v-if="card.network" class="modules__badge">{{ t("modules.network") }}</span>
           </p>
           <div class="modules__actions">
+            <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="exportData(card)">{{ t("modules.export_data") }}</button>
+            <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="clearData(card)">{{ t("modules.clear_data") }}</button>
             <button
               v-if="isRunning(card)"
               type="button"
@@ -295,6 +291,8 @@ onUnmounted(() => {
             >
               {{ t("modules.open_ui") }}
             </button>
+            <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="exportData(card)">{{ t("modules.export_data") }}</button>
+            <button v-if="card.own_data" type="button" class="modules__button dialog__button" :disabled="busy" @click="clearData(card)">{{ t("modules.clear_data") }}</button>
             <button
               v-if="isRunning(card)"
               type="button"

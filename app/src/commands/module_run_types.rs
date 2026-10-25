@@ -20,6 +20,8 @@ pub struct ModuleStatus {
     pub emitted: Vec<String>,
     pub stderr: String,
     pub error: Option<String>,
+    pub data_degraded: bool,
+    pub data_rejected: usize,
 }
 
 impl ModuleStatus {
@@ -34,6 +36,8 @@ impl ModuleStatus {
             emitted: Vec::new(),
             stderr: String::new(),
             error: None,
+            data_degraded: false,
+            data_rejected: 0,
         }
     }
 }

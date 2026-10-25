@@ -236,6 +236,8 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::module::network_allowlist,
         crate::commands::module::network_set_allowlist,
         crate::commands::module::module_uninstall,
+        crate::commands::module_data::module_data_export,
+        crate::commands::module_data::module_data_clear,
         crate::commands::module::module_import_pick,
         crate::commands::module::module_import_confirm,
         crate::commands::module::module_import_cancel,

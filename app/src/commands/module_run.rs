@@ -225,6 +225,14 @@ fn pump_stdout(reader: impl Read + Send + 'static, platform: Arc<Mutex<Platform>
             .and_then(|value| value.as_str())
             .unwrap_or_default()
             .to_string();
+        status.data_degraded = value
+            .get("data_degraded")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        status.data_rejected = value
+            .get("data_rejected")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0) as usize;
         if value.get("ok").and_then(|value| value.as_bool()) == Some(false) {
             let code = value
                 .get("code")

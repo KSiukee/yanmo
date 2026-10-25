@@ -6,6 +6,9 @@ import {
   moduleSetFavorite,
   moduleSetPinned,
   moduleUiOpen,
+  moduleUninstall,
+  moduleDataClear,
+  moduleDataExport,
   type ModuleCard,
 } from "../api/modules";
 import { t } from "../locales/index.ts";
@@ -26,6 +29,29 @@ export function useModuleActions(
     act(() => moduleSetPinned(card.id, !card.pinned));
   }
 
+  function exportData(card: ModuleCard) {
+    act(async () => {
+      const done = await moduleDataExport(card.id, t("modules.export_data"));
+      note.value = done ? t("modules.data_exported") : t("modules.export_cancelled");
+    });
+  }
+
+  function clearData(card: ModuleCard) {
+    if (!window.confirm(t("modules.clear_data_confirm", { name: card.name }))) return;
+    act(async () => {
+      const count = await moduleDataClear(card.id);
+      note.value = t("modules.data_cleared", { count });
+    });
+  }
+
+  function uninstall(card: ModuleCard) {
+    if (!window.confirm(t("modules.uninstall_confirm", { name: card.name }))) return;
+    act(async () => {
+      await moduleUninstall(card.id);
+      note.value = t("modules.uninstalled", { name: card.name });
+    });
+  }
+
   function openUi(card: ModuleCard) {
     act(async () => {
       await moduleUiOpen(card.id);
@@ -33,5 +59,5 @@ export function useModuleActions(
     });
   }
 
-  return { toggleActive, toggleFavorite, togglePinned, openUi };
+  return { toggleActive, toggleFavorite, togglePinned, openUi, exportData, clearData, uninstall };
 }

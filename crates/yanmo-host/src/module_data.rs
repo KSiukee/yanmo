@@ -22,6 +22,8 @@ const MAX_KEY_BYTES: usize = 128;
 pub struct ModuleData {
     conn: Connection,
     writes: VecDeque<Instant>,
+    rejected: usize,
+    degraded: bool,
 }
 
 impl ModuleData {
@@ -35,10 +37,23 @@ impl ModuleData {
         let max_pages = (TOTAL_BYTES / page_size.max(1)).max(1);
         conn.pragma_update(None, "max_page_count", max_pages as i64)
             .map_err(|error| HostError::new(HostError::DATA_FAILED, error.to_string()))?;
-        Ok(Self { conn, writes: VecDeque::new() })
+        Ok(Self { conn, writes: VecDeque::new(), rejected: 0, degraded: false })
     }
 
+    /// 连续 5 次写被拒就降级：只读，后续 put/delete 直接 -1（用户仍可导出/清除）。
     pub fn kv_put(&mut self, module_id: &str, key: &str, value: &[u8]) -> HostResult<()> {
+        if self.degraded {
+            self.rejected += 1;
+            return Err(HostError::new(HostError::DATA_LIMIT, "module data degraded"));
+        }
+        let result = self.kv_put_inner(module_id, key, value);
+        if result.is_err() {
+            self.note_failure();
+        }
+        result
+    }
+
+    fn kv_put_inner(&mut self, module_id: &str, key: &str, value: &[u8]) -> HostResult<()> {
         if key.is_empty() || key.len() > MAX_KEY_BYTES || value.len() > MAX_WRITE_BYTES {
             return Err(HostError::new(HostError::DATA_LIMIT, "key/value too large"));
         }
@@ -110,6 +125,18 @@ impl ModuleData {
     }
 
     pub fn kv_delete(&mut self, module_id: &str, key: &str) -> HostResult<bool> {
+        if self.degraded {
+            self.rejected += 1;
+            return Err(HostError::new(HostError::DATA_LIMIT, "module data degraded"));
+        }
+        let result = self.kv_delete_inner(module_id, key);
+        if result.is_err() {
+            self.note_failure();
+        }
+        result
+    }
+
+    fn kv_delete_inner(&mut self, module_id: &str, key: &str) -> HostResult<bool> {
         if key.is_empty() || key.len() > MAX_KEY_BYTES {
             return Err(HostError::new(HostError::DATA_LIMIT, "key too large"));
         }
@@ -154,6 +181,21 @@ impl ModuleData {
             .optional()
             .map(|value| value.is_some())
             .map_err(|error| HostError::new(HostError::DATA_FAILED, error.to_string()))
+    }
+
+    pub fn rejected(&self) -> usize {
+        self.rejected
+    }
+
+    pub fn degraded(&self) -> bool {
+        self.degraded
+    }
+
+    fn note_failure(&mut self) {
+        self.rejected += 1;
+        if self.rejected >= 5 {
+            self.degraded = true;
+        }
     }
 
     fn rate(&mut self) -> HostResult<()> {

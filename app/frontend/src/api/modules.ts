@@ -110,6 +110,8 @@ export interface ModuleStatus {
   emitted: string[];
   stderr: string;
   error: string | null;
+  data_degraded: boolean;
+  data_rejected: number;
 }
 
 export const moduleRun = (module_id: string) =>
@@ -167,3 +169,9 @@ export const networkAuditExport = (
 
 export const moduleUiOpen = (module_id: string) =>
   call<void>(COMMANDS.moduleUiOpen, { module_id });
+
+export const moduleDataExport = (module_id: string, title: string) =>
+  call<boolean>(COMMANDS.moduleDataExport, { module_id, title });
+
+export const moduleDataClear = (module_id: string) =>
+  call<number>(COMMANDS.moduleDataClear, { module_id });

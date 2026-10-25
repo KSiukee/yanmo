@@ -223,6 +223,8 @@ export const COMMANDS = {
   networkAllowlist: "network_allowlist",
   networkSetAllowlist: "network_set_allowlist",
   moduleUninstall: "module_uninstall",
+  moduleDataExport: "module_data_export",
+  moduleDataClear: "module_data_clear",
   moduleImportPick: "module_import_pick",
   moduleImportConfirm: "module_import_confirm",
   moduleImportCancel: "module_import_cancel",

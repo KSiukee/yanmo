@@ -78,3 +78,17 @@ fn data_imports_are_rejected_without_the_grant() {
     let error = run_package_with_data(&package, config, data).unwrap_err();
     assert_eq!(error.code, HostError::IMPORT_NOT_ALLOWED);
 }
+
+#[test]
+fn five_rejections_degrade_writes_to_read_only() {
+    let dir = fresh();
+    let db = dir.path().join("modules.db");
+    let mut data = ModuleData::open(&db).unwrap();
+    let oversized = vec![0u8; 1024 * 1024 + 1];
+    for index in 0..5 {
+        assert!(data.kv_put(MODULE_ID, &format!("k{index}"), &oversized).is_err());
+    }
+    assert!(data.degraded());
+    assert!(data.rejected() >= 5);
+    assert!(data.kv_put(MODULE_ID, "ok", b"x").is_err());
+}

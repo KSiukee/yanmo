@@ -51,6 +51,8 @@ export function useModuleRuns(onFinished: (status: ModuleStatus) => void) {
       emitted: [],
       stderr: "",
       error: null,
+      data_degraded: false,
+      data_rejected: 0,
     };
     ensurePolling();
   }
