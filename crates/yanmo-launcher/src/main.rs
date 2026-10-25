@@ -65,6 +65,12 @@ fn run() -> Result<(), LaunchError> {
             timeout,
             idle_secs,
         })?;
+        // **先给报告，再给退出码**：平台跑砸时，调用方最需要的是"哪个模块出了什么事"，
+        // 而不是一句"宿主退出码 1"。报告里有每个模块的终局（`modules`）。
+        match serde_json::to_string(&report) {
+            Ok(text) => println!("{text}"),
+            Err(error) => eprintln!("{}", serde_json::json!({ "ok": false, "code": "launch.report", "detail": error.to_string() })),
+        }
         if report.timed_out || report.exit_code.unwrap_or(1) != 0 {
             return Err(LaunchError::new(
                 LaunchError::WAIT,

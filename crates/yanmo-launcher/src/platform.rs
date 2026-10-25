@@ -178,8 +178,10 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
     }
     command
         .stdin(Stdio::piped())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
+        // 宿主的每一行报告（一次运行一行 JSON、失败一行 stderr）**都接过来**：
+        // 原样转发给壳（壳那边的行为不变），同时攒成"每个模块的终局"。
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -195,6 +197,10 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
     };
     let mut job = JobGuard::create_with_limit(JOB_MEMORY_LIMIT, 64);
     let job_assigned = job.as_mut().map(|guard| guard.assign(&child)).unwrap_or(false);
+
+    // 每个模块的终局：宿主（及其子进程）把报告打在 stdout / stderr 上，
+    // 一边转发给壳、一边攒成"每个模块一条"（**失败也要有名字**）。
+    let outcomes = super::platform_outcomes::spawn_readers(&mut child);
 
     let Some(mut stdin) = child.stdin.take() else {
         let _ = child.kill();
@@ -229,8 +235,10 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
 
     let started = Instant::now();
     let mut timed_out = false;
+    let mut stopped_by_shell = false;
     let status = loop {
         if shell_gone.load(Ordering::Relaxed) {
+            stopped_by_shell = true;
             if let Some(guard) = &job {
                 guard.terminate();
             }
@@ -270,14 +278,19 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
         Err(_) => Some("ipc.server_panicked".to_string()),
     };
 
+    let (modules, peak_memory_bytes) = super::platform_outcomes::summarize(&outcomes);
+
     Ok(LaunchReport {
         module_id: "platform".to_string(),
-        exit_code: status.code(),
+        // 壳关掉 stdin = **正常收摊**（不是失败）：别让"用户关窗"看起来像"宿主崩了"
+        exit_code: if stopped_by_shell { Some(0) } else { status.code() },
         timed_out,
         stdout: String::new(),
         stderr: String::new(),
         ipc_error,
         job_assigned,
+        modules,
+        peak_memory_bytes,
     })
 }
 

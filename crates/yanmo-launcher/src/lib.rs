@@ -21,6 +21,7 @@
 
 mod job;
 mod platform;
+mod platform_outcomes;
 
 use std::fs;
 use std::io::{BufRead, Read, Write};
@@ -55,6 +56,24 @@ pub struct LaunchRequest {
     pub idle_secs: u64,
 }
 
+/// 一个模块这一次跑成了什么样（**平台模式**才有；单模块看 `stdout` 里那份报告）。
+///
+/// 失败要能**指名道姓**：哪一本不重要，哪一个模块坏了才重要。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+pub struct ModuleRun {
+    pub module_id: String,
+    pub ok: bool,
+    /// 失败时的稳定码（`host.spawn_failed` / `host.trap` / `ipc.timeout` …）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    /// 跑完后的线性内存（宿主报告里的读数；没跑成就是 0）。
+    #[serde(default)]
+    pub memory_bytes: u64,
+    /// 烧掉的燃料（有界执行的证据）。
+    #[serde(default)]
+    pub fuel_used: u64,
+}
+
 /// 一次启动的结果（给壳/管理页）。
 #[derive(Debug, Clone, Serialize)]
 pub struct LaunchReport {
@@ -67,6 +86,12 @@ pub struct LaunchReport {
     pub ipc_error: Option<String>,
     /// Windows 作业对象是否真的挂上了（挂不上也不算启动失败，只是没有配额）
     pub job_assigned: bool,
+    /// 平台模式：每个模块的终局（按模块 id 排序，便于比对）。
+    #[serde(default)]
+    pub modules: Vec<ModuleRun>,
+    /// 平台模式：所有模块里最大的那份内存读数（内存封顶的证据）。
+    #[serde(default)]
+    pub peak_memory_bytes: u64,
 }
 
 /// 启动失败的稳定码。
@@ -285,6 +310,9 @@ pub fn launch(request: &LaunchRequest) -> Result<LaunchReport, LaunchError> {
         stderr,
         ipc_error,
         job_assigned,
+        // 单模块的终局就在 `stdout` 那份报告里（壳/命令行直接读），这里不重复攒
+        modules: Vec::new(),
+        peak_memory_bytes: 0,
     })
 }
 
