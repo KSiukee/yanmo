@@ -19,6 +19,36 @@ pub(super) const USAGE_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS module_usag
     runs        INTEGER NOT NULL
 )";
 
+/// 唤起留痕的表：**一次运行一行**（谁唤起、什么时候、跑了多久、结果）。
+///
+/// 这就是「链路可见」的地基：今天只有「用户 → 模块」这一种边，
+/// 将来的「模块 → 模块」会以 `trigger = chain:<模块 id>` 写进同一张表。
+pub(super) const RUN_LOG_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS module_run_log (
+    seq         INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_id   TEXT    NOT NULL,
+    trigger     TEXT    NOT NULL,
+    started_at  INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    outcome     TEXT    NOT NULL,
+    code        TEXT    NOT NULL DEFAULT ''
+)";
+
+/// 每个模块最多留多少条唤起记录（老的删掉；这是观测账，不是审计底稿）。
+const RUN_LOG_KEEP: i64 = 200;
+
+/// 一次唤起（链路里的**一条边的一次走过**）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RunEvent {
+    pub module_id: String,
+    /// `user`（用户点的）/ `chain:<模块 id>`（将来模块间的唤起）
+    pub trigger: String,
+    pub started_at: i64,
+    pub duration_ms: i64,
+    /// `ok` / `error` / `timeout` / `unfinished`
+    pub outcome: String,
+    pub code: String,
+}
+
 /// 一个模块的使用账（没跑过 = 0 次、时刻 0）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ModuleUsage {
@@ -40,6 +70,69 @@ impl ModuleData {
             params![module_id, now_millis()],
         )?;
         Ok(())
+    }
+
+    /// 记一次**完整的**唤起（谁唤起、跑了多久、结果如何）。
+    ///
+    /// 与 [`ModuleData::note_run`] 分工：那个只加次数（壳在启动那一刻就记），
+    /// 这个记"这一趟的经过"（启动器在模块结束时记）。两者都不清数据、不挡任何人。
+    pub fn note_run_result(
+        &mut self,
+        module_id: &str,
+        trigger: &str,
+        started_at: i64,
+        duration_ms: i64,
+        outcome: &str,
+        code: &str,
+    ) -> Result<()> {
+        ensure_id(module_id)?;
+        self.conn.execute(
+            "INSERT INTO module_run_log(module_id, trigger, started_at, duration_ms, outcome, code)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                module_id,
+                trigger,
+                started_at,
+                duration_ms.max(0),
+                outcome,
+                code
+            ],
+        )?;
+        // 每个模块只留最近 RUN_LOG_KEEP 条：账要能一直记下去，不能无限长。
+        self.conn.execute(
+            "DELETE FROM module_run_log
+              WHERE module_id = ?1
+                AND seq NOT IN (
+                    SELECT seq FROM module_run_log WHERE module_id = ?1
+                     ORDER BY seq DESC LIMIT ?2
+                )",
+            params![module_id, RUN_LOG_KEEP],
+        )?;
+        Ok(())
+    }
+
+    /// 最近的唤起（新的在前）。
+    pub fn recent_runs(&self, module_id: &str, limit: usize) -> Result<Vec<RunEvent>> {
+        ensure_id(module_id)?;
+        let limit = limit.clamp(1, 200) as i64;
+        let mut stmt = self.conn.prepare(
+            "SELECT module_id, trigger, started_at, duration_ms, outcome, code
+               FROM module_run_log WHERE module_id = ?1
+              ORDER BY seq DESC LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![module_id, limit], |row| {
+                Ok(RunEvent {
+                    module_id: row.get(0)?,
+                    trigger: row.get(1)?,
+                    started_at: row.get(2)?,
+                    duration_ms: row.get(3)?,
+                    outcome: row.get(4)?,
+                    code: row.get(5)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
     }
 
     /// 读这个模块的使用账（没记过就是「没跑过」）。

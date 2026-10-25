@@ -198,9 +198,21 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
     let mut job = JobGuard::create_with_limit(JOB_MEMORY_LIMIT, 64);
     let job_assigned = job.as_mut().map(|guard| guard.assign(&child)).unwrap_or(false);
 
+    // 壳发来的 `run <id>`：既用来补终局，也用来给"唤起留痕"起表。
+    let requested: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let starts: Arc<Mutex<HashMap<String, (i64, Instant)>>> = Arc::new(Mutex::new(HashMap::new()));
     // 每个模块的终局：宿主（及其子进程）把报告打在 stdout / stderr 上，
     // 一边转发给壳、一边攒成"每个模块一条"（**失败也要有名字**）。
-    let outcomes = super::platform_outcomes::spawn_readers(&mut child);
+    // 同时记「唤起留痕」：谁唤起的、跑了多久、结果如何（链路可见的地基）。
+    let recorder = Arc::new(super::platform_outcomes::RunRecorder {
+        starts: starts.clone(),
+        data: yanmo_core::store::ModuleData::open(
+            yanmo_core::store::ModuleData::path_beside(&request.db_path),
+        )
+        .ok()
+        .map(|data| Arc::new(Mutex::new(data))),
+    });
+    let outcomes = super::platform_outcomes::spawn_readers(&mut child, recorder.clone());
 
     let Some(mut stdin) = child.stdin.take() else {
         let _ = child.kill();
@@ -219,16 +231,20 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
     let shell_gone = Arc::new(AtomicBool::new(false));
     let shell_gone_watch = shell_gone.clone();
     let host_stdin = Arc::new(Mutex::new(stdin));
-    // 壳发来的 `run <id>` 也要记下来：强杀时没跑完的那些模块得有两个字的终局。
-    let requested: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    // 强杀时没跑完的那些模块得有两个字的终局；每个 `run` 的时刻给留痕算时长。
     let requested_in = requested.clone();
+    let starts_in = starts.clone();
     std::thread::spawn(move || {
         let stdin = std::io::stdin();
         for line in stdin.lock().lines() {
             let Ok(line) = line else { break };
             if let Some(module_id) = line.strip_prefix("run ") {
+                let module_id = module_id.trim().to_string();
                 if let Ok(mut list) = requested_in.lock() {
-                    list.push(module_id.trim().to_string());
+                    list.push(module_id.clone());
+                }
+                if let Ok(mut map) = starts_in.lock() {
+                    map.entry(module_id).or_insert_with(|| (yanmo_core::time::now_millis(), Instant::now()));
                 }
             }
             let Ok(mut guard) = host_stdin.lock() else { break };
@@ -289,6 +305,8 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
     let (modules, peak_memory_bytes) = super::platform_outcomes::summarize(&outcomes);
     let requested_ids = requested.lock().map(|list| list.clone()).unwrap_or_default();
     let modules = super::platform_outcomes::finalize(modules, &requested_ids, timed_out);
+    // 没等到任何报告行的那些：留痕也要有一个终局（不能只活在内存里）。
+    recorder.note_unfinished(timed_out);
 
     Ok(LaunchReport {
         module_id: "platform".to_string(),

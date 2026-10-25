@@ -259,3 +259,23 @@ fn a_module_can_list_its_own_keys() {
     assert_eq!(keys, vec!["map.json".to_string(), "theme".to_string()]);
     assert_eq!(keys.len(), 2, "别的模块的键不许混进来");
 }
+
+/// 唤起留痕：记一次完整的运行，能按模块读回来；别的模块看不到。
+#[test]
+fn a_run_event_remembers_who_woke_it_and_how_long_it_took() {
+    let (_dir, path) = fresh();
+    let mut data = ModuleData::open(&path).unwrap();
+    data.note_run_result("app.example.data", "user", 1_700_000_000_000, 412, "ok", "")
+        .unwrap();
+    data.note_run_result("app.example.data", "chain:app.example.other", 1_700_000_001_000, 90, "error", "host.trap")
+        .unwrap();
+    data.note_run_result("app.example.other", "user", 1_700_000_002_000, 10, "ok", "")
+        .unwrap();
+    let runs = data.recent_runs("app.example.data", 10).unwrap();
+    assert_eq!(runs.len(), 2, "别的模块的记录不许混进来");
+    assert_eq!(runs[0].trigger, "chain:app.example.other", "新的在前");
+    assert_eq!(runs[0].outcome, "error");
+    assert_eq!(runs[0].code, "host.trap");
+    assert_eq!(runs[1].duration_ms, 412);
+    assert!(data.recent_runs("app.example.none", 10).unwrap().is_empty());
+}

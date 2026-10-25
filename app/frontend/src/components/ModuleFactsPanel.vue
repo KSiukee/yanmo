@@ -15,6 +15,26 @@ const emit = defineEmits<{ close: [] }>();
 
 const view = ref<ModuleFactsView | null>(null);
 
+/** 最近几次唤起：谁唤起 · 多久 · 结果（新的在前）。 */
+const runsLine = computed(() => {
+  const runs = view.value?.runs ?? [];
+  return runs
+    .map((run) => {
+      const who = run.trigger === "user" ? t("facts.run_by_user") : run.trigger;
+      const took = t("facts.run_took", { ms: run.duration_ms });
+      const outcome =
+        run.outcome === "ok"
+          ? t("facts.run_ok")
+          : run.outcome === "timeout"
+            ? t("facts.run_timeout")
+            : run.outcome === "unfinished"
+              ? t("facts.run_unfinished")
+              : t("facts.run_failed", { code: run.code || "—" });
+      return t("facts.run_item", { who, took, outcome });
+    })
+    .join(t("common.list_separator"));
+});
+
 /** 认证清单的稳定码 → 人话（清单版本由核心给，文案在本机）。 */
 const certChecks = computed(() => {
   const checks = view.value?.cert?.checks ?? [];
@@ -205,6 +225,8 @@ const declared = computed(() => {
           </button>
         </li>
         <li v-else class="facts__note">{{ t("facts.archive_none") }}</li>
+        <li v-if="view.runs.length > 0">{{ t("facts.runs", { list: runsLine }) }}</li>
+        <li v-else class="facts__note">{{ t("facts.runs_none") }}</li>
         <li v-if="view.facts.isolated" class="facts__note">
           {{ t("facts.isolated_note", { reason: view.facts.isolation_reason || t("modules.isolation_no_reason") }) }}
         </li>

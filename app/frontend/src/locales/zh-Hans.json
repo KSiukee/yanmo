@@ -184,7 +184,7 @@
   "facts.tables": "{tables} 张表 / {rows} 行",
   "facts.db": "整个模块库 {size}（上限 256 MB）",
   "facts.mirror": "镜像：{when}",
-  "facts.runs": "跑过 {count} 次，最后一次 {when}",
+  "facts.runs": "最近唤起：{list}",
   "facts.rejected": "写入被拒 {count} 次",
   "facts.network_count": "出网 {requests} 次（{ok} 成功 / {failed} 没成），共 {size}",
   "facts.network_last": "最近一次：{host}（{when}）",
@@ -1804,5 +1804,13 @@
   "modules.questions_muted": "这个模块的叩问已被你静音，一条都不会提。",
   "cert.notice_revoked": "有 {count} 个模块的认证被撤销（{list}）：徽标已换成「未认证」，能力限制照旧。",
   "cert.notice_restored": "有 {count} 个模块恢复了认证（{list}）。",
-  "cert.notice_dismiss": "知道了"
+  "cert.notice_dismiss": "知道了",
+  "facts.runs_none": "还没有唤起记录（跑一次就会有）。",
+  "facts.run_by_user": "你",
+  "facts.run_took": "{ms} 毫秒",
+  "facts.run_ok": "成功",
+  "facts.run_failed": "失败（{code}）",
+  "facts.run_timeout": "超时",
+  "facts.run_unfinished": "没跑完",
+  "facts.run_item": "{who} · {took} · {outcome}"
 }

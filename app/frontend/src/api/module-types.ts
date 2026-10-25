@@ -224,8 +224,17 @@ export interface ModuleFactsView {
   reads: ReadSummaryView;
   archive: ArchiveView | null;
   cert: CertView | null;
+  runs: RunEventView[];
   running: boolean;
   idle_seconds: number;
+}
+/** 一次唤起的留痕（链路可见的最小单位）。 */
+export interface RunEventView {
+  trigger: string;
+  started_at: number;
+  duration_ms: number;
+  outcome: string;
+  code: string;
 }
 /** 认证：验过什么（版本号决定清单；认不出的版本 checks 为空）。 */
 export interface CertView {

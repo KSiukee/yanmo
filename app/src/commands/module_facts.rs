@@ -34,6 +34,16 @@ pub struct ReadBookView {
     pub chars: u64,
 }
 
+/// 一次唤起的留痕（链路可见的最小单位）。
+#[derive(Debug, Clone, Serialize)]
+pub struct RunEventView {
+    pub trigger: String,
+    pub started_at: i64,
+    pub duration_ms: i64,
+    pub outcome: String,
+    pub code: String,
+}
+
 /// 认证：**验过什么**（版本号决定清单；认不出的版本 checks 为空）。
 #[derive(Debug, Clone, Serialize)]
 pub struct CertView {
@@ -74,6 +84,8 @@ pub struct ModuleFactsView {
     pub archive: Option<ArchiveView>,
     /// 认证（核心验签后按（id, 版本, 载荷哈希）查到的；没有就是 `None`）。
     pub cert: Option<CertView>,
+    /// 最近几次唤起（新的在前；链路可见的第一版）。
+    pub runs: Vec<RunEventView>,
     /// 现在跑没在跑 + 空闲多少秒（壳观测）。
     pub running: bool,
     pub idle_seconds: u64,
@@ -82,7 +94,7 @@ pub struct ModuleFactsView {
 #[tauri::command(rename_all = "snake_case")]
 pub fn module_facts(
     data: State<'_, AppData>,
-    runs: State<'_, ModuleRuns>,
+    runs_state: State<'_, ModuleRuns>,
     module_id: String,
 ) -> Result<ModuleFactsView, ApiError> {
     let card = data
@@ -100,6 +112,20 @@ pub fn module_facts(
     let program_bytes = dir_bytes(&data.data_dir().join("modules").join(&module_id));
     let network = summary_for(&data, &module_id);
     let reads = read_summary(&data, &module_id)?;
+    let module_data = yanmo_core::store::ModuleData::open(
+        yanmo_core::store::ModuleData::path_beside(&data.data_dir().join("yanmo.db")),
+    )?;
+    let runs: Vec<RunEventView> = module_data
+        .recent_runs(&module_id, 5)?
+        .into_iter()
+        .map(|run| RunEventView {
+            trigger: run.trigger,
+            started_at: run.started_at,
+            duration_ms: run.duration_ms,
+            outcome: run.outcome,
+            code: run.code,
+        })
+        .collect();
     // 认证是**核心验签的结果**：按（id, 版本, 载荷哈希）在已验签清单里查，查不到就是没认证。
     let cert = yanmo_core::store::CertificationSet::built_in()
         .lookup(&card.id, &card.version, &card.fingerprint)
@@ -113,7 +139,7 @@ pub fn module_facts(
         &module_id,
     )
     .map(|record| ArchiveView { version: record.version, archived_at: record.archived_at });
-    let status = status_module(runs.inner(), &module_id)?;
+    let status = status_module(runs_state.inner(), &module_id)?;
     Ok(ModuleFactsView {
         card,
         facts,
@@ -122,6 +148,7 @@ pub fn module_facts(
         reads,
         archive,
         cert,
+        runs,
         running: status.running,
         idle_seconds: status.idle_seconds,
     })

@@ -84,6 +84,7 @@ impl ModuleData {
         conn.execute(ISOLATION_TABLE_SQL, [])?;
         // 使用账：跑过几次、最后一次什么时候（不是模块数据，清除数据也不清它）。
         conn.execute(super::module_usage::USAGE_TABLE_SQL, [])?;
+        conn.execute(super::module_usage::RUN_LOG_TABLE_SQL, [])?;
         // 读取放行账：这个模块现在一次能读几篇正文、被拦过几次（渐进放行用）。
         conn.execute(super::module_read_consent::CONSENT_TABLE_SQL, [])?;
         let limits = ModuleDataLimits::default();

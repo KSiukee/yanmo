@@ -8,20 +8,85 @@ use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::process::Child;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
+
+use yanmo_core::store::ModuleData;
 
 use crate::ModuleRun;
 
 pub(crate) type Outcomes = Arc<Mutex<HashMap<String, ModuleRun>>>;
 
 /// 接住宿主的 stdout / stderr：逐行转发给壳，同时攒终局。
-pub(crate) fn spawn_readers(child: &mut Child) -> Outcomes {
+/// 唤起留痕：每个模块**第一次出现结果**时记一行（谁唤起、多久、结果）。
+///
+/// 记在启动器这边，是因为它是唯一同时看得见"壳发了 run"与"模块出了结果"的进程。
+pub(crate) struct RunRecorder {
+    pub(crate) starts: Arc<Mutex<HashMap<String, (i64, Instant)>>>,
+    pub(crate) data: Option<Arc<Mutex<ModuleData>>>,
+}
+
+impl RunRecorder {
+    pub(crate) fn note(&self, module_id: &str, outcomes: &Outcomes) {
+        let started = self
+            .starts
+            .lock()
+            .ok()
+            .and_then(|map| map.get(module_id).copied());
+        let Some((started_at, instant)) = started else { return };
+        let (outcome, code) = {
+            let Ok(map) = outcomes.lock() else { return };
+            match map.get(module_id) {
+                Some(run) if run.ok => ("ok".to_string(), String::new()),
+                Some(run) => ("error".to_string(), run.code.clone().unwrap_or_default()),
+                None => return,
+            }
+        };
+        let duration = instant.elapsed().as_millis() as i64;
+        self.write(module_id, started_at, duration, &outcome, &code);
+        if let Ok(mut map) = self.starts.lock() {
+            map.remove(module_id);
+        }
+    }
+
+    /// 收工时给"一行报告都没等到"的模块补一条：**沉默也是事实**（没跑完 / 超时）。
+    pub(crate) fn note_unfinished(&self, timed_out: bool) {
+        let leftover: Vec<(String, i64, i64)> = {
+            let Ok(mut map) = self.starts.lock() else { return };
+            map.drain()
+                .map(|(id, (started_at, instant))| {
+                    (id, started_at, instant.elapsed().as_millis() as i64)
+                })
+                .collect()
+        };
+        let outcome = if timed_out { "timeout" } else { "unfinished" };
+        for (module_id, started_at, duration) in leftover {
+            self.write(&module_id, started_at, duration, outcome, "");
+        }
+    }
+
+    fn write(&self, module_id: &str, started_at: i64, duration: i64, outcome: &str, code: &str) {
+        if let Some(data) = &self.data {
+            if let Ok(mut data) = data.lock() {
+                let _ = data.note_run_result(module_id, "user", started_at, duration, outcome, code);
+            }
+        }
+    }
+}
+
+pub(crate) fn spawn_readers(
+    child: &mut Child,
+    recorder: Arc<RunRecorder>,
+) -> Outcomes {
     let outcomes: Outcomes = Arc::new(Mutex::new(HashMap::new()));
     if let Some(stdout) = child.stdout.take() {
         let outcomes = outcomes.clone();
+        let recorder = recorder.clone();
         std::thread::spawn(move || {
             for line in std::io::BufReader::new(stdout).lines() {
                 let Ok(line) = line else { break };
-                collect_outcome(&outcomes, &line, false);
+                if let Some(module_id) = collect_outcome(&outcomes, &line, false) {
+                    recorder.note(&module_id, &outcomes);
+                }
                 let mut out = std::io::stdout();
                 let _ = writeln!(out, "{line}");
                 let _ = out.flush();
@@ -30,10 +95,13 @@ pub(crate) fn spawn_readers(child: &mut Child) -> Outcomes {
     }
     if let Some(stderr) = child.stderr.take() {
         let outcomes = outcomes.clone();
+        let recorder = recorder.clone();
         std::thread::spawn(move || {
             for line in std::io::BufReader::new(stderr).lines() {
                 let Ok(line) = line else { break };
-                collect_outcome(&outcomes, &line, true);
+                if let Some(module_id) = collect_outcome(&outcomes, &line, true) {
+                    recorder.note(&module_id, &outcomes);
+                }
                 let mut err = std::io::stderr();
                 let _ = writeln!(err, "{line}");
                 let _ = err.flush();
@@ -56,17 +124,19 @@ pub(crate) fn summarize(outcomes: &Outcomes) -> (Vec<ModuleRun>, u64) {
 ///
 /// 成功：宿主子进程跑完打的 RunReport（`{"module_id":…, "status":{"kind":"ok"}, …}`）。
 /// 失败：平台自己的错（`{"ok":false,"module_id":…,"code":"host.spawn_failed"}`）。
-fn collect_outcome(outcomes: &Mutex<HashMap<String, ModuleRun>>, line: &str, from_stderr: bool) {
+fn collect_outcome(
+    outcomes: &Mutex<HashMap<String, ModuleRun>>,
+    line: &str,
+    from_stderr: bool,
+) -> Option<String> {
     let text = line.trim();
     if !text.starts_with('{') {
-        return;
+        return None;
     }
     let Ok(value) = serde_json::from_str::<serde_json::Value>(text) else {
-        return;
+        return None;
     };
-    let Some(module_id) = value.get("module_id").and_then(|id| id.as_str()) else {
-        return;
-    };
+    let module_id = value.get("module_id").and_then(|id| id.as_str())?;
     let ok = value.get("ok").and_then(|ok| ok.as_bool()).unwrap_or(false);
     let kind = value
         .get("status")
@@ -77,7 +147,8 @@ fn collect_outcome(outcomes: &Mutex<HashMap<String, ModuleRun>>, line: &str, fro
     let code = value.get("code").and_then(|code| code.as_str()).map(str::to_string);
     let memory_bytes = value.get("memory_bytes").and_then(|bytes| bytes.as_u64()).unwrap_or(0);
     let fuel_used = value.get("fuel_used").and_then(|fuel| fuel.as_u64()).unwrap_or(0);
-    let Ok(mut map) = outcomes.lock() else { return };
+    let Ok(mut map) = outcomes.lock() else { return None };
+    let fresh = !map.contains_key(module_id);
     let entry = map.entry(module_id.to_string()).or_insert_with(|| ModuleRun {
         module_id: module_id.to_string(),
         ok: true,
@@ -96,6 +167,7 @@ fn collect_outcome(outcomes: &Mutex<HashMap<String, ModuleRun>>, line: &str, fro
     }
     entry.memory_bytes = entry.memory_bytes.max(memory_bytes);
     entry.fuel_used = entry.fuel_used.max(fuel_used);
+    fresh.then(|| module_id.to_string())
 }
 
 #[cfg(test)]
