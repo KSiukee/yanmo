@@ -10,6 +10,7 @@ import {
   moduleSetBackground,
   moduleStop,
   modulesList,
+  modulesPanic,
   type ModuleCard,
   type ModuleStatus,
 } from "../api/modules";
@@ -152,6 +153,15 @@ function isRunning(card: ModuleCard): boolean {
   return isRunningId(card.id);
 }
 
+/** 恐慌按钮：先问一句，再停用所有第三方模块（官方模块与稿子照常）。 */
+function panicModules() {
+  if (!window.confirm(t("modules.panic_confirm"))) return;
+  void act(async () => {
+    const frozen = await modulesPanic();
+    note.value = t("modules.panic_done", { count: frozen });
+  });
+}
+
 // 导入流程（挑包 / 预览 / 确认 / 取消）在 useModuleImport 里；这里只把结果贴回列表。
 const {
   preview,
@@ -178,6 +188,7 @@ onUnmounted(() => {
         :busy="busy"
         :offline="offline"
         @offline="toggleOffline"
+        @panic="panicModules"
         @mirror-all="mirrorAll"
         @import="pickImport"
         @refresh="load"

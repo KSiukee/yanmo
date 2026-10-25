@@ -30,6 +30,9 @@ use crate::time::now_millis;
 /// 读记录时的列顺序（与 [`decode`] 的参数顺序一一对应）。
 const COLS: &str = "manifest, granted, enabled, certified, installed_at, updated_at";
 
+/// 官方模块的保留前缀（随本体发布的那一批；恐慌按钮不动它们）。
+pub const OFFICIAL_PREFIX: &str = "app.yanmo.";
+
 fn map_manifest_error(error: ManifestError) -> Error {
     Error::invalid_with(
         codes::MODULE_MANIFEST_INVALID,
@@ -73,6 +76,31 @@ fn encode_grant(granted: &ModuleCapabilities) -> String {
 }
 
 impl Store {
+    /// 恐慌按钮：**一键停用所有第三方模块**（核心与稿子照常可用）。
+    ///
+    /// 只改 `enabled`（与「冻结」同一个开关）：不卸载、不删数据、不碰稿子；
+    /// 官方模块（`app.yanmo.` 前缀，随本体发布的那一批）不动。
+    /// 返回停用了几个。
+    pub fn panic_modules(&mut self) -> Result<usize> {
+        let enabled: Vec<String> = {
+            let mut stmt =
+                self.conn.prepare("SELECT id FROM modules WHERE enabled = 1 ORDER BY id")?;
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            rows
+        };
+        let mut frozen = 0;
+        for id in enabled {
+            if id.starts_with(OFFICIAL_PREFIX) {
+                continue;
+            }
+            self.set_module_enabled(&id, false)?;
+            frozen += 1;
+        }
+        Ok(frozen)
+    }
+
     /// 安装一个模块：校验清单与授予，落注册表，**不碰模块文件**（导入闸在另一条线）。
     ///
     /// 重复安装同一个 id 会被拒（升级走更新纪律，不在这里悄悄覆盖）。

@@ -60,6 +60,9 @@ export interface ImportPreview {
 
 export const modulesList = () => call<ModuleCard[]>(COMMANDS.modulesList);
 
+/** 恐慌按钮：停用所有第三方模块（官方模块与稿子照常）。返回停用了几个。 */
+export const modulesPanic = () => call<number>(COMMANDS.modulesPanic);
+
 export const moduleSetEnabled = (module_id: string, enabled: boolean) =>
   call<void>(COMMANDS.moduleSetEnabled, { module_id, enabled });
 
@@ -312,12 +315,29 @@ export interface NetworkSummary {
   last_result: string;
 }
 
+/** 读账里的一本书（最近 24 小时）。 */
+export interface ReadBookView {
+  work_id: number;
+  title: string | null;
+  reads: number;
+  chars: number;
+}
+
+/** 一个模块最近 24 小时的读账小结（核心观测）。 */
+export interface ReadSummaryView {
+  reads: number;
+  denied: number;
+  chars: number;
+  books: ReadBookView[];
+}
+
 /** 事实页的整份视图：注册表那一行 + 核心观测 + 壳观测。 */
 export interface ModuleFactsView {
   card: ModuleCard;
   facts: ModuleFacts;
   program_bytes: number;
   network: NetworkSummary;
+  reads: ReadSummaryView;
   running: boolean;
   idle_seconds: number;
 }

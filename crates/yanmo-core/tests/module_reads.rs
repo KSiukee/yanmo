@@ -178,3 +178,51 @@ fn unknown_modules_cannot_get_a_reader() {
         codes::MODULE_NOT_FOUND
     );
 }
+
+/// 读账：**读到的和被拒的都要留痕**（被拒也是事实，面板要能说"它试过"）。
+#[test]
+fn the_read_log_records_both_what_was_read_and_what_was_refused() {
+    use yanmo_core::store::{recent_entries, ModuleIpcHandler, ReadLog, READ_LOG_FILE};
+    use yanmo_proto::ipc::ReadHandler;
+
+    let (dir, mut store) = fresh();
+    let (work, chapter) = seeded(&mut store);
+    store.install_module(&manifest(), &grant(&[CoreDataArea::Body])).unwrap();
+
+    let log = ReadLog::new(dir.path().join(READ_LOG_FILE));
+    {
+        let second = Store::open(dir.path().join("yanmo.db")).unwrap();
+        let mut handler = ModuleIpcHandler::new(second, ID).with_read_log(log.clone());
+        let body = handler.read(CoreDataArea::Body, Some(&chapter.to_string())).unwrap();
+        assert!(body.contains("第一章的正文"));
+        // 大纲没授予：门卫拒了它，这一笔也要进账
+        let refused = handler.read(CoreDataArea::Outline, Some(&work.to_string())).unwrap_err();
+        assert_eq!(refused.code, codes::MODULE_CAPABILITY_DENIED);
+    }
+
+    let entries = recent_entries(log.path(), 10);
+    assert_eq!(entries.len(), 2, "{entries:?}");
+    assert_eq!(entries[0].area, "body");
+    assert_eq!(entries[0].work, Some(work), "正文的节点 id 要换算成书");
+    assert_eq!(entries[0].chars, "第一章的正文。".chars().count() as u64);
+    assert!(entries[0].allowed());
+    assert_eq!(entries[1].area, "outline");
+    assert_eq!(entries[1].outcome, "denied");
+    assert_eq!(entries[1].work, Some(work));
+    assert_eq!(entries[1].code.as_deref(), Some(codes::MODULE_CAPABILITY_DENIED));
+}
+
+/// 恐慌按钮：**只停第三方**——官方模块（`app.yanmo.` 前缀）与稿子照常。
+#[test]
+fn the_panic_button_freezes_third_party_modules_only() {
+    let (_dir, mut store) = fresh();
+    let mut official = manifest();
+    official.id = "app.yanmo.official".to_string();
+    store.install_module(&manifest(), &grant(&[])).unwrap();
+    store.install_module(&official, &grant(&[])).unwrap();
+
+    assert_eq!(store.panic_modules().unwrap(), 1, "只停第三方那一个");
+    assert!(!store.module_card(ID).unwrap().enabled);
+    assert!(store.module_card("app.yanmo.official").unwrap().enabled, "官方模块不动");
+    assert_eq!(store.panic_modules().unwrap(), 0, "再按一次没有可停的了");
+}

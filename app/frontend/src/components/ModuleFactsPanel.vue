@@ -56,6 +56,19 @@ const summary = computed(() => {
   return [state, data, runs, net].join(" · ");
 });
 
+/** 读过的书 → 一句「《长夜》12 次、《旧稿》3 次」。 */
+const booksLine = computed(() => {
+  const books = view.value?.reads.books ?? [];
+  return books
+    .map((book) =>
+      t("facts.book_item", {
+        title: book.title ?? t("facts.book_unknown", { id: book.work_id }),
+        reads: book.reads,
+      }),
+    )
+    .join(t("common.list_separator"));
+});
+
 /** 声明的能力（模块自报的那一份）。 */
 const declared = computed(() => {
   const current = view.value;
@@ -98,6 +111,13 @@ const declared = computed(() => {
         <li>{{ t("facts.runs", { count: view.facts.runs, when: whenText(view.facts.last_run_at) }) }}</li>
         <li>{{ t("facts.rejected", { count: view.facts.rejected }) }}</li>
         <li>
+          {{ t("facts.reads", {
+            reads: view.reads.reads,
+            chars: view.reads.chars,
+            denied: view.reads.denied,
+          }) }}
+        </li>
+        <li>
           {{ t("facts.network_count", {
             requests: view.network.requests,
             ok: view.network.ok,
@@ -117,7 +137,8 @@ const declared = computed(() => {
       <ul class="facts__rows">
         <li>{{ t("facts.declared", { list: declared }) }}</li>
         <li>{{ t("facts.actual_network", { requests: view.network.requests, failed: view.network.failed }) }}</li>
-        <li class="facts__note">{{ t("facts.read_ledger_missing") }}</li>
+        <li v-if="view.reads.books.length === 0" class="facts__note">{{ t("facts.reads_none") }}</li>
+        <li v-if="view.reads.books.length > 0">{{ t("facts.reads_books", { list: booksLine }) }}</li>
         <li class="facts__note">{{ t("facts.cross_read_missing") }}</li>
       </ul>
 

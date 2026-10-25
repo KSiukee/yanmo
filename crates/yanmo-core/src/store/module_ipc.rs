@@ -12,72 +12,133 @@ use serde_json::{json, Value};
 use yanmo_proto::capability::CoreDataArea;
 use yanmo_proto::ipc::{IpcError, ReadHandler};
 
+use super::module_read_log::{ReadLog, ReadLogEntry};
 use super::{ModuleOutlineRow, NodeSummary, ShelfEntry, Store};
 use crate::error::{codes, Error, Result};
+
+/// 一次成功读取：给模块的 JSON + 记账用的两个口径。
+struct Served {
+    json: String,
+    /// 有意义的字数（正文＝正文字数；其它区域 0，体积看 `json.len()`）。
+    chars: u64,
+    /// 这次读落在哪本书上（定位不到就是 `None`）。
+    work: Option<i64>,
+}
 
 /// 把一个真实 `Store` 的只读视图接在 IPC 上。
 pub struct ModuleIpcHandler {
     store: Store,
     module_id: String,
+    /// 读账（可选：命令行/测试里不接也能跑，只是不留痕）。
+    log: Option<ReadLog>,
 }
 
 impl ModuleIpcHandler {
     pub fn new(store: Store, module_id: impl Into<String>) -> Self {
-        Self { store, module_id: module_id.into() }
+        Self { store, module_id: module_id.into(), log: None }
     }
-}
 
-impl ReadHandler for ModuleIpcHandler {
-    fn read(&mut self, area: CoreDataArea, arg: Option<&str>) -> std::result::Result<String, IpcError> {
-        let reader = self.store.module_reader(&self.module_id).map_err(to_ipc)?;
+    /// 接上读账（启动器按"数据目录/read-audit.jsonl"建一个）。
+    pub fn with_read_log(mut self, log: ReadLog) -> Self {
+        self.log = Some(log);
+        self
+    }
+
+    /// 这次请求大概落在哪本书上（正文的参数是节点 id，要换算成书）。
+    ///
+    /// 只用于记账：算不出来就是 `None`，**不影响读本身**。
+    fn work_hint(&self, area: CoreDataArea, arg: Option<&str>) -> Option<i64> {
+        let id = arg.and_then(|value| value.parse::<i64>().ok())?;
         match area {
+            CoreDataArea::Works => None,
+            CoreDataArea::Body => self.store.node_work(id).ok(),
+            _ => Some(id),
+        }
+    }
+
+    fn serve(&self, area: CoreDataArea, arg: Option<&str>) -> std::result::Result<Served, IpcError> {
+        let reader = self.store.module_reader(&self.module_id).map_err(to_ipc)?;
+        Ok(match area {
             CoreDataArea::Works => {
                 let entries = reader.works().map_err(to_ipc)?;
-                to_json(entries.iter().map(work_json).collect::<Vec<_>>())
+                let json = to_json(entries.iter().map(work_json).collect::<Vec<_>>())?;
+                Served { json, chars: 0, work: None }
             }
             CoreDataArea::Tree => {
                 let work_id = id_arg(arg)?;
                 let nodes = reader.tree(work_id).map_err(to_ipc)?;
-                to_json(nodes.iter().map(node_json).collect::<Vec<_>>())
+                let json = to_json(nodes.iter().map(node_json).collect::<Vec<_>>())?;
+                Served { json, chars: 0, work: Some(work_id) }
             }
             CoreDataArea::Body => {
                 let node_id = id_arg(arg)?;
                 let body = reader.body(node_id).map_err(to_ipc)?;
-                to_json(body)
+                let chars = body.chars().count() as u64;
+                let work = self.store.node_work(node_id).ok();
+                Served { json: to_json(body)?, chars, work }
             }
             CoreDataArea::Outline => {
                 let work_id = id_arg(arg)?;
                 let rows = reader.outline(work_id).map_err(to_ipc)?;
-                to_json(rows.iter().map(outline_json).collect::<Vec<_>>())
+                let json = to_json(rows.iter().map(outline_json).collect::<Vec<_>>())?;
+                Served { json, chars: 0, work: Some(work_id) }
             }
             CoreDataArea::Fragments => {
                 let work_id = id_arg(arg)?;
                 let fragments = reader.fragments(work_id).map_err(to_ipc)?;
-                to_json(fragments)
+                let json = to_json(fragments)?;
+                Served { json, chars: 0, work: Some(work_id) }
             }
             CoreDataArea::Entities => {
                 let work_id = id_arg(arg)?;
                 let cards = reader.entities(work_id).map_err(to_ipc)?;
-                to_json(cards)
+                let json = to_json(cards)?;
+                Served { json, chars: 0, work: Some(work_id) }
             }
             CoreDataArea::Scenes => {
                 let work_id = id_arg(arg)?;
                 let scenes = reader.scenes(work_id).map_err(to_ipc)?;
-                to_json(
+                let json = to_json(
                     scenes
                         .iter()
                         .map(|(node_id, title, fields)| {
                             json!({ "node_id": node_id, "title": title, "fields": fields })
                         })
                         .collect::<Vec<Value>>(),
-                )
+                )?;
+                Served { json, chars: 0, work: Some(work_id) }
             }
             CoreDataArea::Foreshadows => {
                 let work_id = id_arg(arg)?;
                 let rows = reader.foreshadows(work_id).map_err(to_ipc)?;
-                to_json(rows)
+                let json = to_json(rows)?;
+                Served { json, chars: 0, work: Some(work_id) }
             }
+        })
+    }
+}
+
+impl ReadHandler for ModuleIpcHandler {
+    fn read(&mut self, area: CoreDataArea, arg: Option<&str>) -> std::result::Result<String, IpcError> {
+        let hint = self.work_hint(area, arg);
+        let served = self.serve(area, arg);
+        if let Some(log) = &self.log {
+            let entry = match &served {
+                Ok(served) => ReadLogEntry::ok(
+                    &self.module_id,
+                    area.as_str(),
+                    served.work.or(hint),
+                    served.chars,
+                    served.json.len() as u64,
+                ),
+                Err(error) => {
+                    ReadLogEntry::denied(&self.module_id, area.as_str(), hint, &error.code)
+                }
+            };
+            // 记账是旁路：写不进去（磁盘满 / 没权限）只丢这一行，**绝不因此挡住读**。
+            let _ = log.record(&entry);
         }
+        served.map(|served| served.json)
     }
 }
 

@@ -47,6 +47,18 @@ impl ImportStage {
     }
 }
 
+/// 恐慌按钮：**一键停用所有第三方模块**（核心与稿子照常可用）。
+///
+/// 先停整个平台（再改注册表），只改「启用」这一格：不卸载、不删数据。
+#[tauri::command(rename_all = "snake_case")]
+pub fn modules_panic(
+    data: State<'_, AppData>,
+    runs: State<'_, ModuleRuns>,
+) -> Result<usize, ApiError> {
+    runs.stop_platform()?;
+    data.with_store(|store: &mut Store| store.panic_modules())
+}
+
 /// 管理页列表（置顶 → 收藏 → 安装顺序）。
 #[tauri::command]
 pub fn modules_list(data: State<'_, AppData>) -> Result<Vec<ModuleCard>, ApiError> {

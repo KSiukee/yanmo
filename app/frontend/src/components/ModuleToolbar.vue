@@ -7,6 +7,7 @@ import { t } from "../locales/index.ts";
 defineProps<{ busy: boolean; offline: boolean }>();
 const emit = defineEmits<{
   offline: [];
+  panic: [];
   mirrorAll: [];
   import: [];
   refresh: [];
@@ -24,6 +25,15 @@ const emit = defineEmits<{
       @click="emit('offline')"
     >
       {{ offline ? t("modules.global_offline_on") : t("modules.global_offline_off") }}
+    </button>
+    <button
+      type="button"
+      class="modules__button dialog__button dialog__button--danger"
+      :disabled="busy"
+      :title="t('modules.panic_title')"
+      @click="emit('panic')"
+    >
+      {{ t("modules.panic_button") }}
     </button>
     <button
       type="button"

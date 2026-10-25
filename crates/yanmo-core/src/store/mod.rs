@@ -70,6 +70,7 @@ mod module_package;
 mod module_credentials;
 mod module_management;
 mod module_read;
+mod module_read_log;
 mod module_registry;
 mod node;
 mod naming;
@@ -186,6 +187,9 @@ pub use module_import::{
 pub use module_credentials::CredentialBinding;
 pub use module_management::ModuleCard;
 pub use module_read::{ModuleOutlineRow, ModuleReadApi};
+pub use module_read_log::{
+    recent_entries, summarize, ReadLog, ReadLogEntry, ReadSummary, WorkReads, READ_LOG_FILE,
+};
 pub use question_answer::Answer;
 pub use question_land::{LandReceipt, RoundItem};
 pub use question_defer::Deferral;

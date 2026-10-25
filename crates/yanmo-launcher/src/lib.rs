@@ -134,13 +134,21 @@ pub fn launch(request: &LaunchRequest) -> Result<LaunchReport, LaunchError> {
     let db_path = request.db_path.clone();
     let server_module = module_id.clone();
     let server_token = token.clone();
+    let read_log = yanmo_core::store::ReadLog::new(
+        request
+            .db_path
+            .parent()
+            .map(|dir| dir.join(yanmo_core::store::READ_LOG_FILE))
+            .unwrap_or_else(|| std::path::PathBuf::from(yanmo_core::store::READ_LOG_FILE)),
+    );
     let resident = request.resident;
     let stop_server = Arc::new(AtomicBool::new(false));
     let server_stop = stop_server.clone();
     let server = std::thread::spawn(move || {
         let store = Store::open(&db_path)
             .map_err(|error| IpcError::new(error.code(), error.to_string()))?;
-        let mut handler = ModuleIpcHandler::new(store, server_module);
+        let mut handler =
+            ModuleIpcHandler::new(store, server_module).with_read_log(read_log);
         if resident {
             serve_repeated(
                 listener,

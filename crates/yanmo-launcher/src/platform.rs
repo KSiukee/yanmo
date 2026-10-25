@@ -44,6 +44,14 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
     }
 
     let mut handlers: HashMap<String, ModuleIpcHandler> = HashMap::new();
+    // 读账落在库旁边（跟库走）：每次读一行，模块读不到它、也不影响读本身。
+    let read_log = yanmo_core::store::ReadLog::new(
+        request
+            .db_path
+            .parent()
+            .map(|dir| dir.join(yanmo_core::store::READ_LOG_FILE))
+            .unwrap_or_else(|| PathBuf::from(yanmo_core::store::READ_LOG_FILE)),
+    );
     let mut network_modules: Vec<String> = Vec::new();
     let mut own_data_modules: Vec<String> = Vec::new();
     let mut credentials: HashMap<String, Vec<yanmo_core::store::CredentialBinding>> =
@@ -92,7 +100,7 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
         }
         handlers.insert(
             manifest.id.clone(),
-            ModuleIpcHandler::new(store, manifest.id),
+            ModuleIpcHandler::new(store, manifest.id).with_read_log(read_log.clone()),
         );
     }
     if handlers.is_empty() {
