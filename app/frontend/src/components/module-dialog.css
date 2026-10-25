@@ -35,6 +35,23 @@
   font-weight: 600;
 }
 
+/* 名字同时是「打开事实页」的入口：长得仍像名字，鼠标放上去才看得出能点。 */
+.modules__name--button {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+
+.modules__name--button:hover {
+  color: var(--ym-ink);
+  text-decoration: underline;
+}
+
 .modules__version,
 .modules__meta,
 .modules__desc,

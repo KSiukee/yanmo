@@ -264,7 +264,7 @@ pub fn start_module(
     }
     // 数据被隔离的模块不许跑：它读不到也写不进自己的数据，跑起来只会一路失败。
     // 这里只是**第一道**门——宿主每次 `data_*` 调用都会再读一次隔离账。
-    let module_data = yanmo_core::store::ModuleData::open(data.data_dir().join("modules.db"))?;
+    let mut module_data = yanmo_core::store::ModuleData::open(data.data_dir().join("modules.db"))?;
     if module_data.isolation(module_id)?.is_some() {
         return Err(ApiError::from(yanmo_core::Error::invalid_with(
             yanmo_core::error_codes::codes::MODULE_DATA_ISOLATED,
@@ -284,6 +284,9 @@ pub fn start_module(
 
     runs.ensure_platform(data)?;
     runs.send(&format!("run {module_id}"))?;
+    // 记一次「跑了」：面板上的「跑过几次 / 最后一次」就是这张账；记不进去就不算启动成功
+    //（modules.db 连一次 upsert 都写不进去，模块自己的数据也一定写不进去）。
+    module_data.note_run(module_id)?;
     let mut platform = runs.lock()?;
     let status = platform
         .statuses

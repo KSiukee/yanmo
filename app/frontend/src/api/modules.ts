@@ -282,5 +282,48 @@ export interface MirrorAllReceipt {
 export const moduleDataMirrorAll = () =>
   call<MirrorAllReceipt>(COMMANDS.moduleDataMirrorAll);
 
+/** 核心观测到的这一格的数据事实（透明度面板的第一组）。 */
+export interface ModuleFacts {
+  module_id: string;
+  tables: number;
+  rows: number;
+  data_bytes: number;
+  data_bytes_partial: boolean;
+  db_bytes: number;
+  schema_version: number | null;
+  degraded: boolean;
+  rejected: number;
+  isolated: boolean;
+  isolation_reason: string;
+  mirror_written_at: number;
+  last_run_at: number;
+  runs: number;
+}
+
+/** 出网日志的汇总（壳观测；只覆盖日志窗口里有的记录）。 */
+export interface NetworkSummary {
+  scanned: number;
+  requests: number;
+  ok: number;
+  failed: number;
+  bytes: number;
+  last_at: number;
+  last_host: string;
+  last_result: string;
+}
+
+/** 事实页的整份视图：注册表那一行 + 核心观测 + 壳观测。 */
+export interface ModuleFactsView {
+  card: ModuleCard;
+  facts: ModuleFacts;
+  program_bytes: number;
+  network: NetworkSummary;
+  running: boolean;
+  idle_seconds: number;
+}
+
+export const moduleFacts = (module_id: string) =>
+  call<ModuleFactsView>(COMMANDS.moduleFacts, { module_id });
+
 export const moduleDataRebuild = (module_id: string) =>
   call<ModuleRebuild>(COMMANDS.moduleDataRebuild, { module_id });

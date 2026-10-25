@@ -82,6 +82,8 @@ impl ModuleData {
         )?;
         // 隔离账独立一张表（而不是给健康表加列）：老库打开时自动补上，不需要迁移。
         conn.execute(ISOLATION_TABLE_SQL, [])?;
+        // 使用账：跑过几次、最后一次什么时候（不是模块数据，清除数据也不清它）。
+        conn.execute(super::module_usage::USAGE_TABLE_SQL, [])?;
         let limits = ModuleDataLimits::default();
         let data = Self {
             conn,

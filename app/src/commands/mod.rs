@@ -40,6 +40,8 @@ pub mod module;
 /// 模块凭据：秘密进系统钥匙串，核心只存名字与允许域名。
 pub mod credential;
 pub mod module_data;
+/// 模块事实页：空间 / 行为 / 越界 / 身份四组只读事实（拼装核心与壳的观测，不判断）。
+pub mod module_facts;
 pub mod module_run;
 /// 模块子 WebView：只读静态服务 + 无 Tauri 能力的 remote origin。
 pub mod module_ui;

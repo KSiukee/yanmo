@@ -14,7 +14,9 @@ import {
   type ModuleStatus,
 } from "../api/modules";
 import ModuleCredentials from "./ModuleCredentials.vue";
+import ModuleFactsPanel from "./ModuleFactsPanel.vue";
 import ModuleImportPanel from "./ModuleImportPanel.vue";
+import ModuleToolbar from "./ModuleToolbar.vue";
 import { certificationLabel, readsLabel } from "./moduleLabels";
 import { useModuleActions } from "../composables/useModuleActions";
 import { useModuleImport } from "../composables/useModuleImport";
@@ -28,6 +30,7 @@ const cards = ref<ModuleCard[]>([]);
 const busy = ref(false);
 const note = ref("");
 const credentialFor = ref<string | null>(null);
+const factsFor = ref<string | null>(null);
 const { runs, isRunning: isRunningId, markStarted, markStopped, loadStatuses, dispose } =
   useModuleRuns((status: ModuleStatus) => {
     const emitted = status.emitted.join(" / ");
@@ -171,51 +174,15 @@ onUnmounted(() => {
 <template>
   <div class="modules dialog" @click.self="closeDialog">
     <section class="modules__box dialog__box" role="dialog" aria-modal="true">
-      <header class="modules__head dialog__head">
-        <h2 class="modules__title dialog__title">{{ t("modules.title") }}</h2>
-        <button
-          type="button"
-          class="modules__button dialog__button"
-          :disabled="busy"
-          @click="toggleOffline"
-        >
-          {{
-            offline ? t("modules.global_offline_on") : t("modules.global_offline_off")
-          }}
-        </button>
-        <button
-          type="button"
-          class="modules__button dialog__button"
-          :disabled="busy"
-          @click="mirrorAll"
-        >
-          {{ t("modules.mirror_all_button") }}
-        </button>
-        <button
-          type="button"
-          class="modules__button dialog__button"
-          :disabled="busy"
-          @click="pickImport"
-        >
-          {{ t("modules.import") }}
-        </button>
-        <button
-          type="button"
-          class="modules__button dialog__button"
-          :disabled="busy"
-          @click="load"
-        >
-          {{ t("modules.refresh") }}
-        </button>
-        <button
-          type="button"
-          class="modules__button dialog__button"
-          :title="t('modules.close_title')"
-          @click="closeDialog"
-        >
-          {{ t("common.close") }}
-        </button>
-      </header>
+      <ModuleToolbar
+        :busy="busy"
+        :offline="offline"
+        @offline="toggleOffline"
+        @mirror-all="mirrorAll"
+        @import="pickImport"
+        @refresh="load"
+        @close="closeDialog"
+      />
 
       <p v-if="note" class="modules__note dialog__note">{{ note }}</p>
 
@@ -240,7 +207,14 @@ onUnmounted(() => {
           :class="{ 'modules__card--frozen': !card.enabled }"
         >
           <div class="modules__row">
-            <span class="modules__name">{{ card.name }}</span>
+            <button
+              type="button"
+              class="modules__name modules__name--button"
+              :title="t('facts.open')"
+              @click="factsFor = factsFor === card.id ? null : card.id"
+            >
+              {{ card.name }}
+            </button>
             <span class="modules__version">v{{ card.version }}</span>
             <span class="modules__badge">
               {{ certificationLabel(card) }}
@@ -382,6 +356,12 @@ onUnmounted(() => {
             v-if="credentialFor === card.id"
             :module-id="card.id"
             @close="credentialFor = null"
+          />
+          <ModuleFactsPanel
+            v-if="factsFor === card.id"
+            :module-id="card.id"
+            :module-name="card.name"
+            @close="factsFor = null"
           />
         </li>
       </ul>
