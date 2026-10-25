@@ -72,6 +72,11 @@ pub(super) fn http_get(
             return count_failure(caller);
         }
     };
+    if !host_allowed(caller, &host) {
+        log_denied(caller, &host, "host.network_denied", "host is not in the allowlist");
+        audit(caller, &host, 0, None, "host.network_denied");
+        return count_failure(caller);
+    }
     let max = caller.data().max_network_bytes;
     match network::fetch(&url, max) {
         Ok(body) => write_body(caller, out_ptr, out_cap, &body, &host, None),
@@ -124,6 +129,11 @@ pub(super) fn http_get_auth(
     let Some(host) = parsed.host_str() else {
         return count_failure(caller);
     };
+    if !host_allowed(caller, host) {
+        log_denied(caller, host, "host.network_denied", "host is not in the allowlist");
+        audit(caller, host, 0, Some(&name), "host.network_denied");
+        return count_failure(caller);
+    }
     if !spec.allows(host) {
         log_denied(
             caller,
@@ -173,6 +183,11 @@ fn read_string(
     String::from_utf8(bytes).ok()
 }
 
+fn host_allowed(caller: &Caller<'_, HostState>, host: &str) -> bool {
+    let allowed = &caller.data().allowed_hosts;
+    allowed.is_empty() || allowed.iter().any(|spec| yanmo_vault::allows_host(spec, host))
+}
+
 fn quota_left(caller: &Caller<'_, HostState>) -> bool {
     caller.data().network_requests < caller.data().max_network_requests
 }
@@ -196,6 +211,15 @@ fn write_body(
     }
     if body.len() > out_cap as usize {
         audit(caller, host, 0, credential, "host.output_too_small");
+        return count_failure(caller);
+    }
+    if caller
+        .data()
+        .network_bytes
+        .saturating_add(body.len())
+        > caller.data().max_total_network_bytes
+    {
+        audit(caller, host, 0, credential, "host.network_quota");
         return count_failure(caller);
     }
     let Some(Extern::Memory(memory)) = caller.get_export("memory") else {

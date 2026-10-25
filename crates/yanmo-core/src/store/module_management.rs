@@ -163,6 +163,54 @@ impl Store {
         Ok(())
     }
 
+    /// 全局域名白名单；空 = 不额外限制（仍受私网/回环过滤）。
+    pub fn network_allowlist(&self) -> Result<Vec<String>> {
+        let raw: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'network.allowlist'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(raw
+            .and_then(|text| serde_json::from_str::<Vec<String>>(&text).ok())
+            .unwrap_or_default())
+    }
+
+    /// 写全局域名白名单（去重、小写、校验）；空数组表示不额外限制。
+    pub fn set_network_allowlist(&mut self, hosts: &[String]) -> Result<()> {
+        if hosts.len() > 100 {
+            return Err(Error::invalid_with(
+                codes::MODULE_CREDENTIAL_INVALID,
+                [("field", "allowlist".to_string())],
+            ));
+        }
+        let mut clean = Vec::new();
+        for host in hosts {
+            let host = normalize_allowlist_host(host)?;
+            if !clean.contains(&host) {
+                clean.push(host);
+            }
+        }
+        let now = now_millis();
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES('network.allowlist', ?1, ?2)",
+            params![serde_json::to_string(&clean).unwrap_or_else(|_| "[]".to_string()), now],
+        )?;
+        Self::record_in(
+            &self.device_id,
+            &tx,
+            "settings",
+            0,
+            "network_allowlist",
+            serde_json::json!({ "hosts": clean }),
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// 模块级联网开关：改的是**授予**；清单没声明 network 的一律拒。
     pub fn set_module_network(&mut self, module_id: &str, network: bool) -> Result<()> {
         let record = self.module_record(module_id)?;
@@ -291,4 +339,28 @@ fn decode(
         installed_at,
         updated_at,
     })
+}
+
+fn normalize_allowlist_host(host: &str) -> Result<String> {
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    if host.is_empty()
+        || host.len() > 253
+        || host.contains("://")
+        || host.contains('/')
+        || host.contains(' ')
+        || host.contains(':')
+    {
+        return Err(Error::invalid_with(
+            codes::MODULE_CREDENTIAL_INVALID,
+            [("field", "allowlist".to_string())],
+        ));
+    }
+    let bare = host.strip_prefix("*.").unwrap_or(&host);
+    if bare.is_empty() || bare.contains('*') || !bare.contains('.') {
+        return Err(Error::invalid_with(
+            codes::MODULE_CREDENTIAL_INVALID,
+            [("field", "allowlist".to_string())],
+        ));
+    }
+    Ok(host)
 }

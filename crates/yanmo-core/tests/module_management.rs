@@ -216,3 +216,28 @@ fn credential_hosts_are_narrow() {
     assert!(store.add_module_credential(A, "bad/name", "api.example.com").is_err());
     assert!(store.add_module_credential("app.missing", "x", "api.example.com").is_err());
 }
+
+#[test]
+fn network_allowlist_is_normalized_and_narrow() {
+    let (_dir, mut store) = fresh();
+    assert!(store.network_allowlist().unwrap().is_empty());
+    store
+        .set_network_allowlist(&[
+            "API.Example.com".to_string(),
+            "api.example.com".to_string(),
+            "*.foo.com.".to_string(),
+        ])
+        .unwrap();
+    assert_eq!(
+        store.network_allowlist().unwrap(),
+        vec!["api.example.com", "*.foo.com"]
+    );
+    assert!(store
+        .set_network_allowlist(&["https://api.example.com".to_string()])
+        .is_err());
+    assert!(store
+        .set_network_allowlist(&["localhost".to_string()])
+        .is_err());
+    store.set_network_allowlist(&[]).unwrap();
+    assert!(store.network_allowlist().unwrap().is_empty());
+}

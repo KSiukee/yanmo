@@ -119,6 +119,26 @@ pub fn network_set_offline(
     Ok(offline)
 }
 
+/// 全局域名白名单：空 = 不额外限制；写入后停平台，下次启动生效。
+#[tauri::command(rename_all = "snake_case")]
+pub fn network_allowlist(data: State<'_, AppData>) -> Result<Vec<String>, ApiError> {
+    data.with_store(|store: &mut Store| store.network_allowlist())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn network_set_allowlist(
+    data: State<'_, AppData>,
+    runs: State<'_, ModuleRuns>,
+    hosts: Vec<String>,
+) -> Result<Vec<String>, ApiError> {
+    let clean = data.with_store(|store: &mut Store| {
+        store.set_network_allowlist(&hosts)?;
+        store.network_allowlist()
+    })?;
+    runs.stop_platform()?;
+    Ok(clean)
+}
+
 /// 模块级联网开关：改授予，清单没声明的一律拒；切完停平台，下次启动生效。
 #[tauri::command(rename_all = "snake_case")]
 pub fn module_set_network(

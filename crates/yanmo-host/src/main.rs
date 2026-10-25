@@ -22,7 +22,8 @@ use yanmo_host::{
     ModulePackage, SandboxConfig,
 };
 use yanmo_ipc::Client;
-use yanmo_vault::CredentialSpec;
+
+mod credential_args;
 
 fn main() -> ExitCode {
     match run() {
@@ -45,6 +46,9 @@ fn run() -> Result<(), HostError> {
     let idle_secs = number_of(&args, "--idle-secs").unwrap_or(300).clamp(1, 3600);
     let credentials_json = value_of(&args, "--credentials-json").map(str::to_string);
     let network_log = value_of(&args, "--network-log").map(PathBuf::from);
+    let network_allowlist: Vec<String> = value_of(&args, "--network-allowlist")
+        .map(|value| value.split(',').filter(|host| !host.is_empty()).map(str::to_string).collect())
+        .unwrap_or_default();
     let network_modules: Vec<String> = value_of(&args, "--network-modules")
         .map(|value| value.split(',').filter(|id| !id.is_empty()).map(str::to_string).collect())
         .unwrap_or_default();
@@ -92,6 +96,8 @@ fn run() -> Result<(), HostError> {
             .unwrap_or(defaults.max_network_requests as u64) as usize,
         max_network_bytes: number_of(&args, "--max-network-bytes")
             .unwrap_or(defaults.max_network_bytes as u64) as usize,
+        max_total_network_bytes: number_of(&args, "--max-total-network-bytes")
+            .unwrap_or(defaults.max_total_network_bytes as u64) as usize,
     };
     let token_stdin = args.iter().any(|arg| arg == "--token-stdin");
     let token = if token_stdin {
@@ -224,6 +230,11 @@ fn run() -> Result<(), HostError> {
             if let Some(log) = network_log.as_ref() {
                 command.arg("--network-log").arg(log);
             }
+            if !network_allowlist.is_empty() {
+                command
+                    .arg("--network-allowlist")
+                    .arg(network_allowlist.join(","));
+            }
             #[cfg(windows)]
             {
                 use std::os::windows::process::CommandExt;
@@ -318,11 +329,18 @@ fn run() -> Result<(), HostError> {
         }
     }
 
-    let credentials = credentials_for(module_id_arg.as_deref(), credentials_json.as_deref());
+    let credentials = credential_args::credentials_for(module_id_arg.as_deref(), credentials_json.as_deref());
     let report = if credentials.is_empty() && network_log.is_none() {
         run_package_with_core(&package, config, client)?
     } else {
-        run_package_with_credentials(&package, config, client, credentials, network_log.clone())?
+        run_package_with_credentials(
+            &package,
+            config,
+            client,
+            credentials,
+            network_log.clone(),
+            network_allowlist.clone(),
+        )?
     };
     println!(
         "{}",
@@ -339,20 +357,6 @@ fn run() -> Result<(), HostError> {
 }
 
 
-
-fn credentials_for(
-    module_id: Option<&str>,
-    raw: Option<&str>,
-) -> Vec<CredentialSpec> {
-    let (Some(module_id), Some(raw)) = (module_id, raw) else {
-        return Vec::new();
-    };
-    let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, Vec<CredentialSpec>>>(raw)
-    else {
-        return Vec::new();
-    };
-    map.get(module_id).cloned().unwrap_or_default()
-}
 
 fn reap(children: &mut HashMap<String, std::process::Child>) {
     let done: Vec<String> = children

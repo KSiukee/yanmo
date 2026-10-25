@@ -47,6 +47,7 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
     let mut network_modules: Vec<String> = Vec::new();
     let mut credentials: HashMap<String, Vec<yanmo_core::store::CredentialBinding>> =
         HashMap::new();
+    let mut allowlist: Option<Vec<String>> = None;
     for entry in fs::read_dir(&request.modules_root).map_err(|error| {
         LaunchError::new(LaunchError::MANIFEST, format!("{}: {error}", request.modules_root.display()))
     })? {
@@ -66,6 +67,9 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
         let store = Store::open(&request.db_path)
             .map_err(|error| LaunchError::new(LaunchError::DB, error.to_string()))?;
         let offline = store.network_offline().unwrap_or(false);
+        if allowlist.is_none() {
+            allowlist = Some(store.network_allowlist().unwrap_or_default());
+        }
         if !offline
             && store
                 .module_card(&manifest.id)
@@ -128,6 +132,9 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
         command
             .arg("--credentials-json")
             .arg(serde_json::to_string(&credentials).unwrap_or_else(|_| "{}".to_string()));
+    }
+    if let Some(hosts) = allowlist.as_ref().filter(|hosts| !hosts.is_empty()) {
+        command.arg("--network-allowlist").arg(hosts.join(","));
     }
     if let Some(parent) = request.db_path.parent() {
         command

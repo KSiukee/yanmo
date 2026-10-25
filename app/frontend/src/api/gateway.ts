@@ -219,6 +219,8 @@ export const COMMANDS = {
   networkAuditRecent: "network_audit_recent",
   networkAuditExport: "network_audit_export",
   networkSetOffline: "network_set_offline",
+  networkAllowlist: "network_allowlist",
+  networkSetAllowlist: "network_set_allowlist",
   moduleUninstall: "module_uninstall",
   moduleImportPick: "module_import_pick",
   moduleImportConfirm: "module_import_confirm",

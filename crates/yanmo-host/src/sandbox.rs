@@ -69,7 +69,9 @@ pub(super) struct HostState {
     pub(super) network_bytes: usize,
     pub(super) max_network_requests: usize,
     pub(super) max_network_bytes: usize,
+    pub(super) max_total_network_bytes: usize,
     pub(super) credentials: Vec<CredentialSpec>,
+    pub(super) allowed_hosts: Vec<String>,
     pub(super) network_log: Option<PathBuf>,
     pub(super) declared: BTreeSet<CoreDataArea>,
     pub(super) max_read_arg_bytes: usize,
@@ -94,7 +96,7 @@ pub fn run_package_with_core(
     core: Option<Client>,
 ) -> HostResult<RunReport> {
     let core = core.map(|client| Arc::new(Mutex::new(CoreLink::from_client(client))));
-    run_package_inner(package, config, core, None, &[], None)
+    run_package_inner(package, config, core, None, &[], None, &[])
 }
 
 /// 跑一次模块，带**凭据绑定清单**（宿主代理用；秘密不在这里，只有名字+域名）。
@@ -104,9 +106,18 @@ pub fn run_package_with_credentials(
     core: Option<Client>,
     credentials: Vec<CredentialSpec>,
     network_log: Option<PathBuf>,
+    allowed_hosts: Vec<String>,
 ) -> HostResult<RunReport> {
     let core = core.map(|client| Arc::new(Mutex::new(CoreLink::from_client(client))));
-    run_package_inner(package, config, core, None, &credentials, network_log.as_deref())
+    run_package_inner(
+        package,
+        config,
+        core,
+        None,
+        &credentials,
+        network_log.as_deref(),
+        &allowed_hosts,
+    )
 }
 
 /// 同 [`run_package_with_core`]，但核心连接可以**跨多次运行复用**（常驻宿主用）。
@@ -115,7 +126,7 @@ pub fn run_package_with_core_shared(
     config: SandboxConfig,
     core: Option<Arc<Mutex<CoreLink>>>,
 ) -> HostResult<RunReport> {
-    run_package_inner(package, config, core, None, &[], None)
+    run_package_inner(package, config, core, None, &[], None, &[])
 }
 
 /// 同 [`run_package_with_core_shared`]，但带一个协作取消标志：
@@ -126,7 +137,7 @@ pub fn run_package_with_core_shared_cancellable(
     core: Option<Arc<Mutex<CoreLink>>>,
     cancel: Option<Arc<AtomicBool>>,
 ) -> HostResult<RunReport> {
-    run_package_inner(package, config, core, cancel, &[], None)
+    run_package_inner(package, config, core, cancel, &[], None, &[])
 }
 
 fn run_package_inner(
@@ -136,6 +147,7 @@ fn run_package_inner(
     cancel: Option<Arc<AtomicBool>>,
     credentials: &[CredentialSpec],
     network_log: Option<&Path>,
+    allowed_hosts: &[String],
 ) -> HostResult<RunReport> {
     config.validate()?;
     let declared: BTreeSet<CoreDataArea> =
@@ -182,7 +194,9 @@ fn run_package_inner(
         network_bytes: 0,
         max_network_requests: config.max_network_requests,
         max_network_bytes: config.max_network_bytes,
+        max_total_network_bytes: config.max_total_network_bytes,
         credentials: credentials.to_vec(),
+        allowed_hosts: allowed_hosts.to_vec(),
         network_log: network_log.map(Path::to_path_buf),
         declared,
         max_read_arg_bytes: config.max_read_arg_bytes,

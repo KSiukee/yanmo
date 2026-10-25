@@ -29,6 +29,8 @@ pub struct SandboxConfig {
     pub max_network_requests: usize,
     /// 单次网络响应正文上限（字节）
     pub max_network_bytes: usize,
+    /// 一次运行累计网络正文上限（字节）
+    pub max_total_network_bytes: usize,
 }
 
 impl Default for SandboxConfig {
@@ -45,6 +47,7 @@ impl Default for SandboxConfig {
             allow_network: false,
             max_network_requests: 8,
             max_network_bytes: 512 * 1024,
+            max_total_network_bytes: 2 * 1024 * 1024,
         }
     }
 }

@@ -6,6 +6,8 @@ import {
   credentialAdd,
   credentialRemove,
   credentialsList,
+  networkAllowlist,
+  networkSetAllowlist,
   networkAuditExport,
   networkAuditRecent,
   type CredentialBinding,
@@ -25,10 +27,12 @@ const note = ref("");
 const audit = ref<NetworkAuditRow[]>([]);
 const auditModule = ref("");
 const auditResult = ref("");
+const allowlist = ref("");
 
 async function load() {
   try {
     bindings.value = await credentialsList(props.moduleId);
+    allowlist.value = (await networkAllowlist()).join("\n");
     audit.value = await networkAuditRecent(
       50,
       auditModule.value.trim() || null,
@@ -57,6 +61,23 @@ async function add() {
     secret.value = "";
     name.value = "";
     note.value = t("credentials.added");
+    await load();
+  } catch (error) {
+    note.value = t("credentials.save_failed", { detail: String(error) });
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function saveAllowlist() {
+  busy.value = true;
+  try {
+    const hosts = allowlist.value
+      .split(/[\n,]+/)
+      .map((host) => host.trim())
+      .filter(Boolean);
+    await networkSetAllowlist(hosts);
+    note.value = t("credentials.allowlist_saved");
     await load();
   } catch (error) {
     note.value = t("credentials.save_failed", { detail: String(error) });
@@ -139,6 +160,17 @@ onMounted(load);
       </button>
     </div>
     <p v-if="note" class="credentials__note">{{ note }}</p>
+    <p class="credentials__hint">{{ t("credentials.allowlist_hint") }}</p>
+    <textarea
+      v-model="allowlist"
+      class="credentials__allowlist"
+      rows="3"
+      :placeholder="t('credentials.allowlist_placeholder')"
+      :disabled="busy"
+    ></textarea>
+    <button type="button" class="credentials__button" :disabled="busy" @click="saveAllowlist">
+      {{ t("credentials.allowlist_save") }}
+    </button>
     <p class="credentials__hint">{{ t("credentials.audit_hint") }}</p>
     <div class="credentials__filters">
       <input
@@ -214,6 +246,19 @@ onMounted(load);
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 6px;
+}
+.credentials__allowlist {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 4px 0;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  resize: vertical;
 }
 .credentials__form input {
   flex: 1 1 120px;

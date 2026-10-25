@@ -187,6 +187,8 @@ fn real_authenticated_fetch() {
             "--allow-network",
             "--credentials-json",
             &credentials,
+            "--network-allowlist",
+            "httpbin.org",
             "--network-log",
             log.to_str().unwrap(),
         ])
@@ -212,4 +214,29 @@ fn real_authenticated_fetch() {
     let audit = fs::read_to_string(log).unwrap();
     assert!(audit.contains("\"result\":\"ok\""), "{audit}");
     assert!(audit.contains("\"credential\":\"bearer\""), "{audit}");
+}
+
+#[test]
+fn allowlist_denies_before_any_request() {
+    let dir = TempDir::new().unwrap();
+    package(dir.path());
+    let log = dir.path().join("network-audit.jsonl");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_yanmo-host"))
+        .args([
+            "--module",
+            dir.path().to_str().unwrap(),
+            "--allow-network",
+            "--network-allowlist",
+            "other.example",
+            "--network-log",
+            log.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["status"]["kind"], "guest_error");
+    assert_eq!(report["status"]["code"], -1);
+    let audit = fs::read_to_string(log).unwrap();
+    assert!(audit.contains("\"result\":\"host.network_denied\""), "{audit}");
 }

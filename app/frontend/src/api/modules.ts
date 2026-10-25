@@ -75,6 +75,10 @@ export const moduleSetNetwork = (module_id: string, network: boolean) =>
   call<ModuleCard>(COMMANDS.moduleSetNetwork, { module_id, network });
 
 export const networkOffline = () => call<boolean>(COMMANDS.networkOffline, {});
+export const networkAllowlist = () =>
+  call<string[]>(COMMANDS.networkAllowlist, {});
+export const networkSetAllowlist = (hosts: string[]) =>
+  call<string[]>(COMMANDS.networkSetAllowlist, { hosts });
 export const networkSetOffline = (offline: boolean) =>
   call<boolean>(COMMANDS.networkSetOffline, { offline });
 
