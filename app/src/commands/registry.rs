@@ -235,6 +235,7 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::module_chains::module_edges,
         crate::commands::module_chains::module_edge_cut,
         crate::commands::module_chains::module_edge_restore,
+        crate::commands::module_health::module_health_list,
         crate::commands::module::certifications_recheck,
         crate::commands::module::module_mirror_changed,
         crate::commands::module_ui::module_ui_open,

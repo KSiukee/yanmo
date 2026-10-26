@@ -25,16 +25,17 @@ import { certificationLabel, readsLabel } from "./moduleLabels";
 import { useModuleActions } from "../composables/useModuleActions";
 import { useModuleImport } from "../composables/useModuleImport";
 import { useModuleNetwork } from "../composables/useModuleNetwork";
+import { useModuleHealth } from "../composables/useModuleHealth";
 import { useModuleRuns } from "../composables/useModuleRuns";
 import { t } from "../locales/index.ts";
 
 const emit = defineEmits<{ close: [] }>();
-
 const cards = ref<ModuleCard[]>([]);
 const busy = ref(false);
 const note = ref("");
 const credentialFor = ref<string | null>(null);
-const factsFor = ref<string | null>(null);
+const factsFor = ref<string | null>(null); // 事实页展开的是哪一张
+const { loadHealth, healthLine } = useModuleHealth();
 const { runs, isRunning: isRunningId, markStarted, markStopped, loadStatuses, dispose } =
   useModuleRuns((status: ModuleStatus) => {
     const emitted = status.emitted.join(" / ");
@@ -49,6 +50,7 @@ const { runs, isRunning: isRunningId, markStarted, markStopped, loadStatuses, di
           ? t("modules.run_ok", { emitted })
           : t("modules.run_ok_empty");
     }
+    void loadHealth();
     // 跑完补镜像：**只给变过的模块写**（一致的不写，不打扰作者）
     void moduleMirrorChanged();
   });
@@ -180,6 +182,7 @@ const {
 
 onMounted(() => {
   void load();
+  void loadHealth();
 });
 
 onUnmounted(() => {
@@ -248,6 +251,7 @@ onUnmounted(() => {
             {{ t("modules.author", { author: card.author }) }} · {{ card.id }}
           </p>
           <p v-if="card.description" class="modules__desc">{{ card.description }}</p>
+          <p class="modules__reads">{{ healthLine(card.id) }}</p>
           <p class="modules__reads">{{ t("modules.reads", { reads: readsLabel(card) }) }}</p>
           <p v-if="card.fingerprint" class="modules__reads">
             {{

@@ -254,6 +254,20 @@ export const moduleEdgeCut = (from: string, to: string) =>
 export const moduleEdgeRestore = (from: string, to: string) =>
   call<boolean>(COMMANDS.moduleEdgeRestore, { from, to });
 
+/** 管理页健康读数：每个模块一行。 */
+export interface ModuleHealthView {
+  module_id: string;
+  last_at: number;
+  last_outcome: string;
+  last_code: string;
+  failures: number;
+  backoff_until: number;
+  isolated: boolean;
+}
+
+export const moduleHealthList = () =>
+  call<ModuleHealthView[]>(COMMANDS.moduleHealthList);
+
 /** 跑完补镜像：只给变过的模块写（返回写了哪几个）。 */
 export const moduleMirrorChanged = () =>
   call<string[]>(COMMANDS.moduleMirrorChanged);

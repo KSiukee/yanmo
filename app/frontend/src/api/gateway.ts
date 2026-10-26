@@ -224,6 +224,7 @@ export const COMMANDS = {
   moduleEdges: "module_edges",
   moduleEdgeCut: "module_edge_cut",
   moduleEdgeRestore: "module_edge_restore",
+  moduleHealthList: "module_health_list",
   moduleSetEnabled: "module_set_enabled",
   moduleSetFavorite: "module_set_favorite",
   moduleSetPinned: "module_set_pinned",

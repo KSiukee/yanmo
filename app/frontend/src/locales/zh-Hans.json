@@ -1859,5 +1859,11 @@
   "modules.edge_none": "还没有模块叫过别的模块（边只在真走过之后才出现）。",
   "modules.edge_today": "今天",
   "modules.edge_days": "{days} 天前",
-  "facts.backoff": "自动唤起退避中：连续失败 {count} 次，还要等 {seconds} 秒（你自己点运行不受影响）。"
+  "facts.backoff": "自动唤起退避中：连续失败 {count} 次，还要等 {seconds} 秒（你自己点运行不受影响）。",
+  "modules.health_never": "健康：还没跑过",
+  "modules.health_ok": "健康：上次成功 · {when}",
+  "modules.health_failed": "健康：上次失败（{code}）· {when}",
+  "modules.health_cut": "健康：上次被断链拒了 · {when}",
+  "modules.health_backoff": "· 退避中（连续失败 {count} 次，还要 {seconds} 秒）",
+  "modules.health_isolated": "· 数据已隔离"
 }
