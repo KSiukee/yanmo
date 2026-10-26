@@ -234,6 +234,26 @@ export const moduleWords = (module_id: string) =>
 export const moduleWordsWrite = (module_id: string, items: WordRow[]) =>
   call<number>(COMMANDS.moduleWordsWrite, { module_id, items });
 
+/** 整库恢复：一份镜像目录放回新库。 */
+export interface RestoreItem {
+  module_id: string;
+  ok: boolean;
+  tables: number;
+  rows: number;
+  detail: string;
+}
+
+export interface RestoreReport {
+  found: number;
+  items: RestoreItem[];
+}
+
+export const moduleRestorePick = (title: string) =>
+  call<string | null>(COMMANDS.moduleRestorePick, { title });
+
+export const moduleRestoreAll = (from: string) =>
+  call<RestoreReport>(COMMANDS.moduleRestoreAll, { from });
+
 export interface QuestionSubmitView {
   accepted: number;
   dropped: number;

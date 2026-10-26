@@ -181,7 +181,7 @@ pub use module_audit::{ModuleAudit, ModuleIssue};
 pub use module_data_health::ModuleDataHealth;
 pub use module_data_limits::ModuleDataLimits;
 pub use module_isolation::ModuleIsolation;
-pub use module_mirror::ModuleMirror;
+pub use module_mirror::{ModuleMirror, MIRROR_DIR};
 pub use module_mirror_check::{MirrorDifference, ModuleMirrorCheck};
 pub use module_mirror_rebuild::ModuleRebuild;
 pub use module_transparency::ModuleFacts;

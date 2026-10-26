@@ -16,6 +16,8 @@ import {
   moduleDataRebuild,
   moduleDataRelease,
   moduleDataStats,
+  moduleRestoreAll,
+  moduleRestorePick,
   type ModuleCard,
 } from "../api/modules";
 import { t } from "../locales/index.ts";
@@ -203,7 +205,27 @@ export function useModuleActions(
     });
   }
 
+  /** 整库恢复：选备份目录 → 搬镜像 → 逐模块重建（结果一行话说清）。 */
+  function restoreAll(reload: () => Promise<void>) {
+    act(async () => {
+      const from = await moduleRestorePick(t("modules.restore_pick"));
+      if (!from) {
+        note.value = t("modules.restore_none");
+        return;
+      }
+      const report = await moduleRestoreAll(from);
+      const ok = report.items.filter((item) => item.ok).length;
+      note.value = t("modules.restore_done", {
+        found: report.found,
+        ok,
+        failed: report.items.length - ok,
+      });
+      await reload();
+    });
+  }
+
   return {
+    restoreAll,
     toggleActive,
     toggleFavorite,
     togglePinned,

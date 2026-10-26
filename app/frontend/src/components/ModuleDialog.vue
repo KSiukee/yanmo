@@ -16,11 +16,8 @@ import {
 } from "../api/modules";
 import ModuleCredentials from "./ModuleCredentials.vue";
 import ModuleFactsPanel from "./ModuleFactsPanel.vue";
-import ModuleCandidates from "./ModuleCandidates.vue";
-import ModuleProposals from "./ModuleProposals.vue";
-import ModuleWords from "./ModuleWords.vue";
 import ModuleImportPanel from "./ModuleImportPanel.vue";
-import ModuleReadAsks from "./ModuleReadAsks.vue";
+import ModuleReviewStack from "./ModuleReviewStack.vue";
 import ModuleToolbar from "./ModuleToolbar.vue";
 import { certificationLabel, readsLabel } from "./moduleLabels";
 import { useModuleActions } from "../composables/useModuleActions";
@@ -101,6 +98,7 @@ const {
   mirrorData,
   rebuildData,
   mirrorAll,
+  restoreAll,
   exportData,
   clearData,
   uninstall,
@@ -194,6 +192,7 @@ onUnmounted(() => {
         @offline="toggleOffline"
         @panic="panicModules"
         @mirror-all="mirrorAll"
+        @restore="restoreAll(load)"
         @import="pickImport"
         @refresh="load"
         @close="closeDialog"
@@ -201,15 +200,7 @@ onUnmounted(() => {
 
       <p v-if="note" class="modules__note dialog__note">{{ note }}</p>
 
-      <ModuleReadAsks :cards="cards" :busy="busy" @answered="note = $event" />
-      <ModuleCandidates :cards="cards" :busy="busy" @applied="note = $event" />
-      <ModuleProposals :cards="cards" :busy="busy" @done="note = $event" />
-      <ModuleWords
-        v-if="cards.length === 1"
-        :module-id="cards[0].id"
-        :busy="busy"
-        @done="note = $event"
-      />
+      <ModuleReviewStack :cards="cards" :busy="busy" @done="note = $event" />
 
       <ModuleImportPanel
         v-if="preview"

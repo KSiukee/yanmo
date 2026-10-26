@@ -1840,5 +1840,11 @@
   "modules.words_kind_setting": "设定",
   "modules.words_kind_person": "人物",
   "modules.words_saved": "词表已保存（{count} 条）。",
-  "modules.proposal_capped": "「{name}」还有 {count} 条建议今天不摆了（每日审阅额度已满）。"
+  "modules.proposal_capped": "「{name}」还有 {count} 条建议今天不摆了（每日审阅额度已满）。",
+  "error.shell.module_restore_no_mirrors": "这个目录里没有镜像文件（既没有 module-mirrors/，也没有 *.json）。",
+  "error.shell.module_restore_failed": "整库恢复失败：{detail}",
+  "modules.restore_button": "从镜像整库恢复…",
+  "modules.restore_pick": "选择备份目录（里面有 module-mirrors/ 就行）",
+  "modules.restore_done": "整库恢复：找到 {found} 份镜像，成功 {ok} 个、失败 {failed} 个。",
+  "modules.restore_none": "没有选中目录，什么也没做。"
 }

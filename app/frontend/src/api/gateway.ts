@@ -218,6 +218,8 @@ export const COMMANDS = {
   moduleProposalDismiss: "module_proposal_dismiss",
   moduleWords: "module_words",
   moduleWordsWrite: "module_words_write",
+  moduleRestorePick: "module_restore_pick",
+  moduleRestoreAll: "module_restore_all",
   moduleSetEnabled: "module_set_enabled",
   moduleSetFavorite: "module_set_favorite",
   moduleSetPinned: "module_set_pinned",

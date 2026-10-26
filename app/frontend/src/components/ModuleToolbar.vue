@@ -9,6 +9,7 @@ const emit = defineEmits<{
   offline: [];
   panic: [];
   mirrorAll: [];
+  restore: [];
   import: [];
   refresh: [];
   close: [];
@@ -42,6 +43,14 @@ const emit = defineEmits<{
       @click="emit('mirrorAll')"
     >
       {{ t("modules.mirror_all_button") }}
+    </button>
+    <button
+      type="button"
+      class="modules__button dialog__button"
+      :disabled="busy"
+      @click="emit('restore')"
+    >
+      {{ t("modules.restore_button") }}
     </button>
     <button
       type="button"
