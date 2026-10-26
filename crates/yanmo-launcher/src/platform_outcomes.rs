@@ -50,17 +50,17 @@ impl RunRecorder {
 
     /// 收工时给"一行报告都没等到"的模块补一条：**沉默也是事实**（没跑完 / 超时）。
     pub(crate) fn note_unfinished(&self, timed_out: bool) {
-        let leftover: Vec<(String, i64, i64)> = {
+        let leftover: Vec<(String, i64, i64, String)> = {
             let Ok(mut map) = self.starts.lock() else { return };
             map.drain()
-                .map(|(id, (started_at, instant, _trigger))| {
-                    (id, started_at, instant.elapsed().as_millis() as i64)
+                .map(|(id, (started_at, instant, trigger))| {
+                    (id, started_at, instant.elapsed().as_millis() as i64, trigger)
                 })
                 .collect()
         };
         let outcome = if timed_out { "timeout" } else { "unfinished" };
-        for (module_id, started_at, duration) in leftover {
-            self.write(&module_id, started_at, duration, outcome, "", "user");
+        for (module_id, started_at, duration, trigger) in leftover {
+            self.write(&module_id, started_at, duration, outcome, "", &trigger);
         }
     }
 
@@ -98,16 +98,23 @@ impl RunRecorder {
 pub(crate) fn spawn_readers(
     child: &mut Child,
     recorder: Arc<RunRecorder>,
+    desk: Option<Arc<crate::platform_wake::WakeDesk>>,
 ) -> Outcomes {
     let outcomes: Outcomes = Arc::new(Mutex::new(HashMap::new()));
     if let Some(stdout) = child.stdout.take() {
         let outcomes = outcomes.clone();
         let recorder = recorder.clone();
+        let desk = desk.clone();
         std::thread::spawn(move || {
             for line in std::io::BufReader::new(stdout).lines() {
                 let Ok(line) = line else { break };
-                if let Some(module_id) = collect_outcome(&outcomes, &line, false) {
+                if let Some((module_id, emitted)) = collect_outcome(&outcomes, &line, false) {
                     recorder.note(&module_id, &outcomes);
+                    for to in crate::platform_wake::wake_targets(&emitted) {
+                        if let Some(desk) = &desk {
+                            desk.consider(&module_id, &to);
+                        }
+                    }
                 }
                 let mut out = std::io::stdout();
                 let _ = writeln!(out, "{line}");
@@ -121,7 +128,7 @@ pub(crate) fn spawn_readers(
         std::thread::spawn(move || {
             for line in std::io::BufReader::new(stderr).lines() {
                 let Ok(line) = line else { break };
-                if let Some(module_id) = collect_outcome(&outcomes, &line, true) {
+                if let Some((module_id, _emitted)) = collect_outcome(&outcomes, &line, true) {
                     recorder.note(&module_id, &outcomes);
                 }
                 let mut err = std::io::stderr();
@@ -150,7 +157,7 @@ fn collect_outcome(
     outcomes: &Mutex<HashMap<String, ModuleRun>>,
     line: &str,
     from_stderr: bool,
-) -> Option<String> {
+) -> Option<(String, Vec<String>)> {
     let text = line.trim();
     if !text.starts_with('{') {
         return None;
@@ -167,6 +174,13 @@ fn collect_outcome(
         .unwrap_or("");
     let succeeded = ok && (kind.is_empty() || kind == "ok") && !from_stderr;
     let code = value.get("code").and_then(|code| code.as_str()).map(str::to_string);
+    let emitted: Vec<String> = value
+        .get("emitted")
+        .and_then(|items| items.as_array())
+        .map(|items| {
+            items.iter().filter_map(|item| item.as_str().map(str::to_string)).collect()
+        })
+        .unwrap_or_default();
     let memory_bytes = value.get("memory_bytes").and_then(|bytes| bytes.as_u64()).unwrap_or(0);
     let fuel_used = value.get("fuel_used").and_then(|fuel| fuel.as_u64()).unwrap_or(0);
     let Ok(mut map) = outcomes.lock() else { return None };
@@ -189,7 +203,7 @@ fn collect_outcome(
     }
     entry.memory_bytes = entry.memory_bytes.max(memory_bytes);
     entry.fuel_used = entry.fuel_used.max(fuel_used);
-    fresh.then(|| module_id.to_string())
+    fresh.then(|| (module_id.to_string(), emitted))
 }
 
 #[cfg(test)]

@@ -22,6 +22,7 @@
 mod job;
 mod platform;
 mod platform_outcomes;
+mod platform_wake;
 
 use std::fs;
 use std::io::{BufRead, Read, Write};

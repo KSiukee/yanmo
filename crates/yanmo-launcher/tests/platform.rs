@@ -311,3 +311,148 @@ fn a_cut_edge_is_refused_with_a_terminal_state() {
     assert_eq!(runs[0].trigger, "chain:app.example.chain.a");
     assert_eq!(runs[0].outcome, "cut");
 }
+
+/// 模块间唤起的最小 ABI：A 在报告里 `emit {"wake":"B"}` → 启动器替它叫 B，
+/// B 的留痕来源是 `chain:A`；被断掉的边一次都不转发。
+#[test]
+fn a_module_can_wake_another() {
+    let Some(host_bin) = host_bin() else {
+        eprintln!("skip: yanmo-host binary not built (run `cargo build -p yanmo-host`)");
+        return;
+    };
+    // A 会请求唤起 B；B 什么都不做
+    let dir = TempDir::new().unwrap();
+    package_waker(dir.path(), "app.example.wake.a", "app.example.wake.b");
+    package(dir.path(), "app.example.wake.b");
+    let db = dir.path().join("yanmo.db");
+    Store::open(&db).unwrap();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_yanmo-launch"))
+        .args([
+            "--db", db.to_str().unwrap(),
+            "--modules-root", dir.path().to_str().unwrap(),
+            "--host", host_bin.to_str().unwrap(),
+            "--timeout-secs", "30",
+            "--idle-secs", "30",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut reader = BufReader::new(child.stdout.take().unwrap());
+
+    stdin.write_all(b"run app.example.wake.a\n").unwrap();
+    stdin.flush().unwrap();
+    // 等 B 的报告（它由 A 的唤醒触发，不是我们发的）
+    let mut seen_b = false;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while std::time::Instant::now() < deadline {
+        let mut line = String::new();
+        if reader.read_line(&mut line).unwrap_or(0) == 0 {
+            break;
+        }
+        if line.contains("app.example.wake.b") && line.contains("\"ok\":true") {
+            seen_b = true;
+            break;
+        }
+    }
+    stdin.write_all(b"stop\n").unwrap();
+    stdin.flush().unwrap();
+    assert!(child.wait().unwrap().success());
+    assert!(seen_b, "A 的唤醒应当真把 B 叫起来，并有一份 ok 报告");
+
+    let data = yanmo_core::store::ModuleData::open(yanmo_core::store::ModuleData::path_beside(&db)).unwrap();
+    let runs = data.recent_runs("app.example.wake.b", 5).unwrap();
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].trigger, "chain:app.example.wake.a", "来源要记得是谁叫的");
+}
+
+/// 一个"会叫别人"的模块：报告里 emit 一条 `{"wake":...}`。
+fn package_waker(root: &Path, id: &str, target: &str) {
+    let dir = root.join(id);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("manifest.json"),
+        serde_json::json!({
+            "id": id,
+            "default_language": "zh-Hans",
+            "name": { "zh-Hans": id },
+            "description": { "zh-Hans": "唤起测试。" },
+            "author": { "name": "Example Studio" },
+            "version": "1.0.0",
+            "protocol": 1,
+            "runtime": "wasm",
+            "entry": "module.wasm",
+            "ui": { "form": "headless" },
+            "capabilities": { "read": [] }
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let payload = format!("{{\"wake\":\"{target}\"}}");
+    let escaped = payload.replace('"', "\\\"");
+    let wat = format!(
+        r#"(module
+          (import "env" "emit" (func $emit (param i32 i32) (result i32)))
+          (memory (export "memory") 1)
+          (data (i32.const 0) "{escaped}")
+          (func (export "run") (result i32)
+            (drop (call $emit (i32.const 0) (i32.const {len})))
+            (i32.const 0)))"#,
+        len = payload.len()
+    );
+    fs::write(dir.join("module.wasm"), wat::parse_str(&wat).unwrap()).unwrap();
+}
+
+/// 断掉的边：A 照样跑，但它叫不动 B（B 一行报告都不该出现）。
+#[test]
+fn a_cut_edge_stops_a_wake() {
+    let Some(host_bin) = host_bin() else {
+        eprintln!("skip: yanmo-host binary not built (run `cargo build -p yanmo-host`)");
+        return;
+    };
+    let dir = TempDir::new().unwrap();
+    package_waker(dir.path(), "app.example.cut.a", "app.example.cut.b");
+    package(dir.path(), "app.example.cut.b");
+    let db = dir.path().join("yanmo.db");
+    Store::open(&db).unwrap();
+    {
+        use yanmo_core::store::ModuleData;
+        let mut data = ModuleData::open(ModuleData::path_beside(&db)).unwrap();
+        data.cut_edge("app.example.cut.a", "app.example.cut.b").unwrap();
+    }
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_yanmo-launch"))
+        .args([
+            "--db", db.to_str().unwrap(),
+            "--modules-root", dir.path().to_str().unwrap(),
+            "--host", host_bin.to_str().unwrap(),
+            "--timeout-secs", "30",
+            "--idle-secs", "30",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut reader = BufReader::new(child.stdout.take().unwrap());
+    stdin.write_all(b"run app.example.cut.a\n").unwrap();
+    stdin.flush().unwrap();
+    // 给 A 足够时间跑完并"尝试"叫 B；然后关 stdin 让平台收摊
+    std::thread::sleep(std::time::Duration::from_secs(3));
+    drop(stdin);
+    let mut output = String::new();
+    use std::io::Read;
+    let _ = reader.read_to_string(&mut output);
+    let _ = child.wait().unwrap();
+    // 注意：A 的报告里带着 `{"wake":"…cut.b"}`，所以只看"B 自己的报告行"
+    assert!(
+        !output.contains("\"module_id\":\"app.example.cut.b\""),
+        "断掉的边不许把 B 叫起来"
+    );
+    let data = yanmo_core::store::ModuleData::open(yanmo_core::store::ModuleData::path_beside(&db)).unwrap();
+    assert!(data.recent_runs("app.example.cut.b", 5).unwrap().is_empty(), "B 一次都没跑过");
+}

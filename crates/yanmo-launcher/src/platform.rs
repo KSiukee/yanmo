@@ -217,16 +217,6 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
     // 每个模块的终局：宿主（及其子进程）把报告打在 stdout / stderr 上，
     // 一边转发给壳、一边攒成"每个模块一条"（**失败也要有名字**）。
     // 同时记「唤起留痕」：谁唤起的、跑了多久、结果如何（链路可见的地基）。
-    let recorder = Arc::new(super::platform_outcomes::RunRecorder {
-        starts: starts.clone(),
-        data: yanmo_core::store::ModuleData::open(
-            yanmo_core::store::ModuleData::path_beside(&request.db_path),
-        )
-        .ok()
-        .map(|data| Arc::new(Mutex::new(data))),
-    });
-    let outcomes = super::platform_outcomes::spawn_readers(&mut child, recorder.clone());
-
     let Some(mut stdin) = child.stdin.take() else {
         let _ = child.kill();
         let _ = child.wait();
@@ -241,9 +231,27 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
         let _ = server.join();
         return Err(LaunchError::new(LaunchError::SPAWN, error.to_string()));
     }
+    let recorder = Arc::new(super::platform_outcomes::RunRecorder {
+        starts: starts.clone(),
+        data: yanmo_core::store::ModuleData::open(
+            yanmo_core::store::ModuleData::path_beside(&request.db_path),
+        )
+        .ok()
+        .map(|data| Arc::new(Mutex::new(data))),
+    });
+
     let shell_gone = Arc::new(AtomicBool::new(false));
     let shell_gone_watch = shell_gone.clone();
     let host_stdin = Arc::new(Mutex::new(stdin));
+    // 唤起台拿的是**同一根**宿主 stdin：断链/深度/扇出都在这里把关。
+    let wake_data = yanmo_core::store::ModuleData::open(
+        yanmo_core::store::ModuleData::path_beside(&request.db_path),
+    )
+    .ok()
+    .map(|data| Arc::new(Mutex::new(data)));
+    let desk = Some(super::platform_wake::WakeDesk::new(host_stdin.clone(), wake_data, starts.clone()));
+    let outcomes = super::platform_outcomes::spawn_readers(&mut child, recorder.clone(), desk.clone());
+
     // 强杀时没跑完的那些模块得有两个字的终局；每个 `run` 的时刻给留痕算时长。
     let requested_in = requested.clone();
     let starts_in = starts.clone();
