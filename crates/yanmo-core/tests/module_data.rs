@@ -353,3 +353,44 @@ fn backoff_grows_on_failures_and_clears_on_success() {
     assert!(reopened.backoff("app.b").unwrap().is_none(), "成功一次就清零");
     assert!(reopened.backoff_allows("app.b").unwrap());
 }
+
+/// 每模块退避参数：默认 10 秒起 / 5 分钟封顶；改了按改的算；关掉就不挡；校验挡坏值。
+#[test]
+fn retry_policy_is_per_module_and_validated() {
+    use yanmo_core::store::RetryPolicy;
+    let (_dir, path) = fresh();
+    let mut data = ModuleData::open(&path).unwrap();
+    let default = data.retry_policy("app.b").unwrap();
+    assert_eq!(default.base_ms, 10_000);
+    assert_eq!(default.max_ms, 300_000);
+    assert!(default.enabled);
+
+    data.set_retry_policy(
+        "app.b",
+        &RetryPolicy { base_ms: 2_000, max_ms: 30_000, enabled: true },
+    )
+    .unwrap();
+    assert_eq!(data.retry_policy("app.b").unwrap().base_ms, 2_000);
+    assert_eq!(data.retry_policy("app.c").unwrap().base_ms, 10_000, "别的模块不受影响");
+
+    data.note_backoff("app.b", false).unwrap();
+    let wait = data.backoff("app.b").unwrap().unwrap().next_at - yanmo_core::time::now_millis();
+    assert!(wait <= 2_000 + 500, "按模块的起步算（实际 {wait}ms）");
+
+    data.set_retry_policy(
+        "app.b",
+        &RetryPolicy { base_ms: 1_000, max_ms: 60_000, enabled: false },
+    )
+    .unwrap();
+    assert!(data.backoff_allows("app.b").unwrap(), "关掉就不挡自动唤起");
+
+    assert!(data
+        .set_retry_policy(
+            "app.b",
+            &RetryPolicy { base_ms: 500, max_ms: 1_000, enabled: true },
+        )
+        .is_err(), "起步 500ms 太短，要拒");
+
+    data.clear_retry_policy("app.b").unwrap();
+    assert_eq!(data.retry_policy("app.b").unwrap().base_ms, 10_000, "清掉回默认");
+}

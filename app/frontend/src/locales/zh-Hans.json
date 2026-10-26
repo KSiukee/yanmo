@@ -1865,5 +1865,13 @@
   "modules.health_failed": "健康：上次失败（{code}）· {when}",
   "modules.health_cut": "健康：上次被断链拒了 · {when}",
   "modules.health_backoff": "· 退避中（连续失败 {count} 次，还要 {seconds} 秒）",
-  "modules.health_isolated": "· 数据已隔离"
+  "modules.health_isolated": "· 数据已隔离",
+  "error.module.backoff_invalid": "退避参数不合规（起步 1 秒~10 分钟、封顶不小于起步且 ≤1 小时）：{base_ms}/{max_ms}",
+  "facts.retry_title": "退避：{base} 秒起 / {max} 分钟封顶{off}",
+  "facts.retry_off": "（已关闭，不挡自动唤起）",
+  "facts.retry_base": "起步（秒）",
+  "facts.retry_max": "封顶（分钟）",
+  "facts.retry_save": "保存退避",
+  "facts.retry_reset": "回默认",
+  "facts.retry_saved": "退避参数已保存（{base} 秒起 / {max} 分钟封顶）。"
 }

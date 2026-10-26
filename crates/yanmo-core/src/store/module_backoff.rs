@@ -18,6 +18,49 @@ use super::module_data::{ensure_id, ModuleData};
 use crate::error::Result;
 use crate::time::now_millis;
 
+/// 退避参数（可按模块调；不设就用默认）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct RetryPolicy {
+    /// 第一次失败后等多久
+    pub base_ms: i64,
+    /// 封顶
+    pub max_ms: i64,
+    /// 关掉 = 不挡自动唤起（作者自己承担唤醒风暴）
+    pub enabled: bool,
+}
+
+impl RetryPolicy {
+    pub fn default_policy() -> Self {
+        Self { base_ms: BASE_MS, max_ms: MAX_MS, enabled: true }
+    }
+
+    /// 校验：1 秒 ~ 10 分钟起步、封顶不小于起步、封顶 ≤ 1 小时。
+    pub fn validate(&self) -> crate::error::Result<()> {
+        let ok = self.base_ms >= 1_000
+            && self.base_ms <= 10 * 60 * 1000
+            && self.max_ms >= self.base_ms
+            && self.max_ms <= 60 * 60 * 1000;
+        if ok {
+            Ok(())
+        } else {
+            Err(crate::error::Error::invalid_with(
+                crate::error::codes::MODULE_BACKOFF_INVALID,
+                [
+                    ("base_ms", self.base_ms.to_string()),
+                    ("max_ms", self.max_ms.to_string()),
+                ],
+            ))
+        }
+    }
+}
+
+pub(super) const RETRY_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS module_retry (
+    module_id TEXT PRIMARY KEY,
+    base_ms   INTEGER NOT NULL,
+    max_ms    INTEGER NOT NULL,
+    enabled   INTEGER NOT NULL
+)";
+
 pub(super) const BACKOFF_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS module_backoff (
     module_id   TEXT PRIMARY KEY,
     failures    INTEGER NOT NULL,
@@ -56,9 +99,10 @@ impl ModuleData {
             )
             .unwrap_or(0)
             + 1;
-        // 2^(n-1) 放大，封顶 MAX_MS；位数不越界（n 很大时也安全）
+        // 2^(n-1) 放大，封顶"这个模块的封顶"；位数不越界（n 很大时也安全）
+        let policy = self.retry_policy(module_id)?;
         let shift = (failures - 1).clamp(0, 20) as u32;
-        let wait = BASE_MS.saturating_mul(1_i64 << shift).min(MAX_MS);
+        let wait = policy.base_ms.saturating_mul(1_i64 << shift).min(policy.max_ms);
         self.conn.execute(
             "INSERT INTO module_backoff(module_id, failures, next_at, updated_at)
              VALUES(?1, ?2, ?3, ?4)
@@ -71,9 +115,55 @@ impl ModuleData {
         Ok(())
     }
 
+    /// 这个模块的退避参数（没设过 = 默认）。
+    pub fn retry_policy(&self, module_id: &str) -> Result<RetryPolicy> {
+        ensure_id(module_id)?;
+        let row = self
+            .conn
+            .query_row(
+                "SELECT base_ms, max_ms, enabled FROM module_retry WHERE module_id = ?1",
+                [module_id],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?)),
+            )
+            .ok();
+        Ok(row
+            .map(|(base_ms, max_ms, enabled)| RetryPolicy {
+                base_ms,
+                max_ms,
+                enabled: enabled != 0,
+            })
+            .unwrap_or_else(RetryPolicy::default_policy))
+    }
+
+    /// 改这个模块的退避参数（先校验；关掉 = 不挡自动唤起）。
+    pub fn set_retry_policy(&mut self, module_id: &str, policy: &RetryPolicy) -> Result<()> {
+        ensure_id(module_id)?;
+        policy.validate()?;
+        self.conn.execute(
+            "INSERT INTO module_retry(module_id, base_ms, max_ms, enabled)
+             VALUES(?1, ?2, ?3, ?4)
+             ON CONFLICT(module_id) DO UPDATE SET
+                 base_ms = excluded.base_ms,
+                 max_ms = excluded.max_ms,
+                 enabled = excluded.enabled",
+            params![module_id, policy.base_ms, policy.max_ms, i64::from(policy.enabled)],
+        )?;
+        Ok(())
+    }
+
+    /// 回到默认参数（删掉这一行，不是写一份"和默认一样"的副本）。
+    pub fn clear_retry_policy(&mut self, module_id: &str) -> Result<()> {
+        ensure_id(module_id)?;
+        self.conn.execute("DELETE FROM module_retry WHERE module_id = ?1", [module_id])?;
+        Ok(())
+    }
+
     /// 现在能不能自动唤起它（`true` = 可以）。没记录 = 可以。
     pub fn backoff_allows(&self, module_id: &str) -> Result<bool> {
         ensure_id(module_id)?;
+        if !self.retry_policy(module_id)?.enabled {
+            return Ok(true);
+        }
         let next_at: Option<i64> = self
             .conn
             .query_row(

@@ -268,6 +268,27 @@ export interface ModuleHealthView {
 export const moduleHealthList = () =>
   call<ModuleHealthView[]>(COMMANDS.moduleHealthList);
 
+/** 每模块的退避参数（默认 10 秒起 / 5 分钟封顶）。 */
+export interface RetryView {
+  module_id: string;
+  base_ms: number;
+  max_ms: number;
+  enabled: boolean;
+}
+
+export const moduleRetryGet = (module_id: string) =>
+  call<RetryView>(COMMANDS.moduleRetryGet, { module_id });
+
+export const moduleRetrySet = (
+  module_id: string,
+  base_ms: number,
+  max_ms: number,
+  enabled: boolean,
+) => call<RetryView>(COMMANDS.moduleRetrySet, { module_id, base_ms, max_ms, enabled });
+
+export const moduleRetryClear = (module_id: string) =>
+  call<void>(COMMANDS.moduleRetryClear, { module_id });
+
 /** 跑完补镜像：只给变过的模块写（返回写了哪几个）。 */
 export const moduleMirrorChanged = () =>
   call<string[]>(COMMANDS.moduleMirrorChanged);

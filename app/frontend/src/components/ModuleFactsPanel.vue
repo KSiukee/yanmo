@@ -4,16 +4,64 @@
 // 三条呈现纪律：① 一句话总结优先（下面那行大字），数字折叠在四组里；
 // ② 只给事实——这里没有任何"安全评分"或颜色分级；③ 标明谁说的——每组标题后面写着
 // 观测来源（核心 / 壳 / 模块自报）。
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 
 import { moduleFacts, moduleRollback, type ModuleFactsView } from "../api/modules";
 import { readsLabel } from "./moduleLabels";
+import { moduleRetryClear, moduleRetryGet, moduleRetrySet, type RetryView } from "../api/modules";
 import { t } from "../locales/index.ts";
 
 const props = defineProps<{ moduleId: string; moduleName: string }>();
 const emit = defineEmits<{ close: [] }>();
 
 const view = ref<ModuleFactsView | null>(null);
+
+// 退避参数（每模块可调；读不到就按默认显示）
+const retry = ref<RetryView | null>(null);
+const retryBase = ref(10);
+const retryMax = ref(5);
+
+async function loadRetry() {
+  try {
+    const item = await moduleRetryGet(props.moduleId);
+    retry.value = item;
+    retryBase.value = Math.round(item.base_ms / 1000);
+    retryMax.value = Math.round(item.max_ms / 60_000);
+  } catch {
+    retry.value = null;
+  }
+}
+
+async function saveRetry() {
+  try {
+    const item = await moduleRetrySet(
+      props.moduleId,
+      Math.round(retryBase.value) * 1000,
+      Math.round(retryMax.value) * 60_000,
+      retry.value?.enabled ?? true,
+    );
+    retry.value = item;
+    note.value = t("facts.retry_saved", { base: item.base_ms / 1000, max: item.max_ms / 60_000 });
+  } catch (error) {
+    note.value = t("modules.action_failed", { detail: String(error) });
+  }
+}
+
+async function resetRetry() {
+  try {
+    await moduleRetryClear(props.moduleId);
+    await loadRetry();
+    note.value = t("facts.retry_reset");
+  } catch (error) {
+    note.value = t("modules.action_failed", { detail: String(error) });
+  }
+}
+
+watch(
+  () => props.moduleId,
+  () => void loadRetry(),
+  { immediate: true },
+);
 
 /** 退避还要等几秒（负数按 0 算）。 */
 const backoffSeconds = computed(() =>
@@ -230,6 +278,17 @@ const declared = computed(() => {
           </button>
         </li>
         <li v-else class="facts__note">{{ t("facts.archive_none") }}</li>
+        <li v-if="retry" class="facts__note">
+          {{ t("facts.retry_title", { base: retryBase, max: retryMax, off: retry.enabled ? "" : t("facts.retry_off") }) }}
+          <input v-model.number="retryBase" type="number" min="1" max="600" class="facts__num" />
+          <input v-model.number="retryMax" type="number" min="1" max="60" class="facts__num" />
+          <button type="button" class="facts__link" @click="saveRetry">
+            {{ t("facts.retry_save") }}
+          </button>
+          <button type="button" class="facts__link" @click="resetRetry">
+            {{ t("facts.retry_reset") }}
+          </button>
+        </li>
         <li v-if="view.backoff" class="facts__note">
           {{ t("facts.backoff", { count: view.backoff.failures, seconds: backoffSeconds }) }}
         </li>

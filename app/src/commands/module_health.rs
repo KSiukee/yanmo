@@ -26,6 +26,60 @@ pub struct ModuleHealthView {
     pub isolated: bool,
 }
 
+/// 一个模块的退避参数（界面读它显示/编辑）。
+#[derive(Debug, Clone, Serialize)]
+pub struct RetryView {
+    pub module_id: String,
+    pub base_ms: i64,
+    pub max_ms: i64,
+    pub enabled: bool,
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn module_retry_get(
+    data: State<'_, AppData>,
+    module_id: String,
+) -> Result<RetryView, ApiError> {
+    let module_data = ModuleData::open(ModuleData::path_beside(
+        &data.data_dir().join("yanmo.db"),
+    ))?;
+    let policy = module_data.retry_policy(&module_id)?;
+    Ok(RetryView {
+        module_id,
+        base_ms: policy.base_ms,
+        max_ms: policy.max_ms,
+        enabled: policy.enabled,
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn module_retry_set(
+    data: State<'_, AppData>,
+    module_id: String,
+    base_ms: i64,
+    max_ms: i64,
+    enabled: bool,
+) -> Result<RetryView, ApiError> {
+    let mut module_data = ModuleData::open(ModuleData::path_beside(
+        &data.data_dir().join("yanmo.db"),
+    ))?;
+    let policy = yanmo_core::store::RetryPolicy { base_ms, max_ms, enabled };
+    module_data.set_retry_policy(&module_id, &policy)?;
+    Ok(RetryView { module_id, base_ms, max_ms, enabled })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn module_retry_clear(
+    data: State<'_, AppData>,
+    module_id: String,
+) -> Result<(), ApiError> {
+    let mut module_data = ModuleData::open(ModuleData::path_beside(
+        &data.data_dir().join("yanmo.db"),
+    ))?;
+    module_data.clear_retry_policy(&module_id)?;
+    Ok(())
+}
+
 #[tauri::command(rename_all = "snake_case")]
 pub fn module_health_list(
     data: State<'_, AppData>,

@@ -355,6 +355,9 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "模块数据行数超限：{module_id}" : ["module_id"],
     MODULE_DATA_WRITE_LIMIT => "module.data_write_limit"
         : "模块数据写入超限" : [],
+    MODULE_BACKOFF_INVALID => "module.backoff_invalid"
+        : "退避参数不合规（起步 1 秒~10 分钟、封顶不小于起步且 ≤1 小时）：{base_ms}/{max_ms}"
+        : ["base_ms", "max_ms"],
     MODULE_CHAIN_SELF => "module.chain_self"
         : "模块不能唤起自己：{module_id}" : ["module_id"],
     MODULE_DATA_INVALID => "module.data_invalid"

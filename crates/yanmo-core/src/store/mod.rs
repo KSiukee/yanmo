@@ -183,7 +183,7 @@ pub use module_audit::{ModuleAudit, ModuleIssue};
 pub use module_data_health::ModuleDataHealth;
 pub use module_data_limits::ModuleDataLimits;
 pub use module_isolation::ModuleIsolation;
-pub use module_backoff::Backoff;
+pub use module_backoff::{Backoff, RetryPolicy};
 pub use module_chain::{ChainCut, ChainEdge};
 pub use module_mirror::{ModuleMirror, MIRROR_DIR};
 pub use module_mirror_check::{MirrorDifference, ModuleMirrorCheck};
