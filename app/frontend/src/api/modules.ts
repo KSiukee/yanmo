@@ -199,6 +199,9 @@ export interface ProposalView {
   index: number;
   /** 成卷：要挪进新卷的节点（id + 当时的树指纹） */
   nodes: [number, string][];
+  target: number | null;
+  source: number | null;
+  source_hash: string;
 }
 
 export interface ProposalsView {

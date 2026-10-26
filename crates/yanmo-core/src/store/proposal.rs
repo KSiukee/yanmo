@@ -117,6 +117,63 @@ impl Store {
         Ok(ProposalOutcome::Applied { chars: 0 })
     }
 
+    /// 应用一份**合并卷提案**：把 source 卷里的节点挪进 target 卷，然后软删空掉的 source 卷。
+    ///
+    /// 两步都要"基于当时的样子"：两个卷与每个孩子的指纹都要对得上；
+    /// 任何一个变了 → 整份失效（合并到一半比不合并更糟）。
+    pub fn apply_merge_proposal(
+        &mut self,
+        target: i64,
+        source: i64,
+        base_target: &str,
+        base_source: &str,
+        nodes: &[CollectNode],
+    ) -> Result<ProposalOutcome> {
+        let Some(target_now) = self.tree_fingerprint(target)? else {
+            return Ok(ProposalOutcome::Missing);
+        };
+        let Some(source_now) = self.tree_fingerprint(source)? else {
+            return Ok(ProposalOutcome::Missing);
+        };
+        if target_now != base_target.trim() || source_now != base_source.trim() {
+            return Ok(ProposalOutcome::Stale { current_hash: target_now });
+        }
+        for node in nodes {
+            let Some(current) = self.tree_fingerprint(node.node_id)? else {
+                return Ok(ProposalOutcome::Missing);
+            };
+            if current != node.fingerprint.trim() {
+                return Ok(ProposalOutcome::Stale { current_hash: current });
+            }
+        }
+        // 目标卷里现有多少个子节点 = 追加的起点
+        let existing = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM nodes WHERE parent_id = ?1 AND deleted_at IS NULL",
+                [target],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            .max(0) as usize;
+        for (offset, node) in nodes.iter().enumerate() {
+            self.move_node(node.node_id, Some(target), existing + offset)?;
+        }
+        // 源卷空了才删；不空说明提案列漏了东西——留着它比删掉安全
+        let left = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM nodes WHERE parent_id = ?1 AND deleted_at IS NULL",
+                [source],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0);
+        if left == 0 {
+            self.soft_delete_node(source)?;
+        }
+        Ok(ProposalOutcome::Applied { chars: 0 })
+    }
+
     /// 应用一份**成卷提案**：新建一个卷，把列出的节点按顺序挪进去。
     ///
     /// 任何一个节点"这期间被作者动过"，整份提案就失效——成卷是一组动作，

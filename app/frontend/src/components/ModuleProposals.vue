@@ -137,7 +137,9 @@ onUnmounted(() => {
                 ? t("modules.proposal_rename", { title: item.title })
                 : item.kind === "collect"
                   ? t("modules.proposal_collect", { title: item.title, count: item.nodes.length })
-                  : t("modules.proposal_move", { parent: item.parent ?? "—" })
+                  : item.kind === "merge"
+                    ? t("modules.proposal_merge", { count: item.nodes.length })
+                    : t("modules.proposal_move", { parent: item.parent ?? "—" })
           }}
           <span v-if="item.stale" class="modules__proposal-stale">
             {{ t("modules.proposal_stale_badge") }}

@@ -46,6 +46,8 @@ pub mod module_facts;
 pub mod module_read;
 /// 模块的正文提案（只提建议，作者点一下才落盘）。
 pub mod module_proposals;
+/// 建议的每日审阅额度（超额如实计数）。
+pub mod module_proposals_cap;
 /// 模块词表的读写（作者在软件里编辑）。
 pub mod module_words;
 /// 整库恢复：一键把镜像目录放回新库。

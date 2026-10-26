@@ -1873,5 +1873,6 @@
   "facts.retry_max": "封顶（分钟）",
   "facts.retry_save": "保存退避",
   "facts.retry_reset": "回默认",
-  "facts.retry_saved": "退避参数已保存（{base} 秒起 / {max} 分钟封顶）。"
+  "facts.retry_saved": "退避参数已保存（{base} 秒起 / {max} 分钟封顶）。",
+  "modules.proposal_merge": "合并两卷（{count} 章并成一个卷）"
 }

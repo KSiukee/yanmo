@@ -31,8 +31,13 @@ pub struct ProposalView {
     /// 树提案的落点（移动）
     pub parent: Option<i64>,
     pub index: i64,
-    /// 成卷：要挪进新卷的那些节点（节点 id + 当时的树指纹）
+    /// 成卷/合并：要挪进新卷（或目标卷）的那些节点（节点 id + 当时的树指纹）
     pub nodes: Vec<(i64, String)>,
+    /// 合并卷：目标卷 id 与来源卷 id
+    pub target: Option<i64>,
+    pub source: Option<i64>,
+    /// 来源卷当时的指纹（合并提案用）
+    pub source_hash: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -56,14 +61,38 @@ pub fn module_proposals(
         return Ok(ProposalsView { items: Vec::new(), suppressed: 0 });
     }
     // 今天已经"摆出来过"的条数（应用/失效/忽略都算一次审阅）
-    let reviewed_today = reviewed_today(&data, &module_id)?;
-    let (items, suppressed) = limit_daily(items, reviewed_today, DAILY_REVIEW_CAP);
+    let reviewed_today = super::module_proposals_cap::reviewed_today(&data, &module_id)?;
+    let (items, suppressed) = super::module_proposals_cap::limit_daily(
+        items,
+        reviewed_today,
+        DAILY_REVIEW_CAP,
+    );
     let current: Vec<(i64, Option<String>)> = data.with_store(|store: &mut Store| {
         Ok(items
             .iter()
             .map(|item| {
                 let hash = if item.kind == "text" {
                     store.body_hash(item.node_id).ok().flatten()
+                } else if item.kind == "merge" {
+                    let both = (item.target, item.source);
+                    let ok = match both {
+                        (Some(target), Some(source)) => {
+                            let target_now = store.tree_fingerprint(target).ok().flatten();
+                            let source_now = store.tree_fingerprint(source).ok().flatten();
+                            target_now.as_deref() == Some(item.base_hash.as_str())
+                                && source_now.as_deref() == Some(item.source_hash.as_str())
+                                && item.nodes.iter().all(|(node_id, base)| {
+                                    store
+                                        .tree_fingerprint(*node_id)
+                                        .ok()
+                                        .flatten()
+                                        .map(|current| &current == base)
+                                        .unwrap_or(false)
+                                })
+                        }
+                        _ => false,
+                    };
+                    ok.then(|| item.base_hash.clone())
                 } else if item.kind == "collect" {
                     let all_ok = item.nodes.iter().all(|(node_id, base)| {
                         store
@@ -112,6 +141,28 @@ pub fn module_proposal_apply(
         return Err(ApiError::new("shell.module_proposal_missing"));
     };
     let outcome = match proposal.kind.as_str() {
+        "merge" => match (proposal.target, proposal.source) {
+            (Some(target), Some(source)) => {
+                let nodes = proposal
+                    .nodes
+                    .iter()
+                    .map(|(node_id, base)| yanmo_core::store::CollectNode {
+                        node_id: *node_id,
+                        fingerprint: base.clone(),
+                    })
+                    .collect::<Vec<_>>();
+                data.with_store(|store: &mut Store| {
+                    store.apply_merge_proposal(
+                        target,
+                        source,
+                        &proposal.base_hash,
+                        &proposal.source_hash,
+                        &nodes,
+                    )
+                })?
+            }
+            _ => return Err(ApiError::new("shell.module_proposal_missing")),
+        },
         "collect" => {
             let nodes = proposal
                 .nodes
@@ -207,6 +258,13 @@ fn read_proposals(data: &AppData, module_id: &str) -> Result<Vec<ProposalView>, 
                         kind,
                         parent: item.get("parent").and_then(|value| value.as_i64()),
                         index: item.get("index").and_then(|value| value.as_i64()).unwrap_or(0),
+                        target: item.get("target").and_then(|value| value.as_i64()),
+                        source: item.get("source").and_then(|value| value.as_i64()),
+                        source_hash: item
+                            .get("source_hash")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                         nodes: item
                             .get("nodes")
                             .and_then(|value| value.as_array())
@@ -291,83 +349,4 @@ fn record_result(
         .map_err(|error| ApiError::new("shell.module_proposal_invalid").caused_by(error))?;
     module_data.kv_put(module_id, "proposal_results.json", &text)?;
     Ok(())
-}
-
-/// 今日审阅额度：只数"今天记过结果"的条数（每条建议无论应用还是被忽略，都算占过一次名额）。
-fn reviewed_today(data: &AppData, module_id: &str) -> Result<usize, ApiError> {
-    let module_data = ModuleData::open(ModuleData::path_beside(
-        &data.data_dir().join("yanmo.db"),
-    ))?;
-    let Some(bytes) = module_data.kv_get(module_id, "proposal_results.json")? else {
-        return Ok(0);
-    };
-    let Ok(records) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-        return Ok(0);
-    };
-    let now = yanmo_core::time::now_millis();
-    let day_start = now - now.rem_euclid(24 * 60 * 60 * 1000);
-    Ok(records
-        .as_array()
-        .map(|list| {
-            list.iter()
-                .filter(|record| {
-                    record
-                        .get("at")
-                        .and_then(|value| value.as_i64())
-                        .map(|at| at >= day_start)
-                        .unwrap_or(false)
-                })
-                .count()
-        })
-        .unwrap_or(0))
-}
-
-/// 额度用完了就只摆出剩下的名额（其余**如实计数**，不静默吞掉）。
-fn limit_daily(
-    items: Vec<ProposalView>,
-    reviewed_today: usize,
-    cap: usize,
-) -> (Vec<ProposalView>, usize) {
-    let left = cap.saturating_sub(reviewed_today);
-    if items.len() <= left {
-        return (items, 0);
-    }
-    let mut items = items;
-    let suppressed = items.len() - left;
-    items.truncate(left);
-    (items, suppressed)
-}
-
-#[cfg(test)]
-mod rate_tests {
-    use super::*;
-
-    fn item(id: &str) -> ProposalView {
-        ProposalView {
-            id: id.to_string(),
-            node_id: 1,
-            title: String::new(),
-            base_hash: String::new(),
-            stale: false,
-            chars: 0,
-            kind: "text".to_string(),
-            parent: None,
-            index: 0,
-            nodes: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn the_daily_cap_only_shows_what_is_left_and_counts_the_rest() {
-        let items: Vec<ProposalView> = (0..5).map(|i| item(&format!("p{i}"))).collect();
-        let (shown, suppressed) = limit_daily(items, 3, 5);
-        assert_eq!(shown.len(), 2, "three already reviewed today leaves two slots");
-        assert_eq!(suppressed, 3);
-        let (shown, suppressed) = limit_daily(vec![item("a")], 5, 5);
-        assert!(shown.is_empty());
-        assert_eq!(suppressed, 1);
-        let (shown, suppressed) = limit_daily(vec![item("a")], 0, 5);
-        assert_eq!(shown.len(), 1);
-        assert_eq!(suppressed, 0);
-    }
 }

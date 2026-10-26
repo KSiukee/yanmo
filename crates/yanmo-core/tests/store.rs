@@ -646,3 +646,52 @@ fn a_collect_proposal_needs_every_chapter_unchanged() {
         );
     }
 }
+
+/// 合并卷：两个卷与每个孩子都对得上才动；来源卷空掉后自动软删；作者动过就整份失效。
+#[test]
+fn merging_two_volumes_needs_both_sides_unchanged() {
+    use yanmo_core::model::{NodeKind, WorkKind};
+    use yanmo_core::store::{CollectNode, ProposalOutcome};
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path().join("yanmo.db")).unwrap();
+    let work = store.create_work(WorkKind::Novel, "题本").unwrap();
+    let v1 = store.create_node(work.id, None, NodeKind::Volume, "第一卷").unwrap();
+    let v2 = store.create_node(work.id, None, NodeKind::Volume, "第二卷").unwrap();
+    let a = store.create_node(work.id, Some(v1), NodeKind::Chapter, "第一章").unwrap();
+    let b = store.create_node(work.id, Some(v2), NodeKind::Chapter, "第二章").unwrap();
+    let c = store.create_node(work.id, Some(v2), NodeKind::Chapter, "第三章").unwrap();
+
+    let nodes = |store: &Store, ids: &[i64]| -> Vec<CollectNode> {
+        ids.iter()
+            .map(|id| CollectNode {
+                node_id: *id,
+                fingerprint: store.tree_fingerprint(*id).unwrap().unwrap(),
+            })
+            .collect()
+    };
+    let target_fp = store.tree_fingerprint(v1).unwrap().unwrap();
+    let source_fp = store.tree_fingerprint(v2).unwrap().unwrap();
+    let kids = nodes(&store, &[b, c]);
+
+    // 作者在这期间改名 → 整份失效
+    store.rename_node(b, "第二章 改过").unwrap();
+    let stale = store
+        .apply_merge_proposal(v1, v2, &target_fp, &source_fp, &kids)
+        .unwrap();
+    assert!(matches!(stale, ProposalOutcome::Stale { .. }));
+
+    // 按现在重提 → 成功：三章都在第一卷下，第二卷被软删
+    let target_fp = store.tree_fingerprint(v1).unwrap().unwrap();
+    let source_fp = store.tree_fingerprint(v2).unwrap().unwrap();
+    let kids = nodes(&store, &[b, c]);
+    let applied = store
+        .apply_merge_proposal(v1, v2, &target_fp, &source_fp, &kids)
+        .unwrap();
+    assert!(applied.applied(), "合并应当成功：{applied:?}");
+    for id in [a, b, c] {
+        let fp = store.tree_fingerprint(id).unwrap().unwrap();
+        assert!(fp.starts_with(&format!("{}|", v1)), "第 {id} 章应在第一卷下");
+    }
+    assert!(store.tree_fingerprint(v2).unwrap().is_none(), "空掉的第二卷应被软删");
+}
