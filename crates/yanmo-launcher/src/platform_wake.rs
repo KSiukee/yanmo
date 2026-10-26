@@ -30,6 +30,8 @@ pub(crate) enum WakeVerdict {
     TooDeep,
     TooMany,
     BadId,
+    /// 它刚失败过，还在退避窗口里（只挡自动唤起，作者手点不受影响）
+    Backoff,
 }
 
 impl WakeVerdict {
@@ -40,6 +42,7 @@ impl WakeVerdict {
             WakeVerdict::TooDeep => "too_deep",
             WakeVerdict::TooMany => "too_many",
             WakeVerdict::BadId => "bad_id",
+            WakeVerdict::Backoff => "backoff",
         }
     }
 }
@@ -90,6 +93,9 @@ impl WakeDesk {
             if let Ok(data) = data.lock() {
                 if data.is_cut(from, to).unwrap_or(false) {
                     return WakeVerdict::Cut;
+                }
+                if !data.backoff_allows(to).unwrap_or(true) {
+                    return WakeVerdict::Backoff;
                 }
             }
         }

@@ -324,3 +324,32 @@ fn edges_come_from_real_runs_and_carry_the_cut_flag() {
     data.cut_edge("app.a", "app.b").unwrap();
     assert!(data.edges().unwrap()[0].cut, "断了要在边上看得出来");
 }
+
+/// 退避：失败就往后推（指数、封顶），成功立刻清零；重启不清。
+#[test]
+fn backoff_grows_on_failures_and_clears_on_success() {
+    let (_dir, path) = fresh();
+    let mut data = ModuleData::open(&path).unwrap();
+    assert!(data.backoff_allows("app.b").unwrap(), "没失败过就放行");
+
+    data.note_backoff("app.b", false).unwrap();
+    let first = data.backoff("app.b").unwrap().unwrap();
+    assert_eq!(first.failures, 1);
+    assert!(!data.backoff_allows("app.b").unwrap(), "刚失败要等");
+    let wait1 = first.next_at - yanmo_core::time::now_millis();
+    assert!(wait1 > 5_000, "第一次大约等 10 秒（实际 {wait1}ms）");
+
+    data.note_backoff("app.b", false).unwrap();
+    let second = data.backoff("app.b").unwrap().unwrap();
+    assert_eq!(second.failures, 2);
+    assert!(second.next_at > first.next_at, "第二次等更久");
+
+    // 重启不清：重开之后仍记得
+    drop(data);
+    let mut reopened = ModuleData::open(&path).unwrap();
+    assert_eq!(reopened.backoff("app.b").unwrap().unwrap().failures, 2);
+
+    reopened.note_backoff("app.b", true).unwrap();
+    assert!(reopened.backoff("app.b").unwrap().is_none(), "成功一次就清零");
+    assert!(reopened.backoff_allows("app.b").unwrap());
+}

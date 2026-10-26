@@ -225,6 +225,8 @@ export interface ModuleFactsView {
   archive: ArchiveView | null;
   cert: CertView | null;
   runs: RunEventView[];
+  /** 退避账：连续失败几次、自动唤起要等到什么时候（没失败过 = null）。 */
+  backoff: { failures: number; next_at: number } | null;
   running: boolean;
   idle_seconds: number;
 }

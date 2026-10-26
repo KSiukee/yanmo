@@ -90,6 +90,8 @@ impl RunRecorder {
         if let Some(data) = &self.data {
             if let Ok(mut data) = data.lock() {
                 let _ = data.note_run_result(module_id, trigger, started_at, duration, outcome, code);
+                // 成败同时记进退避账：连续失败往后推，成功清零。
+                let _ = data.note_backoff(module_id, outcome == "ok");
             }
         }
     }

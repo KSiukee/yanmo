@@ -44,6 +44,13 @@ pub struct RunEventView {
     pub code: String,
 }
 
+/// 退避账（界面显示"还要等多久"）。
+#[derive(Debug, Clone, Serialize)]
+pub struct BackoffView {
+    pub failures: i64,
+    pub next_at: i64,
+}
+
 /// 认证：**验过什么**（版本号决定清单；认不出的版本 checks 为空）。
 #[derive(Debug, Clone, Serialize)]
 pub struct CertView {
@@ -86,6 +93,8 @@ pub struct ModuleFactsView {
     pub cert: Option<CertView>,
     /// 最近几次唤起（新的在前；链路可见的第一版）。
     pub runs: Vec<RunEventView>,
+    /// 退避账：连续失败几次、自动唤起要等到什么时候（没失败过 = `None`）。
+    pub backoff: Option<BackoffView>,
     /// 现在跑没在跑 + 空闲多少秒（壳观测）。
     pub running: bool,
     pub idle_seconds: u64,
@@ -126,6 +135,9 @@ pub fn module_facts(
             code: run.code,
         })
         .collect();
+    let backoff = module_data
+        .backoff(&module_id)?
+        .map(|item| BackoffView { failures: item.failures, next_at: item.next_at });
     // 认证是**核心验签的结果**：按（id, 版本, 载荷哈希）在已验签清单里查，查不到就是没认证。
     let cert = yanmo_core::store::CertificationSet::built_in()
         .lookup(&card.id, &card.version, &card.fingerprint)
@@ -149,6 +161,7 @@ pub fn module_facts(
         archive,
         cert,
         runs,
+        backoff,
         running: status.running,
         idle_seconds: status.idle_seconds,
     })

@@ -15,6 +15,11 @@ const emit = defineEmits<{ close: [] }>();
 
 const view = ref<ModuleFactsView | null>(null);
 
+/** 退避还要等几秒（负数按 0 算）。 */
+const backoffSeconds = computed(() =>
+  Math.max(0, Math.ceil((view.value?.backoff?.next_at ?? 0 - Date.now()) / 1000)),
+);
+
 /** 最近几次唤起：谁唤起 · 多久 · 结果（新的在前）。 */
 const runsLine = computed(() => {
   const runs = view.value?.runs ?? [];
@@ -225,6 +230,9 @@ const declared = computed(() => {
           </button>
         </li>
         <li v-else class="facts__note">{{ t("facts.archive_none") }}</li>
+        <li v-if="view.backoff" class="facts__note">
+          {{ t("facts.backoff", { count: view.backoff.failures, seconds: backoffSeconds }) }}
+        </li>
         <li v-if="view.runs.length > 0">{{ t("facts.runs", { list: runsLine }) }}</li>
         <li v-else class="facts__note">{{ t("facts.runs_none") }}</li>
         <li v-if="view.facts.isolated" class="facts__note">

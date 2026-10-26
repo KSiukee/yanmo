@@ -1858,5 +1858,6 @@
   "modules.edge_restore_done": "已接回「{from} → {to}」。",
   "modules.edge_none": "还没有模块叫过别的模块（边只在真走过之后才出现）。",
   "modules.edge_today": "今天",
-  "modules.edge_days": "{days} 天前"
+  "modules.edge_days": "{days} 天前",
+  "facts.backoff": "自动唤起退避中：连续失败 {count} 次，还要等 {seconds} 秒（你自己点运行不受影响）。"
 }
