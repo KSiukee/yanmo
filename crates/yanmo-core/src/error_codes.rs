@@ -354,6 +354,10 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
     MODULE_DATA_ROW_LIMIT => "module.data_row_limit"
         : "模块数据行数超限：{module_id}" : ["module_id"],
     MODULE_DATA_WRITE_LIMIT => "module.data_write_limit"
+        : "模块数据写入超限" : [],
+    MODULE_CHAIN_SELF => "module.chain_self"
+        : "模块不能唤起自己：{module_id}" : ["module_id"],
+    MODULE_DATA_INVALID => "module.data_invalid"
         : "模块数据写入不合规" : [],
     MODULE_DATA_RATE_LIMIT => "module.data_rate_limit"
         : "模块数据写入太频繁，已拒绝" : [],

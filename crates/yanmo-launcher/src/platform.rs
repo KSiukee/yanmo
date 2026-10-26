@@ -32,6 +32,19 @@ pub struct LaunchPlatformRequest {
     pub idle_secs: u64,
 }
 
+/// 被断链拒掉的唤起也要有一个终局条目（不许只剩沉默）。
+fn note_cut(outcomes: &super::platform_outcomes::Outcomes, module_id: &str) {
+    if let Ok(mut map) = outcomes.lock() {
+        map.entry(module_id.to_string()).or_insert_with(|| crate::ModuleRun {
+            module_id: module_id.to_string(),
+            ok: false,
+            code: Some("launch.chain_cut".to_string()),
+            memory_bytes: 0,
+            fuel_used: 0,
+        });
+    }
+}
+
 pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, LaunchError> {
     if request.timeout.is_zero() {
         return Err(LaunchError::new(LaunchError::TIMEOUT, "timeout must be > 0"));
@@ -200,7 +213,7 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
 
     // 壳发来的 `run <id>`：既用来补终局，也用来给"唤起留痕"起表。
     let requested: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let starts: Arc<Mutex<HashMap<String, (i64, Instant)>>> = Arc::new(Mutex::new(HashMap::new()));
+    let starts: Arc<Mutex<HashMap<String, (i64, Instant, String)>>> = Arc::new(Mutex::new(HashMap::new()));
     // 每个模块的终局：宿主（及其子进程）把报告打在 stdout / stderr 上，
     // 一边转发给壳、一边攒成"每个模块一条"（**失败也要有名字**）。
     // 同时记「唤起留痕」：谁唤起的、跑了多久、结果如何（链路可见的地基）。
@@ -234,17 +247,45 @@ pub fn launch_platform(request: &LaunchPlatformRequest) -> Result<LaunchReport, 
     // 强杀时没跑完的那些模块得有两个字的终局；每个 `run` 的时刻给留痕算时长。
     let requested_in = requested.clone();
     let starts_in = starts.clone();
+    let cut_db = request.db_path.clone();
+    let outcomes_cut = outcomes.clone();
+    let recorder_cut = recorder.clone();
     std::thread::spawn(move || {
         let stdin = std::io::stdin();
         for line in stdin.lock().lines() {
             let Ok(line) = line else { break };
-            if let Some(module_id) = line.strip_prefix("run ") {
-                let module_id = module_id.trim().to_string();
+            if let Some(rest) = line.strip_prefix("run ") {
+                // `run <id>` 或 `run <id> from:<模块 id>`（后者 = 模块间唤起）
+                let mut parts = rest.split_whitespace();
+                let module_id = parts.next().unwrap_or_default().to_string();
+                let from = parts.find_map(|part| part.strip_prefix("from:").map(str::to_string));
+                if module_id.is_empty() {
+                    continue;
+                }
                 if let Ok(mut list) = requested_in.lock() {
                     list.push(module_id.clone());
                 }
+                let trigger = match &from {
+                    Some(from) => format!("chain:{from}"),
+                    None => "user".to_string(),
+                };
                 if let Ok(mut map) = starts_in.lock() {
-                    map.entry(module_id).or_insert_with(|| (yanmo_core::time::now_millis(), Instant::now()));
+                    map.entry(module_id.clone()).or_insert_with(|| {
+                        (yanmo_core::time::now_millis(), Instant::now(), trigger.clone())
+                    });
+                }
+                // 断链：作者掐断的边**一行都不转发**，但"被拒"要留痕、要有终局。
+                if let Some(from) = &from {
+                    let cut = yanmo_core::store::ModuleData::open(
+                        yanmo_core::store::ModuleData::path_beside(&cut_db),
+                    )
+                    .map(|data| data.is_cut(from, &module_id).unwrap_or(false))
+                    .unwrap_or(false);
+                    if cut {
+                        note_cut(&outcomes_cut, &module_id);
+                        recorder_cut.note_cut(&module_id, from);
+                        continue;
+                    }
                 }
             }
             let Ok(mut guard) = host_stdin.lock() else { break };

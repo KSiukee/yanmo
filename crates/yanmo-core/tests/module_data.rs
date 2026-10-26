@@ -279,3 +279,28 @@ fn a_run_event_remembers_who_woke_it_and_how_long_it_took() {
     assert_eq!(runs[1].duration_ms, 412);
     assert!(data.recent_runs("app.example.none", 10).unwrap().is_empty());
 }
+
+/// 断链：断了就在、重启还在、接回去才通；自环没有意义。
+#[test]
+fn a_cut_edge_stays_cut_until_the_author_restores_it() {
+    let (_dir, path) = fresh();
+    let mut data = ModuleData::open(&path).unwrap();
+    assert!(!data.is_cut("app.a", "app.b").unwrap());
+    data.cut_edge("app.a", "app.b").unwrap();
+    data.cut_edge("app.a", "app.b").unwrap(); // 幂等
+    assert!(data.is_cut("app.a", "app.b").unwrap());
+    assert!(!data.is_cut("app.b", "app.a").unwrap(), "反向是另一条边");
+    assert_eq!(data.cuts().unwrap().len(), 1);
+
+    // 重新打开（= 重启）仍然断着
+    drop(data);
+    let reopened = ModuleData::open(&path).unwrap();
+    assert!(reopened.is_cut("app.a", "app.b").unwrap());
+
+    let mut reopened = reopened;
+    assert!(reopened.restore_edge("app.a", "app.b").unwrap(), "接回要说明真接回了");
+    assert!(!reopened.is_cut("app.a", "app.b").unwrap());
+    assert!(!reopened.restore_edge("app.a", "app.b").unwrap(), "再接一次就没得接了");
+
+    assert!(reopened.cut_edge("app.a", "app.a").is_err(), "自环拒掉");
+}

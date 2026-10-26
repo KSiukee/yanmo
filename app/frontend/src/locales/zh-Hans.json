@@ -1846,5 +1846,7 @@
   "modules.restore_button": "从镜像整库恢复…",
   "modules.restore_pick": "选择备份目录（里面有 module-mirrors/ 就行）",
   "modules.restore_done": "整库恢复：找到 {found} 份镜像，成功 {ok} 个、失败 {failed} 个。",
-  "modules.restore_none": "没有选中目录，什么也没做。"
+  "modules.restore_none": "没有选中目录，什么也没做。",
+  "error.module.chain_self": "模块不能唤起自己：{module_id}",
+  "error.module.data_invalid": "模块数据写入不合规。"
 }

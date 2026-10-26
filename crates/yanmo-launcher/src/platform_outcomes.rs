@@ -21,7 +21,7 @@ pub(crate) type Outcomes = Arc<Mutex<HashMap<String, ModuleRun>>>;
 ///
 /// 记在启动器这边，是因为它是唯一同时看得见"壳发了 run"与"模块出了结果"的进程。
 pub(crate) struct RunRecorder {
-    pub(crate) starts: Arc<Mutex<HashMap<String, (i64, Instant)>>>,
+    pub(crate) starts: Arc<Mutex<HashMap<String, (i64, Instant, String)>>>,
     pub(crate) data: Option<Arc<Mutex<ModuleData>>>,
 }
 
@@ -31,8 +31,8 @@ impl RunRecorder {
             .starts
             .lock()
             .ok()
-            .and_then(|map| map.get(module_id).copied());
-        let Some((started_at, instant)) = started else { return };
+            .and_then(|map| map.get(module_id).cloned());
+        let Some((started_at, instant, trigger)) = started else { return };
         let (outcome, code) = {
             let Ok(map) = outcomes.lock() else { return };
             match map.get(module_id) {
@@ -42,7 +42,7 @@ impl RunRecorder {
             }
         };
         let duration = instant.elapsed().as_millis() as i64;
-        self.write(module_id, started_at, duration, &outcome, &code);
+        self.write(module_id, started_at, duration, &outcome, &code, &trigger);
         if let Ok(mut map) = self.starts.lock() {
             map.remove(module_id);
         }
@@ -53,21 +53,43 @@ impl RunRecorder {
         let leftover: Vec<(String, i64, i64)> = {
             let Ok(mut map) = self.starts.lock() else { return };
             map.drain()
-                .map(|(id, (started_at, instant))| {
+                .map(|(id, (started_at, instant, _trigger))| {
                     (id, started_at, instant.elapsed().as_millis() as i64)
                 })
                 .collect()
         };
         let outcome = if timed_out { "timeout" } else { "unfinished" };
         for (module_id, started_at, duration) in leftover {
-            self.write(&module_id, started_at, duration, outcome, "");
+            self.write(&module_id, started_at, duration, outcome, "", "user");
         }
     }
 
-    fn write(&self, module_id: &str, started_at: i64, duration: i64, outcome: &str, code: &str) {
+    /// 被断链拒掉的唤起：留一行 `cut`，来源记得是**谁想唤起它**。
+    pub(crate) fn note_cut(&self, module_id: &str, from: &str) {
+        let started_at = self
+            .starts
+            .lock()
+            .ok()
+            .and_then(|map| map.get(module_id).map(|(at, _, _)| *at))
+            .unwrap_or_else(yanmo_core::time::now_millis);
+        self.write(module_id, started_at, 0, "cut", "module.chain_cut", &format!("chain:{from}"));
+        if let Ok(mut map) = self.starts.lock() {
+            map.remove(module_id);
+        }
+    }
+
+    fn write(
+        &self,
+        module_id: &str,
+        started_at: i64,
+        duration: i64,
+        outcome: &str,
+        code: &str,
+        trigger: &str,
+    ) {
         if let Some(data) = &self.data {
             if let Ok(mut data) = data.lock() {
-                let _ = data.note_run_result(module_id, "user", started_at, duration, outcome, code);
+                let _ = data.note_run_result(module_id, trigger, started_at, duration, outcome, code);
             }
         }
     }

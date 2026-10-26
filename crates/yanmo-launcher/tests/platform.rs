@@ -240,3 +240,74 @@ fn platform_launcher_stops_when_parent_stdin_closes() {
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
 }
+
+/// 断链：作者掐断的边，唤起**一行都不转发**，但要有终局（`launch.chain_cut`）和一行 `cut` 留痕。
+#[test]
+fn a_cut_edge_is_refused_with_a_terminal_state() {
+    let Some(host_bin) = host_bin() else {
+        eprintln!("skip: yanmo-host binary not built (run `cargo build -p yanmo-host`)");
+        return;
+    };
+    let dir = TempDir::new().unwrap();
+    package(dir.path(), "app.example.chain.a");
+    package(dir.path(), "app.example.chain.b");
+    let db = dir.path().join("yanmo.db");
+    Store::open(&db).unwrap();
+    {
+        use yanmo_core::store::ModuleData;
+        let mut data = ModuleData::open(ModuleData::path_beside(&db)).unwrap();
+        data.cut_edge("app.example.chain.a", "app.example.chain.b").unwrap();
+    }
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_yanmo-launch"))
+        .args([
+            "--db",
+            db.to_str().unwrap(),
+            "--modules-root",
+            dir.path().to_str().unwrap(),
+            "--host",
+            host_bin.to_str().unwrap(),
+            "--timeout-secs",
+            "30",
+            "--idle-secs",
+            "30",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut reader = BufReader::new(child.stdout.take().unwrap());
+
+    // 被断链：宿主**不该**收到这条 run（所以不会有一行 ok 报告），但仍要有终局
+    stdin
+        .write_all(b"run app.example.chain.b from:app.example.chain.a\n")
+        .unwrap();
+    stdin.flush().unwrap();
+    stdin.write_all(b"stop\n").unwrap();
+    stdin.flush().unwrap();
+    assert!(child.wait().unwrap().success());
+
+    let mut lines = String::new();
+    use std::io::Read;
+    reader.read_to_string(&mut lines).unwrap();
+    let final_report: Value = lines
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line.trim()).ok())
+        .find(|value| value.get("modules").is_some())
+        .expect("收工时要有整份报告");
+    let modules = final_report["modules"].as_array().unwrap();
+    let b = modules
+        .iter()
+        .find(|item| item["module_id"] == "app.example.chain.b")
+        .expect("被拒的唤起也要有终局条目");
+    assert_eq!(b["ok"], false);
+    assert_eq!(b["code"], "launch.chain_cut");
+
+    let data = yanmo_core::store::ModuleData::open(yanmo_core::store::ModuleData::path_beside(&db)).unwrap();
+    let runs = data.recent_runs("app.example.chain.b", 5).unwrap();
+    assert_eq!(runs.len(), 1, "被拒也要留一行");
+    assert_eq!(runs[0].trigger, "chain:app.example.chain.a");
+    assert_eq!(runs[0].outcome, "cut");
+}

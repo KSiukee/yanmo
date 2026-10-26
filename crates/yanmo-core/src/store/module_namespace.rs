@@ -23,13 +23,14 @@ use yanmo_proto::is_valid_module_id;
 /// 核心自己在 `modules.db` 里的记账表（**不是任何模块的数据**）。
 ///
 /// 加一张核心表就加一项：漏了它，体检会把核心自己的账当成「谁也不认的表」。
-pub const CORE_TABLES: [&str; 6] = [
+pub const CORE_TABLES: [&str; 7] = [
     "module_schema",
     "module_data_health",
     "module_data_isolation",
     "module_usage",
     "module_read_consent",
     "module_run_log",
+    "module_chain_cut",
 ];
 
 /// 一张表归谁。

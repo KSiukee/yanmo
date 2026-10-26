@@ -203,7 +203,6 @@ fn a_certification_says_what_was_checked() {
 /// 启动复核：清单里没了就撤销、回来了就恢复；没变就什么都不报。
 #[test]
 fn a_startup_recheck_revokes_and_restores() {
-    use yanmo_proto::manifest::ModuleManifest;
     let dir = TempDir::new().unwrap();
     let module = package(dir.path());
     let preview = inspect_module_package_with_certs(&module, &CertificationSet::empty()).unwrap();
