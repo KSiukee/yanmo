@@ -213,6 +213,7 @@ export const COMMANDS = {
   moduleCandidatesApply: "module_candidates_apply",
   moduleQuestionsSubmit: "module_questions_submit",
   certificationsRecheck: "certifications_recheck",
+  moduleMirrorChanged: "module_mirror_changed",
   moduleProposals: "module_proposals",
   moduleProposalApply: "module_proposal_apply",
   moduleProposalDismiss: "module_proposal_dismiss",

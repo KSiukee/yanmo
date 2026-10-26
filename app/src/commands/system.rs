@@ -145,6 +145,12 @@ pub fn ui_lag(ms: u64, data: State<'_, AppData>) {
 /// 这里不再做任何判断，免得两处逻辑各说各话。顺手告诉兜底时钟"退出已开始"。
 #[tauri::command]
 pub fn exit_app(app: tauri::AppHandle, data: State<'_, AppData>) {
+    // 收工前给变过的模块补一份镜像：**失败也不挡退出**（退出比镜子重要）。
+    if let Ok(module_data) = yanmo_core::store::ModuleData::open(
+        yanmo_core::store::ModuleData::path_beside(&data.data_dir().join("yanmo.db")),
+    ) {
+        let _ = module_data.refresh_mirrors_changed();
+    }
     data.exit_watch().mark_exiting();
     app.exit(0);
 }

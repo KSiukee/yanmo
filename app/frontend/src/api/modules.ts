@@ -254,6 +254,10 @@ export const moduleEdgeCut = (from: string, to: string) =>
 export const moduleEdgeRestore = (from: string, to: string) =>
   call<boolean>(COMMANDS.moduleEdgeRestore, { from, to });
 
+/** 跑完补镜像：只给变过的模块写（返回写了哪几个）。 */
+export const moduleMirrorChanged = () =>
+  call<string[]>(COMMANDS.moduleMirrorChanged);
+
 /** 整库恢复：一份镜像目录放回新库。 */
 export interface RestoreItem {
   module_id: string;

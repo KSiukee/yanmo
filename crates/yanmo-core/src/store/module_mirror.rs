@@ -175,6 +175,20 @@ impl ModuleData {
         self.mirror(module_id).map(Some)
     }
 
+    /// 收工/跑完之后：**只给变过的模块补镜像**（一致的不写）。
+    ///
+    /// 返回真正写了镜像的模块 id——空表示"全都没变，什么都没写"。
+    /// 一个模块写失败不挡其他模块：镜像坏了不该把退出也拖住。
+    pub fn refresh_mirrors_changed(&self) -> Result<Vec<String>> {
+        let mut written = Vec::new();
+        for module_id in self.module_ids()? {
+            if let Ok(Some(_)) = self.refresh_mirror_if_stale(&module_id) {
+                written.push(module_id);
+            }
+        }
+        Ok(written)
+    }
+
     /// 给**所有**有账的模块各写一份镜像（显式的「全部留一份」）。
     ///
     /// 「有账」＝库里有它的表，或 `module_schema` 里有它的行。中途任何一份写失败就整体返回

@@ -6,6 +6,7 @@
 import { onMounted, onUnmounted, ref } from "vue";
 
 import {
+  moduleMirrorChanged,
   moduleRun,
   moduleSetBackground,
   moduleStop,
@@ -48,6 +49,8 @@ const { runs, isRunning: isRunningId, markStarted, markStopped, loadStatuses, di
           ? t("modules.run_ok", { emitted })
           : t("modules.run_ok_empty");
     }
+    // 跑完补镜像：**只给变过的模块写**（一致的不写，不打扰作者）
+    void moduleMirrorChanged();
   });
 
 function messageOf(error: unknown): string {

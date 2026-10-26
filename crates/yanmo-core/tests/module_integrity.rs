@@ -191,3 +191,21 @@ fn a_long_isolation_reason_is_trimmed_instead_of_failing() {
     assert_eq!(state.reason.chars().count(), 200);
     assert!(!state.reason.starts_with(' '), "首尾空白要清掉");
 }
+
+/// 收工补镜像：变了才写（第二次是空的）；写失败不挡别人。
+#[test]
+fn only_changed_modules_get_a_fresh_mirror() {
+    use yanmo_core::store::ModuleData;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("modules.db");
+    let mut data = ModuleData::open(&path).unwrap();
+    // 写一次自己的数据 → 有了账，也变了
+    data.kv_put("app.example.mirror", "notes.json", b"{\"a\":1}").unwrap();
+    let written = data.refresh_mirrors_changed().unwrap();
+    assert_eq!(written, vec!["app.example.mirror".to_string()]);
+    assert_eq!(
+        data.refresh_mirrors_changed().unwrap(),
+        Vec::<String>::new(),
+        "没变就不写"
+    );
+}

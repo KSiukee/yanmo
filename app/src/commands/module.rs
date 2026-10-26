@@ -259,6 +259,19 @@ pub fn module_import_confirm(
     Ok(card)
 }
 
+/// 跑完/收工补镜像：**只给变过的模块写一份**（一致的不写）。
+///
+/// 挂两处：界面在模块跑完后调一次；退出应用时再兜一次（退出前那道见 `exit_app`）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn module_mirror_changed(
+    data: State<'_, AppData>,
+) -> Result<Vec<String>, ApiError> {
+    let module_data = yanmo_core::store::ModuleData::open(
+        yanmo_core::store::ModuleData::path_beside(&data.data_dir().join("yanmo.db")),
+    )?;
+    module_data.refresh_mirrors_changed().map_err(Into::into)
+}
+
 /// 认证启动复核：按官方清单重核一遍（撤销就撤、恢复就恢复），把变化交回界面。
 ///
 /// **不静默失效**：注册表变了，界面要如实告诉作者哪几个模块的认证没了。
