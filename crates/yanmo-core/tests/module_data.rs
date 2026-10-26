@@ -304,3 +304,23 @@ fn a_cut_edge_stays_cut_until_the_author_restores_it() {
 
     assert!(reopened.cut_edge("app.a", "app.a").is_err(), "自环拒掉");
 }
+
+/// 边只看"真走过"的：留痕里有 chain: 行才画得出来；断了的状态合并进来。
+#[test]
+fn edges_come_from_real_runs_and_carry_the_cut_flag() {
+    let (_dir, path) = fresh();
+    let mut data = ModuleData::open(&path).unwrap();
+    data.note_run_result("app.b", "chain:app.a", 1_000, 10, "ok", "").unwrap();
+    data.note_run_result("app.b", "chain:app.a", 2_000, 10, "error", "host.trap").unwrap();
+    data.note_run_result("app.a", "user", 3_000, 10, "ok", "").unwrap();
+    let edges = data.edges().unwrap();
+    assert_eq!(edges.len(), 1, "只有 chain 来源的才算边");
+    assert_eq!(edges[0].from, "app.a");
+    assert_eq!(edges[0].to, "app.b");
+    assert_eq!(edges[0].runs, 2);
+    assert_eq!(edges[0].failures, 1);
+    assert!(!edges[0].cut);
+
+    data.cut_edge("app.a", "app.b").unwrap();
+    assert!(data.edges().unwrap()[0].cut, "断了要在边上看得出来");
+}

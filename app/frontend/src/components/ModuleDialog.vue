@@ -18,6 +18,7 @@ import ModuleCredentials from "./ModuleCredentials.vue";
 import ModuleFactsPanel from "./ModuleFactsPanel.vue";
 import ModuleImportPanel from "./ModuleImportPanel.vue";
 import ModuleReviewStack from "./ModuleReviewStack.vue";
+import ModuleChains from "./ModuleChains.vue";
 import ModuleToolbar from "./ModuleToolbar.vue";
 import { certificationLabel, readsLabel } from "./moduleLabels";
 import { useModuleActions } from "../composables/useModuleActions";
@@ -201,6 +202,7 @@ onUnmounted(() => {
       <p v-if="note" class="modules__note dialog__note">{{ note }}</p>
 
       <ModuleReviewStack :cards="cards" :busy="busy" @done="note = $event" />
+      <ModuleChains :busy="busy" @done="note = $event" />
 
       <ModuleImportPanel
         v-if="preview"

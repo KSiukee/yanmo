@@ -50,6 +50,8 @@ pub mod module_proposals;
 pub mod module_words;
 /// 整库恢复：一键把镜像目录放回新库。
 pub mod module_restore;
+/// 链路面板：走过的边 + 断/接。
+pub mod module_chains;
 /// 半自动登记：模块提候选、作者确认后落成设定卡。
 pub mod module_candidates;
 pub mod module_run;

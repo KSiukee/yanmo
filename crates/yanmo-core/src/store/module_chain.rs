@@ -26,6 +26,21 @@ pub(super) const CHAIN_CUT_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS module_
     PRIMARY KEY (from_module, to_module)
 )";
 
+/// 一条**真实发生过的边**（从唤起留痕汇总出来的）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ChainEdge {
+    pub from: String,
+    pub to: String,
+    /// 这条边一共走过几次
+    pub runs: i64,
+    /// 最近一次是什么时候（毫秒）
+    pub last_at: i64,
+    /// 其中失败了几次
+    pub failures: i64,
+    /// 作者是否断了这条边
+    pub cut: bool,
+}
+
 /// 一条被断开的边。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ChainCut {
@@ -77,6 +92,39 @@ impl ModuleData {
             )
             .ok();
         Ok(found.is_some())
+    }
+
+    /// 所有**真实走过的边**（按最近使用倒序），并把断链状态合并进来。
+    ///
+    /// 只从留痕汇总：没有走过就画不出边——界面不该凭空长出线。
+    pub fn edges(&self) -> Result<Vec<ChainEdge>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT substr(r.trigger, 7) AS from_module,
+                    r.module_id,
+                    COUNT(*) AS runs,
+                    MAX(r.started_at) AS last_at,
+                    SUM(CASE WHEN r.outcome = 'ok' THEN 0 ELSE 1 END) AS failures,
+                    CASE WHEN c.from_module IS NULL THEN 0 ELSE 1 END AS cut
+               FROM module_run_log r
+               LEFT JOIN module_chain_cut c
+                 ON c.from_module = substr(r.trigger, 7) AND c.to_module = r.module_id
+              WHERE r.trigger LIKE 'chain:%'
+              GROUP BY from_module, r.module_id, cut
+              ORDER BY last_at DESC, from_module, r.module_id",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(ChainEdge {
+                    from: row.get(0)?,
+                    to: row.get(1)?,
+                    runs: row.get(2)?,
+                    last_at: row.get(3)?,
+                    failures: row.get(4)?,
+                    cut: row.get::<_, i64>(5)? != 0,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
     }
 
     /// 全部断开的边（界面按这个列）。

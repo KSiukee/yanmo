@@ -1848,5 +1848,15 @@
   "modules.restore_done": "整库恢复：找到 {found} 份镜像，成功 {ok} 个、失败 {failed} 个。",
   "modules.restore_none": "没有选中目录，什么也没做。",
   "error.module.chain_self": "模块不能唤起自己：{module_id}",
-  "error.module.data_invalid": "模块数据写入不合规。"
+  "error.module.data_invalid": "模块数据写入不合规。",
+  "modules.edges_title": "链路：{count} 条边（谁叫过谁）",
+  "modules.edge_item": "{from} → {to} · {runs} 次 · 最近 {when}",
+  "modules.edge_cut_badge": "已断开",
+  "modules.edge_cut": "断开这条",
+  "modules.edge_restore": "接回",
+  "modules.edge_cut_done": "已断开「{from} → {to}」：它以后叫不动对方，作者自己点不受影响。",
+  "modules.edge_restore_done": "已接回「{from} → {to}」。",
+  "modules.edge_none": "还没有模块叫过别的模块（边只在真走过之后才出现）。",
+  "modules.edge_today": "今天",
+  "modules.edge_days": "{days} 天前"
 }

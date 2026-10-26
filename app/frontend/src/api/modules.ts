@@ -234,6 +234,26 @@ export const moduleWords = (module_id: string) =>
 export const moduleWordsWrite = (module_id: string, items: WordRow[]) =>
   call<number>(COMMANDS.moduleWordsWrite, { module_id, items });
 
+/** 一条真实走过的链路（A → B）。 */
+export interface ChainEdgeView {
+  from: string;
+  to: string;
+  from_name: string;
+  to_name: string;
+  runs: number;
+  last_at: number;
+  failures: number;
+  cut: boolean;
+}
+
+export const moduleEdges = () => call<ChainEdgeView[]>(COMMANDS.moduleEdges);
+
+export const moduleEdgeCut = (from: string, to: string) =>
+  call<void>(COMMANDS.moduleEdgeCut, { from, to });
+
+export const moduleEdgeRestore = (from: string, to: string) =>
+  call<boolean>(COMMANDS.moduleEdgeRestore, { from, to });
+
 /** 整库恢复：一份镜像目录放回新库。 */
 export interface RestoreItem {
   module_id: string;
