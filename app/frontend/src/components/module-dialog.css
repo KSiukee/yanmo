@@ -1,22 +1,128 @@
+/* 管理页是一张**浮在工作台上的大卡片**，不是一页内容：
+   更宽的底、圆角、深阴影，并把后面的稿子压暗、轻微模糊——点开它，别处就该退后。 */
+.modules {
+  backdrop-filter: blur(3px);
+}
+
 .modules__box {
-  width: min(760px, 100%);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: min(1180px, 94vw);
+  max-height: min(88vh, 940px);
+  padding: 22px 24px 18px;
+  border-radius: 16px;
+  box-shadow:
+    0 32px 90px var(--ym-shadow-strong),
+    0 0 0 1px var(--ym-shadow-soft);
+}
+
+/* 关闭：卡片右上角一个小小的 ×（不跟动作排挤在一起）。 */
+.modules__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--ym-ink-soft);
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modules__close:hover {
+  border-color: var(--ym-line);
+  color: var(--ym-ink);
+}
+
+/* 表头：左边「模块 + 一句它是什么」，右边一排动作。 */
+.modules__head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--ym-line);
+}
+
+.modules__heading {
+  min-width: 0;
+}
+
+.modules__title {
+  display: flex;
+  align-items: center;
+  margin: 0 0 3px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+}
+
+/* 跟顶栏那颗入口用同一个图标：认出「这是同一件事」。 */
+.modules__icon {
+  width: 15px;
+  height: 15px;
+  margin-right: 7px;
+  fill: none;
+  stroke: var(--ym-accent);
+  stroke-width: 1.4;
+}
+
+.modules__sub {
+  margin: 0;
+  color: var(--ym-ink-soft);
+  font-size: 12px;
+}
+
+.modules__tools {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  padding-top: 2px;
+  padding-right: 34px;
+}
+
+/* 「导入模块」是这张卡片上最该被先找到的动作。 */
+.modules__button--primary {
+  border-color: var(--ym-accent);
+  background: var(--ym-accent-soft);
+  color: var(--ym-accent);
+}
+
+.modules__button--primary:hover {
+  background: var(--ym-accent);
+  color: var(--ym-paper);
 }
 
 .modules__list {
   overflow-y: auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   margin: 0;
-  padding: 0;
+  padding: 0 4px 0 0;
   list-style: none;
 }
 
 .modules__card {
-  padding: 10px 12px;
+  padding: 12px 14px;
   border: 1px solid var(--ym-line);
-  border-radius: 6px;
-  background: var(--ym-paper);
+  border-radius: 10px;
+  background: var(--ym-paper-dim);
+}
+
+.modules__card:hover {
+  border-color: var(--ym-accent);
 }
 
 .modules__card--frozen {
@@ -139,3 +245,18 @@
 .modules__ask-text {
   flex: 1 1 320px;
 }
+
+/* 空态：一块虚线地方，把「下一步点哪」写在里面——比一句「还没有安装模块」有用。 */
+.modules__empty {
+  padding: 34px 16px;
+  border: 1px dashed var(--ym-line);
+  border-radius: 12px;
+  text-align: center;
+}
+
+.modules__empty-hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--ym-ink-soft);
+}
+

@@ -220,7 +220,7 @@ onUnmounted(() => {
       />
 
       <p v-if="cards.length === 0" class="modules__empty dialog__empty">
-        {{ t("modules.empty") }}
+        {{ t("modules.empty") }}<span class="modules__empty-hint">{{ t("modules.empty_hint") }}</span>
       </p>
 
       <ul v-else class="modules__list">

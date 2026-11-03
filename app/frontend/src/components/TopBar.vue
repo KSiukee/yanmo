@@ -90,12 +90,20 @@ const emit = defineEmits<{
     >
       {{ t("app.entities") }}
     </button>
+    <!-- 模块是**另一种东西**（装进来的小程序，不是写作功能）：给它一个图标和一点颜色，
+         混在八颗一样的文字按钮里，作者得眯着眼找。 -->
     <button
       type="button"
-      class="bar__button"
+      class="bar__button bar__button--modules"
       :title="t('app.modules_title')"
       @click="emit('modules')"
     >
+      <svg class="bar__icon" viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="1.7" y="1.7" width="5.2" height="5.2" rx="1.1" />
+        <rect x="9.1" y="1.7" width="5.2" height="5.2" rx="1.1" />
+        <rect x="1.7" y="9.1" width="5.2" height="5.2" rx="1.1" />
+        <rect x="9.1" y="9.1" width="5.2" height="5.2" rx="1.1" />
+      </svg>
       {{ t("app.modules") }}
     </button>
     <button
@@ -148,6 +156,28 @@ const emit = defineEmits<{
 .bar__button:hover {
   border-color: var(--ym-accent);
   color: var(--ym-accent);
+}
+
+/* 模块入口：图标 + 强调色，一眼能从这排文字里认出来（它是「装东西的地方」，不是写作功能） */
+.bar__button--modules {
+  border-color: var(--ym-accent);
+  background: var(--ym-accent-soft);
+  color: var(--ym-accent);
+}
+
+.bar__button--modules:hover {
+  background: var(--ym-accent);
+  color: var(--ym-paper);
+}
+
+.bar__icon {
+  width: 11px;
+  height: 11px;
+  margin-right: 4px;
+  vertical-align: -1px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
 }
 
 .bar__hint {
