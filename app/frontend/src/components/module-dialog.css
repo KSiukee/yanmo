@@ -18,90 +18,9 @@
     0 0 0 1px var(--ym-shadow-soft);
 }
 
-/* 关闭：卡片右上角一个小小的 ×（不跟动作排挤在一起）。 */
-.modules__close {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: none;
-  color: var(--ym-ink-soft);
-  font: inherit;
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.modules__close:hover {
-  border-color: var(--ym-line);
-  color: var(--ym-ink);
-}
-
-/* 表头：左边「模块 + 一句它是什么」，右边一排动作。 */
-.modules__head {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: flex-start;
-  gap: 18px;
-  margin-bottom: 14px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--ym-line);
-}
-
-.modules__heading {
-  min-width: 0;
-}
-
-.modules__title {
-  display: flex;
-  align-items: center;
-  margin: 0 0 3px;
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-}
-
-/* 跟顶栏那颗入口用同一个图标：认出「这是同一件事」。 */
-.modules__icon {
-  width: 15px;
-  height: 15px;
-  margin-right: 7px;
-  fill: none;
-  stroke: var(--ym-accent);
-  stroke-width: 1.4;
-}
-
-.modules__sub {
-  margin: 0;
-  color: var(--ym-ink-soft);
-  font-size: 12px;
-}
-
-.modules__tools {
-  display: flex;
-  flex: 1;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-  padding-top: 2px;
-  padding-right: 34px;
-}
-
-/* 「导入模块」是这张卡片上最该被先找到的动作。 */
-.modules__button--primary {
-  border-color: var(--ym-accent);
-  background: var(--ym-accent-soft);
-  color: var(--ym-accent);
-}
-
-.modules__button--primary:hover {
-  background: var(--ym-accent);
-  color: var(--ym-paper);
-}
+/* 表头那些类名（modules__head / title / icon / tools / close）**不在这里**：
+   它们在子组件 `ModuleToolbar.vue` 里，必须写进 `module-toolbar.css`——
+   Vue 的 scoped 样式不会作用到子组件内部（见那份文件头注释）。 */
 
 .modules__list {
   overflow-y: auto;

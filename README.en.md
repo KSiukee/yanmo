@@ -14,7 +14,7 @@ no feature locked behind a paywall. Open source under **AGPL-3.0-or-later**.
 
 *Chapter tree (left) · manuscript (middle) · **questions** (right). The questions panel asks you
 about plot, outline and uncollected foreshadowing — **shipped since 0.54**. The current release
-is 0.175.0.*
+is 0.175.1.*
 
 ## What it is
 
@@ -79,7 +79,7 @@ mirror of every chapter on disk.
 
 ## Download
 
-- **Latest release (0.175.0)**: <https://github.com/KSiukee/yanmo/releases>
+- **Latest release (0.175.1)**: <https://github.com/KSiukee/yanmo/releases>
 - Every asset ships with a matching `.sha256` file:
 
   ```bat
@@ -135,3 +135,4 @@ on the code are in [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 - Issues, bug reports, feature requests: <https://github.com/KSiukee/yanmo/issues>
 - Donations (Chinese platform, no rewards promised): <https://afdian.com/a/siukee>
+

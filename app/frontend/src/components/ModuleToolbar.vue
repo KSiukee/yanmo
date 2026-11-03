@@ -94,3 +94,4 @@ const emit = defineEmits<{
 </template>
 
 <style scoped src="./dialog.css"></style>
+<style scoped src="./module-toolbar.css"></style>
