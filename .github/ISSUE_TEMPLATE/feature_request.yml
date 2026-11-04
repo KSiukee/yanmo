@@ -1,0 +1,31 @@
+name: 想要一个功能
+description: 先说清楚你卡在哪，比先给方案有用
+title: "[想法] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        写之前先说两句实话：
+        研墨**不做"自动生成正文"**（平台对 AI 生成正文是封杀的），也**不会把稿子传上云**。
+        跟这两条冲突的想法会被婉拒——不是不领情，是方向定了。
+
+  - type: textarea
+    id: scene
+    attributes:
+      label: 你在什么场景下卡住了
+      description: 越具体越好：写到哪一步、当时想做什么、现在怎么绕过去
+      placeholder: 写到第三卷，想回头查某个设定第一次出现在哪一章，只能一格格翻
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: 现在怎么绕过去的
+      description: 没有就写"没绕过去"
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: 你希望它怎么解决（可选）
+      description: 不用写实现，写"你希望看到什么"就行

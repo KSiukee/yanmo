@@ -15,11 +15,12 @@ no feature locked behind a paywall. Open source under **AGPL-3.0-or-later**.
 > **Status: in development.** The everyday tools for writing a long novel already work, but please
 > keep a second copy of any manuscript you care about. Details under [What works today](#what-works-today).
 
-![Yanmo: chapter tree on the left, manuscript in the middle, "questions" panel on the right](./assets/screenshots/editor.png)
+![Yanmo: chapter tree on the left, manuscript in the middle, "questions" panel on the right](./assets/screenshots/questions.png)
 
-*Chapter tree (left) · manuscript (middle) · **questions** (right). The questions panel asks you
-about plot, outline and uncollected foreshadowing — **shipped since 0.54**. The current release
-is 0.176.2.*
+*Chapter tree (left) · manuscript (middle) · **questions** (right). The screenshot is live: the
+chapter, its scene grid and one-line summary are filled in, and the panel on the right is asking a
+question it derived from the chapter you just finished and three planted threads — **the rules
+produce the question, the answer is always yours**.*
 
 ## What it is
 

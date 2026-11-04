@@ -1,0 +1,53 @@
+name: 报一个问题
+description: 界面报错、数据异常、安装 / 升级出问题
+title: "[问题] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        谢谢你愿意花时间报问题。
+        **动手之前先备份**（软件里的「备份」，或者直接把数据文件夹整个复制一份）——
+        涉及数据的问题，别在唯一的稿子上复现。
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么
+      description: 一句话说清现象；有截图更好
+      placeholder: 点「导出」之后界面卡住，状态栏一直显示"正在导出"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 怎么复现
+      description: 尽量写成"第一步点哪、第二步点哪"
+      placeholder: |
+        1. 打开一本有 3 章的书
+        2. 点顶栏「导出」
+        3. 选 docx
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 底栏右下角那串 `v0.176.2`；命令行工具跑 `yanmo-cli --help` 也能看到
+    validations:
+      required: true
+
+  - type: input
+    id: system
+    attributes:
+      label: 系统与形态
+      description: Windows 版本 + 装的是哪种（安装版 / 便携版 / 绿色版）
+      placeholder: Windows 10 22H2，安装版
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志或错误码（可选）
+      description: 设置 →「关于」→ 打开数据文件夹，里面的 `logs/` 有日志；有错误码请原样贴
+      render: text

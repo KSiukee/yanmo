@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全承诺与已知限制
+    url: https://github.com/KSiukee/yanmo/blob/main/SECURITY.md
+    about: 备份包不加密、单库是单点、强杀会丢最后几秒——这些先写在明处，再决定要不要报
+  - name: 自己从源码构建
+    url: https://github.com/KSiukee/yanmo/blob/main/RELEASING.md
+    about: 一条命令出一份你自己的安装包；遇到构建问题也走这里的说明
