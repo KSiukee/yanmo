@@ -122,10 +122,19 @@ def say(ok: bool, name: str, detail: str = "") -> None:
 
 
 def fail(name: str, output: str) -> int:
+    # 失败时**多留几行**（原来只留 14 行，把真正的错误那几行截掉了好几次），
+    # 并把完整输出落到 logs/（不进仓），方便回头查。
+    full = ROOT / "logs" / f"build-failure-{time.strftime('%Y%m%d-%H%M%S')}.log"
+    try:
+        full.parent.mkdir(parents=True, exist_ok=True)
+        full.write_text(output or "", encoding="utf-8")
+    except OSError:
+        full = Path("(写不进 logs/)")
     print(f"\n构建停下：{name}")
-    for line in tail(output).splitlines():
+    for line in tail(output, 40).splitlines():
         print(f"      │ {line}")
-    print("\n（修好之后再跑同一条命令；没有产物就不会有半成品混进 dist/）")
+    print(f"\n完整输出：{full}")
+    print("（修好之后再跑同一条命令；没有产物就不会有半成品混进 dist/）")
     return 1
 
 
@@ -277,6 +286,29 @@ def run_tests(skip: bool) -> tuple[bool, str, str]:
 def bundle(tauri_cmd: list, no_bundle: bool) -> tuple[bool, str]:
     """发布配置打包（模块平台由 module_package 负责编 + 放）。"""
     return module_package.bundle(tauri_cmd, no_bundle, APP, run)
+
+
+def built_artifact(no_bundle: bool, version: str) -> Path | None:
+    """打包命令喊失败时，回头看一眼**产物到底有没有落地**。
+
+    为什么需要这一层：tauri-cli 在 Windows 上偶尔会「包打好了、退出码却是 1」
+    （本地连着重现过三次：输出最后一行就是 `Finished 1 bundle at: …`，产物也在，
+    但子进程返回 1）。只认退出码会把一个能用的包判死；只认产物又会在真失败时放过。
+    所以：**先看退出码，退出码不 0 时再验产物**——产物在、大小够，才当成功，
+    并在输出里如实写一句「以产物为准」。
+    """
+    if no_bundle:
+        path = ROOT / "target/release/yanmo.exe"
+        return path if path.is_file() and path.stat().st_size >= MIN_BINARY_BYTES else None
+    folder = ROOT / "target/release/bundle/nsis"
+    if not folder.is_dir():
+        return None
+    for path in sorted(folder.glob(f"*_{version}_*setup.exe")):
+        if path.is_file() and path.stat().st_size >= MIN_INSTALLER_BYTES:
+            return path
+    return None
+
+
 def collect(out_dir: Path, version: str, no_bundle: bool) -> tuple[Path | None, str]:
     """把产物收进 `dist/`，名字带版本号。
 
@@ -459,8 +491,13 @@ def main() -> int:
     print("[6/7] 打包" + ("（不生成安装包）" if args.no_bundle else "（NSIS 安装器）"))
     ok, out = bundle(tools.get("tauri_cmd", []), args.no_bundle)
     if not ok:
-        return fail("打包（cargo tauri build）", out)
-    say(True, "打包", "完成")
+        # 退出码不 0 时再看一眼产物（见 built_artifact 的注释：tauri-cli 会假失败）
+        landed = built_artifact(args.no_bundle, version)
+        if landed is None:
+            return fail("打包（cargo tauri build）", out)
+        say(True, "打包", f"命令退出码非 0，但产物确实产出了：{landed.name}（以产物为准）")
+    else:
+        say(True, "打包", "完成")
 
     print("[7/7] 归集与自检")
     artifact, detail = collect(Path(args.out), version, args.no_bundle)
