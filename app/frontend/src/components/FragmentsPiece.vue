@@ -63,21 +63,27 @@ async function save() {
       <textarea
         v-model="draft"
         class="jot__box"
-        rows="2"
+        rows="4"
         :placeholder="t('creator.jot.placeholder')"
         :disabled="busy"
         @keydown.ctrl.enter.prevent="save"
       ></textarea>
       <div class="row">
-        <label class="jot__kind">
-          <span class="hint">{{ t("creator.jot.kind") }}</span>
-          <select v-model="draftKind" :disabled="busy">
-            <option v-for="kind in WRITABLE_KINDS" :key="kind" :value="kind">
-              {{ kindLabel(kind) }}
-            </option>
-          </select>
-        </label>
-        <button class="link" :disabled="busy || !draft.trim()" @click="save">
+        <div class="jot__kinds" role="group" :aria-label="t('creator.jot.kind')">
+          <span class="jot__kind-label">{{ t("creator.jot.kind") }}</span>
+          <button
+            v-for="kind in WRITABLE_KINDS"
+            :key="kind"
+            type="button"
+            class="seg"
+            :class="{ 'seg--on': draftKind === kind }"
+            :disabled="busy"
+            @click="draftKind = kind"
+          >
+            {{ kindLabel(kind) }}
+          </button>
+        </div>
+        <button class="jot__save" :disabled="busy || !draft.trim()" @click="save">
           {{ t("creator.jot.save") }}
         </button>
       </div>
@@ -181,39 +187,92 @@ async function save() {
 }
 
 .jot {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
+  padding: 10px 12px 8px;
+  border: 1px solid var(--ym-line);
+  border-radius: 8px;
+  background: var(--ym-paper-dim);
 }
 
 .jot__box {
   box-sizing: border-box;
   width: 100%;
-  margin: 0 0 6px;
-  padding: 4px 6px;
+  min-height: 96px;
+  margin: 0 0 8px;
+  padding: 8px 10px;
   border: 1px solid var(--ym-line);
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--ym-paper);
   color: inherit;
   font: inherit;
+  font-size: 12.5px;
+  line-height: 1.7;
   resize: vertical;
 }
 
-.jot__kind {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
+.jot__box::placeholder {
+  color: var(--ym-ink-soft);
+  opacity: 0.75;
 }
 
-.jot__kind .hint {
-  margin: 0;
+.jot__box:focus {
+  outline: none;
+  border-color: var(--ym-accent);
+  box-shadow: 0 0 0 2px var(--ym-accent-soft);
+}
+
+/* 「记成」用两格切换，不用系统下拉：原生 select 在本机的观感和别的控件不是一套 */
+.jot__kinds {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.jot__kind-label {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.seg {
+  padding: 2px 10px;
+  border: 1px solid var(--ym-line);
+  border-radius: 999px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.seg--on {
+  border-color: var(--ym-accent);
+  background: var(--ym-accent-soft);
+  color: var(--ym-accent);
+}
+
+.jot__save {
+  padding: 3px 12px;
+  border: 1px solid var(--ym-accent);
+  border-radius: 6px;
+  background: var(--ym-accent);
+  color: var(--ym-paper);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.jot__save:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
-  margin: 0 0 4px;
+  justify-content: space-between;
+  margin: 0 0 6px;
 }
 
 .link {
