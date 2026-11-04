@@ -8,9 +8,16 @@
 - **怎么装**：研墨 → 模块页 → 示例卡上点「装上看看」；走的是完整导入通道
   （预览 → 逐项勾权限 → 确认），跟从文件夹导入没有任何区别。
 - **怎么验**：`cargo test -p yanmo-app --test sample_module`（守卫：程序在、界面在、
-  声明了只读能力、且**没有**声明读正文）。
+  源码在仓里、声明了只读能力、且**没有**声明读正文）。
 
-## 许可
+## 源码（写模块的参考）
 
-示例模块由研墨作者提供、随安装包分发；**它与核心分开授权**，源码不在本仓。
-核心本体仍是 AGPL-3.0-or-later（见仓库根 `LICENSE`）。
+`bigmap-lite-src/` 是它的源码，**约 250 行、不依赖核心**，把「一个模块怎么读数据、
+怎么把自己的结果存起来」这条件讲清楚：
+
+```powershell
+cd bigmap-lite-src
+pwsh -NoProfile -File build.ps1   # 编 wasm 并覆盖 ../bigmap-lite/module.wasm
+```
+
+需要 `rustup target add wasm32-unknown-unknown`。源码与核心同为 **AGPL-3.0-or-later**。
