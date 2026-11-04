@@ -70,12 +70,22 @@ computer means copying the folder (the built-in backup and restore tools are the
 - Appearance: **light / dark / follow-the-system** theme (applies to the whole window — panes, shelf,
   dialogs and the editor — takes effect at once and is remembered across restarts)
 
-**Planned, not shipped yet:** the "questions" panel (it asks *you* questions about what happens next;
-rules produce the question, AI only polishes the wording), a writing-trail record that journals **how**
-the text was produced — timeline, version chain, whether a block appeared in one step, how much was
-pasted, whether a module was running — and is explicit that this is **not** proof that no AI was
-involved (platforms judge text features, not local timestamps); full-text search UI, and an `.md`
-mirror of every chapter on disk.
+**Also in the box:** the "questions" panel (it asks *you* questions about what happens next;
+rules produce the question, AI only polishes the wording), per-chapter source tracking (how much of
+this chapter was typed / pasted / delivered by a module), an `.md` mirror of every chapter on disk,
+and full-text search.
+
+**Modules (add-ons):** modules are separate little programs you install from a folder. Before
+installing, Yanmo lists exactly what a module wants to read and asks you to tick each item — tick
+nothing and it simply cannot read anything. Modules run in their own sandboxed host process, their
+UI lives in an isolated web view, and they can only *propose* edits (you apply them). A sample
+module — **Big Map (trial)**, which reads the outline, setting cards and foreshadowing and draws
+places, people and uncollected threads — is bundled: one click on the modules page installs it. Its
+source ships in this repository (`app/samples/bigmap-lite-src/`, AGPL) as a reference for writing
+your own. There is **no module store, no SDK tooling and no certified module yet**.
+
+**Not shipped yet:** packaging the writing trail into a portable, verifiable record; the module
+store/SDK; and self-healing after a frozen UI (today it detects, reports and preserves evidence).
 
 ## Download
 
@@ -87,9 +97,10 @@ mirror of every chapter on disk.
   ```
 
 - **Build it yourself**: with Rust, Node and Visual Studio Build Tools installed, run
-  `tools\build-release.bat` in the repository root. It checks the toolchain, builds the frontend,
-  **runs the test suite (and stops if it fails)**, packages, and writes the artifacts, checksums and
-  a build fingerprint into `dist\`. See [CONTRIBUTING.md](./CONTRIBUTING.md) for prerequisites.
+  `tools\build-release.bat` in the repository root. Seven steps: toolchain check → version
+  consistency → stage the CLI and the module host/launcher → build the frontend → **run the test
+  suite (and stop if it fails)** → package → collect artifacts, checksums and a build fingerprint
+  into `dist\`. See [CONTRIBUTING.md](./CONTRIBUTING.md) for prerequisites.
 
 Three forms are published from one source and one build:
 
@@ -109,7 +120,7 @@ would rather not see the prompt at all, build your own build from source.
 
 ## Reliability
 
-Every release has to pass **500+ automated checks** (300+ for the core, 200+ for the interface,
+Every release has to pass **1,800+ automated checks** (1,252 for the core, 553 for the interface,
 growing every version) covering write / save / close / reopen / restore / export paths. The release
 script stops on failure — it never ships with warnings. Some checks exist specifically for the worst
 cases: power loss in the middle of an upgrade, the database disagreeing with what is on screen, and
