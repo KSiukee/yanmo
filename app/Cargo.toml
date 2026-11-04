@@ -27,6 +27,8 @@ tempfile = "3"
 # Windows API：盘符探测（卷序列号 / 卷标 / 可移动判定）+ 恢复时的"选一个库文件"对话框。
 # **只在 Windows 上编**，其余平台不引入。
 [target.'cfg(windows)'.dependencies]
+# 字体列表：只读注册表里的字体族名（不加载字体文件，也不引入新的下载）
+winreg = "0.55"
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_Security",

@@ -34,6 +34,7 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         // 慢命令与卡顿的现场（守护之心"慢"那一半的读数）
         crate::commands::system::slow_report,
         crate::commands::system::ui_lag,
+        crate::commands::system::system_fonts,
         // 加密备份包那一族（开关 / 口令 / 恢复码，见 commands/seal.rs）
         crate::commands::seal::seal_status,
         crate::commands::seal::seal_enable,

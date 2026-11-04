@@ -206,6 +206,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "认不出的问话语气：{value}（只认 warm / neutral / direct）" : ["value"],
     UNKNOWN_ASIDE_TAB => "value.unknown_aside_tab"
         : "认不出的第二栏分区：{value}（只认 flow / creator / sop）" : ["value"],
+    UNKNOWN_EDITOR_FONT => "value.unknown_editor_font"
+        : "认不出的正文字体：{value}（只认预设码，或 family:<字体名>）" : ["value"],
     UNKNOWN_THEME => "value.unknown_theme"
         : "认不出的配色：{value}（只认 light / dark / system）" : ["value"],
     UNKNOWN_RULE_STYLE => "value.unknown_rule_style"

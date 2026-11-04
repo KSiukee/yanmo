@@ -739,3 +739,69 @@ fn the_rule_style_is_remembered_per_book_and_never_touches_the_text() {
         .unwrap();
     assert_eq!(store.appearance(Some(other.id)).unwrap().editor_rule_style, RuleStyle::None);
 }
+
+#[test]
+fn the_editor_font_is_a_closed_set_plus_installed_families() {
+    let (_dir, mut store) = fresh();
+
+    // 没设过 → 宋体那档（默认只有核心这一处）
+    assert_eq!(store.appearance(None).unwrap().editor_font, "serif");
+
+    // 预设码原样收，并且只改这一项也要落库（`is_empty()` 漏了它就会被当空记录删掉）
+    store
+        .set_appearance(
+            None,
+            &Appearance { editor_font: Some("kai".to_string()), ..Default::default() },
+        )
+        .unwrap();
+    assert_eq!(store.appearance(None).unwrap().editor_font, "kai");
+    assert!(
+        raw(&store, "appearance").is_some_and(|json| json.contains("kai")),
+        "只改字体也要落库（漏了它，作者选完重开就没了）"
+    );
+
+    // 系统里装的那一款：`family:<名字>` 收进去（首尾空白去掉）
+    store
+        .set_appearance(
+            None,
+            &Appearance {
+                editor_font: Some("family:  思源宋体 CN ".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(store.appearance(None).unwrap().editor_font, "family:思源宋体 CN");
+
+    // 认不出的码当场拒（不静默改成默认）；空名字、超长名字也拒
+    for value in [
+        "comic".to_string(),
+        "family:".to_string(),
+        "family:   ".to_string(),
+        format!("family:{}", "字".repeat(61)),
+    ] {
+        let result = store.set_appearance(
+            None,
+            &Appearance { editor_font: Some(value.clone()), ..Default::default() },
+        );
+        assert!(result.is_err(), "应当拒绝这个字体取值：{value}");
+    }
+
+    // `"auto"` = 清掉这一层 → 回到默认那档
+    store
+        .set_appearance(
+            None,
+            &Appearance { editor_font: Some("auto".to_string()), ..Default::default() },
+        )
+        .unwrap();
+    assert_eq!(store.appearance(None).unwrap().editor_font, "serif");
+
+    // 库里躺着不认识的码：当没设过（界面不该被一条坏记录卡住）
+    store
+        .conn()
+        .execute(
+            "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES(?1, ?2, 0)",
+            rusqlite::params!["appearance", r#"{"editor_font":"comic-sans"}"#],
+        )
+        .unwrap();
+    assert_eq!(store.appearance(None).unwrap().editor_font, "serif");
+}

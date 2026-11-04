@@ -139,6 +139,96 @@ pub fn ui_lag(ms: u64, data: State<'_, AppData>) {
     data.note_ui_lag_now(ms);
 }
 
+/// 系统里装了哪些字体族（**只读注册表**，不加载字体文件）。
+///
+/// 用途：排版里「更多字体…」那个可搜索列表。规则很克制：
+/// - 只列**字体族名**：去掉 `(TrueType)`/`(OpenType)` 这类后缀，按 ` & ` 拆开
+///   （注册表一条里常写两个别名，比如 `Microsoft YaHei & Microsoft YaHei UI`）；
+/// - 去掉重名（中英文各一条很常见，保留先出现的那条）；
+/// - 只读，不改任何东西；非 Windows 平台返回空数组。
+#[tauri::command(rename_all = "snake_case")]
+pub fn system_fonts() -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    #[cfg(windows)]
+    {
+        use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
+        use winreg::RegKey;
+
+        const KEY: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts";
+        for hive in [
+            RegKey::predef(HKEY_LOCAL_MACHINE),
+            RegKey::predef(HKEY_CURRENT_USER),
+        ] {
+            if let Ok(key) = hive.open_subkey_with_flags(KEY, KEY_READ) {
+                for (value, _) in key.enum_values().flatten() {
+                    names.extend(font_families_of(&value));
+                }
+            }
+        }
+    }
+    names.sort_by_key(|name| name.to_lowercase());
+    names.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+    names
+}
+
+/// 一条注册表值名 → 一到两个**字体族名**（去掉字重/字形后缀）。
+///
+/// 例：`Microsoft YaHei & Microsoft YaHei UI (TrueType)` → `Microsoft YaHei`、`Microsoft YaHei UI`；
+/// `Arial Bold Italic (TrueType)` → `Arial`（注册表把每个字形各列一条，界面上那是个菜单，
+/// 不该出现"Arial Bold"和"Arial Bold Italic"这种按字重分的重复项）。
+fn font_families_of(raw: &str) -> Vec<String> {
+    let stripped = match raw.rfind(" (") {
+        Some(index) => &raw[..index],
+        None => raw,
+    };
+    stripped
+        .split(" & ")
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(family_name_of)
+        .filter(|name| !name.is_empty())
+        .collect()
+}
+
+/// 去掉结尾的字重 / 字形词（可能连着好几个，比如 `Bold Italic`）。
+const STYLE_SUFFIXES: [&str; 14] = [
+    "bold italic",
+    "bold oblique",
+    "semi bold",
+    "semi bold italic",
+    "demibold",
+    "semibold",
+    "bold",
+    "italic",
+    "oblique",
+    "light",
+    "regular",
+    "medium",
+    "black",
+    "heavy",
+];
+
+fn family_name_of(part: &str) -> String {
+    let mut name = part.trim().to_string();
+    loop {
+        let lower = name.to_lowercase();
+        let mut trimmed = false;
+        for suffix in STYLE_SUFFIXES {
+            if lower.ends_with(suffix) {
+                let keep = name.len() - suffix.len();
+                name.truncate(keep);
+                name = name.trim_end().to_string();
+                trimmed = true;
+                break;
+            }
+        }
+        if !trimmed {
+            break;
+        }
+    }
+    name
+}
+
 /// 退出应用。
 ///
 /// **只由退出闸门通过后调用**：关窗那一步已经先落盘、并留好了关窗快照；
@@ -153,4 +243,28 @@ pub fn exit_app(app: tauri::AppHandle, data: State<'_, AppData>) {
     }
     data.exit_watch().mark_exiting();
     app.exit(0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::font_families_of;
+
+    #[test]
+    fn registry_names_split_into_font_families() {
+        assert_eq!(
+            font_families_of("Microsoft YaHei & Microsoft YaHei UI (TrueType)"),
+            vec!["Microsoft YaHei".to_string(), "Microsoft YaHei UI".to_string()]
+        );
+        assert_eq!(
+            font_families_of("宋体 & 新宋体 (TrueType)"),
+            vec!["宋体".to_string(), "新宋体".to_string()]
+        );
+        // 没有括号、没有别名的那种也不该被丢掉
+        assert_eq!(font_families_of("SimSun"), vec!["SimSun".to_string()]);
+        // 注册表把每个字重各列一条：界面上只留族名
+        assert_eq!(font_families_of("Arial Bold Italic (TrueType)"), vec!["Arial".to_string()]);
+        assert_eq!(font_families_of("Arial Bold (TrueType)"), vec!["Arial".to_string()]);
+        assert_eq!(font_families_of("Segoe UI Light (TrueType)"), vec!["Segoe UI".to_string()]);
+        assert_eq!(font_families_of("等线 Light (TrueType)"), vec!["等线".to_string()]);
+    }
 }

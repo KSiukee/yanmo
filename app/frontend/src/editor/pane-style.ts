@@ -15,6 +15,7 @@
 import type { Appearance } from "../api/core.ts";
 import type { BackgroundOutcome } from "../api/background.ts";
 import { typographyStyle } from "./typography.ts";
+import { fontStyle } from "./fonts.ts";
 import { asRuleStyle, ruleStyle } from "./rule.ts";
 import { asBgColor, asBgLayout, backgroundStyle, bgImageName } from "./background.ts";
 
@@ -47,6 +48,7 @@ export function editorSurface(
   return {
     style: [
       typographyStyle(values), // 字号 / 行距 / 字距
+      fontStyle(values), // 正文字体
       ruleStyle(values), // 稿纸横线一格的格距
       backgroundStyle(values), // 底纹一格的大小 + 图片层的不透明度与铺法
       layer, // 图本身（没有就整段不绑）

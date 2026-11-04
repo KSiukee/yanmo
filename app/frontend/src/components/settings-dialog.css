@@ -220,7 +220,7 @@
   border: 1px solid var(--ym-line);
   border-radius: 4px;
   background: var(--ym-paper);
-  font-family: var(--ym-font-body);
+  /* 字体由组件内联绑（`fontStackOf`）：这块示例要能立刻看出换没换字体 */
   font-size: var(--ym-body-size, 17px);
   line-height: var(--ym-body-line, 190%);
   letter-spacing: var(--ym-body-spacing, 0em);
@@ -253,4 +253,50 @@
 .settings__textarea {
   resize: vertical;
   line-height: 1.6;
+}
+
+/* 「更多字体…」：一张小卡，搜索框 + 可滚动的字体名列表 */
+.settings__fonts {
+  margin: 4px 0 8px;
+  padding: 8px;
+  border: 1px solid var(--ym-line);
+  border-radius: 6px;
+  background: var(--ym-paper-dim);
+}
+
+.settings__fonts-search {
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.settings__fonts-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 168px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.settings__fonts-item {
+  padding: 1px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: var(--ym-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings__fonts-item:hover {
+  border-color: var(--ym-accent);
+}
+
+.settings__fonts-item--on {
+  border-color: var(--ym-accent);
+  background: var(--ym-accent-soft);
+  color: var(--ym-accent);
 }

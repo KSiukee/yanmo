@@ -14,6 +14,7 @@
  * 所以两样都是导出的——**通道仍然只有 core.ts 一条**（只有它 import Tauri API）。 */
 export const COMMANDS = {
   engineInfo: "engine_info",
+  systemFonts: "system_fonts",
   dataHome: "data_home",
   openDataDir: "open_data_dir",
   diagnoseNote: "diagnose_note",

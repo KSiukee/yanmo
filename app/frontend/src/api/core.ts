@@ -155,6 +155,8 @@ export interface Appearance {
   editor_font_size: number | null;
   editor_line_height: number | null;
   editor_letter_spacing: number | null;
+  /** 正文字体：五档预设码（serif/sans/kai/yahei/dengxian）或 `family:<字体名>` */
+  editor_font: string;
   /** 正文底下那层稿纸横线用哪种线（none / solid / dashed）；**只影响观感，不进导出** */
   editor_rule_style: string;
   /** 叩问问话的语气（warm / neutral / direct）；neutral 就是"不加语气"＝把这层关掉 */
@@ -202,6 +204,8 @@ export interface AppearancePatch {
   editor_font_size?: number;
   editor_line_height?: number;
   editor_letter_spacing?: number;
+  /** 正文字体：预设码或 `family:<字体名>`；传 "auto" 就是**清掉这一层**（回默认宋体那档） */
+  editor_font?: string;
   /** 稿纸线型：none / solid / dashed；传 "auto" 就是**清掉这一层**（回默认：不显示） */
   editor_rule_style?: string;
   /** 正文底色：paper / cream / green / gray；传 "auto" 就是**清掉这一层**（回默认：纸白） */
@@ -689,6 +693,8 @@ export async function call<T>(command: string, args?: Record<string, unknown>): 
 }
 
 export const readEngineInfo = () => call<EngineInfo>(COMMANDS.engineInfo);
+/** 系统里装了的字体族（只读注册表；排版里「更多字体…」的可搜索列表用它）。 */
+export const systemFonts = () => call<string[]>(COMMANDS.systemFonts);
 export const readDataHome = () => call<DataHome>(COMMANDS.dataHome);
 
 /** 在文件管理器里打开稿子所在的目录（壳自己打开自己的目录，界面不传路径）。 */

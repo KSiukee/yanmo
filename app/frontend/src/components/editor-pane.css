@@ -317,7 +317,8 @@
   max-width: 42em;
   margin: 0 auto;
   padding: 32px 24px;
-  font-family: var(--ym-font-body);
+  /* 字体也由设置里「排版」决定（变量同样绑在 .editor__area 上）；这里只是兜底 */
+  font-family: var(--ym-editor-font, var(--ym-font-body));
   /* 字号 / 行距 / 字距由设置里「排版」那一栏决定：变量绑在 .editor__area 上
      （见 EditorPane 的 bodyStyle 与 editor/typography.ts）；这里只是没绑上时的兜底 */
   font-size: var(--ym-body-size, 17px);

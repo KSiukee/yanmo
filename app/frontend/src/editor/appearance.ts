@@ -130,6 +130,13 @@ export interface AppearanceState {
    */
   setTypography: (field: TypographyField, value: number) => Promise<void>;
   /**
+   * 设正文字体：五档预设码（`serif` / `sans` / `kai` / `yahei` / `dengxian`）
+   * 或 `family:<字体族名>`（系统里装了的某一款）；传 `"auto"` = 清掉这一层（回默认宋体那档）。
+   *
+   * 只写**全局默认**（与排版三项同一条口径）；纯显示层：不进导出、不动正文。
+   */
+  setEditorFont: (value: string) => Promise<void>;
+  /**
    * 设稿纸横线的线型（`solid` / `dashed`；传 `"auto"` = 清掉这一层，回默认"不显示"）。
    *
    * 与排版三项同一条口径：**只写全局那一层**（第一版先只暴露全局，每书覆盖的机制已经在了）。
@@ -328,6 +335,12 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
       // 写全局那一层（稀疏合并：只传这一项，别的项不受影响）
       await act(() => options.transport.write(null, { [field]: value }));
       // 全局换了 → "这本书生效的那一份"也跟着换：顺手重读，编辑区与面板立刻一致
+      await state.loadWork();
+    },
+    setEditorFont: async (value) => {
+      // 传 `预设码` / `family:<名字>` 都行；`"auto"` = 清掉这一层（回默认宋体那档）。
+      // 与排版三项同一条路：写全局，再重读"这本书生效的那一份"。
+      await act(() => options.transport.write(null, { editor_font: value }));
       await state.loadWork();
     },
     setRuleStyle: async (value) => {

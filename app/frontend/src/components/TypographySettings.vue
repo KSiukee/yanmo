@@ -5,8 +5,9 @@
 // 三个旋钮 + 一段示例字 + 恢复默认，再加下面那组「稿纸横线」，与别的设置项没有耦合，
 // 拆出来两边都清清爽爽（横线跟排版是同一份偏好的两面：一格多高由行距算出来）。
 // 档位、范围与换算**一律向 editor/typography.ts 与 editor/rule.ts 要**（组件里不写死 px）。
-import { computed } from "vue";
+import { computed, ref } from "vue";
 
+import { systemFonts } from "../api/core.ts";
 import { t } from "../locales/index.ts";
 import type { EditorSession } from "../editor/session";
 import {
@@ -17,9 +18,16 @@ import {
   type TypographyKnob,
 } from "../editor/typography.ts";
 import { asRuleStyle, RULE_STYLES, type RuleStyle } from "../editor/rule.ts";
+import {
+  asEditorFont,
+  FONT_PRESETS,
+  fontFamilyName,
+  fontStackOf,
+} from "../editor/fonts.ts";
 
 const props = defineProps<{ session: EditorSession }>();
-const { values, workValues, busy, setTypography, setRuleStyle } = props.session.appearance;
+const { values, workValues, busy, setTypography, setRuleStyle, setEditorFont } =
+  props.session.appearance;
 
 /** 现在用的是哪一档：这本书的覆盖优先，没打开书看全局（与编辑区绑的是同一份） */
 const typography = computed(() => asTypography(workValues.value ?? values.value));
@@ -49,7 +57,55 @@ function typographyLabel(knob: TypographyKnob): string {
 }
 
 /** 示例那一段绑的是同一份变量（与编辑区一字不差地同源） */
-const sampleStyle = computed(() => typographyStyle(workValues.value ?? values.value));
+const sampleStyle = computed(() => ({
+  ...typographyStyle(workValues.value ?? values.value),
+  fontFamily: fontStackOf(fontValue.value),
+}));
+
+// ── 正文字体：五档预设 + 系统里装了的（可搜） ──────────────────────
+const fontValue = computed(() => asEditorFont(workValues.value ?? values.value));
+const customFamily = computed(() => fontFamilyName(fontValue.value));
+const fontsOpen = ref(false);
+const fonts = ref<string[]>([]);
+const fontsLoading = ref(false);
+const fontsLoaded = ref(false);
+const fontsError = ref("");
+const fontQuery = ref("");
+
+const filteredFonts = computed(() => {
+  const query = fontQuery.value.trim().toLowerCase();
+  const list = fonts.value;
+  return query === ""
+    ? list
+    : list.filter((name) => name.toLowerCase().includes(query));
+});
+
+/** 选一档预设：只改观感，正文一个字不动 */
+function pickPreset(code: string) {
+  void setEditorFont(code);
+}
+
+/** 展开/收起「更多字体…」：第一次展开才去读系统字体（读一次就够） */
+async function toggleFonts() {
+  fontsOpen.value = !fontsOpen.value;
+  if (!fontsOpen.value || fontsLoaded.value) return;
+  fontsLoading.value = true;
+  fontsError.value = "";
+  try {
+    fonts.value = await systemFonts();
+    fontsLoaded.value = true;
+  } catch (error) {
+    fontsError.value = t("settings.font_failed", {
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    fontsLoading.value = false;
+  }
+}
+
+function pickFamily(name: string) {
+  void setEditorFont(`family:${name}`);
+}
 
 // ── 稿纸横线：实线 / 虚线 / 不显示 ────────────────────────────────
 // 线型是作者选的一档（核心 `appearance.editor_rule_style`）；"一格多高"由 `editor/rule.ts`
@@ -73,6 +129,62 @@ function onRule(event: Event) {
 
 <template>
   <p class="settings__group">{{ t("settings.group_typography") }}</p>
+  <!-- 字体：五档常用 + 系统里装了的（可搜）。只改正文观感，不进导出。 -->
+  <p class="settings__row">
+    <span class="settings__label">{{ t("settings.font") }}</span>
+    <span class="settings__choices">
+      <label v-for="preset in FONT_PRESETS" :key="preset.code" class="settings__choice">
+        <input
+          type="radio"
+          name="ym-font"
+          :value="preset.code"
+          :checked="fontValue === preset.code"
+          :disabled="busy || unavailable"
+          @change="pickPreset(preset.code)"
+        />
+        <span>{{ t(preset.labelKey) }}</span>
+      </label>
+      <button
+        type="button"
+        class="settings__button dialog__button"
+        :disabled="busy || unavailable"
+        @click="toggleFonts"
+      >
+        {{ fontsOpen ? t("settings.font_less") : t("settings.font_more") }}
+      </button>
+    </span>
+  </p>
+  <p v-if="customFamily" class="settings__hint">
+    {{ t("settings.font_current", { name: customFamily }) }}
+  </p>
+  <div v-if="fontsOpen" class="settings__fonts">
+    <input
+      v-model="fontQuery"
+      type="search"
+      class="settings__fonts-search"
+      :placeholder="t('settings.font_search')"
+    />
+    <p v-if="fontsLoading" class="settings__hint">{{ t("settings.font_loading") }}</p>
+    <p v-else-if="fontsError" class="settings__hint">{{ fontsError }}</p>
+    <p v-else-if="filteredFonts.length === 0" class="settings__hint">
+      {{ t("settings.font_empty") }}
+    </p>
+    <ul v-else class="settings__fonts-list">
+      <li v-for="name in filteredFonts" :key="name">
+        <button
+          type="button"
+          class="settings__fonts-item"
+          :class="{ 'settings__fonts-item--on': customFamily === name }"
+          :disabled="busy || unavailable"
+          @click="pickFamily(name)"
+        >
+          {{ name }}
+        </button>
+      </li>
+    </ul>
+  </div>
+  <p class="settings__hint">{{ t("settings.font_hint") }}</p>
+
   <p v-for="knob in TYPOGRAPHY_KNOBS" :key="knob.field" class="settings__row">
     <span class="settings__label">{{ t(knob.labelKey) }}</span>
     <input

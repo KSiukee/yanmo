@@ -28,6 +28,8 @@ pub struct AppearanceDto {
     pub editor_font_size: Option<i64>,
     pub editor_line_height: Option<i64>,
     pub editor_letter_spacing: Option<i64>,
+    /// 正文字体：五档预设码（`serif`/`sans`/`kai`/`yahei`/`dengxian`）或 `family:<字体名>`
+    pub editor_font: String,
     /// 稿纸横线的线型（`none` / `solid` / `dashed`；**只影响观感，不进导出**）
     pub editor_rule_style: String,
     /// 叩问问话的语气（`warm` / `neutral` / `direct`；`neutral` 就是"不加语气"）
@@ -70,6 +72,7 @@ impl From<ResolvedAppearance> for AppearanceDto {
             editor_font_size: value.editor_font_size,
             editor_line_height: value.editor_line_height,
             editor_letter_spacing: value.editor_letter_spacing,
+            editor_font: value.editor_font,
             editor_rule_style: value.editor_rule_style.as_str().to_string(),
             question_tone: value.question_tone.as_str().to_string(),
             question_push_per_day: value.question_push_per_day,
@@ -129,6 +132,9 @@ pub struct AppearancePatch {
     /// 所以不拿 0 当"清掉"；传负数 = 清掉这一层（回默认关）。
     /// **只落全局那一层**（传了 `work_id` 也不会写进每书记录）
     pub eye_care: Option<i64>,
+    /// 正文字体：五档预设码（`serif` / `sans` / `kai` / `yahei` / `dengxian`），或
+    /// `family:<字体族名>`（系统里装了的某一款）；传 `"auto"` = 清掉这一层（回默认宋体那档）
+    pub editor_font: Option<String>,
     /// 正文底色（`paper` / `cream` / `green` / `gray`）；传 `"auto"` = 清掉这一层（回默认纸白）
     pub editor_bg_color: Option<String>,
     /// 正文底纹（`none` / `grid` / `dots` / `grain`）；传 `"auto"` = 清掉这一层（回默认不铺）
@@ -151,6 +157,7 @@ impl From<AppearancePatch> for Appearance {
             editor_font_size: patch.editor_font_size,
             editor_line_height: patch.editor_line_height,
             editor_letter_spacing: patch.editor_letter_spacing,
+            editor_font: patch.editor_font,
             editor_rule_style: patch.editor_rule_style,
             question_tone: patch.question_tone,
             question_push_per_day: patch.question_push_per_day,
