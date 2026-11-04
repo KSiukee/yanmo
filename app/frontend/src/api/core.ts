@@ -155,8 +155,10 @@ export interface Appearance {
   editor_font_size: number | null;
   editor_line_height: number | null;
   editor_letter_spacing: number | null;
-  /** 正文字体：五档预设码（serif/sans/kai/yahei/dengxian）或 `family:<字体名>` */
+  /** 正文字体：五档预设码（serif/sans/kai/yahei/dengxian）或 `family:<字体名>` / `file:<文件名>` */
   editor_font: string;
+  /** 字体生效范围：body = 仅正文 / all = 整个界面 */
+  editor_font_scope: string;
   /** 正文底下那层稿纸横线用哪种线（none / solid / dashed）；**只影响观感，不进导出** */
   editor_rule_style: string;
   /** 叩问问话的语气（warm / neutral / direct）；neutral 就是"不加语气"＝把这层关掉 */
@@ -204,8 +206,10 @@ export interface AppearancePatch {
   editor_font_size?: number;
   editor_line_height?: number;
   editor_letter_spacing?: number;
-  /** 正文字体：预设码或 `family:<字体名>`；传 "auto" 就是**清掉这一层**（回默认宋体那档） */
+  /** 正文字体：预设码或 `family:<字体名>` / `file:<文件名>`；传 "auto" 就是**清掉这一层**（回默认宋体那档） */
   editor_font?: string;
+  /** 字体生效范围：body / all；传 "auto" 就是**清掉这一层**（回默认仅正文） */
+  editor_font_scope?: string;
   /** 稿纸线型：none / solid / dashed；传 "auto" 就是**清掉这一层**（回默认：不显示） */
   editor_rule_style?: string;
   /** 正文底色：paper / cream / green / gray；传 "auto" 就是**清掉这一层**（回默认：纸白） */
@@ -695,6 +699,18 @@ export async function call<T>(command: string, args?: Record<string, unknown>): 
 export const readEngineInfo = () => call<EngineInfo>(COMMANDS.engineInfo);
 /** 系统里装了的字体族（只读注册表；排版里「更多字体…」的可搜索列表用它）。 */
 export const systemFonts = () => call<string[]>(COMMANDS.systemFonts);
+
+/** 作者挑的一个字体文件：**只有名字与地址，没有路径**（壳复制进数据目录）。 */
+export interface FontPick {
+  name: string;
+  url: string;
+}
+
+/** 让作者挑一个字体文件；取消返回 null。标题与过滤器文案由界面给（壳里不写中文）。 */
+export const pickFont = (title: string, filter_label: string) =>
+  call<FontPick | null>(COMMANDS.pickFont, { title, filter_label });
+/** 重启之后把已存字体文件的地址找回来（文件不在了就是 null）。 */
+export const fontUrl = (name: string) => call<string | null>(COMMANDS.fontUrl, { name });
 export const readDataHome = () => call<DataHome>(COMMANDS.dataHome);
 
 /** 在文件管理器里打开稿子所在的目录（壳自己打开自己的目录，界面不传路径）。 */

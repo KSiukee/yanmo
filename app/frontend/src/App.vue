@@ -10,6 +10,9 @@ import { computed, onMounted, ref } from "vue";
 
 import { t } from "./locales/index.ts";
 import { useEditorSession } from "./editor/session";
+import { useCustomFont } from "./composables/custom-font.ts";
+import { useFontScope } from "./composables/custom-font.ts";
+import { asEditorFont } from "./editor/fonts.ts";
 import { useAsideTab } from "./editor/aside";
 import { useTheme } from "./editor/theme.ts";
 import { useEyeCare } from "./editor/eye-care.ts";
@@ -46,6 +49,20 @@ import WritingDialog from "./components/WritingDialog.vue";
 
 // 会话在布局层建**一次**：目录树、书架与正文编辑器说的必须是同一本书、同一章
 const session = useEditorSession();
+
+// 自定义字体文件：库里存的是 `file:<名字>`，这里把它变成一段 @font-face（只在这一处注入）。
+const currentFont = computed(() =>
+  asEditorFont(session.appearance.workValues.value ?? session.appearance.values.value),
+);
+useCustomFont(currentFont);
+
+// 字体生效范围：默认只换正文；选「整个界面」时连三栏、弹窗一起换。
+const currentFontScope = computed(() =>
+  (session.appearance.workValues.value ?? session.appearance.values.value)?.editor_font_scope === "all"
+    ? "all"
+    : "body",
+);
+useFontScope(currentFont, currentFontScope);
 
 // 磁盘 .md 镜像：启动后看几眼，有"磁盘上那份与研墨不一样"的事就把对话框请出来。
 // 看一眼是异步的（后台那趟对账要几秒），看不到就算了——那是真的没有要对的事。

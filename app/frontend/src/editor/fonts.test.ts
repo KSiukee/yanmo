@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { asEditorFont, fontFamilyName, fontStackOf } from "./fonts.ts";
+import { asEditorFont, fontFamilyName, fontFileName, fontStackOf } from "./fonts.ts";
 
 test("认不出的字体值回默认（宋体那档）", () => {
   assert.equal(asEditorFont({ editor_font: "comic-sans" }), "serif");
@@ -31,4 +31,13 @@ test("字体栈：预设各不相同；自定义名字进栈并去掉引号", ()
   const custom = fontStackOf('family:我的"字体\\');
   assert.ok(custom.startsWith('"我的字体"'), custom);
   assert.ok(custom.endsWith("serif"));
+});
+
+test("字体文件：file: 原样认，拼栈时用统一的族名", () => {
+  assert.equal(asEditorFont({ editor_font: "file:font-abc.ttf" }), "file:font-abc.ttf");
+  assert.equal(fontFileName("file:font-abc.ttf"), "font-abc.ttf");
+  assert.equal(fontFileName("kai"), null);
+  const stack = fontStackOf("file:font-abc.ttf");
+  assert.ok(stack.startsWith('"YanmoCustomFont"'), stack);
+  assert.ok(stack.endsWith("serif"));
 });

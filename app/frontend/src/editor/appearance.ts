@@ -137,6 +137,12 @@ export interface AppearanceState {
    */
   setEditorFont: (value: string) => Promise<void>;
   /**
+   * 字体生效范围：`body` = 仅正文 / `all` = 整个界面；传 `"auto"` = 清掉这一层（回默认仅正文）。
+   *
+   * 只写**全局默认**；纯显示层：不改正文、不进导出。
+   */
+  setEditorFontScope: (value: string) => Promise<void>;
+  /**
    * 设稿纸横线的线型（`solid` / `dashed`；传 `"auto"` = 清掉这一层，回默认"不显示"）。
    *
    * 与排版三项同一条口径：**只写全局那一层**（第一版先只暴露全局，每书覆盖的机制已经在了）。
@@ -341,6 +347,10 @@ export function useAppearance(options: AppearanceOptions): AppearanceState {
       // 传 `预设码` / `family:<名字>` 都行；`"auto"` = 清掉这一层（回默认宋体那档）。
       // 与排版三项同一条路：写全局，再重读"这本书生效的那一份"。
       await act(() => options.transport.write(null, { editor_font: value }));
+      await state.loadWork();
+    },
+    setEditorFontScope: async (value) => {
+      await act(() => options.transport.write(null, { editor_font_scope: value }));
       await state.loadWork();
     },
     setRuleStyle: async (value) => {

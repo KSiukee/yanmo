@@ -15,6 +15,8 @@
 export const COMMANDS = {
   engineInfo: "engine_info",
   systemFonts: "system_fonts",
+  pickFont: "pick_font",
+  fontUrl: "font_url",
   dataHome: "data_home",
   openDataDir: "open_data_dir",
   diagnoseNote: "diagnose_note",

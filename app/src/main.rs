@@ -242,6 +242,12 @@ fn main() {
             let state = ctx.app_handle().state::<ModuleUiState>();
             module_ui::respond(ctx.app_handle(), state.inner(), request)
         })
+        // 自定义正文字体：只服务 `<数据目录>/fonts/` 这一层的只读协议
+        // （界面拿到的是 http://yanmo-font.localhost/local/<名字>，永远没有路径）
+        .register_uri_scheme_protocol("yanmo-font", |ctx, request| {
+            let data = ctx.app_handle().state::<storage::AppData>();
+            commands::fonts::respond(&data.data_dir(), request)
+        })
         .invoke_handler(commands::registry::app_handlers())
         .run(tauri::generate_context!())
         // i18n-allow-next-line: 进程级 panic 文本（开发者看），应用起不来时界面还不存在

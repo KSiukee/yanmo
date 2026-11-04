@@ -772,6 +772,34 @@ fn the_editor_font_is_a_closed_set_plus_installed_families() {
         .unwrap();
     assert_eq!(store.appearance(None).unwrap().editor_font, "family:思源宋体 CN");
 
+    // 生效范围：默认仅正文；能改成整个界面；认不出的当场拒；auto 清回默认
+    assert_eq!(store.appearance(None).unwrap().editor_font_scope, "body");
+    store
+        .set_appearance(
+            None,
+            &Appearance {
+                editor_font_scope: Some("all".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(store.appearance(None).unwrap().editor_font_scope, "all");
+    let bad_scope = store.set_appearance(
+        None,
+        &Appearance {
+            editor_font_scope: Some("window".to_string()),
+            ..Default::default()
+        },
+    );
+    assert!(bad_scope.is_err(), "不认识的字体范围要被拒");
+    store
+        .set_appearance(
+            None,
+            &Appearance { editor_font_scope: Some("auto".to_string()), ..Default::default() },
+        )
+        .unwrap();
+    assert_eq!(store.appearance(None).unwrap().editor_font_scope, "body");
+
     // 认不出的码当场拒（不静默改成默认）；空名字、超长名字也拒
     for value in [
         "comic".to_string(),

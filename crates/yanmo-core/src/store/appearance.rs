@@ -107,6 +107,11 @@ pub struct Appearance {
     /// 由界面的字体栈自然回退（核心不判断"装没装"）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editor_font: Option<String>,
+    /// 字体生效范围（稳定码：`body` = 仅正文 / `all` = 整个界面）。`None` = 没改过 → 仅正文。
+    ///
+    /// 纯显示层：换的是"用哪套字"，不改任何正文与布局。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor_font_scope: Option<String>,
     /// 正文底下那层稿纸横线用哪种线（`RuleStyle` 的稳定码：`none` / `solid` / `dashed`）。
     /// `None` = 没改过 → **不显示**（与研墨一直以来的样子一致），由读侧落定。
     ///
@@ -215,24 +220,41 @@ fn typography_value(value: i64, (low, high): (i64, i64)) -> Option<i64> {
 pub const EDITOR_FONT_CODES: [&str; 5] = ["serif", "sans", "kai", "yahei", "dengxian"];
 /// `family:<名字>` 的前缀（名字只做形状校验：非空、不超长、无控制字符）。
 pub const EDITOR_FONT_FAMILY_PREFIX: &str = "family:";
+/// `file:<文件名>` 的前缀：作者自己挑的**字体文件**（由壳复制进数据目录，界面拿不到路径）。
+pub const EDITOR_FONT_FILE_PREFIX: &str = "file:";
 const MAX_FONT_FAMILY_CHARS: usize = 60;
+const MAX_FONT_FILE_CHARS: usize = 80;
 
-/// 把一个"正文字体"取值收成稳定形态：预设码原样，`family:` 去掉首尾空白。
+/// 把一个"正文字体"取值收成稳定形态：预设码原样，`family:` / `file:` 去掉首尾空白。
 ///
 /// **不判断系统里装没装**——那件事界面在挑的时候就已经确认过；这里只管形状，
-/// 免得把一串控制字符或 200 字的胡说存进设置里。
+/// 免得把一串控制字符或 200 字的胡说存进设置里。`file:` 另外**不许带目录成分**
+/// （名字来自壳，界面只会原样带回来；带 `/` `\` `:` 的一律当坏值）。
 fn editor_font_code(value: &str) -> Option<String> {
     if EDITOR_FONT_CODES.contains(&value) {
         return Some(value.to_string());
     }
-    let family = value.strip_prefix(EDITOR_FONT_FAMILY_PREFIX)?.trim();
-    if family.is_empty()
-        || family.chars().count() > MAX_FONT_FAMILY_CHARS
-        || family.chars().any(char::is_control)
+    if let Some(family) = value.strip_prefix(EDITOR_FONT_FAMILY_PREFIX) {
+        let family = family.trim();
+        if family.is_empty()
+            || family.chars().count() > MAX_FONT_FAMILY_CHARS
+            || family.chars().any(char::is_control)
+        {
+            return None;
+        }
+        return Some(format!("{EDITOR_FONT_FAMILY_PREFIX}{family}"));
+    }
+    let file = value.strip_prefix(EDITOR_FONT_FILE_PREFIX)?.trim();
+    let lower = file.to_lowercase();
+    if file.is_empty()
+        || file.chars().count() > MAX_FONT_FILE_CHARS
+        || file.chars().any(char::is_control)
+        || file.contains(['/', '\\', ':'])
+        || !["ttf", "otf", "ttc"].iter().any(|ext| lower.ends_with(&format!(".{ext}")))
     {
         return None;
     }
-    Some(format!("{EDITOR_FONT_FAMILY_PREFIX}{family}"))
+    Some(format!("{EDITOR_FONT_FILE_PREFIX}{file}"))
 }
 
 /// 用眼提醒那两个阈值的校验：**≤0 与超过上限都一律拒**。
@@ -300,6 +322,7 @@ impl Appearance {
             && self.editor_line_height.is_none()
             && self.editor_letter_spacing.is_none()
 && self.editor_font.is_none()
+&& self.editor_font_scope.is_none()
             && self.editor_rule_style.is_none()
             && self.question_tone.is_none()
             && self.question_push_per_day.is_none()
@@ -338,6 +361,10 @@ impl Appearance {
             editor_letter_spacing: over.editor_letter_spacing.or(self.editor_letter_spacing),
 // 字体：每书覆盖也走同一条路（界面只暴露全局，机制先留着）
 editor_font: over.editor_font.clone().or_else(|| self.editor_font.clone()),
+editor_font_scope: over
+    .editor_font_scope
+    .clone()
+    .or_else(|| self.editor_font_scope.clone()),
             // 稿纸线型：每书覆盖也走同一条路（第一版界面只暴露全局，机制先留着）
             editor_rule_style: over
                 .editor_rule_style
@@ -400,6 +427,8 @@ pub struct ResolvedAppearance {
     pub editor_letter_spacing: Option<i64>,
     /// 正文字体：预设码或 `family:<名字>`（没改过 → `serif`）。
     pub editor_font: String,
+    /// 字体生效范围（`body` = 仅正文 / `all` = 整个界面；没改过 → 仅正文）。
+    pub editor_font_scope: String,
     /// 稿纸横线的线型（没改过就是不显示）。
     pub editor_rule_style: RuleStyle,
     /// 叩问问话的语气（没改过就是温柔那档；`neutral` = 不加语气）。
@@ -447,8 +476,9 @@ impl Default for ResolvedAppearance {
             editor_font_size: None,
             editor_line_height: None,
             editor_letter_spacing: None,
-            // 字体默认宋体那档（与研墨一直以来的正文观感一致）
+            // 字体默认宋体那档（与研墨一直以来的正文观感一致）；范围默认仅正文
             editor_font: "serif".to_string(),
+            editor_font_scope: "body".to_string(),
             editor_rule_style: RuleStyle::default(),
             // 叩问：默认温柔（贴心那档）、一天最多 3 次、两次之间隔 60 分钟
             // ——"主动开口"必须稀缺，写作最怕被打断
@@ -526,6 +556,11 @@ impl Store {
                 .as_deref()
                 .and_then(editor_font_code)
                 .unwrap_or_else(|| "serif".to_string()),
+            // 范围：认不出来的当没设过（与别的码同一条规矩），回"仅正文"
+            editor_font_scope: match merged.editor_font_scope.as_deref() {
+                Some("all") => "all".to_string(),
+                _ => "body".to_string(),
+            },
             // 线型：认不出来的码当没设过（与口径 / 引号 / 配色同一条规矩），回"不显示"
             editor_rule_style: merged
                 .editor_rule_style
@@ -697,6 +732,19 @@ impl Store {
         }
         // 正文字体：`"auto"` = 清掉这一层（回默认宋体那档）；五档预设码原样收，
         // `family:<名字>` 只做形状校验（真"装没装"由界面挑的时候保证）
+        if let Some(value) = patch.editor_font_scope.as_deref() {
+            // `"auto"` = 清掉这一层（回默认"仅正文"）；只认两个稳定码
+            stored.editor_font_scope = if value == "auto" {
+                None
+            } else if matches!(value, "body" | "all") {
+                Some(value.to_string())
+            } else {
+                return Err(crate::error::Error::invalid_with(
+                    crate::error::codes::UNKNOWN_FONT_SCOPE,
+                    [("value", value.to_string())],
+                ));
+            };
+        }
         if let Some(value) = patch.editor_font.as_deref() {
             stored.editor_font = if value == "auto" {
                 None
@@ -856,6 +904,7 @@ impl Store {
                 "editor_line_height": patch.editor_line_height,
                 "editor_letter_spacing": patch.editor_letter_spacing,
                 "editor_font": patch.editor_font,
+                "editor_font_scope": patch.editor_font_scope,
                 "editor_rule_style": patch.editor_rule_style,
                 "editor_bg_color": patch.editor_bg_color,
                 "editor_bg_layout": patch.editor_bg_layout,

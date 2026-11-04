@@ -7,7 +7,7 @@
 // 档位、范围与换算**一律向 editor/typography.ts 与 editor/rule.ts 要**（组件里不写死 px）。
 import { computed, ref } from "vue";
 
-import { systemFonts } from "../api/core.ts";
+import { pickFont, systemFonts } from "../api/core.ts";
 import { t } from "../locales/index.ts";
 import type { EditorSession } from "../editor/session";
 import {
@@ -22,11 +22,12 @@ import {
   asEditorFont,
   FONT_PRESETS,
   fontFamilyName,
+  fontFileName,
   fontStackOf,
 } from "../editor/fonts.ts";
 
 const props = defineProps<{ session: EditorSession }>();
-const { values, workValues, busy, setTypography, setRuleStyle, setEditorFont } =
+const { values, workValues, busy, setTypography, setRuleStyle, setEditorFont, setEditorFontScope } =
   props.session.appearance;
 
 /** 现在用的是哪一档：这本书的覆盖优先，没打开书看全局（与编辑区绑的是同一份） */
@@ -64,7 +65,13 @@ const sampleStyle = computed(() => ({
 
 // ── 正文字体：五档预设 + 系统里装了的（可搜） ──────────────────────
 const fontValue = computed(() => asEditorFont(workValues.value ?? values.value));
+const fontScope = computed(() =>
+  (workValues.value ?? values.value)?.editor_font_scope === "all" ? "all" : "body",
+);
 const customFamily = computed(() => fontFamilyName(fontValue.value));
+const customFile = computed(() => fontFileName(fontValue.value));
+const picking = ref(false);
+const pickError = ref("");
 const fontsOpen = ref(false);
 const fonts = ref<string[]>([]);
 const fontsLoading = ref(false);
@@ -83,6 +90,12 @@ const filteredFonts = computed(() => {
 /** 选一档预设：只改观感，正文一个字不动 */
 function pickPreset(code: string) {
   void setEditorFont(code);
+}
+
+/** 生效范围：仅正文 / 整个界面（都只改观感，不动正文） */
+const FONT_SCOPES = ["body", "all"] as const;
+function pickScope(scope: string) {
+  void setEditorFontScope(scope);
 }
 
 /** 展开/收起「更多字体…」：第一次展开才去读系统字体（读一次就够） */
@@ -105,6 +118,20 @@ async function toggleFonts() {
 
 function pickFamily(name: string) {
   void setEditorFont(`family:${name}`);
+}
+
+/** 用作者自己下载的字体文件（壳把它拷进数据目录，界面只拿到一个安全文件名）。 */
+async function chooseFontFile() {
+  picking.value = true;
+  pickError.value = "";
+  try {
+    const picked = await pickFont(t("settings.font_file_title"), t("settings.font_file_filter"));
+    if (picked !== null) await setEditorFont(`file:${picked.name}`);
+  } catch (error) {
+    pickError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    picking.value = false;
+  }
 }
 
 // ── 稿纸横线：实线 / 虚线 / 不显示 ────────────────────────────────
@@ -144,19 +171,34 @@ function onRule(event: Event) {
         />
         <span>{{ t(preset.labelKey) }}</span>
       </label>
-      <button
-        type="button"
-        class="settings__button dialog__button"
-        :disabled="busy || unavailable"
-        @click="toggleFonts"
-      >
-        {{ fontsOpen ? t("settings.font_less") : t("settings.font_more") }}
-      </button>
     </span>
   </p>
-  <p v-if="customFamily" class="settings__hint">
+  <!-- 两个入口另起一行：与五档挤在一起会把「字体」两个字压成两行 -->
+  <p class="settings__font-actions">
+    <button
+      type="button"
+      class="settings__button dialog__button"
+      :disabled="busy || unavailable || picking"
+      @click="chooseFontFile"
+    >
+      {{ t("settings.font_file") }}
+    </button>
+    <button
+      type="button"
+      class="settings__button dialog__button"
+      :disabled="busy || unavailable"
+      @click="toggleFonts"
+    >
+      {{ fontsOpen ? t("settings.font_less") : t("settings.font_more") }}
+    </button>
+  </p>
+  <p v-if="customFile" class="settings__hint">
+    {{ t("settings.font_file_current", { name: customFile }) }}
+  </p>
+  <p v-else-if="customFamily" class="settings__hint">
     {{ t("settings.font_current", { name: customFamily }) }}
   </p>
+  <p v-if="pickError" class="settings__hint">{{ pickError }}</p>
   <div v-if="fontsOpen" class="settings__fonts">
     <input
       v-model="fontQuery"
@@ -184,6 +226,24 @@ function onRule(event: Event) {
     </ul>
   </div>
   <p class="settings__hint">{{ t("settings.font_hint") }}</p>
+  <p class="settings__hint">{{ t("settings.font_file_hint") }}</p>
+  <!-- 生效范围：默认只换正文，想连界面一起换再选「整个界面」 -->
+  <p class="settings__row">
+    <span class="settings__label">{{ t("settings.font_scope") }}</span>
+    <span class="settings__choices">
+      <label v-for="scope in FONT_SCOPES" :key="scope" class="settings__choice">
+        <input
+          type="radio"
+          name="ym-font-scope"
+          :value="scope"
+          :checked="fontScope === scope"
+          :disabled="busy || unavailable"
+          @change="pickScope(scope)"
+        />
+        <span>{{ t(`settings.font_scope.${scope}`) }}</span>
+      </label>
+    </span>
+  </p>
 
   <p v-for="knob in TYPOGRAPHY_KNOBS" :key="knob.field" class="settings__row">
     <span class="settings__label">{{ t(knob.labelKey) }}</span>

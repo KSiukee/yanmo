@@ -80,6 +80,9 @@ pub mod question;
 pub mod question_push;
 /// 从备份恢复：预览、体检、换库。
 pub mod restore;
+/// 自定义正文字体文件：挑一个 `.ttf`/`.otf`/`.ttc` → 拷进数据目录 → 只回名字与地址
+/// （界面拿不到路径；`@font-face` 走 `http://yanmo-font.localhost/` 这条只读协议）。
+pub mod fonts;
 /// 场景卡：四格（视角 / 目标 / 冲突 / 结果）的读写。
 /// 加密备份包：开关、口令（只在内存）、恢复码。
 pub mod seal;

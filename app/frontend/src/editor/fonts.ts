@@ -21,6 +21,9 @@ export const FONT_PRESETS: ReadonlyArray<{ code: EditorFontPreset; labelKey: str
 
 export const DEFAULT_EDITOR_FONT: EditorFontPreset = "serif";
 const FAMILY_PREFIX = "family:";
+const FILE_PREFIX = "file:";
+/** 自定义字体文件在 CSS 里的族名（壳给的地址注入 `@font-face` 时用同一个名字）。 */
+export const CUSTOM_FONT_FAMILY = "YanmoCustomFont";
 
 /** 每档的字体栈（兜底放在最后，装没装都不至于空白）。 */
 const STACKS: Record<EditorFontPreset, string> = {
@@ -31,12 +34,13 @@ const STACKS: Record<EditorFontPreset, string> = {
   dengxian: `"DengXian", "Microsoft YaHei", sans-serif`,
 };
 
-/** 把库里那个值收成"认识的"：预设码原样，`family:<名字>` 原样，别的一律回默认。 */
+/** 把库里那个值收成"认识的"：预设码原样，`family:<名字>` / `file:<文件名>` 原样，别的一律回默认。 */
 export function asEditorFont(values: Partial<Appearance> | null | undefined): string {
   const raw = values?.editor_font;
   if (typeof raw !== "string") return DEFAULT_EDITOR_FONT;
   if (FONT_PRESETS.some((preset) => preset.code === raw)) return raw;
   if (raw.startsWith(FAMILY_PREFIX) && raw.slice(FAMILY_PREFIX.length).trim() !== "") return raw;
+  if (raw.startsWith(FILE_PREFIX) && raw.slice(FILE_PREFIX.length).trim() !== "") return raw;
   return DEFAULT_EDITOR_FONT;
 }
 
@@ -45,8 +49,16 @@ export function fontFamilyName(value: string): string | null {
   return value.startsWith(FAMILY_PREFIX) ? value.slice(FAMILY_PREFIX.length) : null;
 }
 
+/** 自定义字体文件的文件名（不是 `file:` 就返回 null）。 */
+export function fontFileName(value: string): string | null {
+  return value.startsWith(FILE_PREFIX) ? value.slice(FILE_PREFIX.length) : null;
+}
+
 /** 拼成能直接塞进 CSS 的字体栈（族名里可能带引号，先去掉再包一层）。 */
 export function fontStackOf(value: string): string {
+  if (fontFileName(value) !== null) {
+    return `"${CUSTOM_FONT_FAMILY}", "Songti SC", "SimSun", serif`;
+  }
   const family = fontFamilyName(value);
   if (family !== null) {
     const safe = family.replace(/["\\]/g, "").trim();
