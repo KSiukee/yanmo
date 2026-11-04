@@ -82,3 +82,5 @@ function setCooldown(event: Event) {
   </label>
   <p class="settings__hint">{{ t("settings.push_hint") }}</p>
 </template>
+
+<style scoped src="./settings-dialog.css"></style>
