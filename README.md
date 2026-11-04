@@ -1,5 +1,10 @@
 # 研墨
 
+[![Release](https://img.shields.io/github/v/release/KSiukee/yanmo?label=release&color=4f6ce0)](https://github.com/KSiukee/yanmo/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/KSiukee/yanmo/total?color=4f6ce0)](https://github.com/KSiukee/yanmo/releases)
+[![License](https://img.shields.io/github/license/KSiukee/yanmo?color=4f6ce0)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-4f6ce0)](#)
+
 **An offline, local-first Chinese novel-writing app for Windows**（Rust + Tauri）——你的稿子就是你
 自己电脑上的一个普通文件夹：不联网、不上传、不需要注册账号、不锁功能。
 Read this in [English](./README.en.md) · [下载安装](#版本与下载) · [安全承诺](./SECURITY.md)

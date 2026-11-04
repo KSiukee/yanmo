@@ -1,5 +1,10 @@
 # Yanmo (研墨)
 
+[![Release](https://img.shields.io/github/v/release/KSiukee/yanmo?label=release&color=4f6ce0)](https://github.com/KSiukee/yanmo/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/KSiukee/yanmo/total?color=4f6ce0)](https://github.com/KSiukee/yanmo/releases)
+[![License](https://img.shields.io/github/license/KSiukee/yanmo?color=4f6ce0)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-4f6ce0)](#)
+
 **An offline, local-first Chinese novel-writing app for Windows**, built with Rust + Tauri.
 
 Your manuscript is just a plain folder on your own computer. No cloud, no account, no telemetry,
