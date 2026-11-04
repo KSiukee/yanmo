@@ -8,6 +8,7 @@ import { onMounted, onUnmounted, ref } from "vue";
 import {
   moduleMirrorChanged,
   moduleRun,
+  moduleSampleAvailable,
   moduleSetBackground,
   moduleStop,
   modulesList,
@@ -35,6 +36,8 @@ const busy = ref(false);
 const note = ref("");
 const credentialFor = ref<string | null>(null);
 const factsFor = ref<string | null>(null); // 事实页展开的是哪一张
+// 随包附带的示例模块在不在：在才摆那张「装上看看」的卡（开发构建里可能没有）。
+const sampleAvailable = ref(false);
 const { loadHealth, healthLine } = useModuleHealth();
 const { runs, isRunning: isRunningId, markStarted, markStopped, loadStatuses, dispose } =
   useModuleRuns((status: ModuleStatus) => {
@@ -174,6 +177,7 @@ function panicModules() {
 const {
   preview,
   pickImport,
+  pickSample,
   confirmImport,
   cancelImport,
 } = useModuleImport(busy, note, (next) => {
@@ -183,6 +187,11 @@ const {
 onMounted(() => {
   void load();
   void loadHealth();
+  void moduleSampleAvailable()
+    .then((available) => {
+      sampleAvailable.value = available;
+    })
+    .catch(() => undefined);
 });
 
 onUnmounted(() => {
@@ -219,7 +228,29 @@ onUnmounted(() => {
         @cancel="cancelImport"
       />
 
-      <p v-if="cards.length === 0" class="modules__empty dialog__empty">
+      <!-- 一个模块都没装时：先给一张**能真的装上**的示例，而不是一句「还没有安装模块」。
+           点「装上看看」会走完整导入通道（预览 → 逐项勾权限 → 确认），不绕过任何一道门。 -->
+      <section
+        v-if="cards.length === 0 && !preview && sampleAvailable"
+        class="modules__sample"
+      >
+        <p class="modules__sample-tag">{{ t("modules.sample_tag") }}</p>
+        <h3 class="modules__sample-name">{{ t("modules.sample_name") }}</h3>
+        <p class="modules__sample-desc">{{ t("modules.sample_desc") }}</p>
+        <div class="modules__sample-acts">
+          <button
+            type="button"
+            class="modules__button dialog__button modules__button--primary"
+            :disabled="busy"
+            @click="pickSample"
+          >
+            {{ t("modules.sample_install") }}
+          </button>
+        </div>
+        <p class="modules__sample-note">{{ t("modules.sample_note") }}</p>
+      </section>
+
+      <p v-else-if="cards.length === 0" class="modules__empty dialog__empty">
         {{ t("modules.empty") }}<span class="modules__empty-hint">{{ t("modules.empty_hint") }}</span>
       </p>
 

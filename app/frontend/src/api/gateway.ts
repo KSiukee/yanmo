@@ -259,6 +259,8 @@ export const COMMANDS = {
   moduleImportPick: "module_import_pick",
   moduleImportConfirm: "module_import_confirm",
   moduleImportCancel: "module_import_cancel",
+  moduleSampleAvailable: "module_sample_available",
+  moduleSamplePreview: "module_sample_preview",
   moduleRun: "module_run",
   moduleStatus: "module_status",
   moduleStop: "module_stop",

@@ -69,6 +69,14 @@ export const moduleImportConfirm = (granted: ModuleCapabilities, expected_finger
 
 export const moduleImportCancel = () => call<void>(COMMANDS.moduleImportCancel);
 
+/** 随包附带的示例模块在不在（开发构建里可能没有）。 */
+export const moduleSampleAvailable = () =>
+  call<boolean>(COMMANDS.moduleSampleAvailable);
+
+/** 把随包示例放进导入通道（只预览）：返回的预览与「导入模块」完全一样。 */
+export const moduleSamplePreview = () =>
+  call<ImportPreview | null>(COMMANDS.moduleSamplePreview);
+
 
 
 export const moduleRun = (module_id: string) =>

@@ -9,6 +9,7 @@ import {
   moduleImportCancel,
   moduleImportConfirm,
   moduleImportPick,
+  moduleSamplePreview,
   modulesList,
   type ImportPreview,
   type ModuleCapabilities,
@@ -43,6 +44,25 @@ export function useModuleImport(
     }
   }
 
+  /** 装上随包附带的示例模块：先走预览（权限照样逐项确认），不直接安装。 */
+  async function pickSample() {
+    if (busy.value) return;
+    busy.value = true;
+    note.value = "";
+    try {
+      const picked = await moduleSamplePreview();
+      if (!picked) {
+        note.value = t("modules.sample_missing");
+        return;
+      }
+      preview.value = picked;
+    } catch (error) {
+      note.value = t("modules.import_failed", { detail: messageOf(error) });
+    } finally {
+      busy.value = false;
+    }
+  }
+
   async function confirmImport(grant: ModuleCapabilities) {
     const current = preview.value;
     if (!current || busy.value) return;
@@ -65,5 +85,5 @@ export function useModuleImport(
     preview.value = null;
   }
 
-  return { preview, pickImport, confirmImport, cancelImport };
+  return { preview, pickImport, pickSample, confirmImport, cancelImport };
 }

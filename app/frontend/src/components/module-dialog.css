@@ -179,3 +179,45 @@
   color: var(--ym-ink-soft);
 }
 
+/* 示例模块卡：一个模块都没装时先摆它，讲清「模块是什么」，并给一个能真的装上的入口。 */
+.modules__sample {
+  padding: 18px 18px 16px;
+  border: 1px solid var(--ym-line);
+  border-radius: 12px;
+  background: var(--ym-paper-dim);
+}
+
+.modules__sample-tag {
+  display: inline-block;
+  margin: 0 0 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--ym-accent-soft);
+  color: var(--ym-accent);
+  font-size: 11px;
+}
+
+.modules__sample-name {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.modules__sample-desc {
+  margin: 0 0 12px;
+  color: var(--ym-ink-soft);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.modules__sample-acts {
+  display: flex;
+  gap: 8px;
+}
+
+.modules__sample-note {
+  margin: 10px 0 0;
+  color: var(--ym-ink-soft);
+  font-size: 12px;
+}
+

@@ -5234,7 +5234,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-app"
-version = "0.175.1"
+version = "0.176.0"
 dependencies = [
  "getrandom 0.4.3",
  "serde",
@@ -5250,7 +5250,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-cli"
-version = "0.175.1"
+version = "0.176.0"
 dependencies = [
  "serde_json",
  "tempfile",
@@ -5259,7 +5259,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-core"
-version = "0.175.1"
+version = "0.176.0"
 dependencies = [
  "argon2",
  "chacha20poly1305",
@@ -5279,7 +5279,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-host"
-version = "0.175.1"
+version = "0.176.0"
 dependencies = [
  "rusqlite",
  "serde",
@@ -5296,7 +5296,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-ipc"
-version = "0.175.1"
+version = "0.176.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5305,7 +5305,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-launcher"
-version = "0.175.1"
+version = "0.176.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5319,7 +5319,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-proto"
-version = "0.175.1"
+version = "0.176.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5327,7 +5327,7 @@ dependencies = [
 
 [[package]]
 name = "yanmo-vault"
-version = "0.175.1"
+version = "0.176.0"
 dependencies = [
  "keyring",
  "serde",

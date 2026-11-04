@@ -272,6 +272,8 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::module::module_import_pick,
         crate::commands::module::module_import_confirm,
         crate::commands::module::module_import_cancel,
+        crate::commands::module::module_sample_available,
+        crate::commands::module::module_sample_preview,
         crate::commands::module_run::module_run,
         crate::commands::module_run::module_status,
         crate::commands::module_run::module_stop,

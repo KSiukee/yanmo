@@ -190,6 +190,52 @@ pub fn module_uninstall(
     Ok(())
 }
 
+/// 随包附带的示例模块（体验版大地图）在哪：装好的资源目录优先，开发构建退到 exe 旁边。
+///
+/// 这条路径**不由界面传入**：它由壳自己拼，界面只说「装示例」。装的时候仍走
+/// `module_sample_preview` → 预览 → 确认那条路——不因为它是官方示例就绕过导入闸。
+fn sample_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    use tauri::Manager;
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Ok(dir) = app.path().resource_dir() {
+        roots.push(dir.clone());
+        roots.push(dir.join("resources"));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            roots.push(parent.to_path_buf());
+            roots.push(parent.join("resources"));
+        }
+    }
+    roots
+        .into_iter()
+        .map(|root| root.join("samples").join("bigmap-lite"))
+        .find(|dir| dir.join("manifest.json").is_file())
+}
+
+/// 示例模块在不在（随包附带；开发构建里可能没有）。界面据此决定要不要摆那张示例卡。
+#[tauri::command(rename_all = "snake_case")]
+pub fn module_sample_available(app: tauri::AppHandle) -> bool {
+    sample_dir(&app).is_some()
+}
+
+/// 把随包的示例模块**放进导入通道**（只预览，不安装）：出来的预览与「导入模块」完全一样，
+/// 权限逐项确认那条纪律不因为它是官方示例就破例。包里没有示例时返回 `None`。
+#[tauri::command(rename_all = "snake_case")]
+pub fn module_sample_preview(
+    app: tauri::AppHandle,
+    data: State<'_, AppData>,
+    stage: State<'_, ImportStage>,
+) -> Result<Option<ImportPreview>, ApiError> {
+    stage.clear();
+    let Some(dir) = sample_dir(&app) else {
+        return Ok(None);
+    };
+    let preview = data.with_store(|store: &mut Store| store.inspect_import(&dir))?;
+    stage.set(dir, preview.module_id.clone(), preview.fingerprint.clone())?;
+    Ok(Some(preview))
+}
+
 /// 选一个模块文件夹并预览（**不安装**）。取消返回 `None`。
 ///
 /// 路径留在壳里（[`ImportStage`]）；界面只拿到事实：清单、声明的权限、指纹、协议。

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-Hans">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>大地图</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="head">
+      <div>
+        <h1 id="title">大地图</h1>
+        <p id="stats" class="stats">正在读自己的数据…</p>
+      </div>
+      <div class="acts">
+        <p id="hint" class="hint"></p>
+        <button id="recompute" type="button" class="recompute">重算</button>
+      </div>
+    </header>
+
+    <main class="body">
+      <section class="map-pane">
+        <svg id="map" class="map" role="img" aria-label="地点与人物"></svg>
+        <div class="slider-row">
+          <input id="slider" type="range" min="0" max="0" value="0" />
+          <span id="chapter-label" class="chapter-label"></span>
+        </div>
+      </section>
+
+      <aside class="side">
+        <h2>章节</h2>
+        <ol id="chapters" class="chapters"></ol>
+        <h2>还没收的线头</h2>
+        <ul id="foreshadows" class="foreshadows"></ul>
+      </aside>
+    </main>
+
+    <script src="/_yanmo.js"></script>
+    <script src="bigmap.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

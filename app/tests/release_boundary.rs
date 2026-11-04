@@ -141,19 +141,33 @@ fn installer_cannot_ship_internal_tools() {
         serde_json::from_str(&read(&app.join("tauri.conf.json"))).expect("配置应当是合法 JSON");
 
     // ① 打包配置里不许有"把仓库别处的东西一起打进安装包"的口子
-    //    `resources` / `files`：**一律不许有**（至今没有正当用途）。
+    //    `files`：**一律不许有**（至今没有正当用途）。
+    //    `resources`：有一个**受控例外**——随包的示例模块（`samples/bigmap-lite`，
+    //    0.176.0 起）：它是本仓内容（`app/samples/`，公开源码产物，不在 TOOL_MARKERS 里），
+    //    而「第一次打开就知道模块是什么」需要它随包。放行条件写死在这里：
+    //    只能指 `samples/` 下、不许有 `..`；哪天要第二种用途，先回到这里改判据。
     //    `externalBin`：有一个**受控例外**——命令行工具 `yanmo-cli`。它是本仓公开源码
     //    （`crates/yanmo-cli`，不在 TOOL_MARKERS 里），而 README / SECURITY 都承诺
-    //    "随发行包附带"（界面打不开时唯一的取稿路）。放行的条件写死在这里：
-    //    只能指 `binaries/` 下、名字以 `yanmo-cli` 开头的产物，且不许有 `..`。
+    //    "随发行包附带"（界面打不开时唯一的取稿路）。放行条件：只能指 `binaries/` 下、
+    //    名字以 `yanmo-cli` 开头，且不许有 `..`。
     let bundle = conf.get("bundle").expect("bundle 段");
-    for key in ["resources", "files"] {
-        let value = bundle.get(key);
+    let resources = bundle
+        .get("resources")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    for entry in &resources {
+        let path = entry.as_str().unwrap_or_default();
         assert!(
-            value.is_none() || value == Some(&serde_json::Value::Object(Default::default())),
-            "bundle.{key} 会把仓库里的别处文件打进安装包（内部工具就是这么漏出去的）：{value:?}"
+            path.starts_with("samples/") && !path.contains(".."),
+            "bundle.resources 只放行随包示例（samples/**），出现了别的：{path:?}"
         );
     }
+    let files = bundle.get("files");
+    assert!(
+        files.is_none() || files == Some(&serde_json::Value::Object(Default::default())),
+        "bundle.files 会把仓库里的别处文件打进安装包（内部工具就是这么漏出去的）：{files:?}"
+    );
     let externals = bundle
         .get("externalBin")
         .and_then(|value| value.as_array())

@@ -178,7 +178,7 @@ Read this in [English](./README.en.md) · [下载安装](#版本与下载) · [�
 
 ## 版本与下载
 
-- **当前版本**：0.175.1
+- **当前版本**：0.176.0
 - **下载**：GitHub Releases —— <https://github.com/KSiukee/yanmo/releases>
   （装哪个、怎么装、第一次打开会看到什么，见下面的「上手三步」）
 - **校验和**：每个安装包与便携版旁边都有一个同名 `.sha256` 文件，可用来核对文件有没有被改过：
@@ -288,4 +288,5 @@ Read this in [English](./README.en.md) · [下载安装](#版本与下载) · [�
 
 技术细节（架构、为什么这样做、怎么改代码）见 [CONTRIBUTING.md](./CONTRIBUTING.md)；
 安全承诺与限制见 [SECURITY.md](./SECURITY.md)。
+
 

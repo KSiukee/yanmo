@@ -1,0 +1,30 @@
+{
+  "id": "app.yanmo.bigmap.lite",
+  "default_language": "zh-Hans",
+  "name": {
+    "zh-Hans": "大地图（体验版）"
+  },
+  "description": {
+    "zh-Hans": "把一本书的目录、设定卡与伏笔画成一张地图：地点与人物、章节滑块、还没收的线头。只读核心，不改稿子。体验版不读正文，也不做「按词表在正文里找候选」——那是完整版的能力。"
+  },
+  "author": {
+    "name": "研墨"
+  },
+  "version": "0.1.0",
+  "protocol": 1,
+  "runtime": "wasm",
+  "entry": "module.wasm",
+  "ui": {
+    "form": "embedded",
+    "placement": "workbench"
+  },
+  "capabilities": {
+    "read": [
+      "works",
+      "outline",
+      "entities",
+      "foreshadows"
+    ],
+    "own_data": true
+  }
+}
