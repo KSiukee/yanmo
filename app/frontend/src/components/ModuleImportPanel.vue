@@ -203,3 +203,4 @@ function addedLabel(code: string): string {
   margin-top: 8px;
 }
 </style>
+<style scoped src="./dialog.css"></style>

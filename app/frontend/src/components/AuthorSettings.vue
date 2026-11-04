@@ -168,3 +168,5 @@ function onToggle(key: keyof Author, event: Event): void {
 </template>
 
 <style scoped src="./settings-dialog.css"></style>
+
+<style scoped src="./dialog.css"></style>

@@ -128,3 +128,5 @@ watch(() => detail.value?.work_id, fillTarget, { immediate: true });
 </template>
 
 <style scoped src="./manuscript-dialog.css"></style>
+
+<style scoped src="./dialog.css"></style>

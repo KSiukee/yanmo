@@ -133,3 +133,5 @@ function submit() {
 </template>
 
 <style scoped src="./manuscript-dialog.css"></style>
+
+<style scoped src="./dialog.css"></style>

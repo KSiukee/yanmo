@@ -120,3 +120,5 @@ function onRule(event: Event) {
 </template>
 
 <style scoped src="./settings-dialog.css"></style>
+
+<style scoped src="./dialog.css"></style>

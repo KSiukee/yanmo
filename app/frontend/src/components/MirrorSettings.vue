@@ -148,3 +148,5 @@ onUnmounted(() => {
 </template>
 
 <style scoped src="./settings-dialog.css"></style>
+
+<style scoped src="./dialog.css"></style>

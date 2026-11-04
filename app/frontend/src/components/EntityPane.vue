@@ -148,3 +148,5 @@ function askRemove(card: EntityCard) {
 </template>
 
 <style scoped src="./entity-dialog.css"></style>
+
+<style scoped src="./dialog.css"></style>
