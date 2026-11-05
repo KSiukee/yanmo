@@ -320,3 +320,35 @@ fn drafts_are_found_in_both_the_old_and_the_new_package_layout() {
     let inside = find_drafts(&root.join("成稿"));
     assert_eq!(inside.len(), 3, "把成稿文件夹本身指过来也认：{inside:?}");
 }
+
+#[test]
+fn an_imported_draft_is_all_unrecorded() {
+    // #108 ③：成稿导入**不伪造来源账**——导进来的字一律算「未记录」。
+    // 这条不是"大概对"：账本里压根没有这些章的段（`import_draft` 直接写正文，
+    // 不走编辑器那条记来源的路），读侧对"没有记录"的落定就是 unknown。
+    let (_dir, mut source) = fresh();
+    let work = rich_book(&mut source, NamingStyle::Chinese);
+    let before = json_of(&source, work);
+
+    let (_target_dir, mut target) = fresh();
+    let report = import(&mut target, &before);
+
+    let mut checked = 0;
+    for node in target.list_nodes(report.work_id).unwrap() {
+        if !matches!(node.kind, NodeKind::Chapter | NodeKind::Section) {
+            continue;
+        }
+        let breakdown = target.source_breakdown(node.id).unwrap();
+        if breakdown.shares.is_empty() {
+            continue; // 空章没有字，也就没有"来源"
+        }
+        assert_eq!(breakdown.shares.len(), 1, "导入的章不该有多段来源（node {}）", node.id);
+        assert_eq!(
+            breakdown.shares[0].source, "unknown",
+            "导入的字必须算「未记录」（node {}）",
+            node.id
+        );
+        checked += 1;
+    }
+    assert!(checked >= 2, "至少要查到两章有正文，否则这条测试是空的");
+}
