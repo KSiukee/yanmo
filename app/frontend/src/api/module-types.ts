@@ -20,6 +20,8 @@ export interface ModuleCard {
   reads: string[];
   own_data: boolean;
   network: boolean;
+  /** 已授予「把正文交给核心」 */
+  deliver_body: boolean;
   network_declared: boolean;
   ui_form: string;
   fingerprint: string;
@@ -34,6 +36,8 @@ export interface ModuleCapabilities {
   cross_read: string[];
   ask_questions: boolean;
   network: boolean;
+  /** 可否把正文交给核心（默认关） */
+  deliver_body: boolean;
 }
 /** 导入前的预览：**只给事实**，界面逐项征得同意。 */
 export interface ImportPreview {

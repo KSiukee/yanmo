@@ -37,6 +37,8 @@ pub struct ModuleCard {
     pub reads: Vec<String>,
     pub own_data: bool,
     pub network: bool,
+    /// 已授予「把正文交给核心」（默认关）
+    pub deliver_body: bool,
     /// 清单是否声明了联网（决定管理页是否显示联网开关）
     pub network_declared: bool,
     /// 清单的界面形态：embedded / standalone / headless
@@ -335,6 +337,7 @@ fn decode(
         reads: granted.read.iter().map(|area| area.as_str().to_string()).collect(),
         own_data: granted.own_data,
         network: granted.network,
+        deliver_body: granted.deliver_body,
         network_declared: manifest.capabilities.network,
         ui_form: match manifest.ui {
             yanmo_proto::manifest::ModuleUiForm::Embedded { .. } => "embedded",

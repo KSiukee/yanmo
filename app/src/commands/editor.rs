@@ -305,6 +305,20 @@ pub fn save_body(
     origin: Option<OriginDto>,
 ) -> Result<SaveAck, ApiError> {
     let origin = write_origin(origin)?;
+    // 模块交付正文是**单独一项授权**（默认关）。
+    // 数据层只校验署名；"这个模块有没有资格交"这一道在命令入口——
+    // 没装过、没声明、没勾，一律拒收（连署名的机会都不给）。
+    if let Some(stamp) = origin.stamp.as_ref() {
+        let allowed = data.with_store(|store| {
+            Ok(store
+                .module_record(&stamp.module_id)
+                .map(|record| record.may_deliver_body())
+                .unwrap_or(false))
+        })?;
+        if !allowed {
+            return Err(ApiError::new("module.delivery_not_granted"));
+        }
+    }
     let ack = data.with_store(|store| {
         let outcome = store.write_body_counted(node_id, &body, tz_offset_minutes, origin)?;
         Ok(SaveAck {

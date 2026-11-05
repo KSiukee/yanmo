@@ -187,6 +187,9 @@ pub(crate) fn capability_additions(
     if declared.ask_questions && !granted.ask_questions {
         added.push("ask_questions".to_string());
     }
+    if declared.deliver_body && !granted.deliver_body {
+        added.push("deliver.body".to_string());
+    }
     for id in &declared.cross_read {
         if !granted.cross_read.contains(id) {
             added.push(format!("cross_read.{id}"));

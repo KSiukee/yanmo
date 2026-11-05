@@ -181,6 +181,7 @@ const declared = computed(() => {
   if (!current) return "";
   const parts = [readsLabel(current.card)];
   if (current.card.own_data) parts.push(t("modules.own_data"));
+  if (current.card.deliver_body) parts.push(t("modules.deliver_body"));
   parts.push(current.card.network_declared ? t("modules.network") : t("facts.network_not_declared"));
   return parts.filter(Boolean).join(t("common.list_separator"));
 });

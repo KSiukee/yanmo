@@ -24,6 +24,7 @@ const grant = ref<ModuleCapabilities>({
   cross_read: [...props.preview.granted.cross_read],
   ask_questions: props.preview.granted.ask_questions,
   network: props.preview.granted.network,
+  deliver_body: props.preview.granted.deliver_body,
 });
 
 /** 新增能力码 → 人话（`read.body` 借已有的权限标签）。 */
@@ -32,6 +33,7 @@ function addedLabel(code: string): string {
   if (code === "own_data") return t("modules.grant.own_data");
   if (code === "network") return t("modules.grant.network");
   if (code === "ask_questions") return t("modules.grant.ask_questions");
+  if (code === "deliver.body") return t("modules.grant.deliver_body");
   if (code.startsWith("cross_read.")) return `${t("modules.grant.cross_read")} ${code.slice(11)}`;
   return code;
 }
@@ -104,6 +106,11 @@ function addedLabel(code: string): string {
       <label v-if="preview.declared.own_data" class="module-import__grant">
         <input v-model="grant.own_data" type="checkbox" />
         {{ t("modules.grant.own_data") }}
+      </label>
+      <!-- 向核心交付正文：单独一项，默认不勾 -->
+      <label v-if="preview.declared.deliver_body" class="module-import__grant">
+        <input v-model="grant.deliver_body" type="checkbox" />
+        {{ t("modules.grant.deliver_body") }}
       </label>
       <label v-if="preview.declared.ask_questions" class="module-import__grant">
         <input v-model="grant.ask_questions" type="checkbox" />

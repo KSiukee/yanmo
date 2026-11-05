@@ -294,8 +294,9 @@ onUnmounted(() => {
           <p v-if="runs[card.id]?.running" class="modules__reads">
             {{ t("modules.run_health", { idle: runs[card.id]?.idle_seconds ?? 0 }) }}
           </p>
-          <p v-if="card.own_data || card.network" class="modules__caps">
+          <p v-if="card.own_data || card.network || card.deliver_body" class="modules__caps">
             <span v-if="card.own_data" class="modules__badge">{{ t("modules.own_data") }}</span>
+        <span v-if="card.deliver_body" class="modules__badge">{{ t("modules.deliver_body") }}</span>
             <span v-if="card.network" class="modules__badge">{{ t("modules.network") }}</span>
           </p>
           <div class="modules__actions">

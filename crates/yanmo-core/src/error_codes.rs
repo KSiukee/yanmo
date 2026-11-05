@@ -208,6 +208,8 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "认不出的第二栏分区：{value}（只认 flow / creator / sop）" : ["value"],
     UNKNOWN_FONT_SCOPE => "value.unknown_font_scope"
         : "认不出的字体范围：{value}（只认 body / all）" : ["value"],
+    MODULE_DELIVERY_NOT_GRANTED => "module.delivery_not_granted"
+        : "这个模块没有「交付正文」的授权（默认关；要在导入/设置里单独勾）" : [],
     UNKNOWN_EDITOR_FONT => "value.unknown_editor_font"
         : "认不出的正文字体：{value}（只认预设码，或 family:<字体名>）" : ["value"],
     FONT_NOT_A_FILE => "value.font_not_a_file" : "选中的不是一个文件" : [],

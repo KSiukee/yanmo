@@ -102,6 +102,11 @@ pub struct ModuleCapabilities {
     pub ask_questions: bool,
     /// 可否联网（还要过全局离线开关、用户同意与出网代理）
     pub network: bool,
+    /// 可否把正文内容**交给核心**（模块交付：默认关；数据层还要求带署名，缺署名拒收）
+    ///
+    /// 与 `read.body` 不是一回事：那个是"读出来"，这个是"写进去"。
+    /// 口径：**默认关、没勾就拒收**（命令入口那一道闸）。
+    pub deliver_body: bool,
 }
 
 impl ModuleCapabilities {
@@ -188,6 +193,7 @@ mod tests {
         let caps: ModuleCapabilities = serde_json::from_str("{}").unwrap();
         assert_eq!(caps, ModuleCapabilities::none());
         assert!(!caps.own_data && !caps.ask_questions && !caps.network);
+        assert!(!caps.deliver_body, "交付正文默认关");
     }
 
     #[test]

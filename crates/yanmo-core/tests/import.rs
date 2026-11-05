@@ -323,7 +323,7 @@ fn drafts_are_found_in_both_the_old_and_the_new_package_layout() {
 
 #[test]
 fn an_imported_draft_is_all_unrecorded() {
-    // #108 ③：成稿导入**不伪造来源账**——导进来的字一律算「未记录」。
+    // 成稿导入**不伪造来源账**——导进来的字一律算「未记录」。
     // 这条不是"大概对"：账本里压根没有这些章的段（`import_draft` 直接写正文，
     // 不走编辑器那条记来源的路），读侧对"没有记录"的落定就是 unknown。
     let (_dir, mut source) = fresh();

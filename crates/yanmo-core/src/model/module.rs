@@ -72,6 +72,14 @@ impl ModuleRecord {
     pub fn may_cross_read(&self, other_module_id: &str) -> bool {
         self.enabled && self.granted.cross_read.iter().any(|id| id == other_module_id)
     }
+
+    /// 现在能不能把正文内容**交给核心**（模块交付）。
+    ///
+    /// 三条同时成立才算：没冻结 + 声明过 + 用户勾了这一项。默认全拒。
+    /// 数据层还要求这一笔带署名（模块 id + 模型名），缺了直接拒收。
+    pub fn may_deliver_body(&self) -> bool {
+        self.enabled && self.granted.deliver_body
+    }
 }
 
 /// 授予里第一项**没被声明**的能力（`None` = 是声明的子集）。
@@ -89,6 +97,9 @@ pub fn first_ungrantable(
     }
     if granted.own_data && !declared.own_data {
         return Some("own_data".to_string());
+    }
+    if granted.deliver_body && !declared.deliver_body {
+        return Some("deliver.body".to_string());
     }
     for module_id in &granted.cross_read {
         if !declared.cross_read.contains(module_id) {
@@ -115,6 +126,7 @@ mod tests {
             cross_read: Vec::new(),
             ask_questions: false,
             network: false,
+            deliver_body: false,
         }
     }
 
@@ -129,6 +141,20 @@ mod tests {
         assert_eq!(
             first_ungrantable(&declared, &caps(&[CoreDataArea::Works], true)).as_deref(),
             Some("own_data")
+        );
+    }
+
+    #[test]
+    fn delivering_body_needs_its_own_grant() {
+        // 交付正文是**单独一项**，不能靠 read.body 顺带拿到
+        let declared = ModuleCapabilities::none();
+        let wanted = ModuleCapabilities { deliver_body: true, ..ModuleCapabilities::none() };
+        assert_eq!(first_ungrantable(&declared, &wanted).as_deref(), Some("deliver.body"));
+
+        let declared = ModuleCapabilities { deliver_body: true, ..ModuleCapabilities::none() };
+        assert!(
+            first_ungrantable(&declared, &wanted).is_none(),
+            "声明过、也授予了，才放行"
         );
     }
 

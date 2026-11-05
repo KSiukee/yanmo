@@ -95,7 +95,7 @@ store/SDK; and self-healing after a frozen UI (today it detects, reports and pre
 
 ## Download
 
-- **Latest release (0.178.1)**: <https://github.com/KSiukee/yanmo/releases>
+- **Latest release (0.179.0)**: <https://github.com/KSiukee/yanmo/releases>
 - Every asset ships with a matching `.sha256` file:
 
   ```bat

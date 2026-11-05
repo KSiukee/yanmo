@@ -258,3 +258,32 @@ fn records_are_listed_in_install_order() {
         .collect();
     assert_eq!(ids, vec!["app.example.map", "app.example.second"]);
 }
+
+#[test]
+fn delivering_body_is_default_denied_and_needs_its_own_grant() {
+    // 模块把正文交给核心，是**单独一项**授权；默认关，冻结也不能交。
+    let (_dir, mut store) = fresh();
+    let mut declared = base_json();
+    declared["capabilities"]["deliver_body"] = json!(true);
+    let manifest = ModuleManifest::from_json(&declared.to_string()).unwrap();
+
+    store.install_module(&manifest, &caps(&["works"], false)).unwrap();
+    assert!(
+        !store.module_record("app.example.map").unwrap().may_deliver_body(),
+        "安装时默认不给交付正文"
+    );
+
+    let mut granted = caps(&["works"], false);
+    granted.deliver_body = true;
+    store.grant_module("app.example.map", &granted).unwrap();
+    assert!(
+        store.module_record("app.example.map").unwrap().may_deliver_body(),
+        "单独勾了这一项才放行"
+    );
+
+    store.set_module_enabled("app.example.map", false).unwrap();
+    assert!(
+        !store.module_record("app.example.map").unwrap().may_deliver_body(),
+        "冻结即不能交付"
+    );
+}
