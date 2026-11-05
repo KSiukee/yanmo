@@ -309,6 +309,27 @@ def built_artifact(no_bundle: bool, version: str) -> Path | None:
     return None
 
 
+def prune_dist(out_dir: Path) -> None:
+    """`dist/` 只留最近 3 个版本（用户 2026-11-05 定；更早的能靠 git 重新捞回来打包）。
+
+    为什么放在构建收尾：**每出一版就多 7 个文件**，十几版就是几百 MB 的"历史垃圾"；
+    让构建自己收尾，比指望人记得跑清理命令可靠。
+    """
+    script = ROOT / "tools/qa/clean_build.py"
+    if not script.is_file():
+        return
+    done = subprocess.run(
+        [sys.executable, str(script), "--root", str(ROOT), "--dist-only"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    line = next((l for l in (done.stdout or "").splitlines() if l.startswith("dist：")), "")
+    if line:
+        say(True, "旧包清理", line.strip())
+
+
 def collect(out_dir: Path, version: str, no_bundle: bool) -> tuple[Path | None, str]:
     """把产物收进 `dist/`，名字带版本号。
 
@@ -334,14 +355,6 @@ def collect(out_dir: Path, version: str, no_bundle: bool) -> tuple[Path | None, 
     if not built or not built.is_file():
         return None, f"没找到打包产物（找过 {built or 'bundle 目录不存在'}）"
     out_dir.mkdir(parents=True, exist_ok=True)
-    # 顺手提醒：dist 里还躺着别的版本，别拿旧包去装（用户已经踩过一次）
-    stale = sorted(
-        path.name
-        for path in out_dir.glob("yanmo-*")
-        if version not in path.name and path.suffix in {".exe", ".sha256"}
-    )
-    if stale:
-        say(True, "旧包提醒", f"dist 里还有别的版本：{'、'.join(stale)}")
     target = out_dir / wanted
     shutil.copy2(built, target)
     digest = hashlib.sha256(target.read_bytes()).hexdigest()
@@ -526,6 +539,7 @@ def main() -> int:
         say(True, "三种形态", f"安装包 / {portable.name} / {green.name}")
     fingerprint = build_fingerprint(Path(args.out), version, tools, artifact, detail)
     say(True, "构建指纹", f"{fingerprint.name}（版本 / 提交 / 工具链 / 产物哈希）")
+    prune_dist(Path(args.out))
     print("─" * 64)
     print(f"产物：{artifact}")
     print(f"SHA256：{detail}")

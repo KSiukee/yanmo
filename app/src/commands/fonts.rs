@@ -100,6 +100,10 @@ pub fn respond(
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", mime)
+        // 字体是**跨源**加载（页面在 tauri.localhost，字体在 yanmo-font.localhost）：
+        // CSS 字体规范要求 CORS，没有这个头浏览器会直接把字体判为加载失败
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Cross-Origin-Resource-Policy", "cross-origin")
         .header("Cache-Control", "no-store")
         .body(Cow::Owned(bytes))
         .unwrap_or_else(|_| not_found())
@@ -233,7 +237,14 @@ mod protocol_tests {
             .uri("http://yanmo-font.localhost/local/font-abc.ttf")
             .body(Vec::new())
             .unwrap();
-        assert_eq!(respond(dir.path(), ok).status(), 200);
+        let response = respond(dir.path(), ok);
+        assert_eq!(response.status(), 200);
+        // 字体是跨源加载：少了这个头，浏览器会按字体规范的 CORS 检查直接判失败
+        // （0.178.0 的「选了字体但不生效」就是这一条）
+        assert_eq!(
+            response.headers().get("access-control-allow-origin").map(|v| v.as_bytes()),
+            Some(&b"*"[..])
+        );
 
         // 目录成分一律 404（不许拿它去读数据目录里的别的东西）
         let escape = tauri::http::Request::builder()
