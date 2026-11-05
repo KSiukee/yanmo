@@ -134,8 +134,19 @@ impl Store {
         let work = self.get_work(work_id)?;
         let nodes = self.list_nodes(work_id)?;
         let node_ids: Vec<i64> = nodes.iter().map(|node| node.id).collect();
-        let node_titles: std::collections::HashMap<i64, String> =
-            nodes.iter().map(|node| (node.id, node.title.clone())).collect();
+        let node_titles: std::collections::HashMap<i64, String> = nodes
+            .iter()
+            .map(|node| {
+                // 显示标题：模板（`第{$N}章`）要渲染成人能读的样子——包里是给外人看的，
+                // 摆一个模板等于把内部写法泄给他。普通标题就原样，省一次查询。
+                let title = if node.title.contains("{$") {
+                    self.rendered_title(node.id).unwrap_or_else(|_| node.title.clone())
+                } else {
+                    node.title.clone()
+                };
+                (node.id, title)
+            })
+            .collect();
 
         let mut raw: Vec<RawEvent> = Vec::new();
         let mut tie = 0usize;
@@ -253,7 +264,7 @@ impl Store {
             }
             chapters.push(json!({
                 "node_id": node.id,
-                "title": node.title,
+                "title": node_titles.get(&node.id).cloned().unwrap_or_default(),
                 "kind": node.kind.as_str(),
                 "shares": breakdown.shares,
             }));
@@ -307,7 +318,7 @@ impl Store {
             "work": { "id": work_id, "title": work.title, "kind": work.kind.as_str(), "language": work.language.as_str() },
             "event_count": events.len(),
             "chain_head": head,
-            "chain_rule": "digest = sha256(prev + '\\n' + json{{seq,at,kind,subject,detail}})",
+            "chain_rule": "digest = sha256(prev + '\\n' + compact_json({seq,at,kind,subject,detail}))",
             "files": files.iter().map(|file| json!({
                 "name": file.name,
                 "bytes": file.bytes.len(),
@@ -330,12 +341,11 @@ fn render_readme(title: &str, events: usize, head: &str, chapters: usize) -> Str
 3. 来源分布能看出每一章的字是怎么进来的：键入 / 粘贴 / 模块 / 口述 / 软件写入 / 未记录。\n\n\
 二、这份包不能证明什么（请如实转述，别替它吹）\n--------------------\n\
 1. 不能证明「这稿是我写的」：AI 生成再整段粘贴，同样会留下记录——只是那条记录会显示\n   「一次到位、没有中间态」。它能做的是把这件事**标出来**，不是替你辩护。\n\
-2. 不能证明本机时间没被改过：时间戳来自这台电脑的时钟，作者自己可以调系统时间。\n\
-   要更强的时间锚，得接外部时间服务；那与研墨「零出网」冲突，本包默认不接。\n\
+2. 不能证明本机时间没被改过：时间戳来自这台电脑的时钟，作者自己可以调系统时间。\n   要更强的时间锚，得接外部时间服务；那与研墨「零出网」冲突，本包默认不接。\n\
 3. 不包含正文：包里只有摘要、计数与分档字数，把过程材料交出去不等于把稿子交出去。\n\n\
 三、怎么自己验（不需要研墨）\n--------------------\n\
 1. 看 manifest.json：event_count 是条数，chain_head 是链头；files 里每个文件都有 SHA-256。\n\
-2. 读 events.jsonl：第 1 条的 prev 必须是 genesis；每条 digest = sha256(prev + 换行 + 这一条的\n   [seq,at,kind,subject,detail] 的紧凑 JSON)；下一条的 prev 必须等于上一条的 digest。\n\
+2. 读 events.jsonl：第 1 条的 prev 必须是 genesis；每条 digest = sha256(prev + 换行 + 这一条的\n   紧凑 JSON)。紧凑 JSON 的**字段顺序固定**为 seq / at / kind / subject / detail，\n   其中 detail 内部按原顺序、整个 JSON 没有空格；下一条的 prev 必须等于上一条的 digest。\n\
 3. 最后一条的 digest 必须等于 chain_head。\n\
 4. 任何一步对不上，说明这份包在生成之后被改过。\n",
     )

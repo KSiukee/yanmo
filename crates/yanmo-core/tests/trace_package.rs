@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 use yanmo_core::model::{NodeKind, WorkKind};
-use yanmo_core::store::{verify_trace_events, Store};
+use yanmo_core::store::{verify_trace_events, Appearance, Store};
 
 fn fresh() -> (tempfile::TempDir, Store) {
     let dir = tempfile::tempdir().unwrap();
@@ -49,6 +49,11 @@ fn the_package_chains_every_event_and_keeps_the_boundaries_honest() {
         assert_eq!(entry["bytes"], serde_json::json!(bytes.len()), "第 {} 个文件 {} 的字节数对不上", index, name);
     }
 
+    // 链规则要写得能照着算：字段顺序固定、没有多余的转义
+    let rule = manifest["chain_rule"].as_str().unwrap();
+    assert!(rule.contains("compact_json"), "链规则要说明是紧凑 JSON：{rule}");
+    assert!(!rule.contains("{{"), "链规则里不该出现双花括号：{rule}");
+
     // 口径必须写清「能证明 / 不能证明 / 不含正文」
     let readme = String::from_utf8(file(&package, "README.txt").to_vec()).unwrap();
     for phrase in ["能证明什么", "不能证明什么", "本机时间", "不包含正文"] {
@@ -88,4 +93,32 @@ fn tampering_with_one_event_breaks_the_chain() {
     let tampered = lines.join("\n") + "\n";
     let error = verify_trace_events(&tampered).expect_err("改过就必须验不过");
     assert!(error.contains("digest") || error.contains("prev"), "错误要说清在哪儿断的：{error}");
+}
+
+#[test]
+fn chapter_titles_in_the_package_are_rendered_not_templates() {
+    // 包里是给外人看的：`第{$N}章 复活节雕塑` 必须渲染成「第一章 复活节雕塑」，
+    // 不能把内部模板原样摆出去。
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "祺").unwrap();
+    store
+        .set_appearance(
+            Some(work.id),
+            &Appearance { naming: Some("chinese".to_string()), ..Default::default() },
+        )
+        .unwrap();
+    let volume = store.list_nodes(work.id).unwrap()[0].id;
+    let chapter = store
+        .create_node(work.id, Some(volume), NodeKind::Chapter, "第{$N}章 复活节雕塑")
+        .unwrap();
+    store.write_body(chapter, "复活节那天，雕塑裂了一道缝。").unwrap();
+
+    let package = store.build_trace_package(work.id).unwrap();
+    let sources: Value = serde_json::from_slice(file(&package, "sources.json")).unwrap();
+    let title = sources["chapters"][0]["title"].as_str().unwrap();
+    assert!(!title.contains("{$"), "标题必须渲染过，不能是模板：{title}");
+    assert!(title.contains("复活节雕塑"), "标题要带上作者写的那部分：{title}");
+
+    let versions: Value = serde_json::from_slice(file(&package, "versions.json")).unwrap();
+    let _ = versions; // 没有快照时是空数组；这条测的是标题渲染那条路
 }
