@@ -59,12 +59,15 @@ pub fn trace_export(
     title: String,
     work_id: i64,
     tz_offset_minutes: i32,
+    scope: String,
     data: State<'_, AppData>,
 ) -> Result<Option<TraceExport>, ApiError> {
     let Some(parent) = crate::pick_dir::pick(&title) else {
         return Ok(None);
     };
-    let package = data.with_store(|store| store.build_trace_package(work_id))?;
+    let package = data.with_store(|store| {
+        store.build_trace_package_with(work_id, yanmo_core::store::TraceScope::parse(&scope))
+    })?;
     let stamp =
         yanmo_core::time::local_stamp(yanmo_core::time::now_millis(), tz_offset_minutes);
     let folder = parent.join(format!("研墨留痕-{}-{stamp}", safe_title(&package.title)));

@@ -1,4 +1,4 @@
-// i18n-allow-file: 包里那页 README 是交给包外的人看的说明书，不是界面文案（界面字典不分发到包外）
+// i18n-allow-file: verify_trace_events 返回的错误文案给测试与命令行看，不进界面（界面字典不分发到包外）
 //! 创作留痕自证包：**把"过程"打包成可以自己验的一组文件**。
 //!
 //! # 它证明什么、不证明什么
@@ -119,6 +119,42 @@ pub fn verify_trace_events(jsonl: &str) -> std::result::Result<(usize, String), 
     Ok((count, prev))
 }
 
+/// 收哪些事件：`All` = 全量（默认）；`Creative` = 只收创作相关，滤掉性能诊断。
+///
+/// 为什么要有这个开关：`op.slow_command` / `op.lag` 是**这台机器当时的性能读数**，
+/// 交给编辑 / 平台看会显得杂（"pick_font 10 秒"跟稿子没有关系）。默认仍收全量——
+/// 少收是作者主动选的，不是我们替他藏。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TraceScope {
+    #[default]
+    All,
+    Creative,
+}
+
+impl TraceScope {
+    pub fn parse(value: &str) -> Self {
+        if value == "creative" {
+            Self::Creative
+        } else {
+            Self::All
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Creative => "creative",
+        }
+    }
+
+    fn keeps(self, kind: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Creative => !matches!(kind, "op.slow_command" | "op.lag"),
+        }
+    }
+}
+
 /// 一条待排序的原始事件（`at` 相同就按来源顺序稳定排）。
 struct RawEvent {
     at: i64,
@@ -131,6 +167,15 @@ struct RawEvent {
 impl Store {
     /// 打一份这本书的留痕包。**只读**：不改库、不写文件。
     pub fn build_trace_package(&self, work_id: i64) -> Result<TracePackage> {
+        self.build_trace_package_with(work_id, TraceScope::All)
+    }
+
+    /// 同上，但可以选收哪些事件（见 [`TraceScope`]）。
+    pub fn build_trace_package_with(
+        &self,
+        work_id: i64,
+        scope: TraceScope,
+    ) -> Result<TracePackage> {
         let work = self.get_work(work_id)?;
         let nodes = self.list_nodes(work_id)?;
         let node_ids: Vec<i64> = nodes.iter().map(|node| node.id).collect();
@@ -177,7 +222,11 @@ impl Store {
                         continue;
                     }
                     let detail = serde_json::from_str(&payload).unwrap_or(json!({ "raw": payload }));
-                    push(created_at, format!("op.{op}"), format!("{entity}:{entity_id}"), detail);
+                    let kind = format!("op.{op}");
+                    if !scope.keeps(&kind) {
+                        continue;
+                    }
+                    push(created_at, kind, format!("{entity}:{entity_id}"), detail);
                 }
             }
         }
@@ -291,7 +340,13 @@ impl Store {
             }));
         }
 
-        let readme = render_readme(&work.title, events.len(), &head, chapters.len());
+        let readme = super::trace_readme::render_readme(
+            &work.title,
+            events.len(),
+            &head,
+            chapters.len(),
+            scope,
+        );
         let sources = serde_json::to_vec_pretty(&json!({
             "package_version": TRACE_PACKAGE_VERSION,
             "work_id": work_id,
@@ -310,11 +365,17 @@ impl Store {
             TraceFile { name: "sources.json".to_string(), bytes: sources },
             TraceFile { name: "versions.json".to_string(), bytes: versions },
             TraceFile { name: "README.txt".to_string(), bytes: readme.into_bytes() },
+            // 自带的校验脚本：包外的人不用写代码，`python verify.py` 就能验
+            TraceFile {
+                name: "verify.py".to_string(),
+                bytes: super::trace_verify::VERIFY_PY.as_bytes().to_vec(),
+            },
         ];
         let manifest = serde_json::to_vec_pretty(&json!({
             "package_version": TRACE_PACKAGE_VERSION,
             "engine_version": env!("CARGO_PKG_VERSION"),
             "created_at": crate::time::now_millis(),
+            "scope": scope.as_str(),
             "work": { "id": work_id, "title": work.title, "kind": work.kind.as_str(), "language": work.language.as_str() },
             "event_count": events.len(),
             "chain_head": head,
@@ -330,23 +391,4 @@ impl Store {
 
         Ok(TracePackage { work_id, title: work.title, head, events: events.len(), files })
     }
-}
-
-fn render_readme(title: &str, events: usize, head: &str, chapters: usize) -> String {
-    format!(
-        "研墨 · 创作留痕包\n==================\n\n书：《{title}》\n章节（有正文的）：{chapters}\n事件条数：{events}\n链头哈希：{head}\n\n\
-一、这份包能证明什么\n--------------------\n\
-1. 这本书在研墨里的操作记录、版本快照、来源分布、口述与问答痕迹，就是这一份（条数与链头对得上）。\n\
-2. 这些记录按时间串成一条链：任何一条被改动，它自己的哈希就对不上，后面每一条也都对不上。\n\
-3. 来源分布能看出每一章的字是怎么进来的：键入 / 粘贴 / 模块 / 口述 / 软件写入 / 未记录。\n\n\
-二、这份包不能证明什么（请如实转述，别替它吹）\n--------------------\n\
-1. 不能证明「这稿是我写的」：AI 生成再整段粘贴，同样会留下记录——只是那条记录会显示\n   「一次到位、没有中间态」。它能做的是把这件事**标出来**，不是替你辩护。\n\
-2. 不能证明本机时间没被改过：时间戳来自这台电脑的时钟，作者自己可以调系统时间。\n   要更强的时间锚，得接外部时间服务；那与研墨「零出网」冲突，本包默认不接。\n\
-3. 不包含正文：包里只有摘要、计数与分档字数，把过程材料交出去不等于把稿子交出去。\n\n\
-三、怎么自己验（不需要研墨）\n--------------------\n\
-1. 看 manifest.json：event_count 是条数，chain_head 是链头；files 里每个文件都有 SHA-256。\n\
-2. 读 events.jsonl：第 1 条的 prev 必须是 genesis；每条 digest = sha256(prev + 换行 + 这一条的\n   紧凑 JSON)。紧凑 JSON 的**字段顺序固定**为 seq / at / kind / subject / detail，\n   其中 detail 内部按原顺序、整个 JSON 没有空格；下一条的 prev 必须等于上一条的 digest。\n\
-3. 最后一条的 digest 必须等于 chain_head。\n\
-4. 任何一步对不上，说明这份包在生成之后被改过。\n",
-    )
 }

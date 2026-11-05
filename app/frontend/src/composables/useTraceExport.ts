@@ -13,6 +13,8 @@ import { exportTracePackage } from "../api/core.ts";
 export function useTraceExport(session: EditorSession) {
   const busy = ref(false);
   const note = ref("");
+  /** 只收创作相关事件（滤掉性能诊断）；默认收全量 */
+  const creativeOnly = ref(false);
   const workId = computed(() => session.workId.value);
 
   async function run(): Promise<void> {
@@ -22,7 +24,12 @@ export function useTraceExport(session: EditorSession) {
     note.value = "";
     try {
       const tz = -new Date().getTimezoneOffset();
-      const result = await exportTracePackage(work, tz, t("backup.trace_pick_title"));
+      const result = await exportTracePackage(
+        work,
+        tz,
+        t("backup.trace_pick_title"),
+        creativeOnly.value ? "creative" : "all",
+      );
       if (result !== null) {
         note.value = t("backup.trace_done", {
           dir: result.dir,
@@ -37,5 +44,5 @@ export function useTraceExport(session: EditorSession) {
     }
   }
 
-  return { busy, note, workId, run };
+  return { busy, note, workId, creativeOnly, run };
 }

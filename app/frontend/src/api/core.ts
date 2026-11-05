@@ -807,7 +807,8 @@ export const exportTracePackage = (
   work_id: number,
   tz_offset_minutes: number,
   title: string,
-) => call<TraceExport | null>(COMMANDS.traceExport, { work_id, tz_offset_minutes, title });
+  scope: "all" | "creative" = "all",
+) => call<TraceExport | null>(COMMANDS.traceExport, { work_id, tz_offset_minutes, title, scope });
 
 /** 能恢复的备份包（扫作者勾过的每个备份位置；盘不在就扫不到）。 */
 export const readRestoreSources = () => call<RestoreSources>(COMMANDS.backupRestoreSources);

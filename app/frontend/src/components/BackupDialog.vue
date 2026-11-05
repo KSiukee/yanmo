@@ -9,14 +9,12 @@ import { t } from "../locales/index.ts";
 import type { EditorSession } from "../editor/session";
 import { formatBytes } from "../editor/display.ts";
 import type { BackupConfig, BackupTarget } from "../api/core";
-import { useTraceExport } from "../composables/useTraceExport.ts";
+import TraceExportSection from "./TraceExportSection.vue";
 import SealSettings from "./SealSettings.vue";
 
 const props = defineProps<{ session: EditorSession }>();
 const { status, lastReport, busy, error, close, save, runNow, dismissTip } =
   props.session.backup;
-const { busy: traceBusy, note: traceNote, workId: traceWorkId, run: exportTrace } =
-  useTraceExport(props.session);
 
 /** 保留份数（改了就存；输入非法时不动） */
 const keepDraft = ref<number | null>(null);
@@ -214,20 +212,8 @@ function openRestore(): void {
 
       <!-- 加密备份包：开关 / 口令 / 恢复码（自成一体，见 components/SealSettings.vue） -->
       <SealSettings :seal="session.seal" />
-      <!-- 创作留痕包：过程材料（不含正文），任何人可按 README 自己验链 -->
-      <h3 class="backup__section">{{ t("backup.trace_button") }}</h3>
-      <p class="backup__hint">{{ t("backup.trace_hint") }}</p>
-      <div class="backup__actions">
-        <button
-          type="button"
-          class="dialog__button"
-          :disabled="busy || traceBusy || traceWorkId === null"
-          @click="exportTrace"
-        >
-          {{ traceBusy ? t("backup.running") : t("backup.trace_button") }}
-        </button>
-        <span v-if="traceNote" class="backup__hint">{{ traceNote }}</span>
-      </div>
+      <!-- 创作留痕包：过程材料（不含正文），自成一体 -->
+      <TraceExportSection :session="session" />
 
       <div class="backup__actions">
         <button type="button" class="dialog__button dialog__button--primary" :disabled="busy" @click="runNow()">

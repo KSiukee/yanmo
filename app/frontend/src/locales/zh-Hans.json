@@ -1233,6 +1233,7 @@
   "backup.trace_button": "导出一份创作留痕包",
   "backup.trace_pick_title": "把留痕包放到哪个文件夹",
   "backup.trace_done": "已导出到 {dir}（{events} 条事件，链头 {head}）",
+  "backup.trace_creative": "只收创作相关事件（滤掉性能诊断：慢命令 / 卡顿读数）",
   "backup.trace_hint": "包里是操作记录 / 版本快照 / 来源分布 / 口述与问答痕迹，不含正文；任何人都能按 README 自己验链。",
   "backup.intro": "研墨会把稿子的一致性快照（不是复制正在写的库）与成稿导出写到下面这些位置；每份都带清单与链式指纹，写完读回体检通过才算成功。",
   "backup.no_target": "还没指定备份位置——至少勾一个，稿子才算真的在别处有一份。",

@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 use yanmo_core::model::{NodeKind, WorkKind};
-use yanmo_core::store::{verify_trace_events, Appearance, Store};
+use yanmo_core::store::{verify_trace_events, Appearance, Store, TraceScope};
 
 fn fresh() -> (tempfile::TempDir, Store) {
     let dir = tempfile::tempdir().unwrap();
@@ -30,7 +30,14 @@ fn the_package_chains_every_event_and_keeps_the_boundaries_honest() {
 
     let package = store.build_trace_package(work.id).unwrap();
     let names: Vec<&str> = package.files.iter().map(|file| file.name.as_str()).collect();
-    for expected in ["events.jsonl", "sources.json", "versions.json", "README.txt", "manifest.json"] {
+    for expected in [
+        "events.jsonl",
+        "sources.json",
+        "versions.json",
+        "README.txt",
+        "verify.py",
+        "manifest.json",
+    ] {
         assert!(names.contains(&expected), "包里该有 {expected}：{names:?}");
     }
 
@@ -56,7 +63,7 @@ fn the_package_chains_every_event_and_keeps_the_boundaries_honest() {
 
     // 口径必须写清「能证明 / 不能证明 / 不含正文」
     let readme = String::from_utf8(file(&package, "README.txt").to_vec()).unwrap();
-    for phrase in ["能证明什么", "不能证明什么", "本机时间", "不包含正文"] {
+    for phrase in ["能证明什么", "不能证明什么", "本机时间", "不包含正文", "python verify.py"] {
         assert!(readme.contains(phrase), "README 少了「{phrase}」这一句");
     }
 
@@ -121,4 +128,43 @@ fn chapter_titles_in_the_package_are_rendered_not_templates() {
 
     let versions: Value = serde_json::from_slice(file(&package, "versions.json")).unwrap();
     let _ = versions; // 没有快照时是空数组；这条测的是标题渲染那条路
+}
+
+#[test]
+fn creative_scope_drops_performance_noise() {
+    // 收录范围：默认全量；选「只收创作相关」时，性能诊断事件不进包。
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let volume = store.list_nodes(work.id).unwrap()[0].id;
+    let chapter = store.create_node(work.id, Some(volume), NodeKind::Chapter, "").unwrap();
+    store.write_body(chapter, "一稿。").unwrap();
+
+    for (op, payload) in [
+        ("slow_command", r#"{"command":"pick_font","ms":10000}"#),
+        ("lag", r#"{"ms":2000}"#),
+    ] {
+        store
+            .conn()
+            .execute(
+                "INSERT INTO op_log(device_id, entity, entity_id, op, payload, created_at)
+                 VALUES('test', 'nodes', ?1, ?2, ?3, 1700000000000)",
+                rusqlite::params![chapter, op, payload],
+            )
+            .unwrap();
+    }
+
+    let all = store.build_trace_package(work.id).unwrap();
+    let creative = store.build_trace_package_with(work.id, TraceScope::Creative).unwrap();
+    assert!(all.events > creative.events, "创作范围应当少一些事件");
+
+    let all_jsonl = String::from_utf8(file(&all, "events.jsonl").to_vec()).unwrap();
+    let creative_jsonl = String::from_utf8(file(&creative, "events.jsonl").to_vec()).unwrap();
+    assert!(all_jsonl.contains("op.lag") && all_jsonl.contains("op.slow_command"));
+    assert!(!creative_jsonl.contains("op.lag"), "创作范围不该带性能诊断");
+    assert!(!creative_jsonl.contains("op.slow_command"), "创作范围不该带性能诊断");
+
+    let manifest: Value = serde_json::from_slice(file(&creative, "manifest.json")).unwrap();
+    assert_eq!(manifest["scope"], "creative");
+    let readme = String::from_utf8(file(&creative, "README.txt").to_vec()).unwrap();
+    assert!(readme.contains("只收创作相关"), "README 要写明收录范围：{readme}");
 }
