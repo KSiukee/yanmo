@@ -112,6 +112,8 @@ mod snapshot;
 mod sop;
 mod sop_mech;
 mod source_ledger;
+/// 创作留痕自证包（只读：把过程材料打成一组可自验的文件）。
+mod trace_package;
 mod source_run;
 mod source_trace;
 mod split;
@@ -135,6 +137,7 @@ pub use sop::{
 };
 pub use sop_mech::{BookMechFacts, ChapterMechFacts};
 pub use chapter_length::{dismiss_identity, ChapterLength, ChapterLengthBoard};
+pub use trace_package::{verify_trace_events, TraceFile, TracePackage, TRACE_PACKAGE_VERSION};
 pub use backup::{
     gaps_for, has_other_volume, ledger_summary, package_day, plan_prune, read_ledger, read_manifest,
     BackupConfig,

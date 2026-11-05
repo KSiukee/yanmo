@@ -155,6 +155,7 @@ export const COMMANDS = {
   backupStatus: "backup_status",
   backupConfigWrite: "backup_config_write",
   backupNow: "backup_now",
+  traceExport: "trace_export",
   backupRestoreSources: "backup_restore_sources",
   backupRestorePreview: "backup_restore_preview",
   backupRestoreApply: "backup_restore_apply",

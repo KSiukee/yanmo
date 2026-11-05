@@ -795,6 +795,20 @@ export const writeBackupConfig = (config: BackupConfig) =>
 export const runBackupNow = (tz_offset_minutes: number, manual: boolean) =>
   call<BackupReport>(COMMANDS.backupNow, { tz_offset_minutes, manual });
 
+/** 创作留痕包：作者挑一个文件夹，壳把核心打好的几个文件写进去；取消返回 null。 */
+export interface TraceExport {
+  dir: string;
+  files: number;
+  events: number;
+  head: string;
+}
+
+export const exportTracePackage = (
+  work_id: number,
+  tz_offset_minutes: number,
+  title: string,
+) => call<TraceExport | null>(COMMANDS.traceExport, { work_id, tz_offset_minutes, title });
+
 /** 能恢复的备份包（扫作者勾过的每个备份位置；盘不在就扫不到）。 */
 export const readRestoreSources = () => call<RestoreSources>(COMMANDS.backupRestoreSources);
 

@@ -37,6 +37,7 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::system::system_fonts,
         crate::commands::fonts::pick_font,
         crate::commands::fonts::font_url,
+        crate::commands::trace::trace_export,
         // 加密备份包那一族（开关 / 口令 / 恢复码，见 commands/seal.rs）
         crate::commands::seal::seal_status,
         crate::commands::seal::seal_enable,

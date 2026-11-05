@@ -80,6 +80,8 @@ pub mod question;
 pub mod question_push;
 /// 从备份恢复：预览、体检、换库。
 pub mod restore;
+/// 创作留痕包：核心打包 → 壳落盘（作者选文件夹，一键出一份）。
+pub mod trace;
 /// 自定义正文字体文件：挑一个 `.ttf`/`.otf`/`.ttc` → 拷进数据目录 → 只回名字与地址
 /// （界面拿不到路径；`@font-face` 走 `http://yanmo-font.localhost/` 这条只读协议）。
 pub mod fonts;
