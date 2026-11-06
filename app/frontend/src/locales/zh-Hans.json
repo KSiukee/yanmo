@@ -1416,6 +1416,8 @@
   "compile.body_limit_whole": "全书都带（不限字数）",
   "compile.body_limit_hint": "按段落累加，不会把一个自然段截成两半；大纲照旧覆盖全书。",
   "compile.outline": "附大纲（书名、简介、卷章标题 + 每章一句话）",
+  "compile.sources": "附一份「来源清单」（每章的字从哪儿来；只有字数，没有正文）",
+  "compile.sources_hint": "给编辑 / 平台看：哪些字是粘贴、模块、口述进来的，哪些是键入。默认不附。",
   "compile.preview": "看看会生成什么",
   "compile.previewing": "正在算…",
   "compile.preview_result": "会生成 {count} 个文件",

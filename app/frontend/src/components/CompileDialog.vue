@@ -15,6 +15,7 @@ const {
   preset,
   bodyLimit,
   withOutline,
+  withSources,
   files,
   note,
   busy,
@@ -22,6 +23,7 @@ const {
   selectPreset,
   setBodyLimit,
   setOutline,
+  setSources,
   preview,
   run,
   openFolder,
@@ -34,6 +36,11 @@ function presetName(code: string): string {
 }
 
 const current = computed(() => presetOf(presets.value, preset.value));
+
+/** 「附来源清单」：只记一个开关，生成与清理都交给核心/壳（同一份文件清单）。 */
+function onSources(event: Event) {
+  setSources((event.target as HTMLInputElement).checked);
+}
 
 /** 正文上限：空着就是"全书都带"，只收数字。 */
 const limitText = computed({
@@ -94,6 +101,12 @@ function onOutline(event: Event) {
         </label>
         <p class="compile__hint">{{ t("compile.body_limit_hint") }}</p>
       </div>
+
+      <label class="compile__check">
+        <input type="checkbox" :checked="withSources" @change="onSources" />
+        {{ t("compile.sources") }}
+      </label>
+      <p class="compile__hint">{{ t("compile.sources_hint") }}</p>
 
       <div class="compile__preview">
         <button type="button" class="dialog__button" :disabled="busy" @click="void preview()">

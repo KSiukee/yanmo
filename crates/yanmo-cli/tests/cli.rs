@@ -1616,3 +1616,63 @@ fn trace_export_writes_a_package_that_verifies_itself() {
     assert_ne!(again["dir"], value["dir"], "同名目录已存在时不能覆盖");
     assert!(again["dir"].as_str().unwrap().ends_with("-2"));
 }
+
+#[test]
+fn export_can_attach_the_source_list() {
+    let dir = tempfile::tempdir().unwrap();
+    let (work_id, node_id) = seed(dir.path(), "novel");
+    ok(
+        dir.path(),
+        "write",
+        &[("node", &node_id.to_string()), ("body", "打出来的一句。粘进来的一句。")],
+    );
+
+    let without = tempfile::tempdir().unwrap();
+    ok(
+        dir.path(),
+        "export",
+        &[
+            ("work", &work_id.to_string()),
+            ("format", "txt"),
+            ("out", without.path().to_str().unwrap()),
+        ],
+    );
+    let has_report = walk_has(without.path(), "来源清单.txt");
+    assert!(!has_report, "没给 --sources 就不该多出一个文件");
+
+    let with = tempfile::tempdir().unwrap();
+    ok(
+        dir.path(),
+        "export",
+        &[
+            ("work", &work_id.to_string()),
+            ("format", "txt"),
+            ("out", with.path().to_str().unwrap()),
+            ("sources", ""),
+        ],
+    );
+    let report = find_file(with.path(), "来源清单.txt").expect("给了 --sources 就该有来源清单");
+    let text = std::fs::read_to_string(report).unwrap();
+    assert!(text.contains("来源清单"), "清单要有标题：{text}");
+    assert!(text.contains("长夜"), "清单要写书名：{text}");
+    assert!(text.contains("合计："), "清单末尾要有合计：{text}");
+}
+
+fn find_file(root: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).ok()? {
+            let path = entry.ok()?.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.file_name().and_then(|value| value.to_str()) == Some(name) {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+fn walk_has(root: &std::path::Path, name: &str) -> bool {
+    find_file(root, name).is_some()
+}

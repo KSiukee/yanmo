@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 use yanmo_core::db;
-use yanmo_core::store::{ExportFormat, Store, TraceScope};
+use yanmo_core::store::{ExportFormat, RenderedFile, Store, TraceScope, SOURCE_REPORT_FILE};
 use yanmo_core::version;
 
 #[cfg(debug_assertions)]
@@ -39,7 +39,7 @@ fn rescue_options(command: &str) -> Option<&'static [&'static str]> {
         "nodes" => Some(&["work"]),
         "read" => Some(&["node"]),
         "search" => Some(&["query", "work", "limit"]),
-        "export" => Some(&["work", "format", "out"]),
+        "export" => Some(&["work", "format", "out", "sources"]),
         "trace" => Some(&["work", "out", "scope"]),
         "import" => Some(&["from", "work", "language", "yes"]),
         _ => None,
@@ -260,7 +260,7 @@ fn rescue(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError> {
             let work = args.required_i64("work")?;
             let format = ExportFormat::parse(args.required("format")?)?;
             let out = PathBuf::from(args.required("out")?);
-            let written = write_rendered(store, work, format, &out)?;
+            let written = write_rendered(store, work, format, &out, args.flag("sources"))?;
             json!({ "ok": true, "command": "export", "files": written, "dir": out.display().to_string() })
         }
         // 留痕包：只读库、只写文件（与桌面壳那条命令同一个核心函数）
@@ -331,8 +331,15 @@ pub(crate) fn write_rendered(
     work_id: i64,
     format: ExportFormat,
     out: &Path,
+    with_sources: bool,
 ) -> Result<usize, CliError> {
-    let files = store.render_work(work_id, format)?;
+    let mut files = store.render_work(work_id, format)?;
+    if with_sources {
+        files.push(RenderedFile {
+            relative_path: SOURCE_REPORT_FILE.to_string(),
+            content: store.source_report_text(work_id)?.into_bytes(),
+        });
+    }
     let mut written = 0;
     for file in &files {
         let path = out.join(&file.relative_path);

@@ -118,6 +118,7 @@ mod trace_chain;
 mod trace_package;
 /// 留痕包自带的校验脚本（编译期嵌入，包里字节与仓里一致）。
 mod trace_verify;
+mod source_report;
 mod source_run;
 mod source_trace;
 mod split;
@@ -141,6 +142,7 @@ pub use sop::{
 };
 pub use sop_mech::{BookMechFacts, ChapterMechFacts};
 pub use chapter_length::{dismiss_identity, ChapterLength, ChapterLengthBoard};
+pub use source_report::SOURCE_REPORT_FILE;
 pub use trace_chain::{verify_trace_events, TraceEvent};
 pub use trace_package::{
     trace_folder_name, TraceFile, TracePackage, TraceScope, TRACE_PACKAGE_VERSION,

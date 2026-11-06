@@ -398,7 +398,7 @@ fn export_work(
     let mut written = 0;
     for format in wanted {
         let format = *format;
-        written += commands::write_rendered(store, entry.work.id, format, &dir)
+        written += commands::write_rendered(store, entry.work.id, format, &dir, false)
             .map_err(|error| format!("导出《{title}》失败：{error}"))?;
     }
     let _ = writeln!(out, "  ✅ 《{title}》→ {}（{written} 个文件）", dir.display());

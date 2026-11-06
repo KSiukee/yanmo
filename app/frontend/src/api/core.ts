@@ -1009,7 +1009,15 @@ export const compilePreview = (
   preset: string,
   body_limit: number | null,
   with_outline: boolean,
-) => call<CompileFile[]>(COMMANDS.compilePreview, { work_id, preset, body_limit, with_outline });
+  with_sources: boolean,
+) =>
+  call<CompileFile[]>(COMMANDS.compilePreview, {
+    work_id,
+    preset,
+    body_limit,
+    with_outline,
+    with_sources,
+  });
 
 /** 真编译：渲染 + 落盘到导出目录里这一种预设自己的子目录。 */
 export const compileWork = (
@@ -1017,7 +1025,15 @@ export const compileWork = (
   preset: string,
   body_limit: number | null,
   with_outline: boolean,
-) => call<CompileAck>(COMMANDS.compileWork, { work_id, preset, body_limit, with_outline });
+  with_sources: boolean,
+) =>
+  call<CompileAck>(COMMANDS.compileWork, {
+    work_id,
+    preset,
+    body_limit,
+    with_outline,
+    with_sources,
+  });
 
 /** 打开某种预设的产物目录（路径由壳自己算，界面不传路径）。 */
 export const compileOpenFolder = (work_id: number, preset: string) =>

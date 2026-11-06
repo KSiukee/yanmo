@@ -19,12 +19,12 @@ function build() {
   const errors: string[] = [];
   const transport: CompileTransport = {
     presets: async () => PRESETS,
-    preview: async (work_id, preset, body_limit, with_outline) => {
-      calls.push(`preview:${work_id}:${preset}:${body_limit}:${with_outline}`);
+    preview: async (work_id, preset, body_limit, with_outline, with_sources) => {
+      calls.push(`preview:${work_id}:${preset}:${body_limit}:${with_outline}:${with_sources}`);
       return [{ path: `${preset}/长夜.docx`, bytes: 2048 }];
     },
-    run: async (work_id, preset, body_limit, with_outline): Promise<CompileAck> => {
-      calls.push(`run:${work_id}:${preset}:${body_limit}:${with_outline}`);
+    run: async (work_id, preset, body_limit, with_outline, with_sources): Promise<CompileAck> => {
+      calls.push(`run:${work_id}:${preset}:${body_limit}:${with_outline}:${with_sources}`);
       const files: CompileFile[] = [{ path: `${preset}/长夜.docx`, bytes: 2048 }];
       return { path: "导出目录/长夜/submission", files, removed: 1 };
     },
@@ -66,12 +66,12 @@ test("预览不落盘，编译才写文件", async () => {
   await state.open(7);
   state.setBodyLimit(12_000);
   await state.preview();
-  assert.deepEqual(calls, ["preview:7:submission_docx:12000:true"]);
+  assert.deepEqual(calls, ["preview:7:submission_docx:12000:true:false"]);
 
   await state.run();
   assert.deepEqual(calls, [
-    "preview:7:submission_docx:12000:true",
-    "run:7:submission_docx:12000:true",
+    "preview:7:submission_docx:12000:true:false",
+    "run:7:submission_docx:12000:true:false",
   ]);
   assert.equal(state.files.value.length, 1);
   // 交代里既有落点也有清掉的旧文件
@@ -83,7 +83,7 @@ test("空上限＝全书都带", async () => {
   await state.open(7);
   state.setBodyLimit(null);
   await state.preview();
-  assert.ok(calls.includes("preview:7:submission_docx:null:true"), calls.join("|"));
+  assert.ok(calls.includes("preview:7:submission_docx:null:true:false"), calls.join("|"));
 });
 
 test("打开目录：只叫这一个动作，不动文件、也不改参数", async () => {
@@ -101,4 +101,12 @@ test("预设查不到就退回第一项；文件大小给人看的说法", () =>
   assert.equal(fileSize(512), "512 B");
   assert.equal(fileSize(2048), "2 KB");
   assert.equal(fileSize(3 * 1024 * 1024), "3.0 MB");
+});
+
+test("附来源清单：勾了就把开关原样送到核心", async () => {
+  const { state, calls } = build();
+  await state.open(7);
+  state.setSources(true);
+  await state.preview();
+  assert.deepEqual(calls, ["preview:7:submission_docx:30000:true:true"]);
 });

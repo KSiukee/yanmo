@@ -14,7 +14,7 @@ use crate::storage::AppData;
 use yanmo_core::compile::{
     compile, compile_collection as render_collection, CollectionFormat, CompileOptions, Preset,
 };
-use yanmo_core::store::Store;
+use yanmo_core::store::{RenderedFile, Store, SOURCE_REPORT_FILE};
 
 /// 预设清单：界面按码取名字，也按这里给的默认值填参数（**默认值只有核心一处**）。
 #[derive(Debug, Serialize)]
@@ -88,11 +88,20 @@ pub fn compile_preview(
     preset: String,
     body_limit: Option<i64>,
     with_outline: Option<bool>,
+    with_sources: Option<bool>,
 ) -> Result<Vec<CompileFileDto>, ApiError> {
     let preset = Preset::parse(&preset).map_err(ApiError::from)?;
     let options = options_of(preset, body_limit, with_outline, None);
     data.with_store(|store: &mut Store| {
-        Ok(compile(store, work_id, preset, &options)?
+        let mut files = compile(store, work_id, preset, &options)?;
+        if with_sources.unwrap_or(false) {
+            let report = store.source_report_text(work_id)?;
+            files.push(RenderedFile {
+                relative_path: format!("{}/{}", preset.folder(), SOURCE_REPORT_FILE),
+                content: report.into_bytes(),
+            });
+        }
+        Ok(files
             .into_iter()
             .map(|file| CompileFileDto { path: file.relative_path, bytes: file.content.len() })
             .collect())
@@ -129,13 +138,22 @@ pub fn compile_work(
     preset: String,
     body_limit: Option<i64>,
     with_outline: Option<bool>,
+    with_sources: Option<bool>,
 ) -> Result<CompileAckDto, ApiError> {
     let preset = Preset::parse(&preset).map_err(ApiError::from)?;
-    let (title, files) = data.with_store(|store: &mut Store| {
+    let (title, mut files) = data.with_store(|store: &mut Store| {
         let title = store.get_work(work_id)?.title;
         // 作者简介：要不要附、带不带身份证与银行账号，都由核心那一层定（见 store::author）
         let options = options_of(preset, body_limit, with_outline, store.author_block()?);
-        Ok((title, compile(store, work_id, preset, &options)?))
+        let mut files = compile(store, work_id, preset, &options)?;
+        if with_sources.unwrap_or(false) {
+            let report = store.source_report_text(work_id)?;
+            files.push(RenderedFile {
+                relative_path: format!("{}/{}", preset.folder(), SOURCE_REPORT_FILE),
+                content: report.into_bytes(),
+            });
+        }
+        Ok((title, files))
     })?;
     // 扩展名由核心给（它知道这一档产出什么）——清理旧产物按它认，认错就留垃圾或误删
     let extension = preset.extension();

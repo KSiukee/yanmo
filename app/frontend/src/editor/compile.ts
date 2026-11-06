@@ -20,12 +20,14 @@ export interface CompileTransport {
     preset: string,
     body_limit: number | null,
     with_outline: boolean,
+    with_sources: boolean,
   ) => Promise<CompileFile[]>;
   run: (
     work_id: number,
     preset: string,
     body_limit: number | null,
     with_outline: boolean,
+    with_sources: boolean,
   ) => Promise<CompileAck>;
   /** 打开这一种预设的产物目录（路径壳里算，界面不传） */
   openFolder: (work_id: number, preset: string) => Promise<void>;
@@ -45,6 +47,8 @@ export interface CompileState {
   /** 正文上限（`null` = 全书都带；只有卡上限的预设才用得上） */
   bodyLimit: Ref<number | null>;
   withOutline: Ref<boolean>;
+  /** 交稿时附一份「来源清单」（默认不附） */
+  withSources: Ref<boolean>;
   /** 预览结果：会生成哪些文件（空数组＝还没预览过） */
   files: Ref<CompileFile[]>;
   note: Ref<string>;
@@ -55,6 +59,7 @@ export interface CompileState {
   selectPreset: (code: string) => void;
   setBodyLimit: (limit: number | null) => void;
   setOutline: (on: boolean) => void;
+  setSources: (on: boolean) => void;
   preview: () => Promise<void>;
   run: () => Promise<void>;
   /** 在文件管理器里打开产物目录 */
@@ -79,6 +84,7 @@ export function useCompile(options: CompileOptionsIn): CompileState {
   const preset = ref("submission_docx");
   const bodyLimit = ref<number | null>(null);
   const withOutline = ref(true);
+  const withSources = ref(false);
   const files = ref<CompileFile[]>([]);
   const note = ref("");
   const busy = ref(false);
@@ -100,8 +106,8 @@ export function useCompile(options: CompileOptionsIn): CompileState {
   }
 
   /** 当前参数（三处调用共用；`body_limit` 只有卡上限的预设才传）。 */
-  function args(): [number, string, number | null, boolean] {
-    return [workId ?? 0, preset.value, bodyLimit.value, withOutline.value];
+  function args(): [number, string, number | null, boolean, boolean] {
+    return [workId ?? 0, preset.value, bodyLimit.value, withOutline.value, withSources.value];
   }
 
   return {
@@ -110,6 +116,7 @@ export function useCompile(options: CompileOptionsIn): CompileState {
     preset,
     bodyLimit,
     withOutline,
+    withSources,
     files,
     note,
     busy,
@@ -136,6 +143,10 @@ export function useCompile(options: CompileOptionsIn): CompileState {
     },
     setOutline: (on) => {
       withOutline.value = on;
+      files.value = [];
+    },
+    setSources: (on) => {
+      withSources.value = on;
       files.value = [];
     },
     preview: async () => {
