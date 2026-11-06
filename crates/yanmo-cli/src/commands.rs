@@ -41,6 +41,8 @@ fn rescue_options(command: &str) -> Option<&'static [&'static str]> {
         "search" => Some(&["query", "work", "limit"]),
         "export" => Some(&["work", "format", "out", "sources"]),
         "trace" => Some(&["work", "out", "scope"]),
+        // 唯一一条**不打开活库**的命令：库坏到打不开时，它才用得上
+        "restore" => Some(&["from", "yes"]),
         "import" => Some(&["from", "work", "language", "yes"]),
         _ => None,
     }
@@ -136,6 +138,12 @@ pub fn execute(args: &Args) -> Result<Value, CliError> {
         if !allowed.contains(&name.as_str()) {
             return Err(Usage(format!("命令 {} 不认识选项 --{name}", args.command)).into());
         }
+    }
+
+    // 救援：库打不开时也要能跑，所以**在开库之前**分流（与 import 不同：
+    // 那条要读成稿，这条只碰文件与备份包）。
+    if args.command == "restore" {
+        return crate::restore::run(args);
     }
 
     let mut store = if may_create_library(&args.command) {

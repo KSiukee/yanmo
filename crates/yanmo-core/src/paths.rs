@@ -8,6 +8,17 @@
 
 use std::path::{Path, PathBuf};
 
+/// 单实例锁的内核对象名（按数据目录算）。
+///
+/// 壳与命令行救援共用这一份：命令行要知道"研墨是不是还开着这个目录"，
+/// 名字必须逐字一致。**不含作者目录名**——对象名在系统里对别的进程可见，
+/// 只放指纹（与壳里原来的算法一致）。
+pub fn instance_lock_name(data_dir: &Path) -> String {
+    let canonical = std::fs::canonicalize(data_dir).unwrap_or_else(|_| data_dir.to_path_buf());
+    let fingerprint = crate::text::content_hash(&canonical.to_string_lossy());
+    format!("Local\\app.yanmo.desktop.data-{fingerprint}")
+}
+
 /// 应用数据目录名（与打包标识一致）。
 pub const APP_DIR_NAME: &str = "app.yanmo.desktop";
 /// 数据库文件名（位于应用数据目录内）。

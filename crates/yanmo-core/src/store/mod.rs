@@ -150,7 +150,7 @@ pub use trace_package::{
 pub use backup::{
     gaps_for, has_other_volume, ledger_summary, package_day, plan_prune, read_ledger, read_manifest,
     BackupConfig,
-    BackupLedger, BackupManifest, BackupReport, BackupRequest, BackupTarget, BackupVerify,
+    verify_backup_package, BackupLedger, BackupManifest, BackupReport, BackupRequest, BackupTarget, BackupVerify,
     LedgerEntry, ModuleBackupStamp, SealKey, TargetOutcome, WorkStamp,
 };
 pub use backup_seal::{is_sealed_package, open_sealed, seal_dir, sealed_path};
@@ -184,7 +184,7 @@ pub use tree_path::work_folder_name;
 pub use naming::NamingRewrite;
 pub use node::{ChapterNeighbors, ChapterSummary, NodeSummary, SubtreeRollup};
 pub use relocate::{copy_dir, verify_same_scale, Relocation};
-pub use restore::RestorePreview;
+pub use restore::{preview_source, RestorePreview, SourcePreview};
 pub use restore_packages::{list_packages, scan_packages, PackageBrief};
 pub use restore_swap::{swap_in, RestoreOutcome, KEEP_FOLDER};
 pub use certification::{

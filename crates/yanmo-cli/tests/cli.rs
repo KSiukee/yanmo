@@ -1676,3 +1676,67 @@ fn find_file(root: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
 fn walk_has(root: &std::path::Path, name: &str) -> bool {
     find_file(root, name).is_some()
 }
+
+#[test]
+fn restore_dry_run_and_yes() {
+    let source = tempfile::tempdir().unwrap();
+    let (work_id, _node) = seed(source.path(), "novel");
+    ok(
+        source.path(),
+        "write",
+        &[("node", &_node.to_string()), ("body", "换库前写下的字。")],
+    );
+
+    // 把库本身复制出来当"备份"（裸库这条路：命令行救援最常用）
+    let backup = tempfile::tempdir().unwrap();
+    let backup_db = backup.path().join("yanmo.db");
+    std::fs::copy(source.path().join("yanmo.db"), &backup_db).unwrap();
+
+    let target = tempfile::tempdir().unwrap();
+    let dry = ok(
+        target.path(),
+        "restore",
+        &[("from", backup_db.to_str().unwrap())],
+    );
+    assert_eq!(dry["dry_run"], true);
+    assert_eq!(dry["plan"]["kind"], "database");
+    assert_eq!(dry["plan"]["source_stats"]["works"], 1);
+    assert!(
+        !target.path().join("yanmo.db").is_file(),
+        "干跑不许碰目标库"
+    );
+
+    // 目标目录里放一个「旧库」（模拟坏库）：换库前必须把它留底
+    std::fs::write(target.path().join("yanmo.db"), b"old broken library").unwrap();
+    let applied = ok(
+        target.path(),
+        "restore",
+        &[("from", backup_db.to_str().unwrap()), ("yes", "")],
+    );
+    assert_eq!(applied["dry_run"], false);
+    assert!(target.path().join("yanmo.db").is_file(), "加了 --yes 才换库");
+    let works = ok(target.path(), "works", &[]);
+    assert_eq!(works["works"][0]["id"], work_id);
+    assert!(
+        target.path().join("旧库留底").is_dir(),
+        "换库必须把原库留底（坏库也要留证）"
+    );
+    let kept: Vec<_> = std::fs::read_dir(target.path().join("旧库留底"))
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .collect();
+    assert!(!kept.is_empty(), "留底目录里要有那一份旧库");
+}
+
+#[test]
+fn restore_refuses_a_source_that_is_not_a_backup() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, _) = seed(dir.path(), "novel");
+    let junk = dir.path().join("不是备份.txt");
+    std::fs::write(&junk, "hello").unwrap();
+    let error = run(dir.path(), "restore", &[("from", junk.to_str().unwrap())]).unwrap_err();
+    match error {
+        CliError::Refused { code, .. } => assert_eq!(code, "backup.restore_source_invalid"),
+        other => panic!("应当是「拒绝执行」，实际 {other:?}"),
+    }
+}

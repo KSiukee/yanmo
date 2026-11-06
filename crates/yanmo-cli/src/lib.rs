@@ -37,6 +37,8 @@ mod dev_question_intake;
 pub mod menu;
 /// 从成稿导入（救援档里唯一会写库的那一条：默认干跑，`--yes` 才写）。
 mod rescue_import;
+/// 命令行救援：库打不开时把备份换回去（默认干跑，`--yes` 才动）。
+mod restore;
 
 pub use commands::execute;
 
@@ -52,6 +54,8 @@ pub enum CliError {
     Usage(Usage),
     Core(yanmo_core::Error),
     Io(std::io::Error),
+    /// **拒绝执行**：来源不合格 / 库还开着——不是执行失败，改一改再来就好（退出码 3）。
+    Refused { code: &'static str, detail: String },
 }
 
 impl From<Usage> for CliError {
@@ -79,6 +83,7 @@ impl std::fmt::Display for CliError {
             CliError::Usage(usage) => f.write_str(&usage.0),
             CliError::Core(error) => write!(f, "{error}"),
             CliError::Io(error) => write!(f, "{error}"),
+            CliError::Refused { code, detail } => write!(f, "{code}: {detail}"),
         }
     }
 }
@@ -88,6 +93,9 @@ fn error_json(error: &CliError) -> Value {
     match error {
         CliError::Usage(usage) => json!({ "ok": false, "code": "cli.usage", "detail": usage.0 }),
         CliError::Io(io) => json!({ "ok": false, "code": "io", "params": { "detail": io.to_string() } }),
+        CliError::Refused { code, detail } => {
+            json!({ "ok": false, "code": code, "params": { "detail": detail } })
+        }
         CliError::Core(core) => {
             let params: BTreeMap<String, String> =
                 core.params().into_iter().map(|(name, value)| (name.to_string(), value)).collect();
@@ -118,6 +126,10 @@ pub fn run(argv: Vec<String>) -> i32 {
         Err(CliError::Usage(usage)) => {
             eprintln!("{}", error_json(&CliError::Usage(usage)));
             2
+        }
+        Err(error @ CliError::Refused { .. }) => {
+            println!("{}", error_json(&error));
+            3
         }
         Err(error) => {
             // 命令失败也打在 stdout：脚本统一从 stdout 读一行 JSON 就够

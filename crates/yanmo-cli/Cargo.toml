@@ -13,6 +13,14 @@ path = "src/main.rs"
 yanmo-core.workspace = true
 serde_json.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+# 只用来问一句「研墨是不是还开着这个数据目录」（命名互斥体），别的不碰。
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Threading",
+] }
+
 [dev-dependencies]
 tempfile = "3"
 

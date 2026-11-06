@@ -78,9 +78,7 @@ mod imp {
     /// 先取规范路径再算指纹：`文档\研墨` 与 `文档\..\文档\研墨` 必须算出同一个名字，
     /// 否则换个写法就能同时开两个（Windows 上大小写也会被 canonicalize 归一）。
     fn lock_name(data_dir: &Path) -> Vec<u16> {
-        let canonical = std::fs::canonicalize(data_dir).unwrap_or_else(|_| data_dir.to_path_buf());
-        let fingerprint = yanmo_core::text::content_hash(&canonical.to_string_lossy());
-        format!("Local\\app.yanmo.desktop.data-{fingerprint}")
+        yanmo_core::paths::instance_lock_name(data_dir)
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect()

@@ -533,3 +533,25 @@ fn backup_includes_module_package_files() {
     assert!(package.join("module-packages/app.example.demo/module.wasm").is_file());
     assert!(f.store.verify_backup(&package).ok, "{:?}", f.store.verify_backup(&package).problems);
 }
+
+/// 命令行救援的前提：**库打不开也要能体检一份备份**。
+#[test]
+fn preview_source_without_opening_the_live_library() {
+    let mut f = fixture();
+    seed_book(&mut f.store);
+    let report = f.store.backup_now(&request(&f, 3)).unwrap();
+    assert_eq!(report.outcomes.len(), 1);
+    let package = PathBuf::from(&report.outcomes[0].package);
+
+    let preview = yanmo_core::store::preview_source(&package, &f.data_dir).unwrap();
+    assert!(preview.can_restore, "刚写出来的包要能恢复：{:?}", preview.verify);
+    assert_eq!(preview.kind, "package");
+    assert_eq!(preview.works, 1);
+    assert!(preview.chapters >= 1);
+    assert!(preview.keep_dir.contains("旧库留底"));
+
+    // 另一个目录（模拟"库坏了换成新的"）也能回答"这份能不能用"
+    let elsewhere = tempfile::tempdir().unwrap();
+    let preview = yanmo_core::store::preview_source(&package, elsewhere.path()).unwrap();
+    assert!(preview.can_restore);
+}

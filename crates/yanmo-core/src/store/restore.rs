@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::backup::{last_write_at, read_manifest, work_stamps, BackupVerify, Probe};
+use super::backup::{last_write_at, read_manifest, verify_backup_package, work_stamps, BackupVerify, Probe};
 use super::restore_packages::dir_bytes;
 use super::restore_swap::{same_file, KEEP_FOLDER};
 use super::Store;
@@ -82,12 +82,12 @@ struct Inspected {
 }
 
 /// 看一份来源：备份包走清单 + 逐项体检；裸库走只读探针。
-fn inspect(source: &Path, verifier: &Store) -> Result<Inspected> {
+fn inspect(source: &Path) -> Result<Inspected> {
     if source.is_dir() {
         let Some(manifest) = read_manifest(source) else {
             return Err(source_invalid(source));
         };
-        let mut problems = verifier.verify_backup(source).problems;
+        let mut problems = verify_backup_package(source).problems;
         if manifest.data_format_version > version::DATA_FORMAT_VERSION {
             problems.push(format!(
                 "这份备份来自更新的研墨（数据格式 v{}），当前引擎只到 v{}",
@@ -215,7 +215,7 @@ impl Store {
                 bytes: std::fs::metadata(source).map(|meta| meta.len()).unwrap_or(0),
             }
         } else {
-            inspect(source, self)?
+            inspect(source)?
         };
 
         // 会退回几天：活库最后写入 - 这份备份的最后写入（正数才算数，向上取整到天）
@@ -267,4 +267,46 @@ fn modified_millis(path: &Path) -> i64 {
         .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+/// 一次“只看不动”的来源体检结论（**不需要活库**，库坏了也照样能看）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePreview {
+    pub source: String,
+    /// `package`（备份包）或 `database`（单个库文件）
+    pub kind: String,
+    pub verify: BackupVerify,
+    pub created_at: i64,
+    pub engine_version: String,
+    pub data_format_version: u32,
+    pub works: i64,
+    pub chapters: i64,
+    pub words: i64,
+    pub bytes: u64,
+    /// 能不能拿它恢复（体检通过即可；"自己恢复自己"要活库才知道，这条在 CLI 里由数据目录判断）
+    pub can_restore: bool,
+    /// 换库时原库会留底到哪儿
+    pub keep_dir: String,
+}
+
+/// 体检一份恢复来源，**不打开活库、不动任何文件**。
+///
+/// 命令行救援用这一条：库已经打不开时，`Store::open` 根本起不来，但"这份备份能不能用"
+/// 仍然必须回答。与 [`Store::preview_restore`] 的区别只是**不算“会丢多少”**——没有活库可算。
+pub fn preview_source(source: &Path, data_dir: &Path) -> Result<SourcePreview> {
+    let inspected = inspect(source)?;
+    Ok(SourcePreview {
+        source: source.to_string_lossy().to_string(),
+        kind: inspected.kind.to_string(),
+        can_restore: inspected.verify.ok,
+        verify: inspected.verify,
+        created_at: inspected.created_at,
+        engine_version: inspected.engine_version,
+        data_format_version: inspected.data_format_version,
+        works: inspected.works,
+        chapters: inspected.chapters,
+        words: inspected.words,
+        bytes: inspected.bytes,
+        keep_dir: data_dir.join(KEEP_FOLDER).to_string_lossy().to_string(),
+    })
 }

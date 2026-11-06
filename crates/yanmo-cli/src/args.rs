@@ -64,6 +64,10 @@ yanmo-cli — 研墨的命令行入口
                             在稿子里检索（全文索引；--work 只搜一本书，--limit 默认 50、上限 500）
   export --work <id> --format txt|json --out <目录>
                             把一本书导出成文件
+  restore --from <备份包目录 或 库文件> [--yes]
+                            **库打不开时的自救**：把备份换回 --data 指的目录。
+                            默认只打印计划（从哪到哪、会留底到哪、体检结论）；
+                            加 --yes 才动库，动之前先把旧库（含 -wal/-shm）搬进「旧库留底」。
   trace --work <id> --out <目录> [--scope all|creative]
                             导出一份**创作留痕包**（不含正文；自带 verify.py，可自己验链）
 

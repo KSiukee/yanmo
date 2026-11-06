@@ -707,87 +707,9 @@ impl Store {
     }
 
     /// 体检一份备份包：清单 → 快照能不能打开且结构完好 → 逐书比对 → 成稿文件还在且指纹对得上。
+    /// 校验一份备份包（方法版；实际逻辑见自由函数 [`verify_backup_package`]）。
     pub fn verify_backup(&self, package: &Path) -> BackupVerify {
-        let mut problems = Vec::new();
-        let Some(manifest) = read_manifest(package) else {
-            return BackupVerify { ok: false, problems: vec![format!("{MANIFEST_FILE} 读不出来（不是研墨的备份包？）")] };
-        };
-
-        let snapshot = package.join(&manifest.snapshot_file);
-        if !snapshot.is_file() {
-            problems.push(format!("找不到快照：{}", manifest.snapshot_file));
-        } else {
-            match Probe::open(&snapshot) {
-                Err(problem) => problems.push(problem),
-                Ok(probe) => {
-                    match crate::db::quick_check(probe.conn()) {
-                        Ok(verdict) if verdict == "ok" => {}
-                        Ok(verdict) => problems.push(format!("快照结构有问题：{verdict}")),
-                        Err(error) => problems.push(format!("快照体检失败：{error}")),
-                    }
-                    // 逐书比对：章节数 + 字数（与清单里记的对得上，才说明这份快照是"完整的")
-                    match work_stamps(probe.conn()) {
-                        Err(error) => problems.push(format!("快照读不出书目：{error}")),
-                        Ok(rows) => {
-                            if rows.len() != manifest.works.len() {
-                                problems.push(format!(
-                                    "书目对不上：快照 {} 本，清单 {} 本",
-                                    rows.len(),
-                                    manifest.works.len()
-                                ));
-                            }
-                            for (id, title, chapters, word_count, chars_no_punct) in rows {
-                                match manifest.works.iter().find(|w| w.id == id) {
-                                    None => problems.push(format!("快照里多出一本：{title}（#{id}）")),
-                                    Some(stamp) => {
-                                        if stamp.chapters != chapters
-                                            || stamp.word_count != word_count
-                                            || stamp.chars_no_punct != chars_no_punct
-                                        {
-                                            problems.push(format!(
-                                                "《{title}》对不上：清单 {} 章/{} 字，快照 {} 章/{} 字",
-                                                stamp.chapters, stamp.word_count, chapters, word_count
-                                            ));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 模块数据：清单说带了，就必须在、结构完好、版本账对得上
-        if let Some(stamp) = &manifest.modules {
-            problems.extend(verify_modules(package, stamp));
-        }
-        if let Some(stamp) = &manifest.module_packages {
-            problems.extend(module_packages::verify(package, stamp));
-        }
-
-        // 成稿文件：在、指纹对得上（文件被改坏/少了一个，这里就会说话）
-        for work in &manifest.works {
-            let mut drafts = Vec::new();
-            for relative in &work.files {
-                match std::fs::read(package.join(relative)) {
-                    Err(error) => problems.push(format!("《{}》的成稿读不到（{relative}）：{error}", work.title)),
-                    // 指纹只算分章文本（人读的那一份）：口径与备份时同一处（见 export）
-                    Ok(content) if relative.ends_with(".txt") => drafts.push(super::export::RenderedFile {
-                        relative_path: relative.clone(),
-                        content,
-                    }),
-                    Ok(_) => {}
-                }
-            }
-            if !drafts.is_empty()
-                && super::export::fingerprint_of_text(&drafts) != work.fingerprint
-            {
-                problems.push(format!("《{}》的成稿内容与清单不符", work.title));
-            }
-        }
-
-        BackupVerify { ok: problems.is_empty(), problems }
+        verify_backup_package(package)
     }
 }
 
@@ -1026,4 +948,93 @@ pub fn ledger_summary(ledger: &BackupLedger) -> Vec<(String, String, Option<Stri
     map.into_iter()
         .map(|(path, (label, last_success, last_reason, count))| (path, label, last_success, last_reason, count))
         .collect()
+}
+
+/// 校验一份备份包：**只要文件，不需要活库**。
+///
+/// 命令行救援（库已经打不开）没有活库可开，这一步必须能单独跑——壳里的
+/// [`Store::verify_backup`] 只是它的一层薄封装。
+pub fn verify_backup_package(package: &Path) -> BackupVerify {
+
+        let mut problems = Vec::new();
+        let Some(manifest) = read_manifest(package) else {
+            return BackupVerify { ok: false, problems: vec![format!("{MANIFEST_FILE} 读不出来（不是研墨的备份包？）")] };
+        };
+
+        let snapshot = package.join(&manifest.snapshot_file);
+        if !snapshot.is_file() {
+            problems.push(format!("找不到快照：{}", manifest.snapshot_file));
+        } else {
+            match Probe::open(&snapshot) {
+                Err(problem) => problems.push(problem),
+                Ok(probe) => {
+                    match crate::db::quick_check(probe.conn()) {
+                        Ok(verdict) if verdict == "ok" => {}
+                        Ok(verdict) => problems.push(format!("快照结构有问题：{verdict}")),
+                        Err(error) => problems.push(format!("快照体检失败：{error}")),
+                    }
+                    // 逐书比对：章节数 + 字数（与清单里记的对得上，才说明这份快照是"完整的")
+                    match work_stamps(probe.conn()) {
+                        Err(error) => problems.push(format!("快照读不出书目：{error}")),
+                        Ok(rows) => {
+                            if rows.len() != manifest.works.len() {
+                                problems.push(format!(
+                                    "书目对不上：快照 {} 本，清单 {} 本",
+                                    rows.len(),
+                                    manifest.works.len()
+                                ));
+                            }
+                            for (id, title, chapters, word_count, chars_no_punct) in rows {
+                                match manifest.works.iter().find(|w| w.id == id) {
+                                    None => problems.push(format!("快照里多出一本：{title}（#{id}）")),
+                                    Some(stamp) => {
+                                        if stamp.chapters != chapters
+                                            || stamp.word_count != word_count
+                                            || stamp.chars_no_punct != chars_no_punct
+                                        {
+                                            problems.push(format!(
+                                                "《{title}》对不上：清单 {} 章/{} 字，快照 {} 章/{} 字",
+                                                stamp.chapters, stamp.word_count, chapters, word_count
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 模块数据：清单说带了，就必须在、结构完好、版本账对得上
+        if let Some(stamp) = &manifest.modules {
+            problems.extend(verify_modules(package, stamp));
+        }
+        if let Some(stamp) = &manifest.module_packages {
+            problems.extend(module_packages::verify(package, stamp));
+        }
+
+        // 成稿文件：在、指纹对得上（文件被改坏/少了一个，这里就会说话）
+        for work in &manifest.works {
+            let mut drafts = Vec::new();
+            for relative in &work.files {
+                match std::fs::read(package.join(relative)) {
+                    Err(error) => problems.push(format!("《{}》的成稿读不到（{relative}）：{error}", work.title)),
+                    // 指纹只算分章文本（人读的那一份）：口径与备份时同一处（见 export）
+                    Ok(content) if relative.ends_with(".txt") => drafts.push(super::export::RenderedFile {
+                        relative_path: relative.clone(),
+                        content,
+                    }),
+                    Ok(_) => {}
+                }
+            }
+            if !drafts.is_empty()
+                && super::export::fingerprint_of_text(&drafts) != work.fingerprint
+            {
+                problems.push(format!("《{}》的成稿内容与清单不符", work.title));
+            }
+        }
+
+        BackupVerify { ok: problems.is_empty(), problems }
+    
 }
