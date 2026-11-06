@@ -84,7 +84,11 @@ pub fn tree_children(
         let nodes = store.children_of(work_id, parent_id)?;
         let mut out = Vec::with_capacity(nodes.len());
         for node in nodes {
-            let rollup = if node.kind.accepts_children() && !node.kind.holds_body() {
+            // 单篇既是正文又是容器（独立长文）：它的「几节」也要算；章/节虽然能收下级，
+            // 但行上不显示汇总，没必要为每一章多查一次。
+            let counts_children = node.kind.accepts_children()
+                && (!node.kind.holds_body() || node.kind == NodeKind::Piece);
+            let rollup = if counts_children {
                 store.subtree_rollup(node.id)?
             } else {
                 SubtreeRollup::default()
