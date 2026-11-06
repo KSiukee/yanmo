@@ -1258,6 +1258,13 @@ export function useEditorSession(): EditorSession {
       void location.load();
       const snapshot = await openEditorTarget();
       applyChapter(snapshot);
+      // 启动时也要认清「这是什么作品」：切书那条路会读 workBrief，但**开机直接恢复**不走那条——
+      // 不补这一下，独立长文在开机后的树里会被当成长篇（顶部冒出「+ 卷」、加号建章）。
+      void workBrief(snapshot.work_id)
+        .then((brief) => {
+          workKind.value = brief.kind;
+        })
+        .catch(() => {});
       makeAutosave(snapshot);
       // 书架列表：**打开当前章之后再拉**（顺序要紧）。正文区那条"第一次使用？"的提示
       // 要拿它判断，而首启那本无名空壳正是上一步（openEditorTarget）才建出来的——

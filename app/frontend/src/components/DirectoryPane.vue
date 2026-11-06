@@ -330,7 +330,7 @@ function askDelete(row: TreeRow) {
         <span v-if="row.holds_body" class="tree__words">{{ row.has_body ? formatCaliberNumber(row, caliber) : t("tree.empty_chapter") }}</span>
         <span v-if="isLong(row)" class="tree__long">{{ t("tree.chapter_long") }}</span>
         <span
-          v-else
+          v-if="!row.holds_body"
           class="tree__words"
           :title="
             t('tree.volume_stat_title', {

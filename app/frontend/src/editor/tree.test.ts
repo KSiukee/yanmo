@@ -42,6 +42,7 @@ function fakeWorld(initial: Spec[]) {
       accepts_children: ACCEPTS_CHILDREN.has(spec.kind),
       has_children: specs.some((kid) => kid.parent === spec.id),
       chapter_count: under.chapters,
+    section_count: 0,
       subtree_word_count: under.words,
       subtree_char_count: under.words,
       subtree_chars_no_punct: under.words,
@@ -386,6 +387,7 @@ test("容器行的小字：本卷几章 · 共多少字（设了卷长就是 x/y
 test("容器行的合计跟着口径走——不然「206 字」旁边写着「200 词」", () => {
   const row = {
     chapter_count: 3,
+    section_count: 0,
     subtree_word_count: 200,
     subtree_char_count: 206,
     subtree_chars_no_punct: 180,
@@ -516,5 +518,5 @@ test("短篇形态：单篇上的「+」是往里加节，节上是再来一节"
 });
 
 test("单篇容器行数的是「节」，不是章", () => {
-  assert.equal(containerLabel(VOLUME_34K, null, "words", "piece"), "12节 · 3.4万");
+  assert.equal(containerLabel({ ...VOLUME_34K, section_count: 12 }, null, "words", "piece"), "12节 · 3.4万");
 });

@@ -27,6 +27,7 @@ function row(id: number, kind: string, parent_id: number | null) {
     accepts_children: kind === "volume",
     has_children: false,
     chapter_count: 0,
+    section_count: 0,
     subtree_word_count: 0,
     subtree_char_count: 0,
     subtree_chars_no_punct: 0,

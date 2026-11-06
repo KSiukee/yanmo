@@ -129,6 +129,7 @@ export interface TreeNode {
   has_children: boolean;
   /** 容器行的小字：本卷几章（**非容器是 0**） */
   chapter_count: number;
+  section_count: number;
   /** 容器行的小字：本卷共多少字（**非容器是 0**）——按词口径 */
   subtree_word_count: number;
   /** 同上，逐字（含标点） */

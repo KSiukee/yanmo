@@ -347,3 +347,15 @@ fn numbering_follows_position_even_when_titles_carry_a_name() {
         assert_eq!(store.rendered_title(*id).unwrap(), format!("第{}章 {suffix}", at + 1));
     }
 }
+
+#[test]
+fn a_piece_counts_its_sections() {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Article, "长文").unwrap();
+    let piece = store.list_nodes(work.id).unwrap()[0].id;
+    store.create_node(work.id, Some(piece), NodeKind::Section, "").unwrap();
+    store.create_node(work.id, Some(piece), NodeKind::Section, "").unwrap();
+    let rollup = store.subtree_rollup(piece).unwrap();
+    assert_eq!(rollup.sections, 2, "单篇的「几节」数的是节");
+    assert_eq!(rollup.chapters, 0, "单篇下面没有章，别把节算成章");
+}

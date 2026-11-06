@@ -42,6 +42,8 @@ pub struct TreeNodeDto {
     pub has_children: bool,
     /// 容器行的小字：本卷几章 / 共多少字（**只有容器才填，叶子是 0**）
     pub chapter_count: i64,
+    /// 独立长文（单篇 + 节）的「几节」；别的容器是 0
+    pub section_count: i64,
     pub subtree_word_count: i64,
     pub subtree_char_count: i64,
     pub subtree_chars_no_punct: i64,
@@ -62,6 +64,7 @@ fn to_dto(node: NodeSummary, rollup: SubtreeRollup) -> TreeNodeDto {
         accepts_children: node.kind.accepts_children(),
         has_children: node.has_children,
         chapter_count: rollup.chapters,
+        section_count: rollup.sections,
         subtree_word_count: rollup.word_count,
         subtree_char_count: rollup.char_count,
         subtree_chars_no_punct: rollup.chars_no_punct,

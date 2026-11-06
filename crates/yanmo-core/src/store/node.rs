@@ -258,6 +258,8 @@ impl Store {
 pub struct SubtreeRollup {
     /// 子树里 `chapter` 类的节点数——"本卷几章"问的就是它（场景卡这类卡片不算章）
     pub chapters: i64,
+    /// 子树里 `section` 类的节点数——独立长文（单篇 + 节）的"几节"问的是它
+    pub sections: i64,
     /// 子树里所有节点的字数之和（正文写入时已回算过，这里只是加总，**不扫正文**）——按词
     pub word_count: i64,
     /// 同上，逐字（含标点）
@@ -288,17 +290,23 @@ impl Store {
              )
              SELECT COALESCE(SUM(word_count), 0), COALESCE(SUM(char_count), 0),
                     COALESCE(SUM(chars_no_punct), 0), COALESCE(SUM(node_kind = 'chapter'), 0),
-                    COALESCE(MAX(depth), 0)
+                    COALESCE(SUM(node_kind = 'section'), 0), COALESCE(MAX(depth), 0)
                FROM sub"
         );
-        let (word_count, char_count, chars_no_punct, chapters, deepest): (i64, i64, i64, i64, i64) =
-            self.conn.query_row(&sql, params![node_id], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
-            })?;
+        let (word_count, char_count, chars_no_punct, chapters, sections, deepest): (
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+        ) = self.conn.query_row(&sql, params![node_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+        })?;
         if deepest as usize >= MAX_TREE_DEPTH - 1 {
             return Err(too_deep());
         }
-        Ok(SubtreeRollup { chapters, word_count, char_count, chars_no_punct })
+        Ok(SubtreeRollup { chapters, sections, word_count, char_count, chars_no_punct })
     }
 }
 

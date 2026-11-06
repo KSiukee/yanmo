@@ -85,7 +85,7 @@ export function containerLabel(
   row: Pick<
     TreeRow,
     "chapter_count" | "subtree_word_count" | "subtree_char_count" | "subtree_chars_no_punct"
-  >,
+  > & { section_count?: number },
   target: number | null,
   /** 合计算哪个口径：**跟同一棵树上的章行用同一个口径**（不然 206 字旁边写着 200 词） */
   caliber: string,
@@ -100,13 +100,15 @@ export function containerLabel(
     },
     caliber,
   );
-  if (row.chapter_count === 0 && total === 0) return t("tree.container_empty");
+  // 单篇数「节」，卷/章数「章」——两套数来自核心两列，别混用
+  const count = kind === "piece" ? (row.section_count ?? 0) : row.chapter_count;
+  if (count === 0 && total === 0) return t("tree.container_empty");
   const chapters =
     kind === "piece"
-      ? t("tree.section_count", { count: row.chapter_count })
+      ? t("tree.section_count", { count })
       : target && target > 0
-        ? t("tree.chapter_ratio", { done: row.chapter_count, target })
-        : t("tree.chapter_count", { count: row.chapter_count });
+        ? t("tree.chapter_ratio", { done: count, target })
+        : t("tree.chapter_count", { count });
   return t("tree.container_label", { chapters, words: formatWords(total) });
 }
 
