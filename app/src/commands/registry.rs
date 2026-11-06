@@ -110,6 +110,12 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::question::question_mute_source,
         crate::commands::question::question_unmute_source,
         crate::commands::question::question_requeue_due,
+        // 外部文本导入：粘贴 / 文件 → 碎片池
+        crate::commands::import::pick_text_file,
+        crate::commands::import::fragment_import_preview,
+        crate::commands::import::fragment_import,
+        crate::commands::import::fragment_import_undo,
+        crate::commands::import::fragment_import_batches,
         crate::commands::fragment::fragment_add,
         crate::commands::fragment::fragment_board,
         crate::commands::fragment::fragment_delete,

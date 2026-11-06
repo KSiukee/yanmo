@@ -168,6 +168,11 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "认不出的碎片种类：{value}（只认 question / answer / idea / event / dictation）"
         : ["value"],
     FRAGMENT_BODY_EMPTY => "fragment.body_empty" : "这条碎片是空的——写点什么再记" : [],
+    IMPORT_TEXT_EMPTY => "import.text_empty" : "没有可导入的文字" : [],
+    IMPORT_TEXT_TOO_LARGE => "import.text_too_large"
+        : "这份文本太大了（{chars} 字，上限 {max} 字）——先挑短的，或分几次导" : ["chars", "max"],
+    IMPORT_BATCH_NOT_FOUND => "import.batch_not_found"
+        : "找不到这一批导入：{batch_id}（可能已经撤过了）" : ["batch_id"],
     FRAGMENT_NOT_FOUND => "fragment.not_found" : "碎片不存在：{fragment_id}" : ["fragment_id"],
     FRAGMENT_KIND_NOT_JOTTED => "fragment.kind_not_jotted"
         : "这一种碎片不由创作流面板记：{value}（问题与答案归叩问那条线）" : ["value"],

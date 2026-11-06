@@ -19,6 +19,7 @@ use super::{
     migrations_v12, migrations_v13, migrations_v14, migrations_v15, migrations_v16,
     migrations_v17, migrations_v18, migrations_v19, migrations_v20, migrations_v21,
     migrations_v22, migrations_v23, migrations_v24, migrations_v25, migrations_v26, migrations_v27,
+    migrations_v28,
 };
 use crate::error::{Error, Result};
 use crate::time::now_millis;
@@ -199,6 +200,12 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "module_credentials",
         steps: migrations_v27::STEPS,
         prepare: Some(migrations_v27::prepare),
+    },
+    Migration {
+        version: 28,
+        name: "fragment_import",
+        steps: migrations_v28::STEPS,
+        prepare: Some(migrations_v28::prepare),
     },
 ];
 

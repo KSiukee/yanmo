@@ -21,6 +21,7 @@ import {
   WRITABLE_KINDS,
 } from "./creator.ts";
 import EventEdit from "./EventEdit.vue";
+import ImportTextDialog from "./ImportTextDialog.vue";
 
 const props = defineProps<{ session: EditorSession }>();
 
@@ -47,6 +48,8 @@ const {
 } = props.session.creator;
 
 const draft = ref("");
+/** 导入外部文本那张表单开没开（粘贴 / txt·md → 碎片池） */
+const importing = ref(false);
 
 async function save() {
   if (await jot(draft.value)) draft.value = "";
@@ -56,6 +59,12 @@ async function save() {
 <template>
   <section class="fragments">
     <p v-if="errorText" class="error">{{ errorText }}</p>
+
+    <div class="fragments__import">
+      <button type="button" class="dialog__button" @click="importing = true">
+        {{ t("import.entry") }}
+      </button>
+    </div>
 
     <!-- 记一条：**记下来不打断手上的事**——写完这一条就回到原来那张纸上 -->
     <section v-if="canJot" class="jot">
@@ -164,8 +173,15 @@ async function save() {
     </ul>
     <p v-else-if="board && !busy" class="hint">{{ t("creator.empty") }}</p>
   </section>
+
+  <ImportTextDialog
+    v-if="importing"
+    :session="session"
+    @close="importing = false"
+  />
 </template>
 
+<style scoped src="./dialog.css"></style>
 <style scoped>
 .hint {
   margin: 0 0 8px;

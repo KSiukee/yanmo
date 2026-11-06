@@ -82,6 +82,12 @@ export const COMMANDS = {
   questionUnmuteSource: "question_unmute_source",
   questionRequeueDue: "question_requeue_due",
   fragmentAdd: "fragment_add",
+  // 外部文本导入
+  pickTextFile: "pick_text_file",
+  fragmentImportPreview: "fragment_import_preview",
+  fragmentImport: "fragment_import",
+  fragmentImportUndo: "fragment_import_undo",
+  fragmentImportBatches: "fragment_import_batches",
   fragmentBoard: "fragment_board",
   fragmentDelete: "fragment_delete",
   fragmentRestore: "fragment_restore",

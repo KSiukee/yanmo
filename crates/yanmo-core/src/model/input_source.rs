@@ -1,7 +1,7 @@
 //! 输入方式：**文本是文本，怎么打出来的是另一个维度**。
 //!
 //! 答案（`frag_kind = 'answer'`）与灵感速记（`'idea'`）落在同一个 `source` 列上，
-//! 列里存的是这张卡的稳定码：`typed` / `voice` / `mixed`。存的就是原文，不是索引。
+//! 列里存的是这张卡的稳定码：`typed` / `voice` / `mixed` / `pasted`。存的就是原文，不是索引。
 //!
 //! # 为什么是闭集，而不是"随便一个字符串"
 //!
@@ -26,6 +26,8 @@ pub enum InputSource {
     Voice,
     /// 混着来的：口述之后又用键盘改了，或者边打边说。
     Mixed,
+    /// 外部文本（粘贴 / txt·md 文件导入）：**不是在这软件里敲的**，不能冒充 `typed`。
+    Pasted,
 }
 
 /// 进 JSON 就用**稳定码本身**。
@@ -41,7 +43,12 @@ impl serde::Serialize for InputSource {
 
 impl InputSource {
     /// 全部取值（穷举测试拿它对表）。
-    pub const ALL: [InputSource; 3] = [InputSource::Typed, InputSource::Voice, InputSource::Mixed];
+    pub const ALL: [InputSource; 4] = [
+        InputSource::Typed,
+        InputSource::Voice,
+        InputSource::Mixed,
+        InputSource::Pasted,
+    ];
 
     /// 稳定码（写库的那一个；**别改**——老库的 `source` 列认的就是它）。
     pub const fn as_str(self) -> &'static str {
@@ -49,6 +56,7 @@ impl InputSource {
             InputSource::Typed => "typed",
             InputSource::Voice => "voice",
             InputSource::Mixed => "mixed",
+            InputSource::Pasted => "pasted",
         }
     }
 
