@@ -106,6 +106,10 @@ fn main() {
         .on_page_load(|webview, payload| {
             // 验收模式：把"页面加载完成"也记进命令日志（这一步没有，说明卡在页面本身）
             if payload.event() == PageLoadEvent::Finished {
+                // 启动已经失败：这一屏会被原生弹框 + 退出接走，不许把它显示出来。
+                if startup::has_failed() {
+                    return;
+                }
                 acceptance::note_command("window.page_loaded");
                 acceptance::note_page_loaded();
                 let window = webview.window();
@@ -153,7 +157,16 @@ fn main() {
                     if acceptance::ui_plan().is_some() {
                         startup::print_failure(&error);
                     } else {
-                        startup::announce_failure(&error);
+                        // 先把主窗藏起来、再以它为 owner 弹框：
+                        // 0.184.0 实测弹框会被主窗盖住，作者只看到后面那张内部报错页。
+                        startup::mark_failed();
+                        let window = app.get_webview_window("main");
+                        let owner =
+                            window.as_ref().and_then(|w| w.hwnd().ok()).map(|handle| handle.0 as isize);
+                        if let Some(w) = window.as_ref() {
+                            let _ = w.hide();
+                        }
+                        startup::announce_failure(&error, owner);
                     }
                     std::process::exit(1);
                 }

@@ -17,6 +17,22 @@
 //! 覆盖范围：`AppData::open` 这一路上会**挡住启动**的失败（见 `main.rs` 的 setup）。
 //! 最后一行的错误码是**故意留着**的：这是作者唯一能转述给别人的原话。
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// 启动失败已经进入“弹框 + 退出”这条路：页面加载完成也**不许再把主窗显示出来**
+/// （否则报错页会出现在弹框后面，用户看得到内部错误）。
+pub static FAILED: AtomicBool = AtomicBool::new(false);
+
+/// 标记启动失败（幂等）。
+pub fn mark_failed() {
+    FAILED.store(true, Ordering::SeqCst);
+}
+
+/// 这次启动是不是已经失败了。
+pub fn has_failed() -> bool {
+    FAILED.load(Ordering::SeqCst)
+}
+
 use crate::error::ApiError;
 
 /// 一条启动失败该怎么跟作者说。
@@ -113,12 +129,12 @@ pub fn print_failure(error: &ApiError) {
 ///
 /// ⚠️ 自动化路径（验收 / 演练）**别走这一条**——一个要人去点的框会把脚本挂在半路，
 /// 那种"卡住"比失败还难查；那边用 [`print_failure`]。
-pub fn announce_failure(error: &ApiError) {
+pub fn announce_failure(error: &ApiError, owner: Option<isize>) {
     print_failure(error);
     let body = explain(error);
     // 「已经开着了」不是故障，用信息图标；其余都是真失败
     let kind = if error.code == "shell.already_running" { Kind::Info } else { Kind::Error };
-    platform::message_box("研墨", &body, kind);
+    platform::message_box("研墨", &body, kind, owner);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -131,18 +147,28 @@ enum Kind {
 mod platform {
     use super::Kind;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        MessageBoxW, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MB_SETFOREGROUND,
+        MessageBoxW, ShowWindow, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MB_SETFOREGROUND, SW_HIDE,
     };
 
-    pub(super) fn message_box(title: &str, body: &str, kind: Kind) {
+    pub(super) fn message_box(title: &str, body: &str, kind: Kind, owner: Option<isize>) {
+        use std::ffi::c_void;
+
         let wide =
             |text: &str| -> Vec<u16> { text.encode_utf16().chain(std::iter::once(0)).collect() };
         let icon = if kind == Kind::Info { MB_ICONINFORMATION } else { MB_ICONERROR };
         let caption = wide(title);
         let message = wide(body);
+        // **必须有 owner**：没有 owner 的 MessageBox 会被主窗口盖在后面——作者只看到后面那张
+        // 报错页，弹框藏在底下，点不到也关不掉（0.184.0 真机实测：主窗 z=23、弹框 z=28）。
+        let owner = owner.map(|handle| handle as *mut c_void).unwrap_or(std::ptr::null_mut());
         unsafe {
+            // 同步藏窗：Tauri 的 hide 是投递到事件循环的，而下面 MessageBoxW 会把主线程堵住，
+            // 藏窗请求要到对话框关掉才执行——等于没藏。这里直接 ShowWindow。
+            if !owner.is_null() {
+                ShowWindow(owner, SW_HIDE);
+            }
             MessageBoxW(
-                std::ptr::null_mut(),
+                owner,
                 message.as_ptr(),
                 caption.as_ptr(),
                 MB_OK | icon | MB_SETFOREGROUND,
@@ -156,7 +182,7 @@ mod platform {
     use super::Kind;
 
     /// 其余平台还没有发布形态：这里不弹窗（stderr 那一份照旧）。
-    pub(super) fn message_box(_title: &str, _body: &str, _kind: Kind) {}
+    pub(super) fn message_box(_title: &str, _body: &str, _kind: Kind, _owner: Option<isize>) {}
 }
 
 #[cfg(test)]
