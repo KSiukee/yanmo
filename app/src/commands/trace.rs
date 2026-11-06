@@ -24,26 +24,6 @@ pub struct TraceExport {
     pub head: String,
 }
 
-/// 把书名变成能当目录名的样子（只留字与数字，其余替成下划线，最长 40 字）。
-fn safe_title(title: &str) -> String {
-    let cleaned: String = title
-        .chars()
-        .map(|ch| {
-            if ch.is_alphanumeric() || ch == '-' || ch == '_' || ch == ' ' {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let trimmed = cleaned.trim_matches(['_', ' '].as_slice()).trim();
-    let mut out: String = trimmed.chars().take(40).collect();
-    if out.is_empty() {
-        out = "未命名".to_string();
-    }
-    out
-}
-
 fn write_failed(path: &Path, error: std::io::Error) -> ApiError {
     ApiError::from(yanmo_core::Error::Io(std::io::Error::new(
         error.kind(),
@@ -70,7 +50,10 @@ pub fn trace_export(
     })?;
     let stamp =
         yanmo_core::time::local_stamp(yanmo_core::time::now_millis(), tz_offset_minutes);
-    let folder = parent.join(format!("研墨留痕-{}-{stamp}", safe_title(&package.title)));
+    let folder = parent.join(format!(
+        "{}-{stamp}",
+        yanmo_core::store::trace_folder_name(&package.title)
+    ));
     std::fs::create_dir_all(&folder).map_err(|error| write_failed(&folder, error))?;
     for file in &package.files {
         let path = folder.join(&file.name);
@@ -82,17 +65,4 @@ pub fn trace_export(
         events: package.events,
         head: package.head,
     }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::safe_title;
-
-    #[test]
-    fn folder_names_are_safe() {
-        assert_eq!(safe_title("长夜渡口"), "长夜渡口");
-        assert_eq!(safe_title("a/b:c*d?"), "a_b_c_d");
-        assert_eq!(safe_title("   "), "未命名");
-        assert!(safe_title(&"字".repeat(100)).chars().count() <= 40);
-    }
 }

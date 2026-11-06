@@ -64,6 +64,8 @@ yanmo-cli — 研墨的命令行入口
                             在稿子里检索（全文索引；--work 只搜一本书，--limit 默认 50、上限 500）
   export --work <id> --format txt|json --out <目录>
                             把一本书导出成文件
+  trace --work <id> --out <目录> [--scope all|creative]
+                            导出一份**创作留痕包**（不含正文；自带 verify.py，可自己验链）
 
 命令二：**从成稿导入**（库坏了、只剩备份包时的最后一条回家路）：
   import --from <备份包目录 或 work.json> [--work <书名>] [--language zh|en|ja] [--yes]

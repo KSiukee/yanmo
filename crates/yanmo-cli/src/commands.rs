@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 use yanmo_core::db;
-use yanmo_core::store::{ExportFormat, Store};
+use yanmo_core::store::{ExportFormat, Store, TraceScope};
 use yanmo_core::version;
 
 #[cfg(debug_assertions)]
@@ -40,6 +40,7 @@ fn rescue_options(command: &str) -> Option<&'static [&'static str]> {
         "read" => Some(&["node"]),
         "search" => Some(&["query", "work", "limit"]),
         "export" => Some(&["work", "format", "out"]),
+        "trace" => Some(&["work", "out", "scope"]),
         "import" => Some(&["from", "work", "language", "yes"]),
         _ => None,
     }
@@ -262,11 +263,66 @@ fn rescue(args: &Args, store: &mut Store) -> Result<Option<Value>, CliError> {
             let written = write_rendered(store, work, format, &out)?;
             json!({ "ok": true, "command": "export", "files": written, "dir": out.display().to_string() })
         }
+        // 留痕包：只读库、只写文件（与桌面壳那条命令同一个核心函数）
+        "trace" => {
+            let work = args.required_i64("work")?;
+            let out = PathBuf::from(args.required("out")?);
+            let scope = TraceScope::parse(args.optional("scope").unwrap_or("all"));
+            let written = write_trace(store, work, &out, scope)?;
+            json!({
+                "ok": true,
+                "command": "trace",
+                "dir": written.dir,
+                "files": written.files,
+                "events": written.events,
+                "head": written.head,
+            })
+        }
         // 唯一会写库的一条：它自己讲清楚了"默认只看不写"，所以单独一处（见 rescue_import）
         "import" => return crate::rescue_import::run(args, store).map(Some),
         _ => return Ok(None),
     };
     Ok(Some(value))
+}
+
+
+/// 写出一份留痕包：`out/<研墨留痕-书名>`；同名已存在就 `-2` / `-3`（不覆盖别人的包）。
+///
+/// 与桌面壳同一个核心函数（`build_trace_package_with`）与同一个目录名规则
+/// （`trace_folder_name`）——命令行与界面不该出两份不同的包。
+fn write_trace(
+    store: &Store,
+    work_id: i64,
+    out: &Path,
+    scope: TraceScope,
+) -> Result<TraceReport, CliError> {
+    let package = store.build_trace_package_with(work_id, scope)?;
+    let base = yanmo_core::store::trace_folder_name(&package.title);
+    let mut dir = out.join(&base);
+    let mut suffix = 2;
+    while dir.exists() {
+        dir = out.join(format!("{base}-{suffix}"));
+        suffix += 1;
+    }
+    std::fs::create_dir_all(&dir)?;
+    let mut files = Vec::new();
+    for file in &package.files {
+        yanmo_core::atomic::write_atomic(&dir.join(&file.name), &file.bytes)?;
+        files.push(file.name.clone());
+    }
+    Ok(TraceReport {
+        dir: dir.display().to_string(),
+        files,
+        events: package.events,
+        head: package.head,
+    })
+}
+
+struct TraceReport {
+    dir: String,
+    files: Vec<String>,
+    events: usize,
+    head: String,
 }
 
 /// 把渲染好的文件写到导出目录：**内容一样就不重写**（与桌面壳同一条纪律）。

@@ -1584,3 +1584,35 @@ fn foreshadows_and_story_time_drive_the_checkup() {
         other => panic!("灵感卡不该有故事时间：{other:?}"),
     }
 }
+
+#[test]
+fn trace_export_writes_a_package_that_verifies_itself() {
+    let dir = tempfile::tempdir().unwrap();
+    let (work_id, _chapter) = seed(dir.path(), "novel");
+    let out = tempfile::tempdir().unwrap();
+    let value = ok(
+        dir.path(),
+        "trace",
+        &[("work", &work_id.to_string()), ("out", out.path().to_str().unwrap())],
+    );
+
+    let package = std::path::PathBuf::from(value["dir"].as_str().expect("要给出写到哪儿了"));
+    for name in ["manifest.json", "events.jsonl", "sources.json", "versions.json", "README.txt", "verify.py"] {
+        assert!(package.join(name).is_file(), "包里缺 {name}");
+    }
+
+    // 包必须能自验：条数与链头都要和命令回执一致
+    let jsonl = std::fs::read_to_string(package.join("events.jsonl")).unwrap();
+    let (count, head) = yanmo_core::store::verify_trace_events(&jsonl).expect("链要自洽");
+    assert_eq!(count as u64, value["events"].as_u64().unwrap());
+    assert_eq!(head, value["head"].as_str().unwrap());
+
+    // 再导一次：不覆盖，落在 -2
+    let again = ok(
+        dir.path(),
+        "trace",
+        &[("work", &work_id.to_string()), ("out", out.path().to_str().unwrap())],
+    );
+    assert_ne!(again["dir"], value["dir"], "同名目录已存在时不能覆盖");
+    assert!(again["dir"].as_str().unwrap().ends_with("-2"));
+}

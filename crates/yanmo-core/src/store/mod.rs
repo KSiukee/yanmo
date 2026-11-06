@@ -114,6 +114,7 @@ mod sop_mech;
 mod source_ledger;
 /// 创作留痕自证包（只读：把过程材料打成一组可自验的文件）。
 mod trace_readme;
+mod trace_chain;
 mod trace_package;
 /// 留痕包自带的校验脚本（编译期嵌入，包里字节与仓里一致）。
 mod trace_verify;
@@ -140,8 +141,9 @@ pub use sop::{
 };
 pub use sop_mech::{BookMechFacts, ChapterMechFacts};
 pub use chapter_length::{dismiss_identity, ChapterLength, ChapterLengthBoard};
+pub use trace_chain::{verify_trace_events, TraceEvent};
 pub use trace_package::{
-    verify_trace_events, TraceFile, TracePackage, TraceScope, TRACE_PACKAGE_VERSION,
+    trace_folder_name, TraceFile, TracePackage, TraceScope, TRACE_PACKAGE_VERSION,
 };
 pub use backup::{
     gaps_for, has_other_volume, ledger_summary, package_day, plan_prune, read_ledger, read_manifest,
