@@ -906,8 +906,8 @@ export const exportWork = (work_id: number, format: string) =>
   call<ExportAck>(COMMANDS.exportWork, { work_id, format });
 
 /** 在当前章后面新建一章（目录树接上前的最小入口）。 */
-export const createChapter = (node_id: number, title: string) =>
-  call<EditorSnapshot>(COMMANDS.createChapter, { node_id, title });
+export const createChapter = (node_id: number, title: string, kind = "chapter") =>
+  call<EditorSnapshot>(COMMANDS.createChapter, { node_id, title, kind });
 
 
 /** 上一章 / 下一章（按阅读顺序，跨卷）。 */

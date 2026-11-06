@@ -460,3 +460,22 @@ fn slow_evidence_is_not_invented_without_a_session_marker() {
         .unwrap();
     assert_eq!(count, 0);
 }
+
+#[test]
+fn a_piece_with_sections_opens_the_first_section() {
+    let (_dir, path) = fresh();
+    let mut store = Store::open(&path).unwrap();
+    let work = store.create_work(WorkKind::Article, "独立长文").unwrap();
+    let piece = store.list_nodes(work.id).unwrap()[0].id;
+    let section = store
+        .create_node(work.id, Some(piece), NodeKind::Section, "第一节")
+        .unwrap();
+    store.write_body(section, "正文在这里。").unwrap();
+
+    let target = store.work_target(work.id).unwrap();
+    assert_eq!(target.node_id, section, "有节时落在节上，不落在单篇那层空壳");
+
+    let bare = store.create_work(WorkKind::Article, "空单篇").unwrap();
+    let only = store.list_nodes(bare.id).unwrap()[0].id;
+    assert_eq!(store.work_target(bare.id).unwrap().node_id, only, "没有节时仍落在单篇自己");
+}

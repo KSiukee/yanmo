@@ -506,3 +506,15 @@ test("还没打开作品就动手：明确报错，不是静默什么都不做",
   const tree = new DirectoryTree(transport);
   await assert.rejects(() => tree.create(null, "volume", "第一卷"), /还没有打开作品/);
 });
+
+test("短篇形态：单篇上的「+」是往里加节，节上是再来一节", () => {
+  const piece = { holds_body: true, accepts_children: true, kind: "piece" };
+  const section = { holds_body: true, accepts_children: false, kind: "section" };
+  assert.equal(addIntent(piece, true), "inside", "单篇：往这一篇里加一节");
+  assert.equal(addIntent(section, true), "after", "节：后面再来一节");
+  assert.equal(addIntent(piece, false), "after", "长篇里单篇仍是叶子式落点（不该出现）");
+});
+
+test("单篇容器行数的是「节」，不是章", () => {
+  assert.equal(containerLabel(VOLUME_34K, null, "words", "piece"), "12节 · 3.4万");
+});

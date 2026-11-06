@@ -236,9 +236,16 @@ pub fn create_chapter(
     data: State<'_, AppData>,
     node_id: i64,
     title: String,
+    kind: Option<String>,
 ) -> Result<EditorSnapshot, ApiError> {
     data.with_store(|store| {
-        let created = store.add_chapter_after(node_id, yanmo_core::model::NodeKind::Chapter, &title)?;
+        // 独立长文要能建「节」；不给就还是章（老调用方一个字不用改）
+        let kind = match kind.as_deref() {
+            Some("section") => yanmo_core::model::NodeKind::Section,
+            Some("piece") => yanmo_core::model::NodeKind::Piece,
+            _ => yanmo_core::model::NodeKind::Chapter,
+        };
+        let created = store.add_chapter_after(node_id, kind, &title)?;
         let target = store.editor_target(created)?;
         store.note_open_node(target.node_id)?;
         sweep_question_requeues(store, target.work_id);

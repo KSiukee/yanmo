@@ -138,9 +138,11 @@ impl NodeKind {
     ///
     /// 单篇与场景卡是叶子；卷 / 章 / 节都能收下级——**层级不写死，由节点的类型说了算**。
     pub const fn accepts_children(self) -> bool {
+        // 单篇也算容器：**独立长文 = 单篇 + 一层节**（定调里的三档形态之一）。
+        // 它自己仍可承载正文（零层级单篇就是只有它自己），加不加节由作者决定。
         matches!(
             self,
-            NodeKind::Volume | NodeKind::Chapter | NodeKind::Section
+            NodeKind::Volume | NodeKind::Chapter | NodeKind::Section | NodeKind::Piece
         )
     }
 }
@@ -249,7 +251,7 @@ mod tests {
     #[test]
     fn containers_accept_children_and_leaves_do_not() {
         assert!(NodeKind::Volume.accepts_children() && NodeKind::Chapter.accepts_children());
-        assert!(!NodeKind::Piece.accepts_children(), "单篇是零层级的根，不该再往下塞");
+        assert!(NodeKind::Piece.accepts_children(), "单篇可以分节（独立长文 = 单篇 + 一层节）");
         assert!(!NodeKind::Scene.accepts_children(), "场景卡是叶子");
     }
 

@@ -39,6 +39,16 @@ export interface TreeTransport {
   move: (node_id: number, parent_id: number | null, index: number) => Promise<void>;
 }
 
+/** 短篇形态（单篇 / 文集）：界面按它决定「+」建篇/节，还是卷/章。 */
+export function isShortForm(workKind: string): boolean {
+  return workKind === "article" || workKind === "collection";
+}
+
+/** 根层「+」该建什么：短篇建一篇，长篇建一卷。 */
+export function rootChildKind(workKind: string): "piece" | "volume" {
+  return isShortForm(workKind) ? "piece" : "volume";
+}
+
 /** 根层的键：节点 id 从 1 开始，0 不会撞上。 */
 const ROOT = 0;
 
@@ -50,7 +60,17 @@ const ROOT = 0;
  *
  * 先问"能不能写正文"再问"能不能装"——章两样都占，但作者的意图是"再来一章"。
  */
-export function addIntent(row: Pick<TreeRow, "holds_body" | "accepts_children">): "after" | "inside" | null {
+export function addIntent(
+  row: Pick<TreeRow, "holds_body" | "accepts_children"> & { kind?: string },
+  shortForm = false,
+): "after" | "inside" | null {
+  // 独立长文（单篇 + 节）：「+」在单篇上是**往里加一节**；在节上是**再来一节**。
+  // 长篇仍是老规矩（章上=下一章、卷上=往里加章）。
+  if (shortForm) {
+    if (row.kind === "piece") return "inside";
+    if (row.holds_body) return "after";
+    return row.accepts_children ? "inside" : null;
+  }
   if (row.holds_body) return "after";
   if (row.accepts_children) return "inside";
   return null;
@@ -69,6 +89,8 @@ export function containerLabel(
   target: number | null,
   /** 合计算哪个口径：**跟同一棵树上的章行用同一个口径**（不然 206 字旁边写着 200 词） */
   caliber: string,
+  /** 容器是什么：`piece` 数的是「节」，其余数「章」 */
+  kind: string = "",
 ): string {
   const total = pickCount(
     {
@@ -80,9 +102,11 @@ export function containerLabel(
   );
   if (row.chapter_count === 0 && total === 0) return t("tree.container_empty");
   const chapters =
-    target && target > 0
-      ? t("tree.chapter_ratio", { done: row.chapter_count, target })
-      : t("tree.chapter_count", { count: row.chapter_count });
+    kind === "piece"
+      ? t("tree.section_count", { count: row.chapter_count })
+      : target && target > 0
+        ? t("tree.chapter_ratio", { done: row.chapter_count, target })
+        : t("tree.chapter_count", { count: row.chapter_count });
   return t("tree.container_label", { chapters, words: formatWords(total) });
 }
 

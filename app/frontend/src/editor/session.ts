@@ -247,7 +247,7 @@ export interface EditorSession {
    */
   resolveMirror: (index: number, node_id: number, action: "adopt" | "overwrite") => Promise<void>;
   /// 在某一章后面新建一章并切过去（目录树的「+」走这条）；返回新章 id，没建成是 null
-  addChapterAfter: (node_id: number) => Promise<number | null>;
+  addChapterAfter: (node_id: number, kind?: string) => Promise<number | null>;
   /** 删掉目录里的一段（软删，进回收站；删到正在写的那一支会自动换落点） */
   deleteNode: (node_id: number) => Promise<void>;
   /** 换一本书（`null` = 回到默认落点）；返回是否真的切过去了 */
@@ -775,7 +775,7 @@ export function useEditorSession(): EditorSession {
     settleFocus(true);
     await directory.refresh();
   }
-  async function addChapterAfter(node_id: number): Promise<number | null> {
+  async function addChapterAfter(node_id: number, kind = "chapter"): Promise<number | null> {
     if (switcher.switching) return null;
     switching.value = true;
     failure.value = null;
@@ -783,7 +783,7 @@ export function useEditorSession(): EditorSession {
       // 标题留空＝由核心按**同层序号**取名（按全书取号的话，分卷之后会跳号）；
       // 落点也由核心定：编号能认出来就**按号归位**，认不出来才退回"插在点的那一行之后"
       // （见 store::node_edit::add_chapter_after 的说明）
-      const created = await createChapter(node_id, "");
+      const created = await createChapter(node_id, "", kind);
       if ((await switcher.to(created)) === "switched") await settleAfterSwitch();
       return created.node_id; // 新章 id：目录树连点「+」时要靠它接着往下排
     } catch (error) {
@@ -945,7 +945,12 @@ export function useEditorSession(): EditorSession {
     });
 
     // 点「+」之后的编排（先问路标 → 补写 / 接着建章）：**不放在视图里**，视图只管"点了哪一行"
-    const adding = useAddChapter({ directory, addChapterAfter, openFreshChapter });
+    const adding = useAddChapter({
+    directory,
+    addChapterAfter,
+    openFreshChapter,
+    shortForm: () => workKind.value === "article" || workKind.value === "collection",
+  });
 
     // 回收站：捞回来 / 彻底删掉；捞回来之后目录树与书架都得跟着刷新
     const trash = useTrash({
@@ -1147,7 +1152,7 @@ export function useEditorSession(): EditorSession {
     const grid = useOutlineGrid({
       workId,
       openNode: (node_id) => switchChapter(node_id),
-      createChapter: (parent_id) => directory.create(parent_id, "chapter", ""),
+      createChapter: (parent_id, kind = "chapter") => directory.create(parent_id, kind, ""),
       // 「大纲」第一页那片总纲：切页 / 关屏时存一次（它自己管失焦即存，见 storyline-panel）
       saveStoryline: () => storyline.save(),
     });

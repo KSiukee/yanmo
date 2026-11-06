@@ -11,7 +11,7 @@
 import { computed, nextTick, ref } from "vue";
 
 import type { EditorSession } from "../editor/session";
-import { addIntent, containerLabel, type TreeRow } from "../editor/tree";
+import { addIntent, containerLabel, isShortForm, rootChildKind, type TreeRow } from "../editor/tree";
 import { composeTitle, renderedPrefix, splitTitle, type TitleParts } from "../editor/title-edit";
 import { t } from "../locales/index.ts";
 import { formatCaliberNumber, formatCaliberWords } from "../editor/display.ts";
@@ -83,6 +83,9 @@ function rowLabel(row: TreeRow): string {
 
 /** 有卷才显示"每卷多少章"这一栏：零层级作品用不上它 */
 const hasVolumes = computed(() => rows.value.some((row) => row.accepts_children && !row.holds_body));
+
+/** 短篇形态（单篇 / 文集）：顶部按钮建的是「篇」，树里的「+」建的是节。 */
+const shortForm = computed(() => isShortForm(props.session.workKind.value));
 
 /**
  * 目录里分母用哪个数：**学到的那个阈值说了算**（核心那边口径只有一份）。
@@ -218,11 +221,11 @@ function askDelete(row: TreeRow) {
       <button
         type="button"
         class="pane__button"
-        :title="t('tree.new_volume')"
+        :title="t(shortForm ? 'tree.new_piece' : 'tree.new_volume')"
         :disabled="switching"
-        @click="create(null, 'volume', '')"
+        @click="create(null, rootChildKind(props.session.workKind.value), '')"
       >
-        {{ t("tree.new_volume_button") }}
+        {{ t(shortForm ? "tree.new_piece_button" : "tree.new_volume_button") }}
       </button>
     </header>
 
@@ -343,13 +346,13 @@ function askDelete(row: TreeRow) {
             })
           "
         >
-          {{ containerLabel(row, threshold, caliber) }}
+          {{ containerLabel(row, threshold, caliber, row.kind) }}
         </span>
         <button
-          v-if="addIntent(row)"
+          v-if="addIntent(row, shortForm)"
           type="button"
           class="tree__add"
-          :title="addIntent(row) === 'inside' ? t('tree.add_inside') : t('tree.add_after')"
+          :title="addIntent(row, shortForm) === 'inside' ? t('tree.add_inside') : t('tree.add_after')"
           @click.stop="addHere(row)"
         >
           +

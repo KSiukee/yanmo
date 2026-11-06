@@ -210,25 +210,21 @@ fn a_piece_with_sections_exports_every_word() {
     assert!(merged_txt(&store, work.id).contains("绝不能丢的字。"), "合并 txt 同样不能丢");
 }
 
-/// ★ 核对结论（缺口，**故意钉在这里**）：定调第 ② 档「独立长文＝单篇 + 一层节」，
-/// 数据层已经支持（上一条测试证明），但**界面还建不出来**——
-/// `NodeKind::Piece::accepts_children()` 是 `false`，而界面正是按它决定"能不能往里放"
-/// （见 `DirectoryPane.vue` 的落点判定与 `editor/tree.ts` 的 `addIntent`）。
-///
-/// 为什么把它写成断言而不是只写一条备注：将来真去接通那一档时，这条会失败，
-/// 逼着我们回来把"单篇能不能装节"这件事**显式**改对（而不是某天悄悄变了没人知道）。
+/// ★ 原「故意钉住的缺口」已经接通：定调第 ② 档「独立长文＝单篇 + 一层节」，
+/// 能力位改为允许单篇有下级，界面（`DirectoryPane.vue` 的落点判定与 `editor/tree.ts`
+/// 的 `addIntent`）按形态建「篇 / 节」。这条断言留下当**回归**：谁再把单篇改回叶子，它会红。
 #[test]
-fn the_long_article_form_is_not_reachable_from_the_interface_yet() {
+fn the_long_article_form_is_reachable_from_the_interface() {
     assert!(
-        !NodeKind::Piece.accepts_children(),
-        "界面按这个能力位决定落点；改成 true 就说明「单篇 + 节」接通了，请连同这条测试一起更新"
+        NodeKind::Piece.accepts_children(),
+        "界面按这个能力位决定落点；改回 false 就等于又建不出「单篇 + 节」了"
     );
-    // 数据层与界面层的落差正是缺口本身：能存进去，但界面上放不进去
+    // 数据层与能力位必须一致：能存、界面上也放得进去
     let (_dir, mut store) = fresh();
     let work = store.create_work(WorkKind::Article, "长文").unwrap();
     let piece = store.list_nodes(work.id).unwrap()[0].id;
     assert!(
         store.create_node(work.id, Some(piece), NodeKind::Section, "第一节").is_ok(),
-        "数据层允许（可变深度树），所以缺口只在界面与能力位"
+        "数据层允许（可变深度树），能力位也必须允许"
     );
 }

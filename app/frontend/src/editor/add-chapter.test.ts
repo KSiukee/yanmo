@@ -113,3 +113,27 @@ test("建不出来（返回 null）：不切章，也不算续接点", async () 
   assert.deepEqual(opened, [], "没建成就不切章");
   assert.deepEqual(anchors, [7, 7], "没建成就不算续接点，下一次仍旧锚在原来那一行");
 });
+
+test("短篇：单篇上点「+」往里加一节；节上点「+」后面再来一节", async () => {
+  const kinds: string[] = [];
+  const adding = useAddChapter({
+    directory: {
+      create: async (_parent_id, kind) => {
+        kinds.push(kind);
+        return 200;
+      },
+      refresh: async () => {},
+    },
+    openFreshChapter: async () => {},
+    addChapterAfter: async (_node_id, kind) => {
+      kinds.push(kind ?? "chapter");
+      return 201;
+    },
+    shortForm: () => true,
+  });
+
+  const piece = { ...row(5, "piece", null), accepts_children: true };
+  await adding.addHere(piece);
+  await adding.addHere(row(6, "section", 5));
+  assert.deepEqual(kinds, ["section", "section"]);
+});

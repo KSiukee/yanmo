@@ -322,6 +322,18 @@ impl Store {
         self.touch_work_opened(work_id)?;
 
         let nodes = self.list_nodes(work_id)?;
+        // 先找**最具体的正文节点**：独立长文是「单篇 + 一层节」，落在单篇那层只会看到空壳，
+        // 真正的正文在节里；只有没有节时才退回单篇自己（零层级单篇就是这种）。
+        if let Some(node) = nodes
+            .iter()
+            .find(|n| n.kind.holds_body() && n.kind != NodeKind::Piece)
+        {
+            return Ok(EditorTarget {
+                work_id,
+                node_id: node.id,
+                title: node.title_rendered.clone(),
+            });
+        }
         if let Some(node) = nodes.iter().find(|n| n.kind.holds_body()) {
             return Ok(EditorTarget {
                 work_id,

@@ -20,8 +20,10 @@ export interface AddChapterDeps {
   directory: Pick<Directory, "create" | "refresh">;
   /** 打开"刚新建"的那一章：**要接着写**（焦点策略见 editor/focus.ts） */
   openFreshChapter: (node_id: number) => Promise<void>;
-  /** 会话：在某一章后面插一章；返回新章 id，没建成是 null */
-  addChapterAfter: (node_id: number) => Promise<number | null>;
+  /** 会话：在某一段后面插一段；返回新段 id，没建成是 null */
+  addChapterAfter: (node_id: number, kind?: string) => Promise<number | null>;
+  /** 是不是短篇形态（单篇 / 文集）：决定「+」建的是**节**还是章 */
+  shortForm?: () => boolean;
 }
 
 export interface AddChapter {
@@ -48,14 +50,16 @@ export function useAddChapter(deps: AddChapterDeps): AddChapter {
 
   return {
     addHere: async (row) => {
-      if (addIntent(row) === "inside") {
-        // 容器往里加：标题留空＝由核心给模板（`第{$N}章` 之类）
-        const created = await deps.directory.create(row.id, "chapter", "");
+      const short = deps.shortForm?.() ?? false;
+      if (addIntent(row, short) === "inside") {
+        // 容器往里加：标题留空＝由核心给模板（章 → `第{$N}章`；短篇的节不编号）
+        const kind = short ? "section" : "chapter";
+        const created = await deps.directory.create(row.id, kind, "");
         lastAdd.value = null; // 往里加：不算"接着往下排"的那条线
         if (created !== null) await deps.openFreshChapter(created);
         return;
       }
-      const created = await deps.addChapterAfter(anchorFor(row));
+      const created = await deps.addChapterAfter(anchorFor(row), short ? "section" : "chapter");
       lastAdd.value = created === null ? null : { from: row.id, created };
     },
   };

@@ -141,7 +141,7 @@ pub fn compile_work(
     with_sources: Option<bool>,
 ) -> Result<CompileAckDto, ApiError> {
     let preset = Preset::parse(&preset).map_err(ApiError::from)?;
-    let (title, mut files) = data.with_store(|store: &mut Store| {
+    let (title, files) = data.with_store(|store: &mut Store| {
         let title = store.get_work(work_id)?.title;
         // 作者简介：要不要附、带不带身份证与银行账号，都由核心那一层定（见 store::author）
         let options = options_of(preset, body_limit, with_outline, store.author_block()?);
