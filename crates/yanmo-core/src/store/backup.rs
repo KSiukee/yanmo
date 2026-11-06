@@ -155,6 +155,16 @@ pub struct WorkStamp {
     pub fingerprint: String,
 }
 
+/// 包里另外两样"说明书"（目录索引 / 设置快照）的账：名字、字节、SHA-256。
+///
+/// 老包没有这一栏（反序列化默认空），体检时自然跳过——向后兼容。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExtraFile {
+    pub name: String,
+    pub bytes: u64,
+    pub sha256: String,
+}
+
 /// 一份备份的清单。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackupManifest {
@@ -177,6 +187,9 @@ pub struct BackupManifest {
     /// 库最后一次写入的时间（恢复时算"会丢多少天"要用）
     pub db_last_write_at: i64,
     pub works: Vec<WorkStamp>,
+    /// 目录索引（`成稿/目录.json`）与设置快照（`settings.json`）的账（老包为空）
+    #[serde(default)]
+    pub extras: Vec<ExtraFile>,
     /// 上一次成功备份的指纹（链式：断了一环说明中间那份没了）
     pub previous_fingerprint: Option<String>,
     /// 本份的指纹（含链上一条）
@@ -566,6 +579,9 @@ impl Store {
             });
         }
 
+        // 两样"说明书"：显式目录索引 + 安全设置快照（人核对 / 程序重建用）
+        let extras = super::backup_extras::write_extras(self, staging, &works)?;
+
         // 账本副本（库打不开时，从包里也能看到备份史）
         let ledger_bytes = serde_json::to_vec_pretty(ledger).unwrap_or_default();
         std::fs::write(staging.join(LEDGER_FILE), &ledger_bytes)?;
@@ -610,6 +626,7 @@ impl Store {
             module_packages,
             db_last_write_at: last_write_at(&self.conn)?,
             works,
+            extras,
             previous_fingerprint,
             fingerprint,
         };
@@ -1013,6 +1030,9 @@ pub fn verify_backup_package(package: &Path) -> BackupVerify {
         if let Some(stamp) = &manifest.module_packages {
             problems.extend(module_packages::verify(package, stamp));
         }
+
+        // 两样"说明书"：文件在、哈希对、与清单逐书一致（老包没有 extras，自动跳过）
+        problems.extend(super::backup_extras::verify(package, &manifest.extras, &manifest.works));
 
         // 成稿文件：在、指纹对得上（文件被改坏/少了一个，这里就会说话）
         for work in &manifest.works {

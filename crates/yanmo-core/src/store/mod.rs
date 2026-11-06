@@ -18,6 +18,7 @@
 mod appearance;
 mod author;
 mod backup;
+mod backup_extras;
 mod backup_key;
 mod backup_seal;
 mod card;

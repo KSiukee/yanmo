@@ -140,8 +140,11 @@ pub fn find_drafts(root: &Path) -> Vec<PathBuf> {
         for entry in entries.filter_map(|entry| entry.ok()) {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().to_string();
-            // 我们自己写在包里的那些 JSON 不是成稿（清单 / 账本副本）
-            let ours = name == super::backup::MANIFEST_FILE || name == super::backup::LEDGER_FILE;
+            // 我们自己写在包里的那些 JSON 不是成稿（清单 / 账本副本 / 目录索引）
+            // i18n-allow-next-line: 包里的文件名（磁盘上的既有数据），不是界面文案
+            let ours = name == super::backup::MANIFEST_FILE
+                || name == super::backup::LEDGER_FILE
+                || name == "目录.json";
             // 老布局（一份包里只有一本书）与手拷出来的那一份：成稿/<书名>.json
             if !ours && path.is_file() && path.extension().map(|ext| ext == "json").unwrap_or(false)
             {

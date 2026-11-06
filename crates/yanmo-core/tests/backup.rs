@@ -555,3 +555,71 @@ fn preview_source_without_opening_the_live_library() {
     let preview = yanmo_core::store::preview_source(&package, elsewhere.path()).unwrap();
     assert!(preview.can_restore);
 }
+
+#[test]
+fn a_package_carries_a_catalog_and_safe_settings() {
+    let mut f = fixture();
+    seed_book(&mut f.store);
+    let report = f.store.backup_now(&request(&f, 3)).unwrap();
+    let package = PathBuf::from(&report.outcomes[0].package);
+    let manifest = read_manifest(&package).expect("清单要能读出来");
+
+    assert_eq!(manifest.extras.len(), 2, "目录索引 + 设置快照都要进账");
+    assert!(f.store.verify_backup(&package).ok);
+
+    let catalog_bytes = std::fs::read(package.join("成稿/目录.json")).expect("目录索引要在");
+    let catalog: serde_json::Value = serde_json::from_slice(&catalog_bytes).unwrap();
+    let works = catalog["works"].as_array().unwrap();
+    assert_eq!(works.len(), 1);
+    assert_eq!(works[0]["chapters"], 2);
+    assert_eq!(works[0]["fingerprint"], manifest.works[0].fingerprint);
+    assert!(works[0]["nodes"].as_array().unwrap().len() >= 3, "至少有卷 + 两章");
+
+    let settings = std::fs::read_to_string(package.join("settings.json")).expect("设置快照要在");
+    assert!(!settings.contains("device_id"), "设置快照不许带本机标识");
+    assert!(!settings.contains("测试机"), "连来源机器名也不该进设置快照");
+    assert!(settings.contains("volume_target"));
+}
+
+#[test]
+fn tampering_the_catalog_fails_verification() {
+    let mut f = fixture();
+    seed_book(&mut f.store);
+    let report = f.store.backup_now(&request(&f, 3)).unwrap();
+    let package = PathBuf::from(&report.outcomes[0].package);
+
+    let path = package.join("成稿/目录.json");
+    let mut catalog: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    catalog["works"][0]["chapters"] = serde_json::json!(999);
+    std::fs::write(&path, serde_json::to_vec_pretty(&catalog).unwrap()).unwrap();
+
+    let verify = f.store.verify_backup(&package);
+    assert!(!verify.ok, "目录索引被改过，体检必须说话");
+    assert!(
+        verify.problems.iter().any(|problem| problem.contains("目录索引")
+            || problem.contains("对不上")),
+        "要说清是哪一格不对：{:?}",
+        verify.problems
+    );
+}
+
+#[test]
+fn old_packages_without_extras_still_verify() {
+    let mut f = fixture();
+    seed_book(&mut f.store);
+    let report = f.store.backup_now(&request(&f, 3)).unwrap();
+    let package = PathBuf::from(&report.outcomes[0].package);
+
+    // 模拟老包：删掉两样说明书、清单里也没有 extras 这一栏
+    std::fs::remove_file(package.join("成稿/目录.json")).unwrap();
+    std::fs::remove_file(package.join("settings.json")).unwrap();
+    let manifest_path = package.join("manifest.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+    manifest.as_object_mut().unwrap().remove("extras");
+    std::fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+
+    let verify = f.store.verify_backup(&package);
+    assert!(verify.ok, "老包要照样通过：{:?}", verify.problems);
+}
