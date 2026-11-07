@@ -14,7 +14,10 @@
 //! - `Display` 仍然有中文——那是**给日志与开发者**看的（模板在 [`crate::error_codes`]），
 //!   与界面文案是两件事，谁也别冒充谁。
 
+use std::collections::BTreeMap;
 use std::fmt;
+
+use serde::{Deserialize, Serialize};
 
 pub use crate::error_codes::codes;
 pub use crate::error_codes::ERROR_CODES;
@@ -37,12 +40,101 @@ pub enum Error {
     Io(std::io::Error),
 }
 
+/// 一条**诊断**：码 + 参数（体检问题、失败原因都走它）。
+///
+/// 与 [`Error`] 的分工：`Error` 是"这次操作失败了"，诊断是"这份东西有哪些问题"
+/// （可以并列很多条）。两者共用同一张码表与同一套参数规矩——界面按码查字典渲染。
+///
+/// 诊断要**序列化进账本**（库之外的 JSON），所以码与参数名都带自己的 `String`：
+/// 读回来的时候已经拿不到 `&'static str` 了。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Diagnosis {
+    pub code: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, String>,
+}
+
+impl Diagnosis {
+    /// 登记一条诊断；参数名与码表声明对不上会在 debug 构建里当场断言。
+    pub fn with(
+        code: &'static str,
+        params: impl IntoIterator<Item = (&'static str, String)>,
+    ) -> Self {
+        let collected = collect(code, params);
+        Self {
+            code: code.to_string(),
+            params: collected
+                .into_iter()
+                .map(|(name, value)| (name.to_string(), value))
+                .collect(),
+        }
+    }
+
+    /// 给日志与开发者的一句中文（**界面不走它**，界面按码查字典）。
+    pub fn render_log(&self) -> String {
+        crate::error_codes::render_log_map(&self.code, &self.params)
+    }
+}
+
+impl fmt::Display for Diagnosis {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.render_log())
+    }
+}
+
+/// 一条「原因」：新写的是诊断（对象），**老账本里落盘的是句子**（字符串）。
+///
+/// 兼容口径：账本是库之外的 JSON，不能因为改格式让作者看见空白——
+/// 老记录读得出来就原样显示，新记录才按码渲染（序列化时两种形状自然分开）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Reason {
+    /// 新写的一条诊断
+    Diagnosis(Diagnosis),
+    /// 老账本里就是一句话：原样带着，不再解析
+    Text(String),
+}
+
+impl Reason {
+    /// 一句现成的话（老数据 / 内部错误消息这类"本来就不是给人看的界面文案"）。
+    pub fn from_text(text: impl Into<String>) -> Self {
+        Self::Text(text.into())
+    }
+
+    /// 给日志与开发者的一句中文（界面按码查字典）。
+    pub fn render_log(&self) -> String {
+        match self {
+            Self::Diagnosis(diagnosis) => diagnosis.render_log(),
+            Self::Text(text) => text.clone(),
+        }
+    }
+
+    /// 这条原因背后的诊断码（老账本里的句子没有码 → `None`）。
+    pub fn code(&self) -> Option<&str> {
+        match self {
+            Self::Diagnosis(diagnosis) => Some(diagnosis.code.as_str()),
+            Self::Text(_) => None,
+        }
+    }
+}
+
+impl fmt::Display for Reason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.render_log())
+    }
+}
+
+impl From<Diagnosis> for Reason {
+    fn from(diagnosis: Diagnosis) -> Self {
+        Self::Diagnosis(diagnosis)
+    }
+}
+
 impl Error {
     /// 没有附加参数的「数据不合法」。
     pub fn invalid(code: &'static str) -> Self {
         Self::invalid_with(code, [])
     }
-
     /// 带参数的「数据不合法」：参数只放**取值**，别塞成品句子。
     pub fn invalid_with(
         code: &'static str,

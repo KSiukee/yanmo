@@ -28,7 +28,7 @@ use super::backup::{last_write_at, read_manifest, verify_backup_package, work_st
 use super::restore_packages::dir_bytes;
 use super::restore_swap::{same_file, KEEP_FOLDER};
 use super::Store;
-use crate::error::{codes, Error, Result};
+use crate::error::{codes, Diagnosis, Error, Result};
 use crate::version;
 
 /// 恢复前的体检结论 + "会退回多少"。
@@ -89,10 +89,12 @@ fn inspect(source: &Path) -> Result<Inspected> {
         };
         let mut problems = verify_backup_package(source).problems;
         if manifest.data_format_version > version::DATA_FORMAT_VERSION {
-            problems.push(format!(
-                "这份备份来自更新的研墨（数据格式 v{}），当前引擎只到 v{}",
-                manifest.data_format_version,
-                version::DATA_FORMAT_VERSION
+            problems.push(Diagnosis::with(
+                codes::RESTORE_VERIFY_FORMAT_TOO_NEW,
+                [
+                    ("found", manifest.data_format_version.to_string()),
+                    ("supported", version::DATA_FORMAT_VERSION.to_string()),
+                ],
             ));
         }
         let (mut chapters, mut words) = (0, 0);
@@ -142,11 +144,20 @@ fn inspect_database(db: &Path) -> Inspected {
         Ok(probe) => {
             match crate::db::quick_check(probe.conn()) {
                 Ok(verdict) if verdict == "ok" => {}
-                Ok(verdict) => problems.push(format!("这个库结构有问题：{verdict}")),
-                Err(error) => problems.push(format!("这个库体检失败：{error}")),
+                Ok(verdict) => problems.push(Diagnosis::with(
+                    codes::RESTORE_VERIFY_DB_BROKEN,
+                    [("verdict", verdict)],
+                )),
+                Err(error) => problems.push(Diagnosis::with(
+                    codes::RESTORE_VERIFY_DB_CHECK_FAILED,
+                    [("detail", error.to_string())],
+                )),
             }
             match work_stamps(probe.conn()) {
-                Err(error) => problems.push(format!("这个库读不出书目：{error}")),
+                Err(error) => problems.push(Diagnosis::with(
+                    codes::RESTORE_VERIFY_DB_WORKS_UNREADABLE,
+                    [("detail", error.to_string())],
+                )),
                 Ok(rows) => {
                     stats.works = rows.len() as i64;
                     for row in &rows {
@@ -161,8 +172,9 @@ fn inspect_database(db: &Path) -> Inspected {
             let schema = crate::db::migrations::user_version(probe.conn()).unwrap_or(0);
             let supported = crate::db::migrations::schema_version();
             if schema > supported {
-                problems.push(format!(
-                    "这个库来自更新的研墨（库结构 v{schema}），当前引擎只到 v{supported}"
+                problems.push(Diagnosis::with(
+                    codes::RESTORE_VERIFY_SCHEMA_TOO_NEW,
+                    [("found", schema.to_string()), ("supported", supported.to_string())],
                 ));
             }
         }

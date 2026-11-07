@@ -27,12 +27,13 @@ use serde::{Deserialize, Serialize};
 
 use super::{ExportFormat, Store};
 use crate::atomic::write_atomic;
-use crate::error::{Error, Result};
+use crate::error::{codes, Diagnosis, Error, Reason, Result};
 use crate::text;
 use crate::time::{local_date, local_stamp, now_millis};
 use crate::version;
 
 /// 备份包目录名的前缀——**只认自己写出来的包**（滚动清理时绝不误删别人的东西）。
+// i18n-allow-next-line: 磁盘上包名的前缀（备份盘上的目录就叫这个名），不是界面文案；改了老包会认不出来
 pub const PACKAGE_PREFIX: &str = "研墨备份-";
 /// 手动备份的名字记号（`研墨备份-手动-<时间戳>`）：**手动写出去的包，滚动清理永不删**。
 ///
@@ -203,8 +204,9 @@ pub struct TargetOutcome {
     pub volume_label: String,
     /// `written` / `skipped` / `failed`
     pub status: String,
-    /// 给人话的原因（成功时为空）
-    pub reason: String,
+    /// 为什么没成（成功时是空的那一句）：**诊断**，界面按码渲染
+    /// （老账本里落盘的是句子，读得出来就原样显示，见 [`Reason`]）
+    pub reason: Reason,
     /// 备份包目录（成功时）
     pub package: String,
     pub bytes: u64,
@@ -254,7 +256,8 @@ pub struct LedgerEntry {
     pub target_path: String,
     pub volume_label: String,
     pub status: String,
-    pub reason: String,
+    /// 失败/跳过的原因（成功时是空的那一句；老账本是句子，新账本是诊断）
+    pub reason: Reason,
     pub fingerprint: String,
 }
 
@@ -345,8 +348,8 @@ pub fn read_manifest(package: &Path) -> Option<BackupManifest> {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackupVerify {
     pub ok: bool,
-    /// 一条条问题（空了就是全过）
-    pub problems: Vec<String>,
+    /// 一条条问题（空了就是全过）：**码 + 参数**，句子由界面按码渲染
+    pub problems: Vec<Diagnosis>,
 }
 
 /// 逐书的规模账（活库与快照用**同一条 SQL** 取，否则体检就成了两套口径）。
@@ -422,14 +425,17 @@ impl Store {
         let (manifest, snapshot_bytes) = match prepared {
             Ok(v) => v,
             Err(error) => {
-                // 快照都做不出来（库层面的问题）：所有目标一起记失败，原因如实写
-                let reason = format!("{error}");
+                // 快照都做不出来（库层面的问题）：所有目标一起记失败，原因如实写。
+                // `Error` 本身就是「码 + 参数」（Display 只是日志口径），这里原样转成诊断。
+                let reason = Reason::Diagnosis(Diagnosis::with(error.code(), error.params()));
                 let mut outcomes = Vec::new();
                 for target in &req.targets {
-                    outcomes.push(outcome(target, "failed", &reason, "", 0, 0, 0, "", at));
+                    outcomes.push(outcome(target, "failed", reason.clone(), "", 0, 0, 0, "", at));
                 }
                 for target in &req.targets {
-                    ledger.entries.push(entry(target, &date, &stamp, "failed", &reason, "", at));
+                    ledger
+                        .entries
+                        .push(entry(target, &date, &stamp, "failed", reason.clone(), "", at));
                 }
                 ledger.updated_at = at;
                 // 包里也带一份账本副本（权威账本在数据目录，见下面那次回写）
@@ -451,10 +457,28 @@ impl Store {
                     // 封不成＝这份备份做不出来：所有目标一起记失败（与快照失败那条早退路径同一套话）
                     let mut outcomes = Vec::new();
                     for target in &req.targets {
-                        outcomes.push(outcome(target, "failed", &reason, "", 0, 0, 0, "", at));
+                        outcomes.push(outcome(
+                            target,
+                            "failed",
+                            reason.clone(),
+                            "",
+                            0,
+                            0,
+                            0,
+                            "",
+                            at,
+                        ));
                     }
                     for target in &req.targets {
-                        ledger.entries.push(entry(target, &date, &stamp, "failed", &reason, "", at));
+                        ledger.entries.push(entry(
+                            target,
+                            &date,
+                            &stamp,
+                            "failed",
+                            reason.clone(),
+                            "",
+                            at,
+                        ));
                     }
                     ledger.updated_at = at;
                     let ledger_written = write_ledger(&req.data_dir, &ledger);
@@ -512,7 +536,7 @@ impl Store {
         std::fs::create_dir_all(staging).map_err(|e| {
             Error::invalid_with(
                 crate::error::codes::BACKUP_SNAPSHOT_FAILED,
-                [("detail", format!("暂存区建不出来：{e}"))],
+                [("detail", format!("create staging dir: {e}"))],
             )
         })?;
         // 一致性快照：VACUUM INTO 写出来的是自洽的单文件库（目标文件必须不存在）
@@ -673,11 +697,11 @@ impl Store {
             let reason = if volume_root_exists(&target.path) {
                 write_dir_reason(error)
             } else {
-                "盘不在（没插？）".to_string()
+                Reason::Diagnosis(Diagnosis::with(codes::BACKUP_WRITE_VOLUME_MISSING, []))
             };
             return (
-                outcome(target, "skipped", &reason, "", 0, 0, 0, "", at),
-                entry(target, date, stamp, "skipped", &reason, "", at),
+                outcome(target, "skipped", reason.clone(), "", 0, 0, 0, "", at),
+                entry(target, date, stamp, "skipped", reason, "", at),
             );
         }
         // 手动与自动用**两种名字**（手动那份带记号）：滚动清理只轮自动的，靠的就是这个记号
@@ -690,19 +714,24 @@ impl Store {
             let reason = write_failed_reason(error);
             std::fs::remove_dir_all(&package).ok();
             return (
-                outcome(target, "failed", &reason, "", 0, 0, 0, "", at),
-                entry(target, date, stamp, "failed", &reason, "", at),
+                outcome(target, "failed", reason.clone(), "", 0, 0, 0, "", at),
+                entry(target, date, stamp, "failed", reason, "", at),
             );
         }
 
         // 读回体检：通不过就不算备份（验不过的包删掉，免得被当成一份"备份"）
         let verify = self.verify_backup(&package);
         if !verify.ok {
-            let reason = format!("读回体检没通过：{}", verify.problems.join("；"));
+            // 具体哪几条问题在日志里有；界面这一行只说"没通过 + 有几个问题"
+            // ——每条问题的完整清单由 [`BackupVerify`] 这条路另给（见 verify_backup_package）。
+            let reason = Reason::Diagnosis(Diagnosis::with(
+                codes::BACKUP_WRITE_VERIFY_FAILED,
+                [("count", verify.problems.len().to_string())],
+            ));
             std::fs::remove_dir_all(&package).ok();
             return (
-                outcome(target, "failed", &reason, "", 0, 0, 0, "", at),
-                entry(target, date, stamp, "failed", &reason, "", at),
+                outcome(target, "failed", reason.clone(), "", 0, 0, 0, "", at),
+                entry(target, date, stamp, "failed", reason, "", at),
             );
         }
 
@@ -711,7 +740,7 @@ impl Store {
             outcome(
                 target,
                 "written",
-                "",
+                Reason::from_text(""),
                 &package.to_string_lossy(),
                 snapshot_bytes,
                 0,
@@ -719,7 +748,7 @@ impl Store {
                 &manifest.fingerprint,
                 at,
             ),
-            entry(target, date, stamp, "written", "", &manifest.fingerprint, at),
+            entry(target, date, stamp, "written", Reason::from_text(""), &manifest.fingerprint, at),
         )
     }
 
@@ -746,7 +775,7 @@ pub(super) struct Probe {
 }
 
 impl Probe {
-    pub(super) fn open(db: &Path) -> std::result::Result<Self, String> {
+    pub(super) fn open(db: &Path) -> std::result::Result<Self, Diagnosis> {
         static PROBE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -755,17 +784,26 @@ impl Probe {
         let seq = PROBE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let path = std::env::temp_dir()
             .join(format!("yanmo-verify-{}-{nanos}-{seq}.db", std::process::id()));
-        std::fs::copy(db, &path).map_err(|error| format!("快照读不出来：{error}"))?;
+        std::fs::copy(db, &path).map_err(|error| {
+            Diagnosis::with(
+                codes::BACKUP_VERIFY_SNAPSHOT_UNREADABLE,
+                [("detail", error.to_string())],
+            )
+        })?;
         match Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE) {
             Ok(conn) => Ok(Self { conn: Some(conn), path }),
             Err(error) => {
                 cleanup_probe(&path);
-                Err(format!("快照打不开：{error}"))
+                Err(Diagnosis::with(
+                    codes::BACKUP_VERIFY_SNAPSHOT_UNOPENABLE,
+                    [("detail", error.to_string())],
+                ))
             }
         }
     }
 
     pub(super) fn conn(&self) -> &Connection {
+        // i18n-allow-next-line: 开发者断言（panic 文本，进不了界面）
         self.conn.as_ref().expect("体检副本的连接还没到收的时候")
     }
 }
@@ -787,7 +825,7 @@ fn cleanup_probe(probe: &Path) {
 pub(super) fn outcome(
     target: &BackupTarget,
     status: &str,
-    reason: &str,
+    reason: Reason,
     package: &str,
     bytes: u64,
     kept: usize,
@@ -799,7 +837,7 @@ pub(super) fn outcome(
         path: target.path.clone(),
         volume_label: target.volume_label.clone(),
         status: status.to_string(),
-        reason: reason.to_string(),
+        reason,
         package: package.to_string(),
         bytes,
         kept,
@@ -814,7 +852,7 @@ pub(super) fn entry(
     date: &str,
     stamp: &str,
     status: &str,
-    reason: &str,
+    reason: Reason,
     fingerprint: &str,
     at: i64,
 ) -> LedgerEntry {
@@ -825,7 +863,7 @@ pub(super) fn entry(
         target_path: target.path.clone(),
         volume_label: target.volume_label.clone(),
         status: status.to_string(),
-        reason: reason.to_string(),
+        reason,
         fingerprint: fingerprint.to_string(),
     }
 }
@@ -872,15 +910,15 @@ fn unique_package(base: PathBuf) -> PathBuf {
 ///
 /// 抽成函数是**为了不把同一句话在另一个文件里再抄一遍**：界面文案守卫按「文件 + 那句话」
 /// 记欠账，抄一份就等于多欠一笔（加密包那条路上也要说这句）。
-pub(super) fn write_dir_reason(error: impl std::fmt::Display) -> String {
-    format!("写不进去：{error}")
+pub(super) fn write_dir_reason(error: impl std::fmt::Display) -> Reason {
+    Reason::Diagnosis(Diagnosis::with(codes::BACKUP_WRITE_DIR_FAILED, [("detail", error.to_string())]))
 }
 
-/// 「写备份失败」那一句（复制 / 封包 / 半截文件都归这里，细节由调用方给）。
+/// 「写备份失败」那一条（复制 / 封包 / 半截文件都归这里，细节由调用方给）。
 ///
 /// 同上：与既有那几句是同一句话，别在别的文件里再写一遍。
-pub(super) fn write_failed_reason(error: impl std::fmt::Display) -> String {
-    format!("写备份失败：{error}")
+pub(super) fn write_failed_reason(error: impl std::fmt::Display) -> Reason {
+    Reason::Diagnosis(Diagnosis::with(codes::BACKUP_WRITE_FAILED, [("detail", error.to_string())]))
 }
 
 /// 复制整棵目录树（备份包不大，够用且直观）。
@@ -949,8 +987,10 @@ pub fn has_other_volume(config: &BackupConfig, data_volume_id: &str) -> bool {
 }
 
 /// 按卷标识聚合的账本摘要（设置页要"每个目标最后一次成功 / 空档"）。
-pub fn ledger_summary(ledger: &BackupLedger) -> Vec<(String, String, Option<String>, Option<String>, i64)> {
-    let mut map: BTreeMap<String, (String, Option<String>, Option<String>, i64)> = BTreeMap::new();
+pub fn ledger_summary(
+    ledger: &BackupLedger,
+) -> Vec<(String, String, Option<String>, Option<Reason>, i64)> {
+    let mut map: BTreeMap<String, (String, Option<String>, Option<Reason>, i64)> = BTreeMap::new();
     for item in &ledger.entries {
         let slot = map
             .entry(item.target_path.clone())
@@ -975,43 +1015,63 @@ pub fn verify_backup_package(package: &Path) -> BackupVerify {
 
         let mut problems = Vec::new();
         let Some(manifest) = read_manifest(package) else {
-            return BackupVerify { ok: false, problems: vec![format!("{MANIFEST_FILE} 读不出来（不是研墨的备份包？）")] };
+            return BackupVerify { ok: false, problems: vec![Diagnosis::with(codes::BACKUP_VERIFY_MANIFEST_UNREADABLE, [("file", MANIFEST_FILE.to_string())])] };
         };
 
         let snapshot = package.join(&manifest.snapshot_file);
         if !snapshot.is_file() {
-            problems.push(format!("找不到快照：{}", manifest.snapshot_file));
+            problems.push(Diagnosis::with(codes::BACKUP_VERIFY_SNAPSHOT_MISSING, [("file", manifest.snapshot_file.clone())]));
         } else {
             match Probe::open(&snapshot) {
                 Err(problem) => problems.push(problem),
                 Ok(probe) => {
                     match crate::db::quick_check(probe.conn()) {
                         Ok(verdict) if verdict == "ok" => {}
-                        Ok(verdict) => problems.push(format!("快照结构有问题：{verdict}")),
-                        Err(error) => problems.push(format!("快照体检失败：{error}")),
+                        Ok(verdict) => problems.push(Diagnosis::with(
+                            codes::BACKUP_VERIFY_SNAPSHOT_BROKEN,
+                            [("verdict", verdict)],
+                        )),
+                        Err(error) => problems.push(Diagnosis::with(
+                            codes::BACKUP_VERIFY_SNAPSHOT_CHECK_FAILED,
+                            [("detail", error.to_string())],
+                        )),
                     }
                     // 逐书比对：章节数 + 字数（与清单里记的对得上，才说明这份快照是"完整的")
                     match work_stamps(probe.conn()) {
-                        Err(error) => problems.push(format!("快照读不出书目：{error}")),
+                        Err(error) => problems.push(Diagnosis::with(
+                            codes::BACKUP_VERIFY_SNAPSHOT_WORKS_UNREADABLE,
+                            [("detail", error.to_string())],
+                        )),
                         Ok(rows) => {
                             if rows.len() != manifest.works.len() {
-                                problems.push(format!(
-                                    "书目对不上：快照 {} 本，清单 {} 本",
-                                    rows.len(),
-                                    manifest.works.len()
+                                problems.push(Diagnosis::with(
+                                    codes::BACKUP_VERIFY_WORKS_COUNT_MISMATCH,
+                                    [
+                                        ("found", rows.len().to_string()),
+                                        ("listed", manifest.works.len().to_string()),
+                                    ],
                                 ));
                             }
                             for (id, title, chapters, word_count, chars_no_punct) in rows {
                                 match manifest.works.iter().find(|w| w.id == id) {
-                                    None => problems.push(format!("快照里多出一本：{title}（#{id}）")),
+                                    None => problems.push(Diagnosis::with(
+                                        codes::BACKUP_VERIFY_WORK_EXTRA,
+                                        [("title", title.clone()), ("work_id", id.to_string())],
+                                    )),
                                     Some(stamp) => {
                                         if stamp.chapters != chapters
                                             || stamp.word_count != word_count
                                             || stamp.chars_no_punct != chars_no_punct
                                         {
-                                            problems.push(format!(
-                                                "《{title}》对不上：清单 {} 章/{} 字，快照 {} 章/{} 字",
-                                                stamp.chapters, stamp.word_count, chapters, word_count
+                                            problems.push(Diagnosis::with(
+                                                codes::BACKUP_VERIFY_WORK_MISMATCH,
+                                                [
+                                                    ("title", title.clone()),
+                                                    ("listed_chapters", stamp.chapters.to_string()),
+                                                    ("listed_words", stamp.word_count.to_string()),
+                                                    ("found_chapters", chapters.to_string()),
+                                                    ("found_words", word_count.to_string()),
+                                                ],
                                             ));
                                         }
                                     }
@@ -1039,7 +1099,14 @@ pub fn verify_backup_package(package: &Path) -> BackupVerify {
             let mut drafts = Vec::new();
             for relative in &work.files {
                 match std::fs::read(package.join(relative)) {
-                    Err(error) => problems.push(format!("《{}》的成稿读不到（{relative}）：{error}", work.title)),
+                    Err(error) => problems.push(Diagnosis::with(
+                        codes::BACKUP_VERIFY_DRAFT_UNREADABLE,
+                        [
+                            ("title", work.title.clone()),
+                            ("file", relative.clone()),
+                            ("detail", error.to_string()),
+                        ],
+                    )),
                     // 指纹只算分章文本（人读的那一份）：口径与备份时同一处（见 export）
                     Ok(content) if relative.ends_with(".txt") => drafts.push(super::export::RenderedFile {
                         relative_path: relative.clone(),
@@ -1051,7 +1118,10 @@ pub fn verify_backup_package(package: &Path) -> BackupVerify {
             if !drafts.is_empty()
                 && super::export::fingerprint_of_text(&drafts) != work.fingerprint
             {
-                problems.push(format!("《{}》的成稿内容与清单不符", work.title));
+                problems.push(Diagnosis::with(
+                    codes::BACKUP_VERIFY_DRAFT_MISMATCH,
+                    [("title", work.title.clone())],
+                ));
             }
         }
 

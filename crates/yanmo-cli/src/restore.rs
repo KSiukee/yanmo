@@ -27,7 +27,13 @@ pub(crate) fn run(args: &Args) -> Result<Value, CliError> {
     if !preview.can_restore {
         return Err(CliError::Refused {
             code: "backup.restore_source_invalid",
-            detail: preview.verify.problems.join("；"),
+            detail: preview
+                .verify
+                .problems
+                .iter()
+                .map(|problem| problem.render_log())
+                .collect::<Vec<_>>()
+                .join("；"),
         });
     }
 

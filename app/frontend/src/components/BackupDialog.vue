@@ -6,6 +6,7 @@
 import { computed, ref } from "vue";
 
 import { t } from "../locales/index.ts";
+import { describeReason } from "../locales/diagnosis.ts";
 import type { EditorSession } from "../editor/session";
 import { formatBytes } from "../editor/display.ts";
 import type { BackupConfig, BackupTarget } from "../api/core";
@@ -31,6 +32,7 @@ const availableVolumes = computed(() => {
 
 /** 默认备份目录：`<盘根>研墨备份`——作者可以之后自己改。 */
 function defaultPathFor(root: string): string {
+  // i18n-allow-next-line: 默认备份目录名（磁盘上的目录，与核心的包名前缀同一口径），不是界面文案
   return `${root.replace(/[\\/]+$/, "")}\\研墨备份`;
 }
 
@@ -139,7 +141,7 @@ function openRestore(): void {
             <span v-if="!target.volume_present" class="backup__bad">{{ t("backup.target_missing_volume") }}</span>
             <span v-else-if="!target.dir_exists" class="backup__hint">{{ t("backup.target_no_dir") }}</span>
             <span v-else-if="target.last_problem" class="backup__bad">
-              {{ t("backup.target_problem", { reason: target.last_problem }) }}
+              {{ t("backup.target_problem", { reason: describeReason(target.last_problem) }) }}
             </span>
           </div>
           <button type="button" class="dialog__button" @click="removeTarget(target.path)">
@@ -242,7 +244,7 @@ function openRestore(): void {
                   · {{ t("backup.result_snapshot", { size: sizeText(outcome.bytes) }) }}
                   <template v-if="outcome.removed"> · {{ t("backup.result_removed", { count: outcome.removed }) }}</template>
                 </template>
-                <template v-else-if="outcome.reason"> · {{ outcome.reason }}</template>
+                <template v-else-if="outcome.reason"> · {{ describeReason(outcome.reason) }}</template>
               </span>
             </div>
           </li>

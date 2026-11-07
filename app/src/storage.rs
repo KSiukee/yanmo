@@ -530,6 +530,7 @@ impl AppData {
                         "shell.restore_left_without_library",
                         [("path", self.db_path.display().to_string())],
                     )
+                    // i18n-allow-next-line: 两条技术细节之间的分隔符（拼进 error 的 detail），不是界面文案
                     .caused_by(format!("{error}／{reopen}")));
                 }
                 Err(ApiError::from(error))

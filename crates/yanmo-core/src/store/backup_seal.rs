@@ -15,7 +15,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::error::{codes, Error, Result};
+use crate::error::{codes, Diagnosis, Error, Reason, Result};
 use crate::seal::{self, PackedFile, Secret};
 
 use super::backup::{
@@ -60,12 +60,12 @@ pub fn is_sealed_package(path: &Path) -> bool {
 /// （作者会以为自己有备份）。所以：封 → 解开到一个临时目录 → 交给调用方体检
 /// （清单/快照/逐书对账那一套）→ 通不过就把密文删掉并如实报原因。
 ///
-/// 返回封好的密文文件路径；失败时返回**给作者看的一句话理由**（同 [`super::backup`] 的风格）。
+/// 返回封好的密文文件路径；失败时返回**给作者看的那一条诊断**。
 pub(super) fn seal_package(
     staging: &Path,
     key: &SealKey,
     verify: impl Fn(&Path) -> bool,
-) -> std::result::Result<PathBuf, String> {
+) -> std::result::Result<PathBuf, Reason> {
     let sealed = sealed_path(staging);
     // 与明文包那条路**同一句话**（作者看的是同一栏「上回为什么没成」）
     seal_dir(staging, &sealed, &key.passphrase, &key.recovery)
@@ -83,16 +83,17 @@ pub(super) fn seal_package(
         Err(error) => {
             let _ = fs::remove_dir_all(&probe);
             let _ = fs::remove_file(&sealed);
-            // i18n-allow-next-line: 解包失败的作者可见理由（与 backup.rs 那一族同性质，
-            // 收「核心诊断串改码+参数」那条任务时一起改成码 + 参数）
-            return Err(format!("封好的包解不开（{error}）——已把这份作废，别拿它当备份"));
+            return Err(Diagnosis::with(
+                codes::BACKUP_SEAL_UNOPENABLE,
+                [("detail", error.to_string())],
+            )
+            .into());
         }
     };
     let _ = fs::remove_dir_all(&probe);
     if !sound {
         let _ = fs::remove_file(&sealed);
-        // i18n-allow-next-line: 同上（解开之后体检没过，这份作废）
-        return Err("封好的包解开之后体检没通过——已把这份作废，别拿它当备份".to_string());
+        return Err(Diagnosis::with(codes::BACKUP_SEAL_VERIFY_FAILED, []).into());
     }
     Ok(sealed)
 }
@@ -117,8 +118,8 @@ pub(super) fn write_sealed_to_target(
     if let Err(error) = fs::create_dir_all(&root) {
         let reason = super::backup::write_dir_reason(error);
         return (
-            outcome(target, "failed", &reason, "", 0, 0, 0, "", at),
-            entry(target, date, stamp, "failed", &reason, "", at),
+            outcome(target, "failed", reason.clone(), "", 0, 0, 0, "", at),
+            entry(target, date, stamp, "failed", reason, "", at),
         );
     }
     // 落地名按**包名**来（`研墨备份-<时间戳>.ympkg`；手动那份带「手动-」记号），
@@ -136,8 +137,8 @@ pub(super) fn write_sealed_to_target(
             let reason = super::backup::write_failed_reason(error);
             let _ = fs::remove_file(&destination);
             return (
-                outcome(target, "failed", &reason, "", 0, 0, 0, "", at),
-                entry(target, date, stamp, "failed", &reason, "", at),
+                outcome(target, "failed", reason.clone(), "", 0, 0, 0, "", at),
+                entry(target, date, stamp, "failed", reason, "", at),
             );
         }
     };
@@ -149,14 +150,24 @@ pub(super) fn write_sealed_to_target(
         let reason =
             super::backup::write_failed_reason(format_args!("copy landed {landed} of {bytes} bytes"));
         return (
-            outcome(target, "failed", &reason, "", 0, 0, 0, "", at),
-            entry(target, date, stamp, "failed", &reason, "", at),
+            outcome(target, "failed", reason.clone(), "", 0, 0, 0, "", at),
+            entry(target, date, stamp, "failed", reason, "", at),
         );
     }
     let removed = super::backup::prune_packages(&root, keep);
     (
-        outcome(target, "written", "", &destination.to_string_lossy(), bytes, 0, removed, fingerprint, at),
-        entry(target, date, stamp, "written", "", fingerprint, at),
+        outcome(
+            target,
+            "written",
+            Reason::from_text(""),
+            &destination.to_string_lossy(),
+            bytes,
+            0,
+            removed,
+            fingerprint,
+            at,
+        ),
+        entry(target, date, stamp, "written", Reason::from_text(""), fingerprint, at),
     )
 }
 

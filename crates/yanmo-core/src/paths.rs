@@ -26,6 +26,7 @@ pub const DB_FILE: &str = "yanmo.db";
 /// 导出目录名：放在作者的"文档"里（他自己找得到的地方），语言无关。
 pub const EXPORT_FOLDER: &str = "YanmoExport";
 /// 早先版本用过的导出目录名——**磁盘上已经有的数据**，不是界面文案，不能跟着语言走。
+// i18n-allow-next-line: 磁盘上既有的目录名（老版本写出去的），改名会让老导出目录认不出来
 pub const LEGACY_EXPORT_FOLDER: &str = "研墨导出";
 
 /// **便携标记**：程序目录里出现这个文件，就表示"数据跟着程序走"。

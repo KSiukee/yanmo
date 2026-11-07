@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 
 use super::backup::{ExtraFile, WorkStamp};
 use super::Store;
-use crate::error::Result;
+use crate::error::{codes, Diagnosis, Result};
 use crate::version;
 
 /// 目录索引在包里的相对路径。
@@ -179,22 +179,30 @@ pub(super) fn write_extras(
 }
 
 /// 核对 extras：文件在、字节数对、SHA-256 对；目录索引与清单逐书对账。
-pub(super) fn verify(package: &Path, extras: &[ExtraFile], works: &[WorkStamp]) -> Vec<String> {
+pub(super) fn verify(package: &Path, extras: &[ExtraFile], works: &[WorkStamp]) -> Vec<Diagnosis> {
     let mut problems = Vec::new();
     for extra in extras {
         let path = package.join(&extra.name);
         match std::fs::read(&path) {
-            Err(error) => problems.push(format!("{} 读不到：{error}", extra.name)),
+            Err(error) => problems.push(Diagnosis::with(
+                codes::BACKUP_EXTRAS_UNREADABLE,
+                [("file", extra.name.clone()), ("detail", error.to_string())],
+            )),
             Ok(bytes) => {
                 if bytes.len() as u64 != extra.bytes {
-                    problems.push(format!(
-                        "{} 的大小对不上（清单 {}，实际 {}）",
-                        extra.name,
-                        extra.bytes,
-                        bytes.len()
+                    problems.push(Diagnosis::with(
+                        codes::BACKUP_EXTRAS_SIZE_MISMATCH,
+                        [
+                            ("file", extra.name.clone()),
+                            ("listed", extra.bytes.to_string()),
+                            ("found", bytes.len().to_string()),
+                        ],
                     ));
                 } else if sha256_hex(&bytes) != extra.sha256 {
-                    problems.push(format!("{} 的内容与清单对不上", extra.name));
+                    problems.push(Diagnosis::with(
+                        codes::BACKUP_EXTRAS_HASH_MISMATCH,
+                        [("file", extra.name.clone())],
+                    ));
                 }
             }
         }
@@ -202,30 +210,44 @@ pub(super) fn verify(package: &Path, extras: &[ExtraFile], works: &[WorkStamp]) 
 
     if let Ok(bytes) = std::fs::read(package.join(CATALOG_FILE)) {
         match serde_json::from_slice::<serde_json::Value>(&bytes) {
-            Err(error) => problems.push(format!("{CATALOG_FILE} 不是合法 JSON：{error}")),
+            Err(error) => problems.push(Diagnosis::with(
+                codes::BACKUP_EXTRAS_INVALID_JSON,
+                [("file", CATALOG_FILE.to_string()), ("detail", error.to_string())],
+            )),
             Ok(catalog) => {
                 let listed = catalog["works"].as_array().cloned().unwrap_or_default();
                 if listed.len() != works.len() {
-                    problems.push(format!(
-                        "目录索引里的书数对不上：索引 {} 本，清单 {} 本",
-                        listed.len(),
-                        works.len()
+                    problems.push(Diagnosis::with(
+                        codes::BACKUP_EXTRAS_CATALOG_COUNT_MISMATCH,
+                        [
+                            ("listed", listed.len().to_string()),
+                            ("found", works.len().to_string()),
+                        ],
                     ));
                 }
                 for work in works {
                     let Some(entry) =
                         listed.iter().find(|item| item["id"].as_i64() == Some(work.id))
                     else {
-                        problems.push(format!("目录索引里缺《{}》", work.title));
+                        problems.push(Diagnosis::with(
+                            codes::BACKUP_EXTRAS_CATALOG_WORK_MISSING,
+                            [("title", work.title.clone())],
+                        ));
                         continue;
                     };
                     if entry["chapters"].as_i64() != Some(work.chapters)
                         || entry["word_count"].as_i64() != Some(work.word_count)
                     {
-                        problems.push(format!("目录索引里《{}》的章数/字数与清单不符", work.title));
+                        problems.push(Diagnosis::with(
+                            codes::BACKUP_EXTRAS_CATALOG_WORK_MISMATCH,
+                            [("title", work.title.clone())],
+                        ));
                     }
                     if entry["fingerprint"].as_str() != Some(work.fingerprint.as_str()) {
-                        problems.push(format!("目录索引里《{}》的成稿指纹与清单不符", work.title));
+                        problems.push(Diagnosis::with(
+                            codes::BACKUP_EXTRAS_CATALOG_FINGERPRINT_MISMATCH,
+                            [("title", work.title.clone())],
+                        ));
                     }
                 }
             }
@@ -234,19 +256,28 @@ pub(super) fn verify(package: &Path, extras: &[ExtraFile], works: &[WorkStamp]) 
 
     if let Ok(bytes) = std::fs::read(package.join(SETTINGS_FILE)) {
         match serde_json::from_slice::<serde_json::Value>(&bytes) {
-            Err(error) => problems.push(format!("{SETTINGS_FILE} 不是合法 JSON：{error}")),
+            Err(error) => problems.push(Diagnosis::with(
+                codes::BACKUP_EXTRAS_INVALID_JSON,
+                [("file", SETTINGS_FILE.to_string()), ("detail", error.to_string())],
+            )),
             Ok(settings) => {
                 // 设置快照里**不许**出现本机标识（防回归：谁加了字段，这里当场红）
                 let text = String::from_utf8_lossy(&bytes).to_lowercase();
                 for forbidden in ["device_id", "session", "data_dir", "pointer"] {
                     if text.contains(forbidden) {
-                        problems.push(format!("{SETTINGS_FILE} 里出现了本机标识：{forbidden}"));
+                        problems.push(Diagnosis::with(
+                            codes::BACKUP_EXTRAS_SETTINGS_LEAK,
+                            [("field", forbidden.to_string())],
+                        ));
                     }
                 }
                 let listed = settings["works"].as_array().cloned().unwrap_or_default();
                 for work in works {
                     if !listed.iter().any(|item| item["id"].as_i64() == Some(work.id)) {
-                        problems.push(format!("设置快照里缺《{}》", work.title));
+                        problems.push(Diagnosis::with(
+                            codes::BACKUP_EXTRAS_SETTINGS_WORK_MISSING,
+                            [("title", work.title.clone())],
+                        ));
                     }
                 }
             }

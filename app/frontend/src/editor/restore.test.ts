@@ -143,7 +143,13 @@ test("选中一份先体检，体检通过才点得动恢复；换库前一定�
 });
 
 test("体检不过就不动手——连落盘都不该发生", async () => {
-  const bad = preview({ verify: { ok: false, problems: ["《长夜》的成稿内容与清单不符"] }, can_restore: false });
+  const bad = preview({
+    verify: {
+      ok: false,
+      problems: [{ code: "backup.verify.draft_mismatch", params: { title: "长夜" } }],
+    },
+    can_restore: false,
+  });
   const { restore, calls } = harness({ preview: bad });
   await restore.open();
   await restore.select("备份盘/研墨备份/研墨备份-20260913-0100");

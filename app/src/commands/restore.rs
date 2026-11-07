@@ -200,8 +200,14 @@ pub fn backup_restore_apply(
     // 当场再体检一次（界面上看过的那遍不算数）
     let preview = data.with_store(|store: &mut Store| Ok(store.preview_restore(&path)?))?;
     if !preview.can_restore {
-        // i18n-allow-next-line: 中文分隔符（把若干条诊断串接成一句），不是文案
-        let joined = preview.verify.problems.join("；");
+        let joined = preview
+            .verify
+            .problems
+            .iter()
+            .map(|problem| problem.render_log())
+            .collect::<Vec<_>>()
+            // i18n-allow-next-line: 中文分隔符（把若干条日志口径的诊断串接成一句），不是界面文案
+            .join("；");
         return Err(ApiError::from(yanmo_core::Error::invalid_with(
             yanmo_core::error_codes::codes::BACKUP_RESTORE_BLOCKED,
             [("reason", joined)],

@@ -16,6 +16,7 @@ use tauri::State;
 
 use crate::error::ApiError;
 use crate::storage::AppData;
+use yanmo_core::error::Reason;
 use yanmo_core::store::{
     gaps_for, has_other_volume, read_ledger, BackupConfig, BackupReport, BackupRequest, BackupTarget,
     SealKey, Store,
@@ -45,8 +46,8 @@ pub struct TargetStatusDto {
     pub volume_label: String,
     /// 最近一次成功的日期（本地 `2026-09-13`）；从没成功过是 null
     pub last_success: Option<String>,
-    /// 最近一次没成的原话（成功之后清掉）
-    pub last_problem: Option<String>,
+    /// 最近一次没成的原因（成功之后清掉）：**诊断**，界面按码渲染
+    pub last_problem: Option<Reason>,
     /// 这块盘此刻在不在（**按卷序列号认**；不在才是真的"没插/被拔了"）
     pub volume_present: bool,
     /// 目标目录建了没有——**没建是常态**（第一次备份会自动创建），不该当成故障
@@ -103,6 +104,7 @@ fn device_name() -> String {
         .or_else(|_| std::env::var("HOSTNAME"))
         .ok()
         .filter(|s| !s.trim().is_empty())
+        // i18n-allow-next-line: 写进备份清单的机器名兜底（数据，不是界面文案；多机共用备份盘时要能认出是哪台）
         .unwrap_or_else(|| "本机".to_string())
 }
 

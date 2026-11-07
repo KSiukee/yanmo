@@ -1,4 +1,5 @@
-// i18n-allow-file: 备份/恢复的体检诊断由核心生成、界面原样展示（既有口径）；把这些诊断转成「码 + 参数」是待办，本文件不新增别的界面文案。
+// i18n-allow-file: 本文件不产界面文案——体检问题只给「码 + 参数」（见 error_codes.rs），
+// 剩下的中文只在注释与日志模板里。
 
 //! 备份里的**模块数据**：`modules.db` 的快照、清单戳与体检。
 //!
@@ -15,7 +16,7 @@ use rusqlite::{params, Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 
 use super::MODULES_FILE;
-use crate::error::{codes, Error, Result};
+use crate::error::{codes, Diagnosis, Error, Result};
 
 /// 一份备份里带的模块数据戳（`modules.db` 的快照）。
 ///
@@ -54,38 +55,58 @@ pub(super) fn snapshot_modules(
 }
 
 /// 体检包里的模块快照：在不在、大小、结构、版本账。
-pub(super) fn verify_modules(package: &Path, stamp: &ModuleBackupStamp) -> Vec<String> {
+pub(super) fn verify_modules(package: &Path, stamp: &ModuleBackupStamp) -> Vec<Diagnosis> {
     let mut problems = Vec::new();
     if stamp.file != MODULES_FILE {
-        problems.push(format!("模块快照文件名对不上：{}", stamp.file));
+        problems.push(Diagnosis::with(
+            codes::BACKUP_MODULES_NAME_MISMATCH,
+            [("file", stamp.file.clone())],
+        ));
         return problems;
     }
     let modules = package.join(MODULES_FILE);
     if !modules.is_file() {
-        problems.push(format!("找不到模块数据快照：{MODULES_FILE}"));
+        problems.push(Diagnosis::with(
+            codes::BACKUP_MODULES_MISSING,
+            [("file", MODULES_FILE.to_string())],
+        ));
         return problems;
     }
     match std::fs::metadata(&modules) {
         Ok(meta) if meta.len() == stamp.bytes => {}
-        Ok(meta) => problems.push(format!(
-            "模块数据大小对不上：清单 {} 字节，包里 {} 字节",
-            stamp.bytes,
-            meta.len()
+        Ok(meta) => problems.push(Diagnosis::with(
+            codes::BACKUP_MODULES_SIZE_MISMATCH,
+            [("listed", stamp.bytes.to_string()), ("found", meta.len().to_string())],
         )),
-        Err(error) => problems.push(format!("模块数据读不到：{error}")),
+        Err(error) => problems.push(Diagnosis::with(
+            codes::BACKUP_MODULES_UNREADABLE,
+            [("detail", error.to_string())],
+        )),
     }
     match super::Probe::open(&modules) {
         Err(problem) => problems.push(problem),
         Ok(probe) => {
             match crate::db::quick_check(probe.conn()) {
                 Ok(verdict) if verdict == "ok" => {}
-                Ok(verdict) => problems.push(format!("模块数据结构有问题：{verdict}")),
-                Err(error) => problems.push(format!("模块数据体检失败：{error}")),
+                Ok(verdict) => problems.push(Diagnosis::with(
+                    codes::BACKUP_MODULES_BROKEN,
+                    [("verdict", verdict)],
+                )),
+                Err(error) => problems.push(Diagnosis::with(
+                    codes::BACKUP_MODULES_CHECK_FAILED,
+                    [("detail", error.to_string())],
+                )),
             }
             match module_schema_versions(probe.conn()) {
                 Ok(schemas) if schemas == stamp.schemas => {}
-                Ok(_) => problems.push("模块数据结构版本与清单对不上".to_string()),
-                Err(error) => problems.push(format!("模块数据读不出结构版本：{error}")),
+                Ok(_) => problems.push(Diagnosis::with(
+                    codes::BACKUP_MODULES_SCHEMA_MISMATCH,
+                    [],
+                )),
+                Err(error) => problems.push(Diagnosis::with(
+                    codes::BACKUP_MODULES_SCHEMA_UNREADABLE,
+                    [("detail", error.to_string())],
+                )),
             }
         }
     }

@@ -12,6 +12,7 @@
 
 use std::path::{Path, PathBuf};
 
+use yanmo_core::error::codes;
 use yanmo_core::model::{NodeKind, WorkKind};
 use yanmo_core::store::{
     list_packages, read_manifest, scan_packages, swap_in, BackupRequest, BackupTarget, Store,
@@ -124,7 +125,9 @@ fn a_damaged_package_can_never_be_restored_and_touches_nothing() {
     let preview = f.store.preview_restore(&package).unwrap();
     assert!(!preview.verify.ok && !preview.can_restore, "{:?}", preview.verify.problems);
     assert!(
-        preview.verify.problems.iter().any(|problem| problem.contains("快照")),
+        preview.verify.problems.iter().any(|problem| {
+            problem.code.starts_with("backup.verify.snapshot_")
+        }),
         "要指到快照这一处：{:?}",
         preview.verify.problems
     );
@@ -145,7 +148,13 @@ fn a_package_missing_its_draft_or_from_a_newer_engine_is_refused() {
     std::fs::remove_file(&draft).unwrap();
     let preview = f.store.preview_restore(&package).unwrap();
     assert!(!preview.can_restore, "成稿缺了就不算一份完整备份");
-    assert!(preview.verify.problems.iter().any(|p| p.contains("成稿读不到")));
+    assert!(
+        preview
+            .verify
+            .problems
+            .iter()
+            .any(|p| p.code == codes::BACKUP_VERIFY_DRAFT_UNREADABLE)
+    );
     std::fs::write(&draft, saved).unwrap();
 
     // ③ 清单说它来自更新的研墨：当前引擎别猜着读
@@ -157,7 +166,13 @@ fn a_package_missing_its_draft_or_from_a_newer_engine_is_refused() {
     std::fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
     let preview = f.store.preview_restore(&package).unwrap();
     assert!(!preview.can_restore, "来自更新版本的备份不能硬恢复");
-    assert!(preview.verify.problems.iter().any(|p| p.contains("更新的研墨")));
+    assert!(
+        preview
+            .verify
+            .problems
+            .iter()
+            .any(|p| p.code == codes::RESTORE_VERIFY_FORMAT_TOO_NEW)
+    );
 }
 
 #[test]

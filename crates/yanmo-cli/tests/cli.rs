@@ -379,9 +379,10 @@ fn a_backup_from_the_command_line_writes_a_package_and_a_skipped_target_is_recor
     // 跳过是"这一处没成，别的目标照做"，失败是"做备份这件事本身出问题了"。
     assert_eq!(bad["skipped"], 1, "不可达的目标要记成跳过：{bad}");
     assert_eq!(bad["failed"], 0, "不可达不该算整体失败：{bad}");
-    assert!(
-        !bad["outcomes"][0]["reason"].as_str().unwrap_or("").is_empty(),
-        "跳过也要给原因，别只说跳过：{bad}"
+    assert_eq!(
+        bad["outcomes"][0]["reason"]["code"].as_str(),
+        Some("backup.write.dir_failed"),
+        "跳过也要给原因（码 + 参数），别只说跳过：{bad}"
     );
 
     // ③ 账本里两次尝试都记着（成功与跳过都记，空档不用猜）
@@ -392,7 +393,7 @@ fn a_backup_from_the_command_line_writes_a_package_and_a_skipped_target_is_recor
     assert_eq!(entries.len(), 2, "两次尝试都该记进账本：{ledger}");
     assert_eq!(entries[0]["status"], "written");
     assert_eq!(entries[1]["status"], "skipped");
-    assert!(!entries[1]["reason"].as_str().unwrap_or("").is_empty());
+    assert_eq!(entries[1]["reason"]["code"].as_str(), Some("backup.write.dir_failed"));
     assert!(work_id > 0);
 }
 

@@ -6,6 +6,7 @@
 import { computed, ref } from "vue";
 
 import { t } from "../locales/index.ts";
+import { describeDiagnosis } from "../locales/diagnosis.ts";
 import { formatBytes, formatWords } from "../editor/display.ts";
 import type { EditorSession } from "../editor/session";
 
@@ -154,7 +155,7 @@ async function chooseFromDisk(): Promise<void> {
           <template v-else>
             <p class="restore__bad">{{ t("restore.verify_failed") }}</p>
             <ul class="restore__problems">
-              <li v-for="(problem, index) in preview.verify.problems" :key="index">{{ problem }}</li>
+              <li v-for="(problem, index) in preview.verify.problems" :key="index">{{ describeDiagnosis(problem) }}</li>
             </ul>
           </template>
           <p v-if="preview.is_live_database" class="restore__bad">{{ t("restore.is_live") }}</p>

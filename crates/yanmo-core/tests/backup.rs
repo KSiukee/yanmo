@@ -10,6 +10,7 @@
 
 use std::path::{Path, PathBuf};
 
+use yanmo_core::error::codes;
 use yanmo_core::model::{NodeKind, WorkKind};
 use yanmo_core::store::{
     is_sealed_package, read_ledger, read_manifest, BackupConfig, BackupRequest, BackupTarget,
@@ -139,7 +140,7 @@ fn verification_catches_a_broken_snapshot_or_a_missing_draft() {
     let verify = f.store.verify_backup(&package);
     assert!(!verify.ok, "删掉成稿之后体检不该还说过");
     assert!(
-        verify.problems.iter().any(|p| p.contains("成稿读不到")),
+        verify.problems.iter().any(|p| p.code == codes::BACKUP_VERIFY_DRAFT_UNREADABLE),
         "要说清是哪一处出的问题：{:?}",
         verify.problems
     );
@@ -174,10 +175,11 @@ fn an_unreachable_target_is_skipped_and_recorded_without_blocking_others() {
     assert_eq!(report.succeeded(), 1, "好目标照样成功");
     assert_eq!(report.skipped(), 1, "拔掉的盘算跳过，不算失败也不静默补做");
     let skipped = report.outcomes.iter().find(|o| o.status == "skipped").unwrap();
-    assert!(
-        skipped.reason.contains("写不进去"),
+    assert_eq!(
+        skipped.reason.code(),
+        Some(codes::BACKUP_WRITE_DIR_FAILED),
         "父级是个文件、盘根却在——原因要如实说「写不进去」，别赖给「盘没插」：{}",
-        skipped.reason
+        skipped.reason.render_log()
     );
 
     // 跳过也记账（"缺了哪几天"靠它）
@@ -253,7 +255,12 @@ fn a_failed_snapshot_is_reported_per_target_instead_of_blowing_up() {
 
     let report = f.store.backup_now(&req).unwrap();
     assert_eq!(report.failed(), 1, "报告：{:?}", report.outcomes);
-    assert!(report.outcomes[0].reason.contains("快照"), "原因要说清是快照做不出来：{}", report.outcomes[0].reason);
+    assert_eq!(
+        report.outcomes[0].reason.code(),
+        Some(codes::BACKUP_SNAPSHOT_FAILED),
+        "原因要说清是快照做不出来：{}",
+        report.outcomes[0].reason.render_log()
+    );
 }
 
 #[test]
@@ -597,8 +604,10 @@ fn tampering_the_catalog_fails_verification() {
     let verify = f.store.verify_backup(&package);
     assert!(!verify.ok, "目录索引被改过，体检必须说话");
     assert!(
-        verify.problems.iter().any(|problem| problem.contains("目录索引")
-            || problem.contains("对不上")),
+        verify
+            .problems
+            .iter()
+            .any(|problem| problem.code == codes::BACKUP_EXTRAS_CATALOG_WORK_MISMATCH),
         "要说清是哪一格不对：{:?}",
         verify.problems
     );

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::error::{codes, Error, Result};
+use crate::error::{codes, Diagnosis, Error, Result};
 
 pub const DIR: &str = "module-packages";
 
@@ -31,18 +31,28 @@ pub(super) fn snapshot(data_dir: &Path, staging: &Path) -> Result<Option<ModuleP
     Ok(Some(measure(&target)?))
 }
 
-pub(super) fn verify(package: &Path, stamp: &ModulePackagesStamp) -> Vec<String> {
+pub(super) fn verify(package: &Path, stamp: &ModulePackagesStamp) -> Vec<Diagnosis> {
     let dir = package.join(DIR);
     if !dir.is_dir() {
-        return vec![format!("找不到模块程序包目录：{DIR}")];
+        return vec![Diagnosis::with(codes::BACKUP_PACKAGES_MISSING, [("dir", DIR.to_string())])];
     }
     match measure(&dir) {
         Ok(actual) if actual == *stamp => Vec::new(),
-        Ok(actual) => vec![format!(
-            "模块程序包对不上：清单 {} 文件/{} 字节/{}，包里 {} 文件/{} 字节/{}",
-            stamp.files, stamp.bytes, stamp.sha256, actual.files, actual.bytes, actual.sha256
+        Ok(actual) => vec![Diagnosis::with(
+            codes::BACKUP_PACKAGES_MISMATCH,
+            [
+                ("listed_files", stamp.files.to_string()),
+                ("listed_bytes", stamp.bytes.to_string()),
+                ("listed_sha", stamp.sha256.clone()),
+                ("found_files", actual.files.to_string()),
+                ("found_bytes", actual.bytes.to_string()),
+                ("found_sha", actual.sha256.clone()),
+            ],
         )],
-        Err(error) => vec![format!("模块程序包读不出来：{error}")],
+        Err(error) => vec![Diagnosis::with(
+            codes::BACKUP_PACKAGES_UNREADABLE,
+            [("detail", error.to_string())],
+        )],
     }
 }
 

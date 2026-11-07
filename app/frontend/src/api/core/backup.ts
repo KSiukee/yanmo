@@ -2,6 +2,20 @@
 
 import { call, COMMANDS } from "./transport";
 
+/** 一条诊断（与核心 `Diagnosis` 同形）：**码 + 参数**，句子由界面按码查字典。 */
+export interface Diagnosis {
+  code: string;
+  params?: Record<string, string>;
+}
+
+/**
+ * 一条「原因」：新记录是诊断（对象），**老账本里落盘的是句子**（字符串）。
+ *
+ * 老账本不能因为改格式就显示成空白——句子原样带出来，诊断才按码渲染
+ * （渲染入口见 `locales/diagnosis.ts`）。
+ */
+export type Reason = string | Diagnosis;
+
 /** 一个备份目标（作者勾的一处落点）。 */
 export interface BackupTarget {
   path: string;
@@ -42,8 +56,8 @@ export interface BackupTargetStatus {
   volume_label: string;
   /** 最近一次成功的本地日期；从没成功过是 null */
   last_success: string | null;
-  /** 最近一次没成的原话（成功过就不再提旧的） */
-  last_problem: string | null;
+  /** 最近一次没成的原因（成功过就不再提旧的）：新记录是诊断，老账本是句子 */
+  last_problem: Reason | null;
   /** 这块盘现在在不在（**按卷序列号认**；不在才是真的"没插/拔了"） */
   volume_present: boolean;
   /** 目标目录建了没——**没建是常态**（第一次备份会自动创建），不该当成故障 */
@@ -73,7 +87,8 @@ export interface BackupTargetOutcome {
   volume_label: string;
   /** written / skipped / failed */
   status: string;
-  reason: string;
+  /** 为什么没成（成功时是空串）：新记录是诊断，老账本是句子 */
+  reason: Reason;
   package: string;
   bytes: number;
   kept: number;
@@ -119,7 +134,7 @@ export interface RestorePreview {
   source: string;
   /** package（备份包）/ database（单个库文件） */
   kind: string;
-  verify: { ok: boolean; problems: string[] };
+  verify: { ok: boolean; problems: Diagnosis[] };
   created_at: number;
   device: string;
   engine_version: string;

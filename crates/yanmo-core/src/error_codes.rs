@@ -439,6 +439,110 @@ DB => "db" : "数据库错误：{detail}" : ["detail"],
         : "认证清单验签失败：{detail}" : ["detail"],
     MODULE_PACKAGE_TAMPERED => "module.package_tampered"
         : "模块包在安装后被改动，拒绝启动；请重新导入" : [],
+
+    // ── 备份包的读回体检（问题列表；界面按码渲染，核心不产句子） ──────────────
+    BACKUP_VERIFY_MANIFEST_UNREADABLE => "backup.verify.manifest_unreadable"
+        : "读不出备份清单 {file}（不是研墨的备份包？）" : ["file"],
+    BACKUP_VERIFY_SNAPSHOT_MISSING => "backup.verify.snapshot_missing"
+        : "找不到快照：{file}" : ["file"],
+    BACKUP_VERIFY_SNAPSHOT_UNREADABLE => "backup.verify.snapshot_unreadable"
+        : "快照读不出来：{detail}" : ["detail"],
+    BACKUP_VERIFY_SNAPSHOT_UNOPENABLE => "backup.verify.snapshot_unopenable"
+        : "快照打不开：{detail}" : ["detail"],
+    BACKUP_VERIFY_SNAPSHOT_BROKEN => "backup.verify.snapshot_broken"
+        : "快照结构有问题：{verdict}" : ["verdict"],
+    BACKUP_VERIFY_SNAPSHOT_CHECK_FAILED => "backup.verify.snapshot_check_failed"
+        : "快照体检失败：{detail}" : ["detail"],
+    BACKUP_VERIFY_SNAPSHOT_WORKS_UNREADABLE => "backup.verify.snapshot_works_unreadable"
+        : "快照读不出书目：{detail}" : ["detail"],
+    BACKUP_VERIFY_WORKS_COUNT_MISMATCH => "backup.verify.works_count_mismatch"
+        : "书目对不上：快照 {found} 本，清单 {listed} 本" : ["found", "listed"],
+    BACKUP_VERIFY_WORK_EXTRA => "backup.verify.work_extra"
+        : "快照里多出一本：{title}（#{work_id}）" : ["title", "work_id"],
+    BACKUP_VERIFY_WORK_MISMATCH => "backup.verify.work_mismatch"
+        : "《{title}》对不上：清单 {listed_chapters} 章/{listed_words} 字，快照 {found_chapters} 章/{found_words} 字"
+        : ["title", "listed_chapters", "listed_words", "found_chapters", "found_words"],
+    BACKUP_VERIFY_DRAFT_UNREADABLE => "backup.verify.draft_unreadable"
+        : "《{title}》的成稿读不到（{file}）：{detail}" : ["title", "file", "detail"],
+    BACKUP_VERIFY_DRAFT_MISMATCH => "backup.verify.draft_mismatch"
+        : "《{title}》的成稿内容与清单不符" : ["title"],
+
+    // ── 写目标失败 / 跳过（界面显示在「上回没成」那一行） ─────────────────────
+    BACKUP_WRITE_DIR_FAILED => "backup.write.dir_failed"
+        : "写不进去：{detail}" : ["detail"],
+    BACKUP_WRITE_FAILED => "backup.write.failed"
+        : "写备份失败：{detail}" : ["detail"],
+    BACKUP_WRITE_VOLUME_MISSING => "backup.write.volume_missing"
+        : "盘不在（没插？）" : [],
+    BACKUP_WRITE_VERIFY_FAILED => "backup.write.verify_failed"
+        : "读回体检没通过（{count} 个问题）" : ["count"],
+    BACKUP_SEAL_UNOPENABLE => "backup.seal.unopenable"
+        : "封好的包解不开（{detail}）——已把这份作废，别拿它当备份" : ["detail"],
+    BACKUP_SEAL_VERIFY_FAILED => "backup.seal.verify_failed"
+        : "封好的包解开之后体检没通过——已把这份作废，别拿它当备份" : [],
+
+    // ── 包里的两样"说明书"（目录索引 / 设置快照） ────────────────────────────
+    BACKUP_EXTRAS_UNREADABLE => "backup.extras.unreadable"
+        : "{file} 读不到：{detail}" : ["file", "detail"],
+    BACKUP_EXTRAS_SIZE_MISMATCH => "backup.extras.size_mismatch"
+        : "{file} 的大小对不上（清单 {listed}，实际 {found}）" : ["file", "listed", "found"],
+    BACKUP_EXTRAS_HASH_MISMATCH => "backup.extras.hash_mismatch"
+        : "{file} 的内容与清单对不上" : ["file"],
+    BACKUP_EXTRAS_INVALID_JSON => "backup.extras.invalid_json"
+        : "{file} 不是合法 JSON：{detail}" : ["file", "detail"],
+    BACKUP_EXTRAS_CATALOG_COUNT_MISMATCH => "backup.extras.catalog_count_mismatch"
+        : "目录索引里的书数对不上：索引 {listed} 本，清单 {found} 本" : ["listed", "found"],
+    BACKUP_EXTRAS_CATALOG_WORK_MISSING => "backup.extras.catalog_work_missing"
+        : "目录索引里缺《{title}》" : ["title"],
+    BACKUP_EXTRAS_CATALOG_WORK_MISMATCH => "backup.extras.catalog_work_mismatch"
+        : "目录索引里《{title}》的章数或字数与清单不符" : ["title"],
+    BACKUP_EXTRAS_CATALOG_FINGERPRINT_MISMATCH => "backup.extras.catalog_fingerprint_mismatch"
+        : "目录索引里《{title}》的成稿指纹与清单不符" : ["title"],
+    BACKUP_EXTRAS_SETTINGS_LEAK => "backup.extras.settings_leak"
+        : "设置快照里出现了本机标识：{field}" : ["field"],
+    BACKUP_EXTRAS_SETTINGS_WORK_MISSING => "backup.extras.settings_work_missing"
+        : "设置快照里缺《{title}》" : ["title"],
+
+    // ── 模块数据快照（备份包里那一份） ──────────────────────────────────────
+    BACKUP_MODULES_NAME_MISMATCH => "backup.modules.name_mismatch"
+        : "模块快照文件名对不上：{file}" : ["file"],
+    BACKUP_MODULES_MISSING => "backup.modules.missing"
+        : "找不到模块数据快照：{file}" : ["file"],
+    BACKUP_MODULES_SIZE_MISMATCH => "backup.modules.size_mismatch"
+        : "模块数据大小对不上：清单 {listed} 字节，包里 {found} 字节" : ["listed", "found"],
+    BACKUP_MODULES_UNREADABLE => "backup.modules.unreadable"
+        : "模块数据读不到：{detail}" : ["detail"],
+    BACKUP_MODULES_BROKEN => "backup.modules.broken"
+        : "模块数据结构有问题：{verdict}" : ["verdict"],
+    BACKUP_MODULES_CHECK_FAILED => "backup.modules.check_failed"
+        : "模块数据体检失败：{detail}" : ["detail"],
+    BACKUP_MODULES_SCHEMA_MISMATCH => "backup.modules.schema_mismatch"
+        : "模块数据结构版本与清单对不上" : [],
+    BACKUP_MODULES_SCHEMA_UNREADABLE => "backup.modules.schema_unreadable"
+        : "模块数据读不出结构版本：{detail}" : ["detail"],
+
+    // ── 模块程序包（受管 modules/ 目录） ────────────────────────────────────
+    BACKUP_PACKAGES_MISSING => "backup.packages.missing"
+        : "找不到模块程序包目录：{dir}" : ["dir"],
+    BACKUP_PACKAGES_MISMATCH => "backup.packages.mismatch"
+        : "模块程序包对不上：清单 {listed_files} 文件/{listed_bytes} 字节/{listed_sha}，包里 {found_files} 文件/{found_bytes} 字节/{found_sha}"
+        : ["listed_files", "listed_bytes", "listed_sha", "found_files", "found_bytes", "found_sha"],
+    BACKUP_PACKAGES_UNREADABLE => "backup.packages.unreadable"
+        : "模块程序包读不出来：{detail}" : ["detail"],
+
+    // ── 恢复前的体检（包与裸库两条路共用的码；文案按来源说"这一份"） ──────────
+    RESTORE_VERIFY_FORMAT_TOO_NEW => "restore.verify.format_too_new"
+        : "这份备份来自更新的研墨（数据格式 v{found}），当前引擎只到 v{supported}"
+        : ["found", "supported"],
+    RESTORE_VERIFY_DB_BROKEN => "restore.verify.db_broken"
+        : "这个库结构有问题：{verdict}" : ["verdict"],
+    RESTORE_VERIFY_DB_CHECK_FAILED => "restore.verify.db_check_failed"
+        : "这个库体检失败：{detail}" : ["detail"],
+    RESTORE_VERIFY_DB_WORKS_UNREADABLE => "restore.verify.db_works_unreadable"
+        : "这个库读不出书目：{detail}" : ["detail"],
+    RESTORE_VERIFY_SCHEMA_TOO_NEW => "restore.verify.schema_too_new"
+        : "这个库来自更新的研墨（库结构 v{found}），当前引擎只到 v{supported}"
+        : ["found", "supported"],
 }
 
 /// 按码把参数填进日志模板；模板不认识这个码就退回 `码(名字=取值, …)`。
@@ -450,6 +554,26 @@ pub(crate) fn render_log(code: &str, params: &[(&'static str, String)]) -> Strin
             .iter()
             .map(|(name, value)| format!("{name}={value}"))
             .collect();
+        return format!("{code}({})", filled.join(", "));
+    };
+    let mut out = template.to_string();
+    for (name, value) in params {
+        out = out.replace(&format!("{{{name}}}"), value);
+    }
+    out
+}
+
+/// 同 [`render_log`]，参数表是「名字 → 取值」。
+///
+/// 诊断要走"序列化进账本再读回来"那条路，参数名那时已经是一个 `String`——
+/// 拿不到 `&'static str`，所以另开一个入口（填充逻辑与上面同一条，别长成两套）。
+pub(crate) fn render_log_map(
+    code: &str,
+    params: &std::collections::BTreeMap<String, String>,
+) -> String {
+    let Some(template) = log_template(code) else {
+        let filled: Vec<String> =
+            params.iter().map(|(name, value)| format!("{name}={value}")).collect();
         return format!("{code}({})", filled.join(", "));
     };
     let mut out = template.to_string();

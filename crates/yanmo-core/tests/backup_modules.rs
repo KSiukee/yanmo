@@ -150,7 +150,10 @@ fn a_corrupt_module_snapshot_fails_verification() {
     let verify = fixture.store.verify_backup(&package);
     assert!(!verify.ok);
     assert!(
-        verify.problems.iter().any(|problem| problem.contains("模块")),
+        verify.problems.iter().any(|problem| {
+            problem.code.starts_with("backup.modules.")
+                || problem.code.starts_with("backup.verify.snapshot_")
+        }),
         "问题要说清是模块数据：{:?}",
         verify.problems
     );
