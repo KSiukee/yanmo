@@ -394,12 +394,32 @@ def source_commit() -> tuple[str, bool, list[str]]:
     return commit, dirty, untracked
 
 
+def target_platform(artifact: Path, installer: bool) -> str:
+    """产物是给哪个平台、什么形态的——**看产物本身，不看构建机**。
+
+    构建机与目标平台是两件事：在 WSL 里跑构建、产物却是 Windows 安装包时，
+    只写 `platform.platform()` 会让人以为包是 Linux 的。这里按扩展名判平台，
+    形态由调用方给（是不是安装包）。
+    """
+    name = artifact.name.lower()
+    if name.endswith((".exe", ".msi")):
+        return "Windows x64（NSIS 安装包）" if installer else "Windows x64（便携可执行文件）"
+    if name.endswith(".dmg"):
+        return "macOS（dmg）"
+    if name.endswith(".appimage"):
+        return "Linux（AppImage）"
+    if name.endswith(".deb"):
+        return "Linux（deb）"
+    return "（认不出来：看产物扩展名）"
+
+
 def build_fingerprint(
     out_dir: Path,
     version: str,
     tools: dict[str, str],
     artifact: Path,
     digest: str,
+    installer: bool,
 ) -> Path:
     """把"这一包到底是怎么来的"写成一页纸：版本 / 提交 / 工具链 / 产物指纹。
 
@@ -416,7 +436,9 @@ def build_fingerprint(
         f"源码提交：{commit or '（不是 git 仓库 / 取不到）'}"
         + ("（**工作区有未提交改动**）" if dirty else ""),
         f"构建时间：{stamp}",
-        f"平台：{platform.platform()}",
+        # 两件事分开写：谁执行的这一步 vs 产物给谁用（在 WSL 里打 Windows 包时二者不同）
+        f"构建机：{platform.platform()}",
+        f"目标平台：{target_platform(artifact, installer)}",
     ]
     if untracked:
         sample = "、".join(untracked[:3]) + ("…" if len(untracked) > 3 else "")
@@ -438,6 +460,9 @@ def build_fingerprint(
         f"  2) 想自己构建：git checkout {commit[:12] if commit else '<提交>'}，用同一套工具链跑 "
         "tools\\build-release.bat",
         "",
+        "构建机与目标平台是两件事：前者是执行这一步的那台机器（可能是 WSL / 容器），",
+        "后者才是产物给谁用——它们可以不同，所以分开写。",
+        "",
         "诚实说明：Windows 安装包内含时间戳等非确定性内容，**逐字节一致做不到**；",
         "这里给的是「同一提交 + 同一工具链 → 功能等价的产物」以及可核对的产物指纹。",
         "",
@@ -447,13 +472,40 @@ def build_fingerprint(
     return target
 
 
+def selftest() -> int:
+    """自检（**不跑构建**）：只钉「目标平台看产物，不看构建机」这一条判据。"""
+    cases = [
+        (Path("yanmo-0.1.0-x64-setup.exe"), True, "Windows x64（NSIS 安装包）"),
+        (Path("yanmo.exe"), False, "Windows x64（便携可执行文件）"),
+        (Path("yanmo-0.1.0.dmg"), True, "macOS（dmg）"),
+        (Path("yanmo-0.1.0.AppImage"), True, "Linux（AppImage）"),
+        (Path("yanmo-0.1.0.deb"), True, "Linux（deb）"),
+        (Path("yanmo-0.1.0.tar.gz"), True, "（认不出来：看产物扩展名）"),
+    ]
+    failed = 0
+    for artifact, installer, expected in cases:
+        actual = target_platform(artifact, installer)
+        ok = actual == expected
+        print(f"  {'✓' if ok else '✗'} {artifact.name} → {actual}")
+        if not ok:
+            failed += 1
+            print(f"    期望：{expected}")
+    # 指纹里那两行必须都在：少了「构建机」或「目标平台」都算没写清楚
+    return 0 if failed == 0 else 1
+
+
 def main() -> int:
     make_output_readable()
     parser = argparse.ArgumentParser(description="研墨一键构建（自检 → 测试 → 打包 → 归集）")
     parser.add_argument("--no-bundle", action="store_true", help="只出可执行文件，不出安装包")
     parser.add_argument("--skip-tests", action="store_true", help="跳过测试（正式出包别用）")
     parser.add_argument("--out", default=str(DEFAULT_OUT), help="产物归集目录（默认 dist/）")
+    parser.add_argument("--selftest", action="store_true", help="只跑构建指纹的平台判据，不构建")
     args = parser.parse_args()
+
+    if args.selftest:
+        print("研墨 · 构建指纹自检")
+        return selftest()
 
     print("研墨 · 一键构建")
     print("─" * 64)
@@ -537,7 +589,9 @@ def main() -> int:
             say(False, "便携版 / 绿色版", why if portable is None else zip_why)
             return 1
         say(True, "三种形态", f"安装包 / {portable.name} / {green.name}")
-    fingerprint = build_fingerprint(Path(args.out), version, tools, artifact, detail)
+    fingerprint = build_fingerprint(
+        Path(args.out), version, tools, artifact, detail, not args.no_bundle
+    )
     say(True, "构建指纹", f"{fingerprint.name}（版本 / 提交 / 工具链 / 产物哈希）")
     prune_dist(Path(args.out))
     print("─" * 64)
