@@ -116,7 +116,8 @@
   margin: 8px 0 0;
   border: 1px solid var(--ym-line);
   border-radius: 4px;
-  background-color: var(--ym-bg-layer, var(--ym-paper));
+  /* 底色用纸色打底（背景图没设时看到的就是它）；背景图那一层由 `--ym-bg-image` 叠上来 */
+  background-color: var(--ym-paper);
   background-position: center;
   background-size: cover;
   background-repeat: no-repeat;

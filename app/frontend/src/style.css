@@ -231,5 +231,7 @@ body {
   z-index: 40;
   pointer-events: none;
   background: var(--ym-eye-care-veil);
+  /* 这一格**由脚本按护眼强度写**（editor/eye-care.ts 的 VEIL_OPACITY_VAR）：
+     不是没声明的漏网变量，别照「只读不写」处理。 */
   opacity: var(--ym-eye-care-strength, 0);
 }

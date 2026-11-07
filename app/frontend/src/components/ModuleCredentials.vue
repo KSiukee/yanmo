@@ -206,9 +206,9 @@ onMounted(load);
 .credentials {
   margin-top: 10px;
   padding: 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--ym-line);
   border-radius: 8px;
-  background: var(--panel-soft);
+  background: var(--ym-paper-dim);
 }
 .credentials__head {
   display: flex;
@@ -219,7 +219,7 @@ onMounted(load);
 .credentials__note {
   margin: 6px 0;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--ym-ink-soft);
 }
 .credentials__list,
 .credentials__audit {
@@ -230,7 +230,7 @@ onMounted(load);
 .credentials__audit li {
   padding: 2px 0;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--ym-ink-soft);
   word-break: break-all;
 }
 .credentials__row {
@@ -252,10 +252,10 @@ onMounted(load);
   box-sizing: border-box;
   margin: 4px 0;
   padding: 6px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--ym-line);
   border-radius: 6px;
-  background: var(--panel);
-  color: var(--text);
+  background: var(--ym-paper);
+  color: inherit;
   font-family: inherit;
   font-size: 12px;
   resize: vertical;
@@ -264,24 +264,24 @@ onMounted(load);
   flex: 1 1 120px;
   min-width: 0;
   padding: 4px 6px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--ym-line);
   border-radius: 6px;
-  background: var(--panel);
-  color: var(--text);
+  background: var(--ym-paper);
+  color: inherit;
 }
 .credentials__button,
 .credentials__link {
   padding: 4px 8px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--ym-line);
   border-radius: 6px;
-  background: var(--panel);
-  color: var(--text);
+  background: var(--ym-paper);
+  color: inherit;
   cursor: pointer;
   font-size: 12px;
 }
 .credentials__link {
   border-color: transparent;
   background: transparent;
-  color: var(--muted);
+  color: var(--ym-ink-soft);
 }
 </style>
