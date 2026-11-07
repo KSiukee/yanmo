@@ -1,3 +1,29 @@
+## 0.194.1 — 2026-11-07
+
+> **`store/session.rs` 拆开了：会话归会话，编辑落点归编辑落点。** 那个文件从 0.72.2 起
+> 就贴着 400 行（已按棘轮登记），这次把「该编辑哪一章 + 光标读到哪了」那一半搬去
+> `store/editor_target.rs`：470 → 272 行，新文件 222 行。对外的 API 一个没变。
+
+### 改
+
+- 新文件 `store/editor_target.rs`：`EditorTarget` / `EditorCursor`、编辑落点那一族
+  （`ensure_editor_target` / `ensure_editor_target_preferring` / `work_target` / `editor_target`）
+  与光标那一族（`save_cursor` / `load_cursor` / `cursor_node`）；
+- `store/session.rs` 只留会话标记与崩溃检测（`begin_session` / `peek_session` / `end_session` /
+  `abandon_session` / 慢命令与卡死现场），272 行；
+- `store/mod.rs` 的导出改成从 `editor_target` 出 `EditorCursor` / `EditorTarget`——
+  **导出面与拆分前完全一致**。
+
+### 边界（如实说）
+
+- 纯移动，零逻辑改动；判据是「导出面不变 + 全仓测试全绿」；
+- 两个文件现在各自都还在 200~399 的报警区间（272 / 222），但离 400 的硬线远了。
+
+### 验收证据
+
+- 核心全量 274 例 + 各测试文件全过（含 session / shelf / restore 那些碰编辑落点的）；
+- `check_all` 全绿；健康基线随之下调（470 → 272）。
+
 ## 0.194.0 — 2026-11-07
 
 > **验收报告开始量「打字时的体感」。** 以前只有冷启动与核心操作的数字，
