@@ -39,6 +39,7 @@ pub mod menu;
 mod rescue_import;
 /// 命令行救援：库打不开时把备份换回去（默认干跑，`--yes` 才动）。
 mod restore;
+mod salvage;
 
 pub use commands::execute;
 

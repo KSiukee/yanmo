@@ -43,6 +43,8 @@ fn rescue_options(command: &str) -> Option<&'static [&'static str]> {
         "trace" => Some(&["work", "out", "scope"]),
         // 唯一一条**不打开活库**的命令：库坏到打不开时，它才用得上
         "restore" => Some(&["from", "yes"]),
+        // 与 restore 同一条：不打开活库，源只读、目标只写新文件
+        "salvage" => Some(&["from", "to", "yes"]),
         "import" => Some(&["from", "work", "language", "yes"]),
         _ => None,
     }
@@ -144,6 +146,9 @@ pub fn execute(args: &Args) -> Result<Value, CliError> {
     // 那条要读成稿，这条只碰文件与备份包）。
     if args.command == "restore" {
         return crate::restore::run(args);
+    }
+    if args.command == "salvage" {
+        return crate::salvage::run(args);
     }
 
     let mut store = if may_create_library(&args.command) {

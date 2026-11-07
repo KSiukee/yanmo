@@ -103,6 +103,7 @@ mod question_select;
 mod question_weights;
 mod relocate;
 mod restore;
+mod salvage;
 mod restore_packages;
 mod restore_swap;
 mod scene_card;
@@ -188,6 +189,7 @@ pub use naming::NamingRewrite;
 pub use node::{ChapterNeighbors, ChapterSummary, NodeSummary, SubtreeRollup};
 pub use relocate::{copy_dir, verify_same_scale, Relocation};
 pub use restore::{preview_source, RestorePreview, SourcePreview};
+pub use salvage::{salvage_database, SalvageReport, SalvagedTable};
 pub use restore_packages::{list_packages, scan_packages, PackageBrief};
 pub use restore_swap::{swap_in, RestoreOutcome, KEEP_FOLDER};
 pub use certification::{

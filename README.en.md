@@ -99,7 +99,7 @@ and chapter-level sync across devices.
 
 ## Download
 
-- **Latest release (0.189.0)**: <https://github.com/KSiukee/yanmo/releases>
+- **Latest release (0.190.0)**: <https://github.com/KSiukee/yanmo/releases>
 - Every asset ships with a matching `.sha256` file:
 
   ```bat
