@@ -135,6 +135,7 @@ mod work_classify;
 mod work_goal;
 mod work_row;
 mod work_text;
+mod window_place;
 mod writing;
 
 pub use appearance::{Appearance, ResolvedAppearance};
@@ -240,6 +241,7 @@ pub use trash::{TrashEntry, TrashKind};
 pub use volume::{CloseReceipt, DissolveReceipt};
 pub use work::ShelfEntry;
 pub use work_brief::WorkBrief;
+pub use window_place::{WindowPlace, WorkArea};
 pub use writing::WritingDay;
 
 use std::path::Path;

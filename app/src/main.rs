@@ -50,6 +50,7 @@ mod startup;
 mod storage;
 mod volume;
 mod watchdog;
+mod window_place;
 
 fn main() {
     // **验收模式**（`--self-test-bench` / `--self-test-ui` / `--check`）：只由启动参数进入，
@@ -171,6 +172,11 @@ fn main() {
                     std::process::exit(1);
                 }
             };
+            // 把上次的窗口落点摆回去（在 manage 之前：这里还要用 `&data`）。
+            // 没有记录 / 那块屏没了 / 摆不动，都保持配置里的居中——启动不因为这件事停。
+            if let Some(window) = app.get_webview_window("main") {
+                window_place::restore(&data, &window);
+            }
             app.manage(data);
             app.manage(ModuleUiState::default());
             // 导入闸：选好的模块文件夹只暂存在壳里（界面拿不到路径）。
@@ -229,6 +235,12 @@ fn main() {
             let Some(data) = window.app_handle().try_state::<storage::AppData>() else {
                 return; // 数据层都没起来：随它关
             };
+            // 记下这次窗口摆在哪、多大（只有主窗、只有普通状态）。
+            // **在闸门判断之前**：闸门没武装时窗口马上就销毁，之后再问位置就晚了；
+            // 写不成也照常往下走——这是"下次更顺手"，不是关窗的新闸门。
+            if window.label() == "main" {
+                window_place::remember(window, &data);
+            }
             if !data.exit_gate_armed() {
                 return;
             }
