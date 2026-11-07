@@ -138,12 +138,13 @@ def fail(name: str, output: str) -> int:
     return 1
 
 
-def project_version() -> tuple[str, list[str]]:
-    """版本号：Cargo 工作区 / 应用配置 / 更新日志首条 / README 的「当前版本」——四处必须一致。
+def project_version() -> tuple[str, list[str], str]:
+    """版本号：Cargo 工作区 / 应用配置 / 更新日志首条——**三处必须一致**。
 
-    为什么把 README 也拉进来：它写着"当前版本 X"，而那是最容易忘的一处——
-    忘了改就会出现"README 说 0.41.8、包里是 0.42.0"这种对不上的事。
-    靠检查单上写一条"记得改 README"是没用的，靠机器拦住才对。
+    README 的「最新已发布版本」**不参与硬比对**（2026-11-07 改）：它写的是最后一次
+    发布出去的版本，与工作区版本本来就不同（本地每改一刀就涨一次）。把它拉进硬拦，
+    会让每一次本地升版本都过不了这道门（实测：README 0.190.0、工作区 0.193.1，
+    脚本连门都进不去）。它落后了只给一句提醒，真正的"发布前对齐"发生在打 tag 那一步。
     """
     found: dict[str, str] = {}
     cargo = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
@@ -159,12 +160,16 @@ def project_version() -> tuple[str, list[str]]:
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     heading = re.search(r"^##\s+(\d+\.\d+\.\d+)", changelog, re.M)
     found["CHANGELOG.md"] = heading.group(1) if heading else ""
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    stated = re.search(r"当前版本\**\s*[:：]\s*\**(\d+\.\d+\.\d+)", readme)
-    found["README.md"] = stated.group(1) if stated else ""
 
     problems = [f"{name}={value or '空'}" for name, value in found.items() if value != found["Cargo.toml"]]
-    return found["Cargo.toml"], problems
+
+    # README 只提醒：它写的是"最后一次发布出去的版本"，本地开发时落后是正常的
+    note = ""
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    stated = re.search(r"最新已发布版本\**\s*[:：]\s*\**(\d+\.\d+\.\d+)", readme)
+    if stated and stated.group(1) != found["Cargo.toml"]:
+        note = f"写的是 {stated.group(1)}（最新已发布版本），发布之后记得更新"
+    return found["Cargo.toml"], problems, note
 
 
 def check_toolchain() -> tuple[bool, dict[str, str]]:
@@ -516,11 +521,14 @@ def main() -> int:
         return 1
 
     print("[2/7] 版本一致")
-    version, problems = project_version()
+    version, problems, readme_note = project_version()
     if problems:
         say(False, "版本一致", "；".join(problems))
         return 1
     say(True, "版本一致", f"{version}（Cargo 工作区 / 应用配置 / 更新日志首条）")
+    if readme_note:
+        # 只提醒、不拦：README 写的是"最新已发布版本"，本地开发时落后于工作区是正常的
+        print(f"  ⚠️ {'README':<10} {readme_note}")
     if not check_no_data_in_bundle():
         return 1
 
