@@ -365,13 +365,24 @@ impl Store {
         )?;
         // 节点、正文、快照由外键级联带走（连接打开了 foreign_keys）
         tx.execute("DELETE FROM works WHERE id = ?1", params![work_id])?;
+        // **按这本书记的设置也一起走**：`work.{id}.` 前缀那一族（每书外观 / 笔名 /
+        // 每卷目标章数 / 集的篇数与字数）。不清的话它们会永远留在库里——书都没了，
+        // 键还在，将来换个 id 恰好撞上就会读到别人家的旧设置。
+        //
+        // 用 GLOB 不用 LIKE：`work.{id}.*` 里的 `.` 要与 `work.123.` 区分开（LIKE 的
+        // 通配符是 `%` 与 `_`，`_` 会吃掉任意一个字符，键名里恰好有下划线的就会误伤）。
+        // 这一句重复执行没有副作用（删不存在的行不报错），**软删那条路根本不跑它**。
+        let settings = tx.execute(
+            "DELETE FROM settings WHERE key GLOB ?1",
+            params![format!("work.{work_id}.*")],
+        )?;
         Self::record_in(
             &self.device_id,
             &tx,
             "works",
             work_id,
             "purge",
-            json!({ "nodes": nodes }),
+            json!({ "nodes": nodes, "settings": settings }),
         )?;
         tx.commit()?;
         Ok(nodes as usize)

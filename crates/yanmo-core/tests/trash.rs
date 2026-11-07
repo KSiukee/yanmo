@@ -316,3 +316,70 @@ fn restoring_a_chapter_does_not_revive_an_earlier_deleted_section() {
     let listed: Vec<i64> = store.list_trash().unwrap().iter().map(|entry| entry.id).collect();
     assert!(listed.contains(&section), "它还该在回收站里看得见（父级活了，它就是最上层那一条）");
 }
+
+/// 这本书在 `settings` 里还剩几个按书键（`work.{id}.` 前缀）。
+fn settings_with_prefix(store: &Store, work: i64) -> i64 {
+    store
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM settings WHERE key GLOB ?1",
+            [format!("work.{work}.*")],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+/// 给一本书造几个真实的按书设置键（外观 / 笔名 / 每卷目标章数 / 集的篇数）。
+fn seed_settings(store: &Store, work: i64) {
+    for suffix in ["appearance", "pen_name", "volume_target", "collection_pieces"] {
+        store
+            .conn()
+            .execute(
+                "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES(?1, '{}', 0)",
+                [format!("work.{work}.{suffix}")],
+            )
+            .unwrap();
+    }
+}
+
+/// **真删之后，按这本书记的设置要一起走；软删与恢复一个都不许动。**
+///
+/// 不清的后果：书都没了，键还永远留着；将来新书的 id 恰好撞上，就会读到别人家的旧设置。
+#[test]
+fn purging_a_book_clears_its_settings_but_soft_delete_keeps_them() {
+    let (_dir, mut store) = fresh();
+    let (gone, _volume, _chapters) = book(&mut store, "要真删的");
+    let (kept, _volume2, _chapters2) = book(&mut store, "留着的那本");
+    seed_settings(&store, gone);
+    seed_settings(&store, kept);
+    assert_eq!(settings_with_prefix(&store, gone), 4, "前提：设置键已造好");
+
+    // 软删：**设置一个都不许动**（捞回来的书必须还是原来那套设置）
+    store.soft_delete_work(gone).unwrap();
+    assert_eq!(settings_with_prefix(&store, gone), 4, "进回收站不清设置");
+    store.restore_work(gone).unwrap();
+    assert_eq!(settings_with_prefix(&store, gone), 4, "捞回来设置还在");
+
+    // 真删：这本书的键一个不剩，另一本书的一个不少
+    store.soft_delete_work(gone).unwrap();
+    store.purge_work(gone).unwrap();
+    assert_eq!(settings_with_prefix(&store, gone), 0, "真删之后按书设置要清干净");
+    assert_eq!(settings_with_prefix(&store, kept), 4, "别人的设置一个都不许碰");
+}
+
+/// 清空回收站与逐个真删同一条路：清掉的每本书，设置也一起清掉。
+#[test]
+fn emptying_the_trash_clears_settings_of_every_purged_book() {
+    let (_dir, mut store) = fresh();
+    let (first, _v1, _c1) = book(&mut store, "第一本");
+    let (second, _v2, _c2) = book(&mut store, "第二本");
+    seed_settings(&store, first);
+    seed_settings(&store, second);
+    store.soft_delete_work(first).unwrap();
+    store.soft_delete_work(second).unwrap();
+
+    let removed = store.empty_trash().unwrap();
+    assert_eq!(removed, 2, "两本书都该被清掉");
+    assert_eq!(settings_with_prefix(&store, first), 0, "清空回收站也要清设置");
+    assert_eq!(settings_with_prefix(&store, second), 0, "清空回收站也要清设置");
+}
