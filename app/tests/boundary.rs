@@ -457,12 +457,13 @@ fn only_the_flipping_status_slot_is_width_pinned() {
 #[test]
 fn frontend_talks_to_core_only_through_the_gateway() {
     let src = package_root().join("frontend/src");
-    let gateway = src.join("api/core.ts");
-    assert!(gateway.is_file(), "核心网关应当存在：{}", gateway.display());
+    // 通道拆成 `api/core/` 各域之后，真正碰 Tauri 的是传输层（facade 只负责转出）
+    let gateway = src.join("api/core/transport.ts");
+    assert!(gateway.is_file(), "核心网关的传输层应当存在：{}", gateway.display());
     let gateway_source = read(&gateway);
     assert!(
         gateway_source.contains("invoke<") || gateway_source.contains("invoke("),
-        "核心网关里没有 invoke——它就不再是唯一通道，这条断言会假绿"
+        "传输层里没有 invoke——它就不再是唯一通道，这条断言会假绿"
     );
 
     for file in source_files(&src, &["ts", "js", "vue"]) {
