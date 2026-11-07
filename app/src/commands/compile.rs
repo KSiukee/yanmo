@@ -144,7 +144,7 @@ pub fn compile_work(
     let (title, files) = data.with_store(|store: &mut Store| {
         let title = store.get_work(work_id)?.title;
         // 作者简介：要不要附、带不带身份证与银行账号，都由核心那一层定（见 store::author）
-        let options = options_of(preset, body_limit, with_outline, store.author_block()?);
+        let options = options_of(preset, body_limit, with_outline, store.author_block_for(work_id)?);
         let mut files = compile(store, work_id, preset, &options)?;
         if with_sources.unwrap_or(false) {
             let report = store.source_report_text(work_id)?;
@@ -182,7 +182,7 @@ pub fn compile_collection(
     let (title, files) = data.with_store(|store: &mut Store| {
         let title = store.get_work(collection_id)?.title;
         // 集子末尾也附作者简介（整本集子一篇，与单篇投稿版同一份口径）
-        let author = store.author_block()?;
+        let author = store.author_block_for(collection_id)?;
         Ok((title, render_collection(store, collection_id, format, author)?))
     })?;
     let outcome =

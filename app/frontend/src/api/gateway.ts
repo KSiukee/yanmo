@@ -59,6 +59,8 @@ export const COMMANDS = {
   authorRead: "author_read",
   authorWrite: "author_write",
   authorReset: "author_reset",
+  workPenNameRead: "work_pen_name_read",
+  workPenNameWrite: "work_pen_name_write",
   appearanceRead: "appearance_read",
   appearanceWrite: "appearance_write",
   appearanceReset: "appearance_reset",

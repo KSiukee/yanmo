@@ -106,3 +106,24 @@ pub fn author_write(
 pub fn author_reset(data: State<'_, AppData>) -> Result<AuthorDto, ApiError> {
     data.with_store(|store: &mut Store| Ok(store.reset_author()?.into()))
 }
+
+/// 读这本书单独用的笔名（`None` = 跟随全局那个）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn work_pen_name_read(
+    data: State<'_, AppData>,
+    work_id: i64,
+) -> Result<Option<String>, ApiError> {
+    data.with_store(|store: &mut Store| Ok(store.pen_name_for(work_id)?))
+}
+
+/// 设/清这本书的笔名（传 `None` 或空串 = 清掉，回全局）。
+#[tauri::command(rename_all = "snake_case")]
+pub fn work_pen_name_write(
+    data: State<'_, AppData>,
+    work_id: i64,
+    pen_name: Option<String>,
+) -> Result<Option<String>, ApiError> {
+    data.with_store(|store: &mut Store| {
+        Ok(store.set_pen_name_for(work_id, pen_name.as_deref())?)
+    })
+}

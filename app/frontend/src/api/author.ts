@@ -37,3 +37,11 @@ export const authorWrite = (patch: Partial<Author>) =>
 
 /** 清空（回到"没设过"）。 */
 export const authorReset = () => call<Author>(COMMANDS.authorReset);
+
+/** 这本书单独用的笔名（null = 跟随全局）。 */
+export const workPenNameRead = (work_id: number) =>
+  call<string | null>(COMMANDS.workPenNameRead, { work_id });
+
+/** 设/清这本书的笔名（传 null 或空串 = 清掉，回全局）。 */
+export const workPenNameWrite = (work_id: number, pen_name: string | null) =>
+  call<string | null>(COMMANDS.workPenNameWrite, { work_id, pen_name });

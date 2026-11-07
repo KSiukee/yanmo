@@ -1,11 +1,8 @@
-//! 作者信息的验收：稀疏合并、坏记录当没设过、**敏感项默认不写进稿件**、留痕不抄取值。
+//! 每本书的笔名：**只覆盖笔名这一栏**，真名/电话/通联仍跟人走；清掉就回全局。
 //!
-//! 最后一条是这一份里最要紧的：身份证号与银行账号会存在库里（作者自己机器上，
-//! 为了"某家刊物要时不用再翻"），但**变更日志里不该跟着抄一份**——
-//! 日志是给排查看的，不需要为了排查把卡号留在里面。
+//! 投稿出口（`author_block_for`）与界面读口（`author_for`）必须看到同一份。
 
-use yanmo_core::error_codes::codes;
-use yanmo_core::model::Author;
+use yanmo_core::model::{Author, WorkKind};
 use yanmo_core::store::Store;
 
 fn fresh() -> (tempfile::TempDir, Store) {
@@ -14,124 +11,61 @@ fn fresh() -> (tempfile::TempDir, Store) {
     (dir, store)
 }
 
-fn full() -> Author {
-    Author {
-        pen_name: Some("南岸".into()),
-        real_name: Some("李明".into()),
-        phone: Some("13800000000".into()),
-        email: Some("nan@example.com".into()),
-        address: Some("某省某市某路 1 号".into()),
-        postcode: Some("100000".into()),
-        bio: Some("写过一些短篇。\n发过几篇散文。".into()),
-        id_number: Some("110101199001010011".into()),
-        bank: Some("工商银行 6222020000000000".into()),
-        attach: Some(true),
-        with_sensitive: None,
-    }
-}
-
 #[test]
-fn nothing_set_reads_as_an_empty_author() {
-    let (_dir, store) = fresh();
-    let author = store.author().unwrap();
-    assert_eq!(author.pen_name, "");
-    assert!(!author.attach, "默认不附");
-    assert!(!author.with_sensitive, "默认不带敏感项");
-    assert_eq!(store.author_block().unwrap(), None);
-}
-
-#[test]
-fn only_what_was_given_is_written() {
+fn a_work_pen_name_overrides_only_the_pen_name() {
     let (_dir, mut store) = fresh();
-    store.set_author(&Author { pen_name: Some("南岸".into()), ..Author::default() }).unwrap();
-    store.set_author(&Author { phone: Some("13800000000".into()), ..Author::default() }).unwrap();
-    let author = store.author().unwrap();
-    assert_eq!(author.pen_name, "南岸", "没再传的栏要保持原样");
-    assert_eq!(author.phone, "13800000000");
-}
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+    let other = store.create_work(WorkKind::Novel, "别的书").unwrap();
 
-#[test]
-fn clearing_one_field_is_explicit() {
-    let (_dir, mut store) = fresh();
-    store.set_author(&full()).unwrap();
-    store.set_author(&Author { bank: Some(String::new()), ..Author::default() }).unwrap();
-    let author = store.author().unwrap();
-    assert_eq!(author.bank, "", "Some(\"\") = 清空那一栏");
-    assert_eq!(author.pen_name, "南岸", "别的栏不受影响");
-}
-
-#[test]
-fn a_broken_record_is_treated_as_unset() {
-    let (_dir, store) = fresh();
     store
-        .conn()
-        .execute(
-            "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES('author', '{{{ 不是 JSON', 1)",
-            [],
-        )
+        .set_author(&Author {
+            pen_name: Some("全局笔名".to_string()),
+            real_name: Some("真名".to_string()),
+            phone: Some("13800000000".to_string()),
+            attach: Some(true),
+            ..Default::default()
+        })
         .unwrap();
-    let author = store.author().unwrap();
-    assert_eq!(author.pen_name, "", "坏记录当没设过，绝不拿它挡住界面");
+
+    // 没设过 → 跟全局
+    assert_eq!(store.author_for(work.id).unwrap().pen_name, "全局笔名");
+    assert!(store.pen_name_for(work.id).unwrap().is_none());
+
+    // 设了 → 只有这一本换，别的书照旧
+    assert_eq!(
+        store.set_pen_name_for(work.id, Some("本书笔名")).unwrap().as_deref(),
+        Some("本书笔名")
+    );
+    let resolved = store.author_for(work.id).unwrap();
+    assert_eq!(resolved.pen_name, "本书笔名", "笔名换成这一本的");
+    assert_eq!(resolved.real_name, "真名", "真名仍跟人走");
+    assert_eq!(resolved.phone, "13800000000", "电话仍跟人走");
+    assert_eq!(store.author_for(other.id).unwrap().pen_name, "全局笔名", "别的书不受影响");
+
+    // 投稿出口看到的是同一份
+    let block = store.author_block_for(work.id).unwrap().expect("勾了附简介就该有");
+    assert_eq!(block.pen_name, "本书笔名");
+    assert_eq!(block.real_name, "真名");
+
+    // 清掉 → 回全局
+    store.set_pen_name_for(work.id, None).unwrap();
+    assert_eq!(store.author_for(work.id).unwrap().pen_name, "全局笔名");
+    assert!(store.pen_name_for(work.id).unwrap().is_none());
 }
 
 #[test]
-fn reset_puts_it_back_to_unset() {
+fn an_empty_work_pen_name_means_follow_the_global_one() {
     let (_dir, mut store) = fresh();
-    store.set_author(&full()).unwrap();
-    let cleared = store.reset_author().unwrap();
-    assert_eq!(cleared.pen_name, "");
-    assert_eq!(store.author_block().unwrap(), None);
-}
-
-#[test]
-fn the_sensitive_two_stay_out_of_the_document_unless_asked() {
-    let (_dir, mut store) = fresh();
-    // `full()` 里勾了"附"、没勾敏感 → 简介在，身份证与卡号不在
-    store.set_author(&full()).unwrap();
-    let block = store.author_block().unwrap().unwrap();
-    assert_eq!(block.pen_name, "南岸");
-    assert_eq!(block.real_name, "李明");
-    assert!(block.id_number.is_empty() && block.bank.is_empty(), "敏感两项默认不写进稿子");
-
-    // 把"附"关掉：一个字节都不写
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
     store
-        .set_author(&Author { attach: Some(false), ..Author::default() })
+        .set_author(&Author { pen_name: Some("全局笔名".to_string()), ..Default::default() })
         .unwrap();
-    assert_eq!(store.author_block().unwrap(), None);
 
-    // 两样都勾上：才带上
-    store
-        .set_author(&Author { attach: Some(true), with_sensitive: Some(true), ..Author::default() })
-        .unwrap();
-    let block = store.author_block().unwrap().unwrap();
-    assert_eq!(block.id_number, "110101199001010011");
-    assert!(block.bank.contains("6222020000000000"));
-}
+    assert!(store.set_pen_name_for(work.id, Some("   ")).unwrap().is_none());
+    assert_eq!(store.author_for(work.id).unwrap().pen_name, "全局笔名");
 
-#[test]
-fn a_too_long_field_is_refused_by_name() {
-    let (_dir, mut store) = fresh();
-    let err = store
-        .set_author(&Author { phone: Some("1".repeat(300)), ..Author::default() })
-        .unwrap_err();
-    assert_eq!(err.code(), codes::AUTHOR_TOO_LONG);
-    assert_eq!(store.author().unwrap().phone, "", "被拒绝时不该写进去");
-}
-
-#[test]
-fn the_change_log_says_which_fields_moved_but_not_their_values() {
-    let (_dir, mut store) = fresh();
-    store.set_author(&full()).unwrap();
-    let payload: String = store
-        .conn()
-        .query_row(
-            "SELECT payload FROM op_log WHERE entity = 'settings' AND op = 'set_author'
-              ORDER BY seq DESC LIMIT 1",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert!(payload.contains("bank"), "要说清动过哪几栏：{payload}");
-    assert!(!payload.contains("6222020000000000"), "取值（尤其卡号）不许抄进日志：{payload}");
-    assert!(!payload.contains("110101199001010011"), "身份证号同样不许：{payload}");
+    // 过长当场拒，不留半条记录
+    let too_long = "长".repeat(201);
+    assert!(store.set_pen_name_for(work.id, Some(&too_long)).is_err());
+    assert!(store.pen_name_for(work.id).unwrap().is_none());
 }

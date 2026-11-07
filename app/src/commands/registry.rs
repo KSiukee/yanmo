@@ -84,6 +84,8 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::author::author_read,
         crate::commands::author::author_write,
         crate::commands::author::author_reset,
+        crate::commands::author::work_pen_name_read,
+        crate::commands::author::work_pen_name_write,
         crate::commands::appearance::appearance_read,
         crate::commands::appearance::appearance_write,
         crate::commands::appearance::appearance_reset,

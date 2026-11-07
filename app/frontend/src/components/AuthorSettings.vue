@@ -7,14 +7,30 @@
 // 两条口径写在界面上，不藏在文档里：
 // - 按期刊惯例，作者简介写在**文末**（笔名、真名、电话、通联、简历）；
 // - **身份证号与银行账号默认不写进稿件**（它们是稿费结算用的，不该跟着每份稿子跑）。
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 
+import type { EditorSession } from "../editor/session";
 import { t } from "../locales/index.ts";
-import { authorRead, authorReset, authorWrite, type Author } from "../api/author";
+import {
+  authorRead,
+  authorReset,
+  authorWrite,
+  workPenNameRead,
+  workPenNameWrite,
+  type Author,
+} from "../api/author";
+
+const props = defineProps<{ session: EditorSession }>();
 
 const draft = ref<Author | null>(null);
 const note = ref("");
 const busy = ref(false);
+
+/** 当前这本书单独用的笔名（空串 = 跟随全局）。 */
+const workPen = ref("");
+const workNote = ref("");
+const workId = computed(() => props.session.workId.value);
+const hasWork = computed(() => workId.value !== null);
 
 /** 一栏一行的顺序（长文本那两栏用多行框）。 */
 const FIELDS: { key: keyof Author; label: string; long?: boolean }[] = [
@@ -49,7 +65,57 @@ async function load(): Promise<void> {
   }
 }
 
-onMounted(load);
+async function loadWorkPen(): Promise<void> {
+  const id = workId.value;
+  if (id === null) {
+    workPen.value = "";
+    return;
+  }
+  try {
+    workPen.value = (await workPenNameRead(id)) ?? "";
+  } catch (error) {
+    say(error);
+  }
+}
+
+onMounted(async () => {
+  await load();
+  await loadWorkPen();
+});
+watch(workId, () => void loadWorkPen());
+
+/** 保存这本书的笔名；空着就当成"回全局"。 */
+async function saveWorkPen(): Promise<void> {
+  const id = workId.value;
+  if (id === null) return;
+  busy.value = true;
+  workNote.value = "";
+  try {
+    const saved = await workPenNameWrite(id, workPen.value.trim() || null);
+    workPen.value = saved ?? "";
+    workNote.value = saved ? t("author.work_saved") : t("author.work_cleared");
+  } catch (error) {
+    say(error);
+  } finally {
+    busy.value = false;
+  }
+}
+
+/** 只清这本书的笔名，不影响上面的全局那一份。 */
+async function clearWorkPen(): Promise<void> {
+  const id = workId.value;
+  if (id === null) return;
+  busy.value = true;
+  workNote.value = "";
+  try {
+    workPen.value = (await workPenNameWrite(id, null)) ?? "";
+    workNote.value = t("author.work_cleared");
+  } catch (error) {
+    say(error);
+  } finally {
+    busy.value = false;
+  }
+}
 
 async function save(): Promise<void> {
   const current = draft.value;
@@ -121,6 +187,41 @@ function onToggle(key: keyof Author, event: Event): void {
         @input="onText(field.key, $event)"
       />
     </label>
+
+    <p class="settings__group">{{ t("author.work_group") }}</p>
+    <p class="settings__hint">
+      {{ hasWork ? t("author.work_hint") : t("author.work_no_work") }}
+    </p>
+    <label class="settings__row">
+      <span class="settings__label">{{ t("author.work_pen") }}</span>
+      <input
+        class="settings__input"
+        type="text"
+        :value="workPen"
+        :disabled="busy || !hasWork"
+        :placeholder="draft.pen_name || t('author.work_placeholder')"
+        @input="workPen = ($event.target as HTMLInputElement).value"
+      />
+    </label>
+    <div class="settings__footer">
+      <button
+        type="button"
+        class="settings__button dialog__button"
+        :disabled="busy || !hasWork"
+        @click="saveWorkPen"
+      >
+        {{ t("author.work_save") }}
+      </button>
+      <button
+        type="button"
+        class="settings__button dialog__button"
+        :disabled="busy || !hasWork || workPen.length === 0"
+        @click="clearWorkPen"
+      >
+        {{ t("author.work_clear") }}
+      </button>
+      <span v-if="workNote" class="settings__hint">{{ workNote }}</span>
+    </div>
 
     <p class="settings__group">{{ t("settings.group_author_sensitive") }}</p>
     <p class="settings__hint">{{ t("author.sensitive_hint") }}</p>

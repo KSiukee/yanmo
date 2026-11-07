@@ -278,7 +278,7 @@ async function runRewrite() {
       </section>
       <!-- 作者信息：投稿时随稿子走的那点身份（填一次，所有作品共用） -->
       <section v-if="activeSection === 'author'" class="settings__section">
-        <AuthorSettings />
+        <AuthorSettings :session="session" />
       </section>
       <section v-if="activeSection === 'location'" class="settings__section">
       <p class="settings__group settings__group--data">{{ t("settings.group_data") }}</p>

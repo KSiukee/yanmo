@@ -18,6 +18,11 @@ use crate::time::now_millis;
 /// 作者信息在 `settings` 里的键（**一份全局**：跟人，不跟书）。
 const AUTHOR_KEY: &str = "author";
 
+/// 每本书的笔名（稀疏：只有设过的那几本有这个键）。
+fn pen_key(work_id: i64) -> String {
+    format!("work.{work_id}.pen_name")
+}
+
 /// 每一栏的长度上限（自由文本那一栏放宽）。
 const MAX_FIELD_CHARS: usize = 200;
 const MAX_BIO_CHARS: usize = 2000;
@@ -37,6 +42,72 @@ impl Store {
     /// 投稿出口用：**要写进稿件的作者简介**（没勾"附"、或什么都没填 → `None`）。
     pub fn author_block(&self) -> Result<Option<AuthorBlock>> {
         Ok(self.author()?.block())
+    }
+
+    /// 这一本书单独用的笔名（没设过 → `None`，就用全局那个）。
+    ///
+    /// 为什么按书存：同一支笔下的不同长篇可以用不同笔名；真名、电话、通联仍跟人走。
+    pub fn pen_name_for(&self, work_id: i64) -> Result<Option<String>> {
+        let raw: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                params![pen_key(work_id)],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(raw.map(|text| text.trim().to_string()).filter(|text| !text.is_empty()))
+    }
+
+    /// 这一本**生效**的作者信息：全局那份打底，这本书有笔名就换成它。
+    pub fn author_for(&self, work_id: i64) -> Result<ResolvedAuthor> {
+        let mut author = self.author()?;
+        if let Some(pen_name) = self.pen_name_for(work_id)? {
+            author.pen_name = pen_name;
+        }
+        Ok(author)
+    }
+
+    /// 投稿出口用（按书）：这本书该写进稿件的作者简介。
+    pub fn author_block_for(&self, work_id: i64) -> Result<Option<AuthorBlock>> {
+        Ok(self.author_for(work_id)?.block())
+    }
+
+    /// 设/清这本书的笔名（`None` 或空串 = 清掉，回全局）。
+    ///
+    /// 长度校验与全局那栏同一条（`AUTHOR_TOO_LONG`），留痕同样**不抄取值**。
+    pub fn set_pen_name_for(
+        &mut self,
+        work_id: i64,
+        pen_name: Option<&str>,
+    ) -> Result<Option<String>> {
+        let cleaned = match pen_name.map(str::trim).filter(|text| !text.is_empty()) {
+            Some(text) => checked(&Author {
+                pen_name: Some(text.to_string()),
+                ..Default::default()
+            })?
+            .pen_name,
+            None => None,
+        };
+        let tx = self.conn.transaction()?;
+        if let Some(text) = &cleaned {
+            tx.execute(
+                "INSERT OR REPLACE INTO settings(key, value, updated_at) VALUES(?1, ?2, ?3)",
+                params![pen_key(work_id), text, now_millis()],
+            )?;
+        } else {
+            tx.execute("DELETE FROM settings WHERE key = ?1", params![pen_key(work_id)])?;
+        }
+        Store::record_in(
+            &self.device_id,
+            &tx,
+            "settings",
+            work_id,
+            "set_work_pen_name",
+            json!({ "field": "pen_name", "set": cleaned.is_some() }),
+        )?;
+        tx.commit()?;
+        Ok(cleaned)
     }
 
     /// 改作者信息：**只写传进来的那几栏**（没传的保持原样），回读落定后的那一份。
