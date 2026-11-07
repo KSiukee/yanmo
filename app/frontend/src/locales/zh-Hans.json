@@ -2025,5 +2025,8 @@
   "error.restore.verify.db_broken": "这个库结构有问题：{verdict}",
   "error.restore.verify.db_check_failed": "这个库体检失败：{detail}",
   "error.restore.verify.db_works_unreadable": "这个库读不出书目：{detail}",
-  "error.restore.verify.schema_too_new": "这个库来自更新的研墨（库结构 v{found}），当前引擎只到 v{supported}"
+  "error.restore.verify.schema_too_new": "这个库来自更新的研墨（库结构 v{found}），当前引擎只到 v{supported}",
+  "backup.advice_use_removable": "建议用 {volume} 备份（还剩 {free}）：可移动盘，备份完能拔走。",
+  "backup.advice_use_roomy": "建议用 {volume} 备份（还剩 {free}）：这是剩下的盘里空间最大的。",
+  "backup.advice_use_now": "用它备份"
 }

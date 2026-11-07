@@ -10,6 +10,7 @@ import { describeReason } from "../locales/diagnosis.ts";
 import type { EditorSession } from "../editor/session";
 import { formatBytes } from "../editor/display.ts";
 import type { BackupConfig, BackupTarget } from "../api/core";
+import BackupVolumes from "./BackupVolumes.vue";
 import TraceExportSection from "./TraceExportSection.vue";
 import SealSettings from "./SealSettings.vue";
 
@@ -29,6 +30,9 @@ const availableVolumes = computed(() => {
   const used = new Set(current.config.targets.map((target) => target.volume_id));
   return current.volumes.filter((volume) => !used.has(volume.volume_id));
 });
+
+/** 该不该给「用哪块盘」的建议：目标全在数据所在盘上时给。 */
+const showAdvice = computed(() => !!status.value && !status.value.has_other_volume);
 
 /** 默认备份目录：`<盘根>研墨备份`——作者可以之后自己改。 */
 function defaultPathFor(root: string): string {
@@ -113,9 +117,6 @@ function openRestore(): void {
       <p v-if="config && !config.targets.length" class="dialog__note dialog__note--warn">
         {{ t("backup.no_target") }}
       </p>
-      <p v-else-if="status && !status.has_other_volume" class="dialog__note dialog__note--warn">
-        {{ t("backup.advice_other_disk") }}
-      </p>
 
       <!-- 已经指定的备份位置 -->
       <h3 class="backup__section">{{ t("backup.targets") }}</h3>
@@ -150,26 +151,12 @@ function openRestore(): void {
         </li>
       </ul>
 
-      <!-- 能看到的盘：默认一个都不勾，只列出来给作者点 -->
-      <h3 class="backup__section">{{ t("backup.volumes") }}</h3>
-      <ul v-if="availableVolumes.length" class="backup__list">
-        <li v-for="volume in availableVolumes" :key="volume.volume_id || volume.root" class="backup__row">
-          <div class="backup__main">
-            <span class="backup__label">{{ volume.root }}{{ volume.label ? ` ${volume.label}` : "" }}</span>
-            <span class="backup__meta">
-              <template v-if="sizeText(volume.free_bytes)">
-                {{ t("backup.volume_free", { free: sizeText(volume.free_bytes) }) }} ·
-              </template>
-              <template v-if="volume.holds_data">{{ t("backup.volume_holds_data") }} · </template>
-              <template v-if="volume.removable">{{ t("backup.volume_removable") }}</template>
-            </span>
-          </div>
-          <button type="button" class="dialog__button" @click="addVolume(volume.volume_id)">
-            {{ t("backup.add") }}
-          </button>
-        </li>
-      </ul>
-      <p v-else class="dialog__empty">{{ t("backup.no_volumes") }}</p>
+      <!-- 能看到的盘 + 「该用哪块盘」的建议（整块在 BackupVolumes 里） -->
+      <BackupVolumes
+        :volumes="availableVolumes"
+        :show-advice="showAdvice"
+        @add="addVolume"
+      />
 
       <!-- 保留与自动 -->
       <div v-if="config" class="backup__options">
@@ -266,43 +253,11 @@ function openRestore(): void {
 
 <!-- 公共壳（遮罩 / 盒子 / 标题 / 按钮）：**必须引**，否则弹窗就是一堆裸内容叠在正文上 -->
 <style scoped src="./dialog.css"></style>
+<style scoped src="./backup-pane.css"></style>
 <style scoped>
 .backup {
   width: min(720px, 100%);
   overflow: auto;
-}
-
-.backup__section {
-  margin: 14px 0 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ym-ink-soft);
-}
-
-.backup__list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.backup__row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: space-between;
-  padding: 6px 8px;
-  border: 1px solid var(--ym-line);
-  border-radius: 6px;
-}
-
-.backup__main {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
 }
 
 .backup__path {
@@ -313,15 +268,6 @@ function openRestore(): void {
   border-radius: 4px;
   background: var(--ym-paper);
   color: inherit;
-}
-
-.backup__label {
-  font-weight: 500;
-}
-
-.backup__meta {
-  font-size: 12px;
-  color: var(--ym-ink-soft);
 }
 
 .backup__bad {

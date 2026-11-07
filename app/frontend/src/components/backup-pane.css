@@ -1,0 +1,44 @@
+/* 备份面板「盘」区与「目标」区共用的那几行版式（backup__ 前缀属于这一页）。
+   两个组件各自 scoped 引入：作用域仍只落在这两处，样式只有一份。 */
+
+.backup__section {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ym-ink-soft);
+}
+
+.backup__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.backup__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border: 1px solid var(--ym-line);
+  border-radius: 6px;
+}
+
+.backup__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.backup__label {
+  font-weight: 500;
+}
+
+.backup__meta {
+  font-size: 12px;
+  color: var(--ym-ink-soft);
+}
