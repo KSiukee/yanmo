@@ -17,6 +17,7 @@ import TypographySettings from "./TypographySettings.vue";
 import BackgroundSettings from "./BackgroundSettings.vue";
 import AskingSettings from "./AskingSettings.vue";
 import AppearanceSettings from "./AppearanceSettings.vue";
+import WorkVisualScope from "./WorkVisualScope.vue";
 import AuthorSettings from "./AuthorSettings.vue";
 import AboutSettings from "./AboutSettings.vue";
 
@@ -204,6 +205,7 @@ async function runRewrite() {
         <AskingSettings :session="session" />
       </section>
       <section v-if="activeSection === 'typography'" class="settings__section">
+        <WorkVisualScope :session="session" />
         <TypographySettings :session="session" />
         <!-- 正文背景（底色 / 底纹 / 自定义图片）：与排版同属"看正文的观感"，但自成一组 -->
         <BackgroundSettings :session="session" />

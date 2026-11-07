@@ -60,6 +60,22 @@ pub struct AppearanceDto {
     pub editor_bg_fit: String,
     /// 背景图那一层的不透明度（0~100）
     pub editor_bg_opacity: i64,
+    /// 这一层**真正设过的项**（稀疏）：界面据此画「跟全局 / 这本书单独设过」的逐项三态
+    pub overridden: Vec<String>,
+}
+
+/// 读一份可显示的偏好，并标出这一层真正设过的项。
+fn dto(store: &Store, work_id: Option<i64>) -> yanmo_core::Result<AppearanceDto> {
+    let mut view: AppearanceDto = store.appearance(work_id)?.into();
+    let overrides = store.appearance_overrides(work_id)?;
+    if let Ok(serde_json::Value::Object(fields)) = serde_json::to_value(&overrides) {
+        view.overridden = fields
+            .into_iter()
+            .filter(|(_, value)| !value.is_null())
+            .map(|(name, _)| name)
+            .collect();
+    }
+    Ok(view)
 }
 
 impl From<ResolvedAppearance> for AppearanceDto {
@@ -91,6 +107,7 @@ impl From<ResolvedAppearance> for AppearanceDto {
             editor_bg_image: value.editor_bg_image,
             editor_bg_fit: value.editor_bg_fit.as_str().to_string(),
             editor_bg_opacity: value.editor_bg_opacity,
+            overridden: Vec::new(),
         }
     }
 }
@@ -193,7 +210,7 @@ pub fn appearance_read(
     work_id: Option<i64>,
 ) -> Result<AppearanceDto, ApiError> {
     crate::acceptance::note_command("appearance_read");
-    data.with_store(|store: &mut Store| Ok(store.appearance(work_id)?.into()))
+    data.with_store(|store: &mut Store| dto(store, work_id))
 }
 
 /// 改偏好：稀疏合并，写完**回读一次**（界面显示的永远是库里那份）。
@@ -205,7 +222,7 @@ pub fn appearance_write(
 ) -> Result<AppearanceDto, ApiError> {
     data.with_store(|store: &mut Store| {
         store.set_appearance(work_id, &patch.into())?;
-        Ok(store.appearance(work_id)?.into())
+        dto(store, work_id)
     })
 }
 
@@ -217,6 +234,6 @@ pub fn appearance_reset(
 ) -> Result<AppearanceDto, ApiError> {
     data.with_store(|store: &mut Store| {
         store.reset_appearance(work_id)?;
-        Ok(store.appearance(work_id)?.into())
+        dto(store, work_id)
     })
 }

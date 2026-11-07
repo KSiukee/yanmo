@@ -54,6 +54,8 @@ export interface Appearance {
   editor_bg_fit: string;
   /** 背景图那一层的不透明度（0~100） */
   editor_bg_opacity: number;
+  /** 这一层真正设过的项（稀疏）；跟全局的项不在这里。旧壳可能没有这一栏。 */
+  overridden?: string[];
 }
 
 /** 要改的偏好项：**只写传进来的**，没传的保持原样。 */

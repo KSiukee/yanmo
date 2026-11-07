@@ -508,6 +508,14 @@ impl Store {
     /// 读偏好：**书的覆盖 → 全局 → 默认**。
     ///
     /// `work_id` 给 `Some` 会先看这本书有没有单独设过；给 `None` 只看全局。
+    /// 只读这一层**真正设过的项**（稀疏；没设过的是 `None`）。
+    ///
+    /// 与 [`Self::appearance`] 的区别：后者是"合并后给人用的那一份"，分不出
+    /// "没设过、跟着全局"和"显式设成跟全局一样的值"；界面要画逐项三态就得看这一份。
+    pub fn appearance_overrides(&self, work_id: Option<i64>) -> Result<Appearance> {
+        self.read_appearance(work_id)
+    }
+
     pub fn appearance(&self, work_id: Option<i64>) -> Result<ResolvedAppearance> {
         let global = self.read_appearance(None)?;
         let merged = match work_id {

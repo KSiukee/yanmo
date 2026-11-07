@@ -1,0 +1,178 @@
+// 外观偏好的**接口契约**：状态形状与注入点，不含实现。
+//
+// 单独成件只为让 `appearance.ts` 别在 400 行线上继续长——界面与测试照旧从
+// `appearance.ts` 取这些类型（那边统一转出）。
+import { type Ref } from "vue";
+
+import type { Appearance, AppearancePatch, NamingRewrite } from "../api/core";
+import type { BackgroundOutcome } from "../api/background";
+import type { TypographyField } from "./typography";
+import type { WorkVisualField } from "./appearance-work.ts";
+
+/** 右侧第二栏露哪一块（与核心 `ASIDE_TABS` 的稳定码一致）。 */
+export type AsideTab = "flow" | "creator" | "sop";
+
+/** 识别第二栏分区码（认不出的给 null）——**闭集只此一处**，别处不许再写一份。 */
+export function parseAsideTab(value: string): AsideTab | null {
+  return value === "flow" || value === "creator" || value === "sop" ? value : null;
+}
+
+/** 偏好要用的几个动作（会话层注入真命令，测试注入替身）。 */
+export interface AppearanceTransport {
+  read: (work_id: number | null) => Promise<Appearance>;
+  write: (work_id: number | null, patch: AppearancePatch) => Promise<Appearance>;
+  reset: (work_id: number | null) => Promise<Appearance>;
+  /** 编号写法：先看会改哪几章、改成什么（只算不改） */
+  previewNaming: (work_id: number) => Promise<NamingRewrite[]>;
+  /** 编号写法：照预览那份清单执行（作者点过确认才走到这里） */
+  applyNaming: (work_id: number, rewrites: NamingRewrite[]) => Promise<number>;
+  /** 正文背景图：读现状 / 请作者挑一张 / 清掉（文件那一半全在壳里） */
+  backgroundImage: () => Promise<BackgroundOutcome>;
+  backgroundPick: (title: string, filter_label: string) => Promise<BackgroundOutcome>;
+  backgroundClear: () => Promise<BackgroundOutcome>;
+}
+
+export interface AppearanceOptions {
+  transport: AppearanceTransport;
+  /** 当前作品（null = 还没打开书）——"只设这本书"要用它 */
+  workId: Ref<number | null>;
+  onError?: (message: string) => void;
+}
+
+/** 设命名规则时写哪一层：全局默认 / 只设当前这本书。 */
+export type NamingTarget = "default" | "work";
+
+export interface AppearanceState {
+  /** 库里那份（**读失败或还没读是 null**）；设置面板据此显示 */
+  values: Ref<Appearance | null>;
+  /** **当前作品生效的那一份**（全局 + 每书覆盖合并后）；没打开书时是 null */
+  workValues: Ref<Appearance | null>;
+  /** 设置面板开着没有 */
+  visible: Ref<boolean>;
+  /** 当前这本书有没有单独设过观感项（开关状态由库里的稀疏记录决定，不是本地臆想） */
+  workMode: Ref<boolean>;
+  /** 打开/关掉"这本书单独一套"：开＝把当前生效值写成这一层的覆盖；关＝清掉这一层 */
+  setWorkMode: (on: boolean) => Promise<void>;
+  /** 把某一项恢复成"跟全局"（只清这一层，不动别的项） */
+  clearWorkField: (field: WorkVisualField) => Promise<void>;
+  busy: Ref<boolean>;
+  /** 读一次（启动时用；失败不打扰写作，按安全那一边走） */
+  load: () => Promise<void>;
+  /** 打开设置面板（打开前重读一次，免得显示旧值） */
+  open: () => Promise<void>;
+  close: () => void;
+  /** 改一项：写完回读，界面显示的永远是库里那份 */
+  setJumpToEnd: (value: boolean) => Promise<void>;
+  /** 引号用哪一套（排版清理里选的，选一次就记住） */
+  setQuoteStyle: (value: string) => Promise<void>;
+  /**
+   * 叩问问话的语气（`warm` / `neutral` / `direct`；传 `"auto"` = 清掉这一层，回默认"温柔"）。
+   *
+   * 只写**全局默认**（与排版三项同一条口径：每书覆盖的机制留着，第一版界面不暴露）。
+   */
+  setQuestionTone: (value: string) => Promise<void>;
+  /**
+   * 主动问一句的打扰度：每天最多几次（**0 = 不打扰**）+ 冷却多少分钟。
+   *
+   * 传 `null` = 把这一层清掉、回默认（3 次 / 60 分钟）。同样只写全局默认。
+   */
+  setQuestionPush: (perDay: number | null, cooldownMinutes: number | null) => Promise<void>;
+  /**
+   * 右侧第二栏露哪一块（`flow` = 叩问 / `creator` = 创作流）——**记住上次**。
+   *
+   * 只写全局那一层（与排版三项、叩问语气同一条口径：每书覆盖的机制留着，界面不暴露）。
+   * 它只决定那一栏先露哪一块，不影响任何数据。
+   */
+  setAsideTab: (value: string) => Promise<void>;
+  /**
+   * 换一档界面配色（`light` / `dark` / `system`；传 `"auto"` = 清掉这一层、回默认浅色）。
+   *
+   * **只写全局那一层**（跟眼睛与房间光线有关，跟哪本书无关）——
+   * 核心那边这项不参与每书覆盖，所以这里也不给"只设这本书"的口子。
+   */
+  setTheme: (value: string) => Promise<void>;
+  /**
+   * 护眼滤色的幅度（0~100；**`0` = 关**，一个像素都不染）。**只写全局那一层**
+   * （跟眼睛与房间光线有关，跟哪本书无关）——核心那边这项不参与每书覆盖，
+   * 所以这里也不给"只设这本书"的口子。
+   *
+   * 它只改屏幕观感：整窗铺一层暖黄的膜，正文、导出与落盘字节一个都不动。
+   * 深浅两套配色合计出来的上限由界面算（见 `editor/eye-care.ts`）。
+   */
+  setEyeCare: (value: number) => Promise<void>;
+  /**
+   * 用眼提醒：开关 + 两个阈值（连着写满多少分钟 / 今天写到多少字）。
+   *
+   * **只写全局那一层**（与配色同一条口径：这两个数与哪本书无关）——所以这里也不给
+   * "只设这本书"的口子。两个阈值 ≤0 或超上限会被核心当场拒，界面照单报出来
+   * （它要拿去跟"写了多久 / 写了多少"比，一个 0 会让它每时每刻都响，那不是提醒）。
+   */
+  setBreakReminder: (enabled: boolean, minutes: number, words: number) => Promise<void>;
+  /** 回到默认（核心的默认值） */
+  resetToDefault: () => Promise<void>;
+  /** 跟当前作品重读一次（打开章节、换书时用） */
+  loadWork: () => Promise<void>;
+  /** 设命名规则：`target` 决定写全局默认还是只写这本书；值传 `"auto"` = 清掉那一层 */
+  setNaming: (value: string, target: NamingTarget) => Promise<void>;
+  /**
+   * 设"章的号跨不跨卷数"（continue / per_volume；传 "auto" = 清掉这一层）。
+   *
+   * 它改的只是**渲染时怎么数**，所以没有"整本一起换"那回事：写进去立刻全见效，
+   * 标题与正文一个字不动（跟命名写法那一条不一样，这里不必先预览）。
+   */
+  setChapterNumbering: (value: string, target: NamingTarget) => Promise<void>;
+  /**
+   * 设正文排版的一项（字号 / 行距 / 字距）：**只写全局那一层**（第一版先只暴露全局，
+   * 每书覆盖的机制已经在了，将来给面板加个"只设这本书"就能用）。
+   *
+   * 传 `0` = 清掉这一项（回默认档）。它只影响观感：写完编辑区立刻变，正文一个字不动。
+   */
+  setTypography: (field: TypographyField, value: number) => Promise<void>;
+  /**
+   * 设正文字体：五档预设码（`serif` / `sans` / `kai` / `yahei` / `dengxian`）
+   * 或 `family:<字体族名>`（系统里装了的某一款）；传 `"auto"` = 清掉这一层（回默认宋体那档）。
+   *
+   * 只写**全局默认**（与排版三项同一条口径）；纯显示层：不进导出、不动正文。
+   */
+  setEditorFont: (value: string) => Promise<void>;
+  /**
+   * 字体生效范围：`body` = 仅正文 / `all` = 整个界面；传 `"auto"` = 清掉这一层（回默认仅正文）。
+   *
+   * 只写**全局默认**；纯显示层：不改正文、不进导出。
+   */
+  setEditorFontScope: (value: string) => Promise<void>;
+  /**
+   * 设稿纸横线的线型（`solid` / `dashed`；传 `"auto"` = 清掉这一层，回默认"不显示"）。
+   *
+   * 与排版三项同一条口径：**只写全局那一层**（第一版先只暴露全局，每书覆盖的机制已经在了）。
+   * 它只影响观感：写完编辑区立刻变，正文一个字不动。
+   */
+  setRuleStyle: (value: string) => Promise<void>;
+  /**
+   * 正文背景：底色 / 底纹 / 图片层的不透明度与铺法。
+   *
+   * 与排版三项同一条口径：**只写全局那一层**（第一版先只暴露全局，每书覆盖的机制已经在了）。
+   * 纯观感——写完编辑区立刻变，正文一个字不动，也不进导出。
+   *
+   * 传 `"auto"`（底色 / 底纹 / 铺法）= 清掉这一层、回默认；不透明度传**负数** = 清掉这一层
+   * （`0` 是正经取值：图留着但看不见）。
+   */
+  setBackgroundColor: (value: string) => Promise<void>;
+  setBackgroundLayout: (value: string) => Promise<void>;
+  setBackgroundFit: (value: string) => Promise<void>;
+  setBackgroundOpacity: (value: number) => Promise<void>;
+  /** 现在的背景图长什么样（文件名 / 能不能画 / 多少字节）——打开面板时问一次 */
+  background: Ref<BackgroundOutcome | null>;
+  /** 请作者挑一张图（壳复制进数据目录；取消时什么都不变） */
+  pickBackground: () => Promise<void>;
+  /** 清掉背景图（库里清空 + 数据目录里那几张删掉） */
+  clearBackground: () => Promise<void>;
+  /** 问一次"现在的背景图还在不在"（比如刚打开设置面板时） */
+  refreshBackground: () => Promise<void>;
+  /** 整本书换编号写法的清单（还没问回来是 null；空数组 = 不用换） */
+  namingPlan: Ref<NamingRewrite[] | null>;
+  /** 问一次"这本书哪些章会换" */
+  previewNaming: () => Promise<void>;
+  /** 执行（照那份清单），回来把目录树刷新交给调用方 */
+  applyNaming: () => Promise<number | null>;
+}

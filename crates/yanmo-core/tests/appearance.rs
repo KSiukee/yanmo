@@ -833,3 +833,41 @@ fn the_editor_font_is_a_closed_set_plus_installed_families() {
         .unwrap();
     assert_eq!(store.appearance(None).unwrap().editor_font, "serif");
 }
+
+#[test]
+fn overrides_expose_only_what_this_book_really_set() {
+    let (_dir, mut store) = fresh();
+    let work = store.create_work(WorkKind::Novel, "长夜").unwrap();
+
+    store
+        .set_appearance(
+            Some(work.id),
+            &Appearance {
+                editor_font_size: Some(20),
+                editor_font: Some("kai".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let overrides = store.appearance_overrides(Some(work.id)).unwrap();
+    assert_eq!(overrides.editor_font_size, Some(20));
+    assert_eq!(overrides.editor_font.as_deref(), Some("kai"));
+    assert_eq!(overrides.editor_bg_color, None, "没设过的项不出现");
+    let global = store.appearance_overrides(None).unwrap();
+    assert!(
+        global.editor_font.is_none() && global.editor_font_size.is_none(),
+        "全局那一层还是空的"
+    );
+
+    // 清掉一项（0 = 清掉这一层）：只影响它，另一项还在
+    store
+        .set_appearance(
+            Some(work.id),
+            &Appearance { editor_font_size: Some(0), ..Default::default() },
+        )
+        .unwrap();
+    let overrides = store.appearance_overrides(Some(work.id)).unwrap();
+    assert_eq!(overrides.editor_font_size, None);
+    assert_eq!(overrides.editor_font.as_deref(), Some("kai"));
+}
