@@ -10,6 +10,9 @@
 
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref, type ShallowRef } from "vue";
 import { useEditor, type Editor } from "@tiptap/vue-3";
+
+// 界面级验收：只在 `--self-test-ui` 下真的跑（正常启动第一句就返回）
+import { connectAcceptanceProbe } from "./acceptance-probe-wire";
 import { plainTextExtensions } from "./extensions";
 
 import {
@@ -1334,6 +1337,10 @@ export function useEditorSession(): EditorSession {
       });
       // 界面就绪：从现在起关窗会先过闸门（未就绪时一律放行，免得窗口关不掉）
       await armExitGate();
+      // 验收模式：就绪**之后**跑一段界面级自测（切章/输入/滚动/检索），把数字交给壳。
+      // 顺序有讲究：窗口这时才真的显示（隐藏窗口里 rAF 会被暂停，帧计时会失真），
+      // 而且冷启动的数字不该被这段自测拖长。正常启动这里第一句就返回。
+      await connectAcceptanceProbe({ directory, editor, saveState, search });
 
       // 该说哪一句由 notice.ts 判（卡死优先于崩溃——那一条有单测盯着）
       crashNotice.value = startupNotice(await sessionReport());

@@ -151,6 +151,9 @@ export const COMMANDS = {
   sessionReport: "session_report",
   uiAlive: "ui_alive",
   armExitGate: "arm_exit_gate",
+  // 界面级验收：只在 `--self-test-ui` 下有效（正常模式探测回 false，那段自测一个字都不跑）
+  acceptanceProbeActive: "acceptance_probe_active",
+  acceptanceUiProbe: "acceptance_ui_probe",
   ackCloseRequest: "ack_close_request",
   closeSession: "close_session",
   abandonSession: "abandon_session",

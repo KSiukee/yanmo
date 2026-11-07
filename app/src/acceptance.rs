@@ -556,24 +556,143 @@ pub fn ui_ready(app: &tauri::AppHandle) {
         // i18n-allow-next-line: 开发者排查看的告警，不是界面文案
         eprintln!("验收报告没写成：{error}");
     }
+    // **不在这里退出**：界面级自测（切章/输入/滚动/检索）要在**窗口真的显示之后**才量得准
+    // （隐藏窗口里 rAF 会被暂停，帧计时全部失真）。探针跑完会走 `acceptance_ui_probe`
+    // 那条命令收场；这条 30 秒的兜底是给"探针没来"准备的——验收绝不能挂在那儿。
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(30));
+        handle.exit(0);
+    });
+}
+
+/// 界面自测交回来了：并进报告，然后收场（400ms 让命令的回应先回到前端）。
+pub fn ui_probe_arrived(app: &tauri::AppHandle, steps: Vec<ProbeStep>) -> bool {
+    let accepted = accept_probe(steps);
+    if !accepted {
+        return false; // 正常模式 / 重复提交：不动报告，也不收场
+    }
     let handle = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(400));
         handle.exit(0);
     });
+    true
+}
+
+/// 界面自测交回来的一步（名字 / 毫秒 / 附注）。
+///
+/// 界面级体感只能在**界面里**量（切章、输入往返、滚动、检索的防抖与渲染），
+/// 壳这边只负责收下来并进同一份报告——口径由前端在 `note` 里写清。
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ProbeStep {
+    pub name: String,
+    pub ms: f64,
+    pub note: String,
+}
+
+/// 界面自测要不要跑（前端启动时问一次；正常模式是 `false`）。
+pub fn probe_active() -> bool {
+    ui_plan().is_some()
+}
+
+/// 只收第一份：前端重复交（或页面热重载）不许把同一批数字写两遍。
+static PROBE_DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// 收下界面自测的那几条并进报告；正常模式或重复提交返回 `false`。
+pub fn accept_probe(steps: Vec<ProbeStep>) -> bool {
+    let Some(plan) = ui_plan() else { return false };
+    if PROBE_DONE.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return false;
+    }
+    if let Err(error) = merge_ui_steps(&plan.report, &steps) {
+        // i18n-allow-next-line: 开发者排查看的告警，不是界面文案
+        eprintln!("验收报告没写成：{error}");
+    }
+    true
 }
 
 /// 把界面那一步并进第一步写好的报告（同一个前缀下最新的一份）。
 ///
 /// `ms` 为 `None` 表示这一步**没量到**（比如界面超时）：只把原因写进附注，不编一个数字。
 fn merge_ui_note(prefix: &Path, ms: Option<f64>, note: &str) -> std::io::Result<()> {
+    let (md_path, json_path) = latest_reports(prefix)?;
+    if let Some(path) = md_path {
+        let text = std::fs::read_to_string(&path)?;
+        let row = match ms {
+            Some(ms) => format!("| 界面冷启动到可输入 | {} | {note} |", human_ms(ms)),
+            None => format!("| 界面冷启动到可输入 | 没量到 | {note} |"),
+        };
+        std::fs::write(&path, text.replace(UI_ROW, &row))?;
+    }
+    if let Some(path) = json_path {
+        let text = std::fs::read_to_string(&path)?;
+        if let Some(index) = text.rfind(']') {
+            let step = format!(
+                ",{{\"name\":{},\"ms\":{},\"note\":{}}}",
+                json_string("界面冷启动到可输入"),
+                ms.map(|value| format!("{value:.3}")).unwrap_or_else(|| "null".to_string()),
+                json_string(note)
+            );
+            let merged = format!("{}{}{}", &text[..index], step, &text[index..]);
+            std::fs::write(&path, merged)?;
+        }
+    }
+    Ok(())
+}
+
+/// 把界面自测的那几条并进报告：md 追加到表格末尾，json 追加进 `steps`。
+fn merge_ui_steps(prefix: &Path, steps: &[ProbeStep]) -> std::io::Result<()> {
+    if steps.is_empty() {
+        return Ok(());
+    }
+    let (md_path, json_path) = latest_reports(prefix)?;
+    if let Some(path) = md_path {
+        let text = std::fs::read_to_string(&path)?;
+        // 表格在「---」之前：把行插在那条分隔线前面（冷启动那一行在不在都不影响）。
+        // 先把分隔线前的空行去掉——否则这几行会落到一个**空行之后**，markdown 就不认它们是
+        // 同一张表了（报告里会显示成一片裸文本）。
+        let marker = "\n---\n";
+        if let Some(at) = text.find(marker) {
+            let rows: String = steps
+                .iter()
+                .map(|step| format!("| {} | {} | {} |\n", step.name, human_ms(step.ms), step.note))
+                .collect();
+            let head = text[..at].trim_end_matches('\n');
+            let merged = format!("{head}\n{rows}{}", &text[at..]);
+            std::fs::write(&path, merged)?;
+        }
+    }
+    if let Some(path) = json_path {
+        let text = std::fs::read_to_string(&path)?;
+        if let Some(index) = text.rfind(']') {
+            let entries: Vec<String> = steps
+                .iter()
+                .map(|step| {
+                    format!(
+                        "{{\"name\":{},\"ms\":{:.3},\"note\":{}}}",
+                        json_string(&step.name),
+                        step.ms,
+                        json_string(&step.note)
+                    )
+                })
+                .collect();
+            let merged = format!("{},{}{}", &text[..index], entries.join(","), &text[index..]);
+            std::fs::write(path, merged)?;
+        }
+    }
+    Ok(())
+}
+
+/// 同一个前缀下最新的一份 md / json 报告（第二步写好的那一份）。
+fn latest_reports(prefix: &Path) -> std::io::Result<(Option<PathBuf>, Option<PathBuf>)> {
     let dir = prefix.parent().filter(|path| !path.as_os_str().is_empty()).map(Path::to_path_buf);
     let stem = prefix
         .file_name()
         .map(|name| name.to_string_lossy().to_string())
         .unwrap_or_else(|| "验收报告".to_string());
-    let search_dir = dir.clone().unwrap_or_else(|| PathBuf::from("."));
-    let mut found: Vec<PathBuf> = std::fs::read_dir(&search_dir)?
+    let search_dir = dir.unwrap_or_else(|| PathBuf::from("."));
+    let mut found: Vec<PathBuf> = std::fs::read_dir(search_dir)?
         .flatten()
         .map(|entry| entry.path())
         .filter(|path| {
@@ -583,28 +702,8 @@ fn merge_ui_note(prefix: &Path, ms: Option<f64>, note: &str) -> std::io::Result<
         })
         .collect();
     found.sort();
-    let md_path = found.iter().rev().find(|path| path.extension().is_some_and(|ext| ext == "md"));
-    let json_path = found.iter().rev().find(|path| path.extension().is_some_and(|ext| ext == "json"));
-    if let Some(path) = md_path {
-        let text = std::fs::read_to_string(path)?;
-        let row = match ms {
-            Some(ms) => format!("| 界面冷启动到可输入 | {} | {note} |", human_ms(ms)),
-            None => format!("| 界面冷启动到可输入 | 没量到 | {note} |"),
-        };
-        std::fs::write(path, text.replace(UI_ROW, &row))?;
-    }
-    if let Some(path) = json_path {
-        let text = std::fs::read_to_string(path)?;
-        if let Some(index) = text.rfind(']') {
-            let step = format!(
-                ",{{\"name\":{},\"ms\":{},\"note\":{}}}",
-                json_string("界面冷启动到可输入"),
-                ms.map(|value| format!("{value:.3}")).unwrap_or_else(|| "null".to_string()),
-                json_string(note)
-            );
-            let merged = format!("{}{}{}", &text[..index], step, &text[index..]);
-            std::fs::write(path, merged)?;
-        }
-    }
-    Ok(())
+    let md = found.iter().rev().find(|path| path.extension().is_some_and(|ext| ext == "md")).cloned();
+    let json =
+        found.iter().rev().find(|path| path.extension().is_some_and(|ext| ext == "json")).cloned();
+    Ok((md, json))
 }

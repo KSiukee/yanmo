@@ -19,3 +19,4 @@ export * from "./core/writing";
 export * from "./core/typeset";
 export * from "./core/compile";
 export * from "./core/import";
+export * from "./core/acceptance";

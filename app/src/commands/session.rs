@@ -69,6 +69,19 @@ pub fn arm_exit_gate(app: tauri::AppHandle, data: State<'_, AppData>) {
     crate::acceptance::ui_ready(&app);
 }
 
+/// 验收模式探测：界面启动时问一次（正常模式 `false`，那段自测一个字都不跑）。
+#[tauri::command]
+pub fn acceptance_probe_active() -> bool {
+    crate::acceptance::probe_active()
+}
+
+/// 界面自测的结果交回壳：只在验收模式收，且只收第一份；收下之后壳写报告并退出。
+#[tauri::command(rename_all = "snake_case")]
+pub fn acceptance_ui_probe(app: tauri::AppHandle, steps: Vec<crate::acceptance::ProbeStep>) -> bool {
+    crate::acceptance::note_command("ui.probe");
+    crate::acceptance::ui_probe_arrived(&app, steps)
+}
+
 /// 界面回话：收到关窗通知，开始处理（落盘，或弹"存不下去"的对话框）。
 ///
 /// 壳据此停掉"界面是不是已经死了"的倒计时——**拦住关窗是界面故意的，而不是界面没反应**。

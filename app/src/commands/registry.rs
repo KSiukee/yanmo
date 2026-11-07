@@ -60,6 +60,9 @@ pub fn app_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         crate::commands::editor::emergency_snapshot,
         crate::commands::session::session_report,
         crate::commands::session::arm_exit_gate,
+        // 界面级验收：只在 `--self-test-ui` 下有效（正常模式探测回 false，前端不跑那段自测）
+        crate::commands::session::acceptance_probe_active,
+        crate::commands::session::acceptance_ui_probe,
         crate::commands::session::ack_close_request,
         crate::commands::session::close_session,
         crate::commands::sop::sop_read,
