@@ -47,6 +47,7 @@ computer means copying the folder (the built-in backup and restore tools are the
 | Hidden cloud uploads and telemetry | The app has no network capability at all — and there is a machine check in CI that fails the build if any appears. Verify it yourself with a firewall |
 | Chinese word counting done wrong | Three word-count modes (every character / characters excluding punctuation / by word) using Chinese rules, not English tokenisation |
 | Handing a manuscript to an editor | One-click export: submission-ready `.docx`, per-chapter `.txt`, merged `.txt` |
+| Ideas stuck in a phone notes app | Paste text or pick a `.txt` / `.md` straight into the fragment pool — preview how it splits first, the source is recorded, the whole batch can be undone, and the manuscript is never touched |
 | Getting distracted | Focus mode (`F9`) leaves only the text and a thin status bar |
 | Software stops working some day | A bundled command-line tool (double-click for a Chinese menu) can read out and export your manuscript when the GUI will not start |
 
@@ -63,12 +64,15 @@ computer means copying the folder (the built-in backup and restore tools are the
 ## What works today
 
 - Editor: body text, chapter titles, a one-line chapter summary, autosave, three word-count modes
-- Chapter tree: volumes and chapters, drag to reorder, rename, insert, per-chapter word counts
+- Chapter tree: volumes and chapters (standalone long-form pieces use one piece with sections), drag to reorder, rename, insert, per-chapter word counts
 - Numbering that follows position automatically (insert / delete / drag / restore), continuous
   across volumes by default, or restarting at 1 in each volume — your choice in settings
 - Multiple books on a shelf, per-book cursor memory, book language (Chinese / English / Japanese)
 - Recovery: recycle bin, per-chapter version history with diff and rollback
-- Safety: multiple backup destinations, restore from backup, save-on-close, crash notice, single instance
+- Safety: multiple backup destinations, restore from backup, save-on-close, crash notice, single instance;
+  if the library itself will not open, `yanmo-cli --data <dir> restore --from <backup>` prints a dry-run plan first and only swaps with `--yes` (old library kept)
+- Import: paste text or pick a `.txt` / `.md` into the fragment pool (source recorded, per-batch undo, duplicates skipped)
+- Writing-trace package: export a chain-hashed record of the writing process (no manuscript text), with a bundled `verify.py`
 - Export: submission `.docx`, per-chapter `.txt`, merged `.txt`; typesetting clean-up (reports first)
 - Statistics: daily progress, daily goal, writing calendar, streaks
 - Comfort: focus mode (`F9`), outline hover cards, shortcuts (`Ctrl+S`, `Ctrl+Alt+←/→` to switch chapter)
@@ -90,8 +94,8 @@ places, people and uncollected threads — is bundled: one click on the modules 
 source ships in this repository (`app/samples/bigmap-lite-src/`, AGPL) as a reference for writing
 your own. There is **no module store, no SDK tooling and no certified module yet**.
 
-**Not shipped yet:** packaging the writing trail into a portable, verifiable record; the module
-store/SDK; and self-healing after a frozen UI (today it detects, reports and preserves evidence).
+**Not shipped yet:** the day-to-day short-story-collection workflow, the module store/SDK,
+and chapter-level sync across devices.
 
 ## Download
 
@@ -126,7 +130,7 @@ would rather not see the prompt at all, build your own build from source.
 
 ## Reliability
 
-Every release has to pass **1,800+ automated checks** (1,252 for the core, 553 for the interface,
+Every release has to pass **1,800+ automated checks** (1,278 for the core, 561 for the interface,
 growing every version) covering write / save / close / reopen / restore / export paths. The release
 script stops on failure — it never ships with warnings. Some checks exist specifically for the worst
 cases: power loss in the middle of an upgrade, the database disagreeing with what is on screen, and
